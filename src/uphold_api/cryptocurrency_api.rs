@@ -39,7 +39,8 @@ const TRX_EUR: &str = "TRX-EUR";
 const XRP_EUR: &str = "XRP-EUR";
 const ZIL_EUR: &str = "ZIL-EUR";
 
-const FILE_NAME: &str = "cryptocurrency_rates_history.json";
+pub const FILE_NAME: &str = "cryptocurrency_rates_history";
+const FILE_FORMAT: &str = "json";
 
 static CRYPTOCURRENCIES: [&str; 20] = [ZRX_EUR, BAL_EUR, BTC_EUR, BCH_EUR, BTG_EUR, DASH_EUR, LINK_EUR, ADA_EUR,
     BTC0_EUR, ATOM_EUR, DGB_EUR, DOGE_EUR, ETH_EUR, IOTA_EUR, NEM_EUR, DOT_EUR, XLM_EUR, TRX_EUR, XRP_EUR, ZIL_EUR];
@@ -58,14 +59,17 @@ static CRYPTOCURRENCIES: [&str; 20] = [ZRX_EUR, BAL_EUR, BTC_EUR, BCH_EUR, BTG_E
 
 pub fn update_currency_prices_from_uphold_web_api() -> Result<()> {
     let mut data_array = self::get_data();
-    let mut file = get_or_create_file(FILE_NAME, true);
+    let full_file_name = format!("{}.{}", FILE_NAME, FILE_FORMAT);
 
     println!("total size of records before: {}", data_array.len());
+
+    // create new file to put all the data records
+    let mut file = get_or_create_file(&full_file_name, true);
 
     let current_date: DateTime<Local> = Local::now();
     let day: u8 = current_date.day() as u8;
     let month: u8 = current_date.month() as u8;
-    let year: u8 = current_date.year() as u8;
+    let year: u16 = current_date.year() as u16;
     let hour: u8 = current_date.hour() as u8;
     let minutes: u8 = current_date.minute() as u8;
 
@@ -74,7 +78,7 @@ pub fn update_currency_prices_from_uphold_web_api() -> Result<()> {
     let mut body;
 
     for pair in &self::CRYPTOCURRENCIES {
-        println!("Pair {:?} ", &pair);
+       // println!("Pair {:?} ", &pair);
         request_url = format!("https://api.uphold.com/v0/ticker/{}", &pair);
 
         res = reqwest::get(&request_url)?;
@@ -91,10 +95,10 @@ pub fn update_currency_prices_from_uphold_web_api() -> Result<()> {
             year: year,
             hour: hour,
             minute: minutes,
-            currency: String::from(pair.to_string()),
+            currency: String::from(json.get("currency").unwrap().to_string().replace("\"", "")).parse().unwrap(),
             pair: String::from(pair.to_string()),
             ask: String::from(json.get("ask").unwrap().to_string().replace("\"", "")).parse().unwrap(),
-            bid: String::from(json.get("ask").unwrap().to_string().replace("\"", "")).parse().unwrap(),
+            bid: String::from(json.get("bid").unwrap().to_string().replace("\"", "")).parse().unwrap(),
         };
 
         data_array.push(data_record);
@@ -107,24 +111,20 @@ pub fn update_currency_prices_from_uphold_web_api() -> Result<()> {
     Ok(())
 }
 
-
 /**
    opens existing data to cryptocurrencies and parse json format to DataStructure struct in rust
 */
 pub fn get_data() -> Vec<DataStructure> {
-    let mut file = file_utils::get_or_create_file(FILE_NAME, false);
+    let full_file_name = format!("{}.{}", FILE_NAME, FILE_FORMAT);
+    let mut file = file_utils::get_or_create_file(&full_file_name, false);
     let mut data = String::new();
+    let mut json: Vec<DataStructure> = vec![];
 
     file.read_to_string(&mut data).expect("Unable to open");
-    let mut json: Vec<DataStructure> = vec![];
 
     if !data.is_empty() {
         json = serde_json::from_str(&data).expect("JSON was not well-formatted");
     }
 
-    let structured_data_vector = match json {
-        json => json,
-    };
-
-    structured_data_vector
+    json
 }

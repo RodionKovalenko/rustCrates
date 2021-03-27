@@ -5,7 +5,7 @@ pub struct DataStructure {
     pub full_date: DateTime<Local>,
     pub day: u8,
     pub month: u8,
-    pub year: u8,
+    pub year: u16,
     pub hour: u8,
     pub minute: u8,
     pub currency: String,
