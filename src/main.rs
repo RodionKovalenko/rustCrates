@@ -3,12 +3,11 @@ extern crate serde_derive;
 extern crate serde;
 extern crate serde_json;
 
-
-pub mod tcp;
 pub mod uphold_api;
 use uphold_api::collect_data_task;
 
-
+#[allow(unused_variables)]
+#[allow(unused_assignments)]
 /**
 * start with cargo run -- --server
 * connect client: cargo run -- --client
