@@ -1,13 +1,16 @@
-#[macro_use]
 extern crate serde_derive;
 extern crate serde;
 extern crate serde_json;
 
+extern crate neural_networks;
+use neural_networks::network_components::layer::initialize_layer;
 pub mod uphold_api;
-use uphold_api::collect_data_task;
 
+#[allow(unused_imports)]
 #[allow(unused_variables)]
 #[allow(unused_assignments)]
+use uphold_api::collect_data_task;
+
 /**
 * start with cargo run -- --server
 * connect client: cargo run -- --client

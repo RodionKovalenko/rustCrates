@@ -1,6 +1,6 @@
 extern crate reqwest;
 
-use error_chain::error_chain;
+use error_chain::*;
 use std::io::Read;
 use std::io::prelude::*;
 use chrono::{DateTime, Timelike, Local, Datelike};
@@ -53,7 +53,9 @@ static CRYPTOCURRENCIES: [&str; 20] = [ZRX_EUR, BAL_EUR, BTC_EUR, BCH_EUR, BTG_E
 // println!("Ask: {}", body);
 // println!("Bid: {}", body);
 
-
+#[allow(unused_imports)]
+#[allow(unused_variables)]
+#[allow(unused_assignments)]
 pub fn update_currency_prices_from_uphold_web_api() -> Result<()> {
     let mut data_array = self::get_data();
     let full_file_name = format!("{}.{}", FILE_NAME, FILE_FORMAT);
@@ -75,7 +77,7 @@ pub fn update_currency_prices_from_uphold_web_api() -> Result<()> {
     let mut body;
 
     for pair in &self::CRYPTOCURRENCIES {
-       // println!("Pair {:?} ", &pair);
+        // println!("Pair {:?} ", &pair);
         request_url = format!("https://api.uphold.com/v0/ticker/{}", &pair);
 
         res = reqwest::get(&request_url)?;

@@ -1,6 +1,9 @@
 use chrono::{DateTime, Local};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
+#[derive(Serialize)]
+#[derive(Deserialize)]
 pub struct CryptocurrencyDto {
     pub full_date: DateTime<Local>,
     pub day: u8,
