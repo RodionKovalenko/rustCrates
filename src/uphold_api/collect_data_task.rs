@@ -8,6 +8,7 @@ const COLLECT_PERIOD_IN_SECONDS: u64 = 1800;
 // every 3 hours make backup
 const BACKUP_PERIOD_IN_SECONDS: u64 = 10800;
 
+#[allow(unused_imports)]
 #[allow(unused_variables)]
 #[allow(unused_assignments)]
 pub fn update_json_data_from_uphold_api() {
