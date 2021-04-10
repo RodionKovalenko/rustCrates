@@ -1,7 +1,7 @@
 use chrono::{DateTime, Local};
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct DataStructure {
+pub struct CryptocurrencyDto {
     pub full_date: DateTime<Local>,
     pub day: u8,
     pub month: u8,

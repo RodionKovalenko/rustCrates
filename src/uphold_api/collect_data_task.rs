@@ -1,28 +1,24 @@
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
-#[path = "cryptocurrency_api.rs"]
-mod cryptocurrency_api;
-#[path = "file_utils.rs"]
-mod file_utils;
-
+use crate::uphold_api::cryptocurrency_api;
+use crate::uphold_api::file_utils;
 // 30 min = 1800 seconds
 const COLLECT_PERIOD_IN_SECONDS: u64 = 1800;
 // every 3 hours make backup
 const BACKUP_PERIOD_IN_SECONDS: u64 = 10800;
 
+#[allow(unused_variables)]
+#[allow(unused_assignments)]
 pub fn update_json_data_from_uphold_api() {
-    let mut now = Instant::now();
-    let mut seconds_elapsed = now.elapsed().as_secs();
-    let mut thread1_uphold_data_collect;
-    let mut thread2_backup;
+    let now = Instant::now();
+    let mut seconds_elapsed;
 
     loop {
         seconds_elapsed = now.elapsed().as_secs();
 
         if seconds_elapsed % COLLECT_PERIOD_IN_SECONDS == 0 {
-            thread1_uphold_data_collect = thread::spawn(move || {
-            
+            thread::spawn(move || {
                 seconds_elapsed = now.elapsed().as_secs();
 
                 println!("");
@@ -37,7 +33,7 @@ pub fn update_json_data_from_uphold_api() {
         }
 
         if seconds_elapsed % BACKUP_PERIOD_IN_SECONDS == 0 {
-            thread2_backup = thread::spawn(move || {
+            thread::spawn(move || {
                 seconds_elapsed = now.elapsed().as_secs();
 
                 println!("");

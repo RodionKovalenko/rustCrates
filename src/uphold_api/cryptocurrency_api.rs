@@ -4,12 +4,9 @@ use error_chain::error_chain;
 use std::io::Read;
 use std::io::prelude::*;
 use chrono::{DateTime, Timelike, Local, Datelike};
-#[path = "data_structure.rs"]
-pub mod data_structure;
-use crate::uphold_api::cryptocurrency_api::data_structure::DataStructure;
-#[path = "file_utils.rs"]
-pub mod file_utils;
-use crate::uphold_api::cryptocurrency_api::file_utils::get_or_create_file;
+use crate::uphold_api::file_utils;
+use crate::uphold_api::cryptocurrency_dto::CryptocurrencyDto;
+use file_utils::get_or_create_file;
 
 error_chain! {
     foreign_links {
@@ -88,7 +85,7 @@ pub fn update_currency_prices_from_uphold_web_api() -> Result<()> {
         let json: serde_json::Value =
             serde_json::from_str(&mut body).expect("JSON was not well-formatted");
 
-        let data_record = DataStructure {
+        let data_record = CryptocurrencyDto {
             full_date: current_date,
             day: day,
             month: month,
@@ -114,11 +111,11 @@ pub fn update_currency_prices_from_uphold_web_api() -> Result<()> {
 /**
    opens existing data to cryptocurrencies and parse json format to DataStructure struct in rust
 */
-pub fn get_data() -> Vec<DataStructure> {
+pub fn get_data() -> Vec<CryptocurrencyDto> {
     let full_file_name = format!("{}.{}", FILE_NAME, FILE_FORMAT);
     let mut file = file_utils::get_or_create_file(&full_file_name, false);
     let mut data = String::new();
-    let mut json: Vec<DataStructure> = vec![];
+    let mut json: Vec<CryptocurrencyDto> = vec![];
 
     file.read_to_string(&mut data).expect("Unable to open");
 

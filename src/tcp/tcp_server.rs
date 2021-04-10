@@ -4,7 +4,7 @@ use std::io::{Error};
 use std::{str, thread};
 use rand::Rng;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug)]
 struct Point3D {
     x: u32,
     y: u32,

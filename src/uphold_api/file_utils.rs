@@ -5,7 +5,6 @@ use std::io::Write;
 use std::io::Read;
 use chrono::{DateTime, Timelike, Local, Datelike};
 
-const FILE_NAME_BACK_UP: &str = "backup";
 const BACKUP_DIR: &str = "backup";
 const FILE_FORMAT_BACK_UP: &str = "json";
 
@@ -41,12 +40,12 @@ pub fn make_backup_file(filename: &str) {
     let minutes: u8 = current_date.minute() as u8;
 
     let backup_time_stamp = format!("{}-{}-{}-{}-{}", year, month, day, hour, minutes);
-    let mut backup_time_dir = format!("{}/{}_{}", BACKUP_DIR, &filename, backup_time_stamp);
-    let mut backup_file_name = format!("{}.{}", &backup_time_dir, FILE_FORMAT_BACK_UP);
+    let backup_time_dir = format!("{}/{}_{}", BACKUP_DIR, &filename, backup_time_stamp);
+    let backup_file_name = format!("{}.{}", &backup_time_dir, FILE_FORMAT_BACK_UP);
     let path_to_backup = Path::new(&backup_file_name);
 
     if !path_to_backup.exists() {
-        std::fs::create_dir_all(BACKUP_DIR);
+        std::fs::create_dir_all(BACKUP_DIR).expect("Could not create directory");
     }
 
     let mut backup_file: File = get_or_create_file(&backup_file_name, true);
@@ -60,7 +59,7 @@ pub fn make_backup_file(filename: &str) {
         if !data.is_empty() {
             // create new backup file to put in data in
             println!("{:?}", backup_file_name);
-            backup_file.write_all(data.as_bytes());
+            backup_file.write_all(data.as_bytes()).expect("Could not write to file");
         }
     }
 }
