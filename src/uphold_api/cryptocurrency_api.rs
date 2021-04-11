@@ -89,10 +89,10 @@ pub fn update_currency_prices_from_uphold_web_api() -> Result<()> {
 
         let data_record = CryptocurrencyDto {
             full_date: current_date,
-            day: day,
-            month: month,
-            year: year,
-            hour: hour,
+            day,
+            month,
+            year,
+            hour,
             minute: minutes,
             currency: String::from(json.get("currency").unwrap().to_string().replace("\"", "")).parse().unwrap(),
             pair: String::from(pair.to_string()),
