@@ -22,9 +22,9 @@ pub struct Layer<T> {
     pub input_weights: Vec<Vec<T>>,
     pub inaktivated_output: Vec<Vec<T>>,
     pub aktivated_output: Vec<Vec<T>>,
-    pub layer_bias: Vec<T>,
     pub gradient: Vec<Vec<T>>,
     pub errors: Vec<Vec<T>>,
+    pub layer_bias: Vec<T>,
     pub activation_type: ActivationType,
     pub layer_type: LayerType,
     pub previous_layer: Option<Box<Layer<T>>>,
@@ -84,8 +84,8 @@ impl Clone for Layer<f64> {
 pub fn initialize_layer(feed_net: &mut FeedforwardNetwork) -> &mut Vec<Layer<f64>> {
     let mut layers = &mut feed_net.layers;
     let total_number_of_layers = feed_net.number_of_hidden_layers + 2;
-    let num_layer_inputs_dim1: i32 = feed_net.input_dimensions[0];
-    let mut num_layer_inputs_dim2: i32 = feed_net.input_dimensions[1];
+    let num_layer_inputs_dim1: usize = feed_net.input_dimensions[0];
+    let mut num_layer_inputs_dim2: usize = feed_net.input_dimensions[1];
     let mut num_hidden_neurons = feed_net.number_of_hidden_neurons;
     let mut input_layer;
     let mut layer_type;
@@ -124,34 +124,8 @@ pub fn initialize_layer(feed_net: &mut FeedforwardNetwork) -> &mut Vec<Layer<f64
         layers.push(input_layer);
     }
 
+    // set reference for next and previous layer
     for i in 0..layers.len() {
-        layers[i].input_weights = vec![
-            vec![0.0f64; 1 as usize];
-            1 as usize
-        ];
-        layers[i].input_weights[0] = vec![123.23];
-
-        if matches!(layers[i].layer_type, LayerType::HiddenLayer) {
-            layers[i - 1].input_weights[0] = vec![123.23];
-            layers[i - 1].input_weights = vec![
-                vec![0.0f64; 1 as usize];
-                1 as usize
-            ];
-            layers[i + 1].input_weights[0] = vec![123.23];
-            layers[i + 1].input_weights = vec![
-                vec![0.0f64; 1 as usize];
-                1 as usize
-            ];
-        }
-
-        if matches!(layers[i].layer_type, LayerType::InputLayer) {
-            layers[i + 1].input_weights[0] = vec![123.23];
-            layers[i + 1].input_weights = vec![
-                vec![0.0f64; 1 as usize];
-                1 as usize
-            ];
-        }
-
         if matches!(layers[i].layer_type, LayerType::InputLayer) {
             layers[i].previous_layer = None;
             layers[i].next_layer = Some(Box::<Layer<f64>>::new(layers[i + 1].clone()));
@@ -162,14 +136,6 @@ pub fn initialize_layer(feed_net: &mut FeedforwardNetwork) -> &mut Vec<Layer<f64
             layers[i].previous_layer = Some(Box::<Layer<f64>>::new(layers[i - 1].clone()));
             layers[i].next_layer = None;
         }
-    }
-
-    for i in 0..layers.len() {
-        println!("{:?}", layers[i]);
-
-        println!("");
-        println!("");
-        println!("");
     }
 
     layers
