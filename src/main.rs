@@ -25,13 +25,13 @@ fn main() {
     //collect_data_task::update_json_data_from_uphold_api();
 
     let mut input = vec![
-        vec![1.0, 2.0, 3.0]
+        vec![1.0, 2.0, 3.0, 1.0, 3.3, 4.4]
     ];
 
     let number_of_hidden_layers = 5;
     let input_dimensions = vec![input.len(), input[0].len()];
-    let number_of_output_neurons = 4;
-    let number_of_hidden_neurons = 3;
+    let number_of_output_neurons = 25;
+    let number_of_hidden_neurons = 15;
     let learning_rate = 0.02;
 
     let mut feedforward_network =

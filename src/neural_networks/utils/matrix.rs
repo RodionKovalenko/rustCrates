@@ -41,7 +41,7 @@ pub fn multiple(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<f64>>)
     result_matrix
 }
 
-pub fn multiple_generic<T: Debug + Clone + Mul<Output=T> + AddAssign>
+pub fn multiple_generic<T: Debug + Clone + Mul<Output=T> + AddAssign + From<f64>>
 (matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<T>>) -> Vec<Vec<T>> {
     let num_rows = matrix_a.len();
     let mut num_columns = matrix_b[0].len();
@@ -87,7 +87,7 @@ pub fn multiple_generic<T: Debug + Clone + Mul<Output=T> + AddAssign>
 
 
 pub fn transpose<T: Debug + Clone>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
-    let mut matrix_b_clone = Vec::new();
+    let mut matrix_result = Vec::new();
     let mut row_vector;
 
     for j in 0..matrix_a[0].len() {
@@ -95,21 +95,32 @@ pub fn transpose<T: Debug + Clone>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
         for i in 0..matrix_a.len() {
             row_vector.push(matrix_a[i][j].clone());
         }
-        matrix_b_clone.push(row_vector);
+        matrix_result.push(row_vector);
     }
 
     // println!("matrix to transpose rows: {}, columns: {}", matrix_a.len(), matrix_a[0].len());
     // println!("matrix generic transposed rows: {:?}, columns: {}", matrix_b_clone.len(), matrix_b_clone[0].len());
 
-    matrix_b_clone
+    matrix_result
 }
 
 pub fn create_generic<T: Debug + Clone>(num_rows: usize, num_columns: usize) -> Vec<Vec<T>> {
-    let mut matrix_b_clone: Vec<Vec<T>> = Vec::new();
+    let mut matrix_result: Vec<Vec<T>> = Vec::new();
 
     for i in 0..num_rows {
-        matrix_b_clone.push(Vec::with_capacity(num_columns));
+        matrix_result.push(Vec::with_capacity(num_columns));
     }
 
-    matrix_b_clone
+    matrix_result
+}
+
+pub fn create_generic_one_dim<T: Debug + Clone + From<f64>>
+(num_rows: usize) -> Vec<T> {
+    let mut matrix_result: Vec<T> = Vec::new();
+
+    for i in 0..num_rows {
+        matrix_result.push(T::from(0.0));
+    }
+
+    matrix_result
 }
