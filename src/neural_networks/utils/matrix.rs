@@ -124,3 +124,20 @@ pub fn create_generic_one_dim<T: Debug + Clone + From<f64>>
 
     matrix_result
 }
+
+pub fn parseToFloat(mut matrix: &Vec<Vec<i32>>) -> Vec<Vec<f64>> {
+    let num_rows = matrix.len();
+    let num_columns = matrix[0].len();
+    let mut matrix_result = vec![
+        vec![0f64; num_columns];
+        num_rows
+    ];
+
+    for i in 0..matrix.len() {
+        for j in 0..matrix[0].len() {
+           matrix_result[i][j] = matrix[i][j] as f64;
+        }
+    }
+
+    matrix_result
+}
