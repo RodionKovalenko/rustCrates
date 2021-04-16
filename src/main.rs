@@ -22,26 +22,26 @@ tcp::test_connection();
 fn main() {
     println!("Test beginns");
 
-     collect_data_task::update_json_data_from_uphold_api();
+    //collect_data_task::update_json_data_from_uphold_api();
 
-    // let mut input = vec![
-    //     vec![1.0, 2.0, 3.0, 1.3, 3.4, 4.4]
-    // ];
-    //
-    // let number_of_hidden_layers = 5;
-    // let input_dimensions = vec![input.len(), input[0].len()];
-    // let number_of_output_neurons = 25;
-    // let number_of_hidden_neurons = 20;
-    // let learning_rate = 0.02;
-    //
-    // let mut feedforward_network =
-    //     feedforward_network::create(
-    //         number_of_hidden_layers,
-    //         number_of_hidden_neurons,
-    //         input_dimensions,
-    //         number_of_output_neurons,
-    //         learning_rate,
-    //     );
-    //
-    // feedforward_network::forward(&mut input, &mut feedforward_network);
+    let mut input = vec![
+        vec![1.0, 2.0, 3.0]
+    ];
+
+    let number_of_hidden_layers = 5;
+    let input_dimensions = vec![input.len(), input[0].len()];
+    let number_of_output_neurons = 4;
+    let number_of_hidden_neurons = 3;
+    let learning_rate = 0.02;
+
+    let mut feedforward_network =
+        feedforward_network::create(
+            number_of_hidden_layers,
+            number_of_hidden_neurons,
+            input_dimensions,
+            number_of_output_neurons,
+            learning_rate,
+        );
+
+    feedforward_network::forward(&mut input, &mut feedforward_network);
 }
