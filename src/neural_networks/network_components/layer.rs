@@ -3,6 +3,10 @@ use std::fmt::{Display, Formatter, Result};
 use crate::network_types::feedforward_network::FeedforwardNetwork;
 use crate::utils::weights_initializer::initialize_weights;
 use std::borrow::{BorrowMut, Borrow};
+use std::ops::RemAssign;
+use num::Zero;
+use num::traits::NumAssign;
+use crate::utils::matrix::{create_generic, create_generic_one_dim};
 
 #[derive(Debug, Clone)]
 pub enum ActivationType {
@@ -31,23 +35,23 @@ pub struct Layer<T> {
     pub next_layer: Option<Box<Layer<T>>>,
 }
 
-impl Layer<f64> {
-    pub fn get_input_weights(&self) -> Vec<Vec<f64>> {
+impl<T: Debug + Clone + Zero + From<f64>> Layer<T> {
+    pub fn get_input_weights(&self) -> Vec<Vec<T>> {
         self.input_weights.clone()
     }
-    pub fn get_inaktivatede_output(&self) -> Vec<Vec<f64>> {
+    pub fn get_inaktivatede_output(&self) -> Vec<Vec<T>> {
         self.inaktivated_output.clone()
     }
-    pub fn get_aktivated_output(&self) -> Vec<Vec<f64>> {
+    pub fn get_aktivated_output(&self) -> Vec<Vec<T>> {
         self.aktivated_output.clone()
     }
-    pub fn get_layer_bias(&self) -> Vec<f64> {
+    pub fn get_layer_bias(&self) -> Vec<T> {
         self.layer_bias.clone()
     }
-    pub fn get_gradient(&self) -> Vec<Vec<f64>> {
+    pub fn get_gradient(&self) -> Vec<Vec<T>> {
         self.gradient.clone()
     }
-    pub fn get_errors(&self) -> Vec<Vec<f64>> {
+    pub fn get_errors(&self) -> Vec<Vec<T>> {
         self.errors.clone()
     }
     pub fn get_activation_type(&self) -> ActivationType {
@@ -56,15 +60,15 @@ impl Layer<f64> {
     pub fn get_layer_type(&self) -> LayerType {
         self.layer_type.clone()
     }
-    pub fn get_previous_layer(&self) -> Option<Box<Layer<f64>>> {
+    pub fn get_previous_layer(&self) -> Option<Box<Layer<T>>> {
         self.previous_layer.clone()
     }
-    pub fn get_next_layer(&self) -> Option<Box<Layer<f64>>> {
+    pub fn get_next_layer(&self) -> Option<Box<Layer<T>>> {
         self.next_layer.clone()
     }
 }
 
-impl Clone for Layer<f64> {
+impl<T: Debug + Clone + Zero + From<f64>> Clone for Layer<T> {
     fn clone(&self) -> Self {
         Layer {
             input_weights: self.get_input_weights(),
@@ -81,13 +85,13 @@ impl Clone for Layer<f64> {
     }
 }
 
-pub fn initialize_layer(feed_net: &mut FeedforwardNetwork) -> &mut Vec<Layer<f64>> {
+pub fn initialize_layer<T: Debug + Clone + Zero + From<f64>>
+(feed_net: &mut FeedforwardNetwork<T>) -> &mut Vec<Layer<T>> {
     let mut layers = &mut feed_net.layers;
     let total_number_of_layers = feed_net.number_of_hidden_layers + 2;
     let num_layer_inputs_dim1: usize = feed_net.input_dimensions[0];
     let mut num_layer_inputs_dim2: usize = feed_net.input_dimensions[1];
     let mut num_hidden_neurons = feed_net.number_of_hidden_neurons;
-    let mut input_layer;
     let mut layer_type;
 
     if total_number_of_layers == 0 {
@@ -106,15 +110,15 @@ pub fn initialize_layer(feed_net: &mut FeedforwardNetwork) -> &mut Vec<Layer<f64
             num_layer_inputs_dim2 = feed_net.number_of_output_neurons;
         }
 
-        input_layer = Layer {
+        let input_layer: Layer<T> = Layer {
             input_weights: initialize_weights(num_layer_inputs_dim1,
                                               num_layer_inputs_dim2,
                                               num_hidden_neurons),
-            inaktivated_output: vec![vec![]],
-            aktivated_output: vec![vec![]],
-            layer_bias: vec![],
-            gradient: vec![vec![]],
-            errors: vec![vec![]],
+            inaktivated_output: create_generic(num_layer_inputs_dim1, num_hidden_neurons),
+            aktivated_output: create_generic(num_layer_inputs_dim1, num_hidden_neurons),
+            layer_bias: create_generic_one_dim(num_hidden_neurons),
+            gradient: create_generic(num_layer_inputs_dim1, num_hidden_neurons),
+            errors: create_generic(num_layer_inputs_dim1, num_hidden_neurons),
             activation_type: ActivationType::SIGMOID,
             layer_type,
             previous_layer: None,
@@ -128,12 +132,12 @@ pub fn initialize_layer(feed_net: &mut FeedforwardNetwork) -> &mut Vec<Layer<f64
     for i in 0..layers.len() {
         if matches!(layers[i].layer_type, LayerType::InputLayer) {
             layers[i].previous_layer = None;
-            layers[i].next_layer = Some(Box::<Layer<f64>>::new(layers[i + 1].clone()));
+            layers[i].next_layer = Some(Box::<Layer<T>>::new(layers[i + 1].clone()));
         } else if matches!(layers[i].layer_type, LayerType::HiddenLayer) {
-            layers[i].previous_layer = Some(Box::<Layer<f64>>::new(layers[i - 1].clone()));
-            layers[i].next_layer = Some(Box::<Layer<f64>>::new(layers[i + 1].clone()));
+            layers[i].previous_layer = Some(Box::<Layer<T>>::new(layers[i - 1].clone()));
+            layers[i].next_layer = Some(Box::<Layer<T>>::new(layers[i + 1].clone()));
         } else {
-            layers[i].previous_layer = Some(Box::<Layer<f64>>::new(layers[i - 1].clone()));
+            layers[i].previous_layer = Some(Box::<Layer<T>>::new(layers[i - 1].clone()));
             layers[i].next_layer = None;
         }
     }
