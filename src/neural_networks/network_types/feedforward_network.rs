@@ -53,20 +53,23 @@ pub fn forward<'a>(inputVec: &mut Vec<Vec<f64>>, feed_net: &'a mut FeedforwardNe
             num_rows = feed_net.input_dimensions[1] as usize;
             num_columns = feed_net.number_of_hidden_neurons as usize;
 
-            layerOutput = matrix::multiple(&inputVec,
+            layerOutput = matrix::multiple_generic(&inputVec,
                                            &layers[i].input_weights.clone());
         } else if matches!(layers[i].layer_type, LayerType::HiddenLayer) {
             num_rows = feed_net.number_of_hidden_neurons as usize;
             num_columns = feed_net.number_of_hidden_neurons as usize;
 
-            layerOutput = matrix::multiple(&layers[i - 1].inaktivated_output,
+            layerOutput = matrix::multiple_generic(&layers[i - 1].inaktivated_output,
                                            &layers[i].input_weights.clone());
         } else {
             num_rows = feed_net.number_of_output_neurons as usize;
             num_columns = feed_net.number_of_output_neurons as usize;
-            layerOutput = matrix::multiple(&layers[i - 1].inaktivated_output,
+            layerOutput = matrix::multiple_generic(&layers[i - 1].inaktivated_output,
                                            &layers[i].input_weights.clone());
         }
+
+        println!("output matrix {:?}", layerOutput);
+        println!("");
 
         layers[i].inaktivated_output = layerOutput;
     }
