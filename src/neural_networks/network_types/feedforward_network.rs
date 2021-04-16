@@ -17,6 +17,7 @@ pub struct FeedforwardNetwork<T> {
     pub number_of_hidden_layers: i8,
 }
 
+
 pub fn create<T: Debug + Clone + Zero + From<f64>>(
     number_of_hidden_layers: i8,
     number_of_hidden_neurons: usize,
