@@ -1,6 +1,6 @@
 use crate::network_components::*;
 use crate::utils::*;
-use crate::network_components::layer::{Layer, ActivationType, LayerType};
+use crate::network_components::layer::{Layer, LayerType};
 use std::fmt::Debug;
 use std::ops::{Mul, AddAssign};
 use num::Zero;
@@ -16,7 +16,6 @@ pub struct FeedforwardNetwork<T> {
     pub number_of_output_neurons: usize,
     pub number_of_hidden_layers: i8,
 }
-
 
 pub fn create<T: Debug + Clone + Zero + From<f64>>(
     number_of_hidden_layers: i8,
@@ -37,7 +36,7 @@ pub fn create<T: Debug + Clone + Zero + From<f64>>(
 
     println!("number of layers before init {}", feed_net.layers.len());
 
-    let layers = layer::initialize_layer(&mut feed_net);
+    layer::initialize_layer(&mut feed_net);
 
     println!("number of layers after init {}", feed_net.layers.len());
 
@@ -45,39 +44,27 @@ pub fn create<T: Debug + Clone + Zero + From<f64>>(
 }
 
 pub fn forward<'a, T: Debug + Clone + Mul<Output=T> + AddAssign + From<f64>>
-(inputVec: &mut Vec<Vec<T>>, feed_net: &'a mut FeedforwardNetwork<T>)
+(input_vec: &mut Vec<Vec<T>>, feed_net: &'a mut FeedforwardNetwork<T>)
  -> &'a mut FeedforwardNetwork<T> {
-    let mut layers: &mut Vec<Layer<T>> = &mut feed_net.layers;
-    let mut currentLayer: Layer<T>;
-    let mut layerWeights: Vec<Vec<T>>;
-    let mut layerOutput: Vec<Vec<T>>;
-    let mut num_columns: usize;
-    let mut num_rows: usize;
+    let layers: &mut Vec<Layer<T>> = &mut feed_net.layers;
+    let mut layer_output: Vec<Vec<T>>;
 
     for i in 0..layers.len() {
         if matches!(layers[i].layer_type, LayerType::InputLayer) {
-            num_rows = feed_net.input_dimensions[1] as usize;
-            num_columns = feed_net.number_of_hidden_neurons as usize;
-
-            layerOutput = matrix::multiple_generic(&inputVec,
-                                                   &layers[i].input_weights.clone());
+            layer_output = matrix::multiple_generic(&input_vec,
+                                                    &layers[i].input_weights.clone());
         } else if matches!(layers[i].layer_type, LayerType::HiddenLayer) {
-            num_rows = feed_net.number_of_hidden_neurons as usize;
-            num_columns = feed_net.number_of_hidden_neurons as usize;
-
-            layerOutput = matrix::multiple_generic(&layers[i - 1].inaktivated_output,
-                                                   &layers[i].input_weights.clone());
+            layer_output = matrix::multiple_generic(&layers[i - 1].inaktivated_output,
+                                                    &layers[i].input_weights.clone());
         } else {
-            num_rows = feed_net.number_of_output_neurons as usize;
-            num_columns = feed_net.number_of_output_neurons as usize;
-            layerOutput = matrix::multiple_generic(&layers[i - 1].inaktivated_output,
-                                                   &layers[i].input_weights.clone());
+            layer_output = matrix::multiple_generic(&layers[i - 1].inaktivated_output,
+                                                    &layers[i].input_weights.clone());
         }
 
-        println!("output matrix {:?}", layerOutput);
+        println!("output matrix {:?}", layer_output);
         println!("");
 
-        layers[i].inaktivated_output = layerOutput;
+        layers[i].inaktivated_output = layer_output;
     }
 
     feed_net

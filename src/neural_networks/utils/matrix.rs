@@ -59,8 +59,8 @@ pub fn multiple_generic<T: Debug + Clone + Mul<Output=T> + AddAssign + From<f64>
 
     let mut result_matrix: Vec<Vec<T>> = create_generic(num_rows, num_columns);
 
-    println!("matrix a rows {}, matrix a columns {}", matrix_a_clone.len(), matrix_a_clone[0].len());
-    println!("matrix a rows {}, matrix a columns {}", matrix_b_clone.len(), matrix_b_clone[0].len());
+    // println!("matrix a rows {}, matrix a columns {}", matrix_a_clone.len(), matrix_a_clone[0].len());
+    // println!("matrix b rows {}, matrix b columns {}", matrix_b_clone.len(), matrix_b_clone[0].len());
 
     // println!("matrix A {:?}", matrix_a_clone);
     // println!("");
@@ -79,8 +79,8 @@ pub fn multiple_generic<T: Debug + Clone + Mul<Output=T> + AddAssign + From<f64>
         }
     }
 
-    println!("result matrix rows {}, columns {}", result_matrix.len(), result_matrix[0].len());
-    println!("");
+    // println!("result matrix rows {}, columns {}", result_matrix.len(), result_matrix[0].len());
+    // println!("");
 
     result_matrix
 }
@@ -107,7 +107,7 @@ pub fn transpose<T: Debug + Clone>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
 pub fn create_generic<T: Debug + Clone>(num_rows: usize, num_columns: usize) -> Vec<Vec<T>> {
     let mut matrix_result: Vec<Vec<T>> = Vec::new();
 
-    for i in 0..num_rows {
+    for _i in 0..num_rows {
         matrix_result.push(Vec::with_capacity(num_columns));
     }
 
@@ -118,14 +118,14 @@ pub fn create_generic_one_dim<T: Debug + Clone + From<f64>>
 (num_rows: usize) -> Vec<T> {
     let mut matrix_result: Vec<T> = Vec::new();
 
-    for i in 0..num_rows {
+    for _i in 0..num_rows {
         matrix_result.push(T::from(0.0));
     }
 
     matrix_result
 }
 
-pub fn parseToFloat(mut matrix: &Vec<Vec<i32>>) -> Vec<Vec<f64>> {
+pub fn parse_to_float(matrix: &Vec<Vec<i32>>) -> Vec<Vec<f64>> {
     let num_rows = matrix.len();
     let num_columns = matrix[0].len();
     let mut matrix_result = vec![

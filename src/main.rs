@@ -1,20 +1,20 @@
 extern crate serde_derive;
 extern crate serde;
 extern crate serde_json;
-
 extern crate neural_networks;
-use neural_networks::utils::matrix;
 
 #[allow(unused_imports)]
 #[allow(unused_variables)]
 #[allow(unused_assignments)]
 use neural_networks::network_types::*;
-use neural_networks::network_components::layer::initialize_layer;
-
 pub mod uphold_api;
 
+#[allow(unused_imports)]
 use uphold_api::collect_data_task;
-use neural_networks::utils::matrix::parseToFloat;
+#[allow(unused_imports)]
+use neural_networks::utils::matrix::parse_to_float;
+#[allow(unused_imports)]
+use neural_networks::network_types::feedforward_network::FeedforwardNetwork;
 
 /**
 * start with cargo run -- --server
@@ -24,13 +24,12 @@ tcp::test_connection();
 fn main() {
     println!("Test beginns");
 
-    //collect_data_task::update_json_data_from_uphold_api();
+   // collect_data_task::update_json_data_from_uphold_api();
 
     let input = vec![
-        vec![1, 2, 3, 1, 3, 4]
+        vec![1, 2, 3, 1, 3, 4],
     ];
-
-    let mut parsed_input = parseToFloat(&input);
+    let mut parsed_input = parse_to_float(&input);
 
     let number_of_hidden_layers = 5;
     let input_dimensions = vec![parsed_input.len(), parsed_input[0].len()];
@@ -38,7 +37,7 @@ fn main() {
     let number_of_hidden_neurons = 15;
     let learning_rate = 0.02;
 
-    let mut feedforward_network =
+    let mut feedforward_network: FeedforwardNetwork<f64>=
         feedforward_network::create(
             number_of_hidden_layers,
             number_of_hidden_neurons,
