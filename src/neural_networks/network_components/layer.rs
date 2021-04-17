@@ -1,11 +1,7 @@
 use core::fmt::Debug;
-use std::fmt::{Display, Formatter, Result};
 use crate::network_types::feedforward_network::FeedforwardNetwork;
 use crate::utils::weights_initializer::initialize_weights;
-use std::borrow::{BorrowMut, Borrow};
-use std::ops::RemAssign;
 use num::Zero;
-use num::traits::NumAssign;
 use crate::utils::matrix::{create_generic, create_generic_one_dim};
 
 #[derive(Debug, Clone)]
@@ -87,20 +83,20 @@ impl<T: Debug + Clone + Zero + From<f64>> Clone for Layer<T> {
 
 pub fn initialize_layer<T: Debug + Clone + Zero + From<f64>>
 (feed_net: &mut FeedforwardNetwork<T>) -> &mut Vec<Layer<T>> {
-    let mut layers = &mut feed_net.layers;
+    let layers = &mut feed_net.layers;
     let total_number_of_layers = feed_net.number_of_hidden_layers + 2;
     let num_layer_inputs_dim1: usize = feed_net.input_dimensions[0];
     let mut num_layer_inputs_dim2: usize = feed_net.input_dimensions[1];
-    let mut num_hidden_neurons = feed_net.number_of_hidden_neurons;
+    let num_hidden_neurons = feed_net.number_of_hidden_neurons;
     let mut layer_type;
 
     if total_number_of_layers == 0 {
         panic!("number of hidden layers cannot be 0");
     }
 
-    for numLayer in 0..total_number_of_layers {
+    for num_layer in 0..total_number_of_layers {
         layer_type = get_layer_type(
-            &numLayer,
+            &num_layer,
             &total_number_of_layers,
         );
 
@@ -111,8 +107,7 @@ pub fn initialize_layer<T: Debug + Clone + Zero + From<f64>>
         }
 
         let input_layer: Layer<T> = Layer {
-            input_weights: initialize_weights(num_layer_inputs_dim1,
-                                              num_layer_inputs_dim2,
+            input_weights: initialize_weights(num_layer_inputs_dim2,
                                               num_hidden_neurons),
             inaktivated_output: create_generic(num_layer_inputs_dim1, num_hidden_neurons),
             aktivated_output: create_generic(num_layer_inputs_dim1, num_hidden_neurons),
