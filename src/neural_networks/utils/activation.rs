@@ -2,15 +2,15 @@ use std::fmt::Debug;
 use std::f32::consts::E;
 use std::ops::{Mul, AddAssign, Add, Div};
 
-struct StoredValue {
-    val: f32,
-}
-
-impl From<f64> for StoredValue {
-    fn from(value: f64) -> StoredValue {
-        StoredValue { val: value as f32 }
-    }
-}
+// struct StoredValue {
+//     val: f32,
+// }
+//
+// impl From<f64> for StoredValue {
+//     fn from(value: f64) -> StoredValue {
+//         StoredValue { val: value as f32 }
+//     }
+// }
 
 pub fn sigmoid<T: Debug + Clone + From<f64> + Into<f64> +
 Mul<Output=T> + AddAssign + Add<Output=T> + Div<Output=T>>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
@@ -21,8 +21,6 @@ Mul<Output=T> + AddAssign + Add<Output=T> + Div<Output=T>>(matrix_a: &Vec<Vec<T>
             result_matrix[i][j] = sigmoid_value(matrix_a[i][j].clone());
         }
     }
-
-
 
     result_matrix
 }

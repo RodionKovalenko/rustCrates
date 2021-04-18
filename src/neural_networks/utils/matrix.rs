@@ -104,12 +104,21 @@ pub fn transpose<T: Debug + Clone>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
     matrix_result
 }
 
-pub fn create_generic<T: Debug + Clone>(num_rows: usize, num_columns: usize) -> Vec<Vec<T>> {
+pub fn create_generic<T: Debug + Clone + From<f64>>(num_rows: usize, num_columns: usize) -> Vec<Vec<T>> {
     let mut matrix_result: Vec<Vec<T>> = Vec::new();
 
-    for _i in 0..num_rows {
-        matrix_result.push(Vec::with_capacity(num_columns));
+    for i in 0..num_rows {
+        matrix_result.push(Vec::new());
+        for j in 0..num_columns {
+            if j >= matrix_result[i].len() {
+                matrix_result[i].push(T::from(0.0));
+            }
+
+            matrix_result[i][j] = T::from(0.0);
+        }
     }
+
+    // println!("created new matrix is {:?}", matrix_result);
 
     matrix_result
 }
@@ -125,7 +134,29 @@ pub fn create_generic_one_dim<T: Debug + Clone + From<f64>>
     matrix_result
 }
 
-pub fn parse_to_float(matrix: &Vec<Vec<i32>>) -> Vec<Vec<f64>> {
+pub fn parse_3_dim_to_float(matrix: &Vec<Vec<Vec<i32>>>) -> Vec<Vec<Vec<f64>>> {
+    let num_dim = matrix.len();
+    let num_rows = matrix[0].len();
+    let num_columns = matrix[0][0].len();
+    let mut matrix_result = vec![
+        vec![
+            vec![0f64; num_columns];
+            num_rows
+        ];
+        num_dim
+    ];
+
+    for i in 0..matrix.len() {
+        matrix_result[i] = parse_2dim_to_float(&matrix[i]);
+    }
+
+    //println!("dim1: {}, dim2: {}, dim3: {}", matrix_result.len(), matrix_result[0].len(), matrix_result[0][0].len());
+    //println!("3 dim matrix:{:?}", matrix_result);
+
+    matrix_result
+}
+
+pub fn parse_2dim_to_float(matrix: &Vec<Vec<i32>>) -> Vec<Vec<f64>> {
     let num_rows = matrix.len();
     let num_columns = matrix[0].len();
     let mut matrix_result = vec![
