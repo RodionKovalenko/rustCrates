@@ -1,18 +1,33 @@
+use std::fmt::Debug;
+use std::f32::consts::E;
+use std::ops::{Mul, AddAssign, Add, Div};
 
-pub fn sigmoid<T: Debug + Clone>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
-    let mut matrix_b_clone = Vec::new();
-    let mut row_vector;
+struct StoredValue {
+    val: f32,
+}
+
+impl From<f64> for StoredValue {
+    fn from(value: f64) -> StoredValue {
+        StoredValue { val: value as f32 }
+    }
+}
+
+pub fn sigmoid<T: Debug + Clone + From<f64> + Into<f64> +
+Mul<Output=T> + AddAssign + Add<Output=T> + Div<Output=T>>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
+    let mut result_matrix = matrix_a.clone();
 
     for j in 0..matrix_a[0].len() {
-        row_vector = Vec::new();
         for i in 0..matrix_a.len() {
-            row_vector.push(matrix_a[i][j].clone());
+            result_matrix[i][j] = sigmoid_value(matrix_a[i][j].clone());
         }
-        matrix_b_clone.push(row_vector);
     }
 
-    println!("matrix to transpose rows: {}, columns: {}", matrix_a.len(), matrix_a[0].len());
-    println!("matrix generic transposed rows: {:?}, columns: {}", matrix_b_clone.len(), matrix_b_clone[0].len());
 
-    matrix_b_clone
+
+    result_matrix
+}
+
+pub fn sigmoid_value<T: Debug + Clone + From<f64> + Into<f64> +
+Mul<Output=T> + AddAssign + Add<Output=T> + Div<Output=T>>(value: T) -> T {
+    T::from(1.0) / (T::from(1.0) + T::from(E.powf(-1.0 * value.into() as f32) as f64))
 }

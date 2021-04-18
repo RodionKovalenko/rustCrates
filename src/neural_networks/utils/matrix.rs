@@ -135,7 +135,7 @@ pub fn parse_to_float(matrix: &Vec<Vec<i32>>) -> Vec<Vec<f64>> {
 
     for i in 0..matrix.len() {
         for j in 0..matrix[0].len() {
-           matrix_result[i][j] = matrix[i][j] as f64;
+            matrix_result[i][j] = matrix[i][j] as f64;
         }
     }
 

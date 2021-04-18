@@ -1,8 +1,9 @@
 use crate::network_components::*;
 use crate::utils::*;
 use crate::network_components::layer::{Layer, LayerType};
+use activation::sigmoid;
 use std::fmt::Debug;
-use std::ops::{Mul, AddAssign};
+use std::ops::{Mul, AddAssign, Add, Div};
 use num::Zero;
 
 pub struct FeedforwardNetwork<T> {
@@ -43,28 +44,31 @@ pub fn create<T: Debug + Clone + Zero + From<f64>>(
     feed_net
 }
 
-pub fn forward<'a, T: Debug + Clone + Mul<Output=T> + AddAssign + From<f64>>
+pub fn forward<'a, T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
++ Into<f64> + Add<Output=T> + Div<Output=T>>
 (input_vec: &mut Vec<Vec<T>>, feed_net: &'a mut FeedforwardNetwork<T>)
  -> &'a mut FeedforwardNetwork<T> {
     let layers: &mut Vec<Layer<T>> = &mut feed_net.layers;
-    let mut layer_output: Vec<Vec<T>>;
 
     for i in 0..layers.len() {
         if matches!(layers[i].layer_type, LayerType::InputLayer) {
-            layer_output = matrix::multiple_generic(&input_vec,
+            layers[i].inaktivated_output = matrix::multiple_generic(&input_vec,
                                                     &layers[i].input_weights.clone());
         } else if matches!(layers[i].layer_type, LayerType::HiddenLayer) {
-            layer_output = matrix::multiple_generic(&layers[i - 1].inaktivated_output,
+            layers[i].inaktivated_output = matrix::multiple_generic(&layers[i - 1].aktivated_output,
                                                     &layers[i].input_weights.clone());
         } else {
-            layer_output = matrix::multiple_generic(&layers[i - 1].inaktivated_output,
+            layers[i].inaktivated_output = matrix::multiple_generic(&layers[i - 1].aktivated_output,
                                                     &layers[i].input_weights.clone());
         }
 
-        println!("output matrix {:?}", layer_output);
-        println!("");
+        layers[i].aktivated_output = sigmoid(&layers[i].inaktivated_output);
 
-        layers[i].inaktivated_output = layer_output;
+        // println!("inactivated output {:?}",  layers[i].inaktivated_output);
+        // println!("");
+        // println!("activated output {:?}",  layers[i].aktivated_output);
+        // println!("");
+        // println!("");
     }
 
     feed_net

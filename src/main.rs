@@ -7,6 +7,7 @@ extern crate neural_networks;
 #[allow(unused_variables)]
 #[allow(unused_assignments)]
 use neural_networks::network_types::*;
+
 pub mod uphold_api;
 
 #[allow(unused_imports)]
@@ -24,7 +25,7 @@ tcp::test_connection();
 fn main() {
     println!("Test beginns");
 
-   // collect_data_task::update_json_data_from_uphold_api();
+    // collect_data_task::update_json_data_from_uphold_api();
 
     let input = vec![
         vec![1, 2, 3, 1, 3, 4],
@@ -37,7 +38,7 @@ fn main() {
     let number_of_hidden_neurons = 15;
     let learning_rate = 0.02;
 
-    let mut feedforward_network: FeedforwardNetwork<f64>=
+    let mut feedforward_network =
         feedforward_network::create(
             number_of_hidden_layers,
             number_of_hidden_neurons,
