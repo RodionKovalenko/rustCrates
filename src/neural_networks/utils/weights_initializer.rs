@@ -23,10 +23,12 @@ pub fn initialize_weights<T: From<f64> + Clone + Debug>(
             }
             //  print!(",weight: {:?}", weight_matrix[i][j]);
         }
-        //   println!("");
+
+        // print!(",weights: {:?}", weight_matrix);
+        // println!("");
     }
 
-    println!("size of weight matrix: number of rows: {}, columns: {}", weight_matrix.len(), weight_matrix[0].len());
+    //println!("size of weight matrix: number of rows: {}, columns: {}", weight_matrix.len(), weight_matrix[0].len());
 
     weight_matrix
 }
