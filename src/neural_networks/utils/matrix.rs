@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::ops::{Mul, AddAssign};
+use std::ops::{Mul, AddAssign, Sub, Add};
 
 pub fn multiple(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<f64>>)
                 -> Vec<Vec<f64>> {
@@ -169,6 +169,50 @@ pub fn parse_2dim_to_float(matrix: &Vec<Vec<i32>>) -> Vec<Vec<f64>> {
             matrix_result[i][j] = matrix[i][j] as f64;
         }
     }
+
+    matrix_result
+}
+
+pub fn subtract<T: Debug + Clone + Sub<Output=T>>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<T>>) -> Vec<Vec<T>> {
+    let mut matrix_result: Vec<Vec<T>> = matrix_a.clone();
+
+    for i in 0..matrix_a.len() {
+        for j in 0..matrix_a[0].len() {
+            matrix_result[i][j] = matrix_a[i][j].clone() - matrix_b[i][j].clone();
+        }
+    }
+
+    // println!("created new matrix is {:?}", matrix_result);
+
+    matrix_result
+}
+
+pub fn get_error<T: Debug + Clone + Sub<Output=T> + From<f64> + Into<f64>>
+(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<T>>) -> Vec<Vec<T>> {
+    let mut matrix_result: Vec<Vec<T>> = matrix_a.clone();
+
+    for i in 0..matrix_a.len() {
+        for j in 0..matrix_a[0].len() {
+            let error = matrix_a[i][j].clone() - matrix_b[i][j].clone();
+            matrix_result[i][j] = T::from(( error.into() as f64).powf(2.0) as f64);
+        }
+    }
+
+    // println!("created new matrix is {:?}", matrix_result);
+
+    matrix_result
+}
+
+pub fn add<T: Debug + Clone + Add<Output=T>>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<T>>) -> Vec<Vec<T>> {
+    let mut matrix_result: Vec<Vec<T>> = matrix_a.clone();
+
+    for i in 0..matrix_a.len() {
+        for j in 0..matrix_a[0].len() {
+            matrix_result[i][j] = matrix_a[i][j].clone() + matrix_b[i][j].clone();
+        }
+    }
+
+    // println!("created new matrix is {:?}", matrix_result);
 
     matrix_result
 }

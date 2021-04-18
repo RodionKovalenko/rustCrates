@@ -13,7 +13,25 @@ pub struct Data<T> {
     pub target: Vec<Vec<T>>,
 }
 
-impl <T: Debug + Clone> DataTrait<T> for Data<T> {
+impl<T: Debug + Clone + From<f64>> Data<T> {
+    pub fn get_input(&self) -> Vec<Vec<T>> {
+        self.input.clone()
+    }
+    pub fn get_target(&self) -> Vec<Vec<T>> {
+        self.target.clone()
+    }
+}
+
+impl<T: Debug + Clone + From<f64>> Clone for Data<T> {
+    fn clone(&self) -> Self {
+        Data {
+            input: self.get_input(),
+            target: self.get_target(),
+        }
+    }
+}
+
+impl <T: Debug + Clone + From<f64>> DataTrait<T> for Data<T> {
     fn new(input: Vec<Vec<T>>, target: Vec<Vec<T>>) -> Data<T> {
         Data { input, target }
     }

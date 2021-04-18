@@ -20,8 +20,8 @@ pub enum LayerType {
 #[derive(Debug)]
 pub struct Layer<T> {
     pub input_weights: Vec<Vec<T>>,
-    pub inaktivated_output: Vec<Vec<T>>,
-    pub aktivated_output: Vec<Vec<T>>,
+    pub inactivated_output: Vec<Vec<T>>,
+    pub activated_output: Vec<Vec<T>>,
     pub gradient: Vec<Vec<T>>,
     pub errors: Vec<Vec<T>>,
     pub layer_bias: Vec<T>,
@@ -29,17 +29,18 @@ pub struct Layer<T> {
     pub layer_type: LayerType,
     pub previous_layer: Option<Box<Layer<T>>>,
     pub next_layer: Option<Box<Layer<T>>>,
+    pub input_data: Vec<Vec<T>>
 }
 
-impl<T: Debug + Clone + Zero + From<f64>> Layer<T> {
+impl<T: Debug + Clone + From<f64>> Layer<T> {
     pub fn get_input_weights(&self) -> Vec<Vec<T>> {
         self.input_weights.clone()
     }
     pub fn get_inaktivatede_output(&self) -> Vec<Vec<T>> {
-        self.inaktivated_output.clone()
+        self.inactivated_output.clone()
     }
     pub fn get_aktivated_output(&self) -> Vec<Vec<T>> {
-        self.aktivated_output.clone()
+        self.activated_output.clone()
     }
     pub fn get_layer_bias(&self) -> Vec<T> {
         self.layer_bias.clone()
@@ -62,14 +63,17 @@ impl<T: Debug + Clone + Zero + From<f64>> Layer<T> {
     pub fn get_next_layer(&self) -> Option<Box<Layer<T>>> {
         self.next_layer.clone()
     }
+    pub fn get_input_data(&self) -> Vec<Vec<T>> {
+        self.input_data.clone()
+    }
 }
 
-impl<T: Debug + Clone + Zero + From<f64>> Clone for Layer<T> {
+impl<T: Debug + Clone + From<f64>> Clone for Layer<T> {
     fn clone(&self) -> Self {
         Layer {
             input_weights: self.get_input_weights(),
-            inaktivated_output: self.get_inaktivatede_output(),
-            aktivated_output: self.get_aktivated_output(),
+            inactivated_output: self.get_inaktivatede_output(),
+            activated_output: self.get_aktivated_output(),
             layer_bias: self.get_layer_bias(),
             gradient: self.get_gradient(),
             errors: self.get_errors(),
@@ -77,6 +81,7 @@ impl<T: Debug + Clone + Zero + From<f64>> Clone for Layer<T> {
             layer_type: self.get_layer_type(),
             previous_layer: self.get_previous_layer(),
             next_layer: self.get_next_layer(),
+            input_data: self.get_input_data(),
         }
     }
 }
@@ -109,8 +114,8 @@ pub fn initialize_layer<T: Debug + Clone + Zero + From<f64>>
         let input_layer: Layer<T> = Layer {
             input_weights: initialize_weights(num_layer_inputs_dim2,
                                               num_hidden_neurons),
-            inaktivated_output: create_generic(num_layer_inputs_dim1, num_hidden_neurons),
-            aktivated_output: create_generic(num_layer_inputs_dim1, num_hidden_neurons),
+            inactivated_output: create_generic(num_layer_inputs_dim1, num_hidden_neurons),
+            activated_output: create_generic(num_layer_inputs_dim1, num_hidden_neurons),
             layer_bias: create_generic_one_dim(num_hidden_neurons),
             gradient: create_generic(num_layer_inputs_dim1, num_hidden_neurons),
             errors: create_generic(num_layer_inputs_dim1, num_hidden_neurons),
@@ -118,6 +123,7 @@ pub fn initialize_layer<T: Debug + Clone + Zero + From<f64>>
             layer_type,
             previous_layer: None,
             next_layer: None,
+            input_data: vec![]
         };
 
         layers.push(input_layer);
