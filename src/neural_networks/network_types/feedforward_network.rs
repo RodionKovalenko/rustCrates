@@ -4,8 +4,8 @@ use crate::network_components::layer::{Layer, LayerType};
 use crate::network_components::input::*;
 use activation::sigmoid;
 use std::fmt::Debug;
-use std::ops::{Mul, AddAssign, Add, Div};
-use num::Zero;
+use std::ops::{Mul, AddAssign, Add, Div, Sub};
+use num::{Zero, range};
 #[allow(unused_imports)]
 use matrix::parse_2dim_to_float;
 use crate::utils::matrix::parse_3_dim_to_float;
@@ -30,6 +30,7 @@ pub fn create<T: Debug + Clone + Zero + From<f64>>(
     learning_rate: f32,
 ) -> FeedforwardNetwork<T> {
     let layers = vec![];
+
     let mut feed_net = FeedforwardNetwork {
         layers,
         learning_rate,
@@ -39,44 +40,56 @@ pub fn create<T: Debug + Clone + Zero + From<f64>>(
         number_of_hidden_layers,
     };
 
-    println!("number of layers before init {}", feed_net.layers.len());
-
     layer::initialize_layer(&mut feed_net);
-
-    println!("number of layers after init {}", feed_net.layers.len());
-
     feed_net
 }
 
-pub fn forward<'b, T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
-+ Into<f64> + Add<Output=T> + Div<Output=T>>
-(input_structs: &mut Vec<Data<T>>, feed_net: &'b mut FeedforwardNetwork<T>)
- -> &'b mut FeedforwardNetwork<T> {
+pub fn forward<'a, T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
++ Into<f64> + Sub<Output=T> + Add<Output=T> + Div<Output=T>>
+(data_structs: &mut Vec<Data<T>>, feed_net: &'a mut FeedforwardNetwork<T>)
+ -> &'a mut FeedforwardNetwork<T> {
     let layers: &mut Vec<Layer<T>> = &mut feed_net.layers;
 
-    for inputIndex in 0..input_structs.len() {
+    for input_index in 0..data_structs.len() {
         for i in 0..layers.len() {
             if matches!(layers[i].layer_type, LayerType::InputLayer) {
-                layers[i].inaktivated_output = matrix::multiple_generic(&input_structs[inputIndex].get_input(),
+                layers[i].input_data = data_structs[input_index].get_input();
+                layers[i].inactivated_output = matrix::multiple_generic(&data_structs[input_index].get_input(),
                                                                         &layers[i].input_weights.clone());
             } else {
-                layers[i].inaktivated_output = matrix::multiple_generic(&layers[i - 1].aktivated_output,
+                layers[i].input_data = layers[i - 1].activated_output.clone();
+                layers[i].inactivated_output = matrix::multiple_generic(&layers[i - 1].activated_output,
                                                                         &layers[i].input_weights.clone());
             }
 
-            layers[i].aktivated_output = sigmoid(&layers[i].inaktivated_output);
+            layers[i].activated_output = sigmoid(&layers[i].inactivated_output);
 
-            // println!("weight matrix size rows: {}, columns: {}", layers[i].input_weights.len(),
-            //          layers[i].input_weights[0].len());
+
             // println!("actived output size rows: {}, columns: {}", layers[i].aktivated_output.len(),
             //          layers[i].aktivated_output[0].len());
             // println!("inactivated output {:?}",  layers[i].inaktivated_output);
             // println!("");
 
+            // println!("input matrix: rows: {}, columns: {}", layers[i].input_data.len(), layers[i].input_data[0].len());
+            // println!("weight matrix: rows: {}, columns: {}", layers[i].input_weights.len(),
+            //          layers[i].input_weights[0].len());
+            // println!(" --------------\
+            // output matrix: rows: {}, columns: {}", layers[i].activated_output.len(), layers[i].activated_output[0].len());
+
             if matches!(layers[i].layer_type, LayerType::OutputLayer) {
+                println!("target: {:?}", &data_structs[input_index].get_target());
+                println!("activated output {:?}", layers[i].activated_output);
+                println!("errors: {:?}", layers[i].errors);
+
+                let errors = matrix::get_error(&data_structs[input_index].get_target(),
+                                              &layers[i].activated_output);
+
+                layers[i].errors = matrix::add(&errors,
+                                               &layers[i].errors.clone());
+
+                println!("errors: {:?}", layers[i].errors);
                 println!("");
                 println!("");
-                println!("activated output {:?}", layers[i].aktivated_output);
             }
         }
     }
@@ -86,25 +99,51 @@ pub fn forward<'b, T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
 
 pub fn predict() {}
 
-pub fn train() {}
+pub fn train<'a, T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
++ Into<f64> + Sub<Output=T> + Add<Output=T> + Div<Output=T>>
+(data_structs: &mut Vec<Data<T>>, feed_net: &'a mut FeedforwardNetwork<T>)
+ -> &'a mut FeedforwardNetwork<T> {
+
+
+    for iter in 0 .. 10 {
+        forward(data_structs, feed_net);
+
+        for i in range(0, feed_net.layers.len()).rev() {
+            train::calculate_gradient(&mut feed_net.layers, i);
+            //train::update_weights(&mut feed_net.layers, i);
+
+           // println!("updated weights {:?}, {:?}", feed_net.layers[i].layer_type, feed_net.layers[i].input_weights);
+        }
+
+        // clear errors and gradients after update
+        for i in range(0, feed_net.layers.len()).rev() {
+            let num_rows =  feed_net.layers[i].gradient.len();
+            let num_columns =  feed_net.layers[i].gradient[0].len();
+            feed_net.layers[i].errors = matrix::create_generic(num_rows, num_columns);
+            feed_net.layers[i].gradient = matrix::create_generic(num_rows, num_columns);
+        }
+    }
+
+    feed_net
+}
 
 pub fn initialize() {
     let input = vec![
         vec![
-            vec![1, 2, 3, 1, 3, 4]
+            vec![5, 2, 9, 1, 5, 4],
         ],
         vec![
-            vec![2, 4, 6, 1, 3, 4]
+            vec![3, 0, 5, 1, 2, 6],
         ]
     ];
 
     let targets = vec![
-        vec![1.0, 0.0, 0.5, 0.6],
-        vec![0.0, 1.0, 0.8, 1.0],
+        vec![1.0, 0.3, 1.0, 0.0],
+        vec![0.0, 1.0, 0.5, 1.0],
     ];
-    let mut parsed_input = parse_3_dim_to_float(&input);
+    let parsed_input = parse_3_dim_to_float(&input);
     let mut input_struct;
-    let mut input_structs = vec![];
+    let mut data_structs = vec![];
 
     for i in 0..parsed_input.len() {
         input_struct = input::Data {
@@ -112,16 +151,16 @@ pub fn initialize() {
             target: vec![targets[i].clone()],
         };
 
-        input_structs.push(input_struct);
+        data_structs.push(input_struct);
     }
 
-    let number_of_hidden_layers = 5;
+    let number_of_hidden_layers = 1;
     let input_dimensions = vec![parsed_input[0].len(), parsed_input[0][0].len()];
     let number_of_output_neurons = 4;
-    let number_of_hidden_neurons = 15;
+    let number_of_hidden_neurons = 5;
     let learning_rate = 0.02;
 
-    let mut feedforward_network =
+    let mut feedforward_network: FeedforwardNetwork<f64> =
         create(
             number_of_hidden_layers,
             number_of_hidden_neurons,
@@ -130,5 +169,5 @@ pub fn initialize() {
             learning_rate,
         );
 
-    forward(&mut input_structs, &mut feedforward_network);
+    train(&mut data_structs, &mut feedforward_network);
 }
