@@ -17,6 +17,7 @@ pub struct FeedforwardNetwork<T> {
     // number of input.rs parameters. For example if only 6 inputs, then input.rs dimensions will be
     // [1][6]
     // if there are 25x8 input.rs e.g. then [25][8]
+    // or [25][1][3] => means 25 data sets with data input [1][3]
     pub input_dimensions: Vec<usize>,
     pub number_of_output_neurons: usize,
     pub number_of_hidden_layers: i8,
@@ -46,7 +47,7 @@ pub fn create<T: Debug + Clone + Zero + From<f64>>(
 
 pub fn forward<'a, T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
 + Into<f64> + Sub<Output=T> + Add<Output=T> + Div<Output=T>>
-(data_structs: &mut Vec<Data<T>>, feed_net: &'a mut FeedforwardNetwork<T>)
+(data_structs: &mut Vec<Data<T>>, feed_net: &'a mut FeedforwardNetwork<T>, show_output: bool)
  -> &'a mut FeedforwardNetwork<T> {
     let layers: &mut Vec<Layer<T>> = &mut feed_net.layers;
 
@@ -54,18 +55,17 @@ pub fn forward<'a, T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
         for i in 0..layers.len() {
             if matches!(layers[i].layer_type, LayerType::InputLayer) {
                 layers[i].input_data[input_index] = data_structs[input_index].get_input();
-                layers[i].inactivated_output = matrix::multiple_generic(&data_structs[input_index].get_input(),
-                                                                        &layers[i].input_weights.clone());
+                layers[i].inactivated_output[input_index] = matrix::multiple_generic(&data_structs[input_index].get_input(),
+                                                                                     &layers[i].input_weights.clone());
             } else {
-                layers[i].input_data[input_index] = layers[i - 1].activated_output.clone();
-                layers[i].inactivated_output = matrix::multiple_generic(&layers[i - 1].activated_output,
-                                                                        &layers[i].input_weights.clone());
+                layers[i].input_data[input_index] = layers[i - 1].activated_output[input_index].clone();
+                layers[i].inactivated_output[input_index] = matrix::multiple_generic(&layers[i - 1].activated_output[input_index],
+                                                                                     &layers[i].input_weights.clone());
             }
 
-            layers[i].inactivated_output = matrix::add(&layers[i].inactivated_output, &layers[i].layer_bias);
+            layers[i].inactivated_output[input_index] = matrix::add(&layers[i].inactivated_output[input_index], &layers[i].layer_bias);
 
-            layers[i].activated_output = sigmoid(&layers[i].inactivated_output);
-
+            layers[i].activated_output[input_index] = sigmoid(&layers[i].inactivated_output[input_index]);
 
             // println!("actived output size rows: {}, columns: {}", layers[i].aktivated_output.len(),
             //          layers[i].aktivated_output[0].len());
@@ -84,17 +84,21 @@ pub fn forward<'a, T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
                 //println!("errors: {:?}", layers[i].errors);
 
                 let errors = matrix::get_error(&data_structs[input_index].get_target(),
-                                               &layers[i].activated_output);
+                                               &layers[i].activated_output[input_index]);
 
                 layers[i].errors[input_index] = errors;
 
                 if input_index == data_structs.len() - 1 {
-                    // println!("target: {:?}", &data_structs[input_index].get_target());
-                    // println!("activated output {:?}", layers[i].activated_output);
-                     println!("errors {:?}", layers[i].errors);
-
-                    println!("");
-                    println!("");
+                    if show_output {
+                        for ind in 0..data_structs.len() {
+                            println!("target: {:?}", &data_structs[ind].get_target());
+                            println!("activated output {:?}", layers[i].activated_output[ind]);
+                            println!("errors {:?}", layers[i].errors[ind]);
+                        }
+                    }
+                    //
+                    // println!("");
+                    // println!("");
                 }
             }
         }
@@ -103,14 +107,14 @@ pub fn forward<'a, T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
     feed_net
 }
 
-pub fn predict() {}
-
 pub fn train<'a, T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
 + Into<f64> + Sub<Output=T> + Add<Output=T> + Div<Output=T>>
 (data_structs: &mut Vec<Data<T>>, feed_net: &'a mut FeedforwardNetwork<T>)
  -> &'a mut FeedforwardNetwork<T> {
-    for iter in 0..30000 {
-        forward(data_structs, feed_net);
+
+    println!("Training beginns");
+    for iter in 0..6000 {
+        forward(data_structs, feed_net, false);
 
         for i in range(0, feed_net.layers.len()).rev() {
             train::calculate_gradient(&mut feed_net.layers, i,
@@ -133,22 +137,24 @@ pub fn train<'a, T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
         }
     }
 
+    forward(data_structs, feed_net, true);
+
     feed_net
 }
 
 pub fn initialize() {
     let input: Vec<Vec<Vec<f64>>> = vec![
-        vec![vec![1.0, 1.0]],
+        vec![vec![1.0, 0.0]],
+        vec![vec![0.0, 0.0]],
         vec![vec![0.0, 1.0]],
-        vec![vec![1.0, 1.0]],
-        vec![vec![1.0, 0.0]]
+        vec![vec![1.0, 1.0]]
     ];
 
     let targets = vec![
-        vec![0.0],
-        vec![1.0],
-        vec![0.0],
-        vec![1.0],
+        vec![1.0, 1.0, 0.0],
+        vec![0.0, 0.5, 0.0],
+        vec![1.0, 1.0, 1.0],
+        vec![0.0, 0.3, 0.2],
     ];
     let parsed_input = input;
     let mut input_struct;
@@ -165,11 +171,11 @@ pub fn initialize() {
 
     println!("parsed input size:  {}, {}, {}", parsed_input.len(), parsed_input[0].len(), parsed_input[0][0].len());
 
-    let number_of_hidden_layers = 4;
+    let number_of_hidden_layers = 0;
     let input_dimensions = vec![parsed_input[0].len(), parsed_input[0][0].len(), parsed_input.len()];
-    let number_of_output_neurons = 1;
-    let number_of_hidden_neurons = 105;
-    let learning_rate = 0.3;
+    let number_of_output_neurons = targets[0].len();
+    let number_of_hidden_neurons = 50;
+    let learning_rate = 0.2;;
 
     let mut feedforward_network: FeedforwardNetwork<f64> =
         create(

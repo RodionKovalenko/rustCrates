@@ -20,8 +20,8 @@ pub enum LayerType {
 #[derive(Debug)]
 pub struct Layer<T> {
     pub input_weights: Vec<Vec<T>>,
-    pub inactivated_output: Vec<Vec<T>>,
-    pub activated_output: Vec<Vec<T>>,
+    pub inactivated_output: Vec<Vec<Vec<T>>>,
+    pub activated_output: Vec<Vec<Vec<T>>>,
     pub gradient: Vec<Vec<T>>,
     pub errors: Vec<Vec<T>>,
     pub layer_bias: Vec<T>,
@@ -36,10 +36,10 @@ impl<T: Debug + Clone + From<f64>> Layer<T> {
     pub fn get_input_weights(&self) -> Vec<Vec<T>> {
         self.input_weights.clone()
     }
-    pub fn get_inaktivatede_output(&self) -> Vec<Vec<T>> {
+    pub fn get_inaktivatede_output(&self) -> Vec<Vec<Vec<T>>> {
         self.inactivated_output.clone()
     }
-    pub fn get_aktivated_output(&self) -> Vec<Vec<T>> {
+    pub fn get_aktivated_output(&self) -> Vec<Vec<Vec<T>>> {
         self.activated_output.clone()
     }
     pub fn get_layer_bias(&self) -> Vec<T> {
@@ -115,8 +115,8 @@ pub fn initialize_layer<T: Debug + Clone + Zero + From<f64>>
         let input_layer: Layer<T> = Layer {
             input_weights: initialize_weights(num_layer_inputs_dim2,
                                               num_hidden_neurons),
-            inactivated_output: create_generic(num_layer_inputs_dim1, num_hidden_neurons),
-            activated_output: create_generic(num_layer_inputs_dim1, num_hidden_neurons),
+            inactivated_output: create_generic_3D(num_layer_inputs_dim1, num_hidden_neurons, feed_net.input_dimensions[2]),
+            activated_output: create_generic_3D(num_layer_inputs_dim1, num_hidden_neurons, feed_net.input_dimensions[2]),
             layer_bias: create_generic_one_dim(num_hidden_neurons),
             gradient: create_generic(num_layer_inputs_dim2, num_hidden_neurons),
             errors: create_generic(feed_net.input_dimensions[2], num_hidden_neurons),
