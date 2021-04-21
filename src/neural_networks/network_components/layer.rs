@@ -2,7 +2,7 @@ use core::fmt::Debug;
 use crate::network_types::feedforward_network::FeedforwardNetwork;
 use crate::utils::weights_initializer::initialize_weights;
 use num::Zero;
-use crate::utils::matrix::{create_generic, create_generic_one_dim};
+use crate::utils::matrix::{create_generic, create_generic_one_dim, create_generic_3D};
 
 #[derive(Debug, Clone)]
 pub enum ActivationType {
@@ -29,7 +29,7 @@ pub struct Layer<T> {
     pub layer_type: LayerType,
     pub previous_layer: Option<Box<Layer<T>>>,
     pub next_layer: Option<Box<Layer<T>>>,
-    pub input_data: Vec<Vec<T>>
+    pub input_data: Vec<Vec<Vec<T>>>,
 }
 
 impl<T: Debug + Clone + From<f64>> Layer<T> {
@@ -63,7 +63,7 @@ impl<T: Debug + Clone + From<f64>> Layer<T> {
     pub fn get_next_layer(&self) -> Option<Box<Layer<T>>> {
         self.next_layer.clone()
     }
-    pub fn get_input_data(&self) -> Vec<Vec<T>> {
+    pub fn get_input_data(&self) -> Vec<Vec<Vec<T>>> {
         self.input_data.clone()
     }
 }
@@ -92,7 +92,7 @@ pub fn initialize_layer<T: Debug + Clone + Zero + From<f64>>
     let total_number_of_layers = feed_net.number_of_hidden_layers + 2;
     let num_layer_inputs_dim1: usize = feed_net.input_dimensions[0];
     let mut num_layer_inputs_dim2: usize = feed_net.input_dimensions[1];
-    let num_hidden_neurons = feed_net.number_of_hidden_neurons;
+    let mut num_hidden_neurons = feed_net.number_of_hidden_neurons;
     let mut layer_type;
 
     if total_number_of_layers == 0 {
@@ -108,7 +108,8 @@ pub fn initialize_layer<T: Debug + Clone + Zero + From<f64>>
         if matches!(layer_type, LayerType::HiddenLayer) {
             num_layer_inputs_dim2 = num_hidden_neurons;
         } else if matches!(layer_type, LayerType::OutputLayer) {
-            num_layer_inputs_dim2 = feed_net.number_of_output_neurons;
+            num_layer_inputs_dim2 = num_hidden_neurons;
+            num_hidden_neurons = feed_net.number_of_output_neurons;
         }
 
         let input_layer: Layer<T> = Layer {
@@ -117,13 +118,13 @@ pub fn initialize_layer<T: Debug + Clone + Zero + From<f64>>
             inactivated_output: create_generic(num_layer_inputs_dim1, num_hidden_neurons),
             activated_output: create_generic(num_layer_inputs_dim1, num_hidden_neurons),
             layer_bias: create_generic_one_dim(num_hidden_neurons),
-            gradient: create_generic(num_layer_inputs_dim1, num_hidden_neurons),
-            errors: create_generic(num_layer_inputs_dim1, num_hidden_neurons),
+            gradient: create_generic(num_layer_inputs_dim2, num_hidden_neurons),
+            errors: create_generic(feed_net.input_dimensions[2], num_hidden_neurons),
             activation_type: ActivationType::SIGMOID,
             layer_type,
             previous_layer: None,
             next_layer: None,
-            input_data: vec![]
+            input_data: create_generic_3D(num_layer_inputs_dim1, num_hidden_neurons, feed_net.input_dimensions[2]),
         };
 
         layers.push(input_layer);
