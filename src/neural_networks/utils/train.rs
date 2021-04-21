@@ -10,106 +10,68 @@ use rand::Rng;
 
 pub fn calculate_gradient<T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
 + Into<f64> + Sub<Output=T> + Add<Output=T> + Div<Output=T>>
-(layers: &mut Vec<Layer<T>>, ind: usize) -> Vec<Vec<T>> {
-    let mut layer = layers[ind].clone();
-    let layer_inact_output = layer.inactivated_output.clone();
+(layers: &mut Vec<Layer<T>>, layer_ind: usize, num_sets: usize, learn_rate: f64) -> Vec<Vec<T>> {
+    let mut layer = layers[layer_ind].clone();
+
+    if layer.gradient.len() == 0 {
+        layer.gradient = create_generic(layer.input_weights.len(), layer.input_weights[0].len());
+    }
+
+    // println!("input size: {}, {}, {}", layer.input_data.len(), layer.input_data[0].len(), layer.input_data[0][0].len());
+    // println!("errors size: {}, {}", layer.errors.len(), layer.errors[0].len());
 
     if matches!(layer.layer_type, LayerType::OutputLayer) {
-        layer.gradient = layer.errors.clone();
-    } else {
-        let mut next_layer = layers[ind + 1].clone();
-        layer.gradient = next_layer.gradient.clone();
-    }
+        for inp_set_ind in 0..num_sets {
+            for j in 0..layer.input_weights[0].len() {
+                for i in 0..layer.input_weights.len() {
+                    layer.gradient[i][j] = layer.gradient[i][j].clone() +
+                        layer.errors[inp_set_ind][j].clone() *
+                            layer.input_data[inp_set_ind][0][j].clone();
 
-    // println!("gradient layer {:?}, {:?}", layer.layer_type, layer.gradient);
-
-    if !matches!(layer.layer_type, LayerType::OutputLayer) {
-        layer.gradient = multiple_generic(&layers[ind + 1].gradient,
-                                          &layers[ind + 1].input_weights);
-
-        // println!("gradient matrix i {}, {}", &layers[ind + 1].gradient.len(), &layers[ind + 1].gradient[0].len());
-        //println!("weight matrix i {}, {}", &layers[ind + 1].input_weights.len(), &layers[ind + 1].input_weights[0].len());
-    }
-
-    for i in 0..layer.gradient.len() {
-        for j in 0..layer.gradient[0].len() {
-            layer.gradient[i][j] =
-                layer.gradient[i][j].clone()
-                    * get_derivative(layer_inact_output[i][j].clone(),
-                                     layer.activation_type.clone());
-
-            if matches!(layer.layer_type, LayerType::OutputLayer) {
-                layer.gradient[i][j] = layer.gradient[i][j].clone() * T::from(-1.0);
-            }
-        }
-    }
-
-    println!("gradient layer result {:?}, {:?}", layer.layer_type, layer.gradient);
-    println!("gradient layer size {:?}, {:?}", layer.gradient.len(), layer.gradient[0].len());
-
-    layers[ind].gradient = layer.gradient;
-    layers[ind].gradient.clone()
-}
-
-pub fn update_weights<T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
-+ Into<f64> + Sub<Output=T> + Add<Output=T> + Div<Output=T>>
-(layers: &mut Vec<Layer<T>>, ind: usize) {
-    let mut layer = layers[ind].clone();
-    let mut gradient = Vec::new();
-    let mut input;
-    let mut rnd = rand::thread_rng();
-
-    if matches!(layer.layer_type, LayerType::InputLayer) {
-        input = layer.input_data.clone();
-
-        for i in 0..input.len() {
-            for j in 0..input[0].len() {
-                if j < layer.gradient[0].len() {
-                    layer.gradient[0][j] = layer.gradient[0][j].clone()
-                        + (layer.gradient[0][j].clone() * input[i][j].clone());
+                    layers[layer_ind].input_weights[i][j] =
+                        layers[layer_ind].input_weights[i][j].clone() +
+                            ((layer.gradient[i][j].clone()
+                                * T::from(learn_rate)) / T::from(num_sets as f64));
                 }
+
+                layers[layer_ind].layer_bias[j] = layers[layer_ind].layer_bias[j].clone() +
+                    ((T::from(learn_rate) * layer.errors[inp_set_ind][j].clone())
+                        / T::from(num_sets as f64));
             }
         }
+
+        //  println!("training errors : {:?}", layer.errors);
     } else {
-        input = layers[ind - 1].inactivated_output.clone();
-
-        for i in 0..input.len() {
-            for j in 0..input[0].len() {
-                if j < layer.gradient[0].len() {
-                    layer.gradient[0][j] = layer.gradient[0][j].clone()
-                        + (layer.gradient[0][j].clone() * input[i][j].clone());
+        for inp_set_ind in 0..num_sets {
+            for j in 0..layer.input_weights[0].len() {
+                for e in 0..layers[layer_ind + 1].errors[0].len() {
+                    layer.errors[inp_set_ind][j] = layer.errors[inp_set_ind][j].clone() +
+                        (layers[layer_ind + 1].errors[inp_set_ind][e].clone()
+                            * layers[layer_ind + 1].input_weights[j][e].clone())
                 }
+
+                layer.errors[inp_set_ind][j] = layer.errors[inp_set_ind][j].clone() *
+                    get_derivative(layer.activated_output[0][j].clone(),
+                                   layer.activation_type.clone());
+
+                for i in 0..layer.input_weights.len() {
+                    layer.gradient[i][j] = layer.gradient[i][j].clone() +
+                        layer.errors[inp_set_ind][j].clone() *
+                            layer.input_data[inp_set_ind][0][i].clone();
+
+                    layers[layer_ind].input_weights[i][j] =
+                        layers[layer_ind].input_weights[i][j].clone() +
+                            ((layer.gradient[i][j].clone()
+                                * T::from(learn_rate)) / T::from(num_sets as f64));
+                }
+
+                layers[layer_ind].layer_bias[j] = layers[layer_ind].layer_bias[j].clone() +
+                    ((T::from(learn_rate) * layer.errors[inp_set_ind][j].clone())
+                        / T::from(num_sets as f64));
             }
         }
     }
-
-    // println!("------------------------------");
-    if matches!(layer.layer_type, LayerType::OutputLayer) {
-        gradient = transpose(&layer.gradient);
-    }
-
-    // println!("update weights: gradient matrix i {}, {}", &layers[ind].gradient.len(), &layers[ind].gradient[0].len());
-    // println!("update weights: weight matrix i {}, {}", &layer.input_weights.len(), &layer.input_weights[0].len());
-
-    for i in 0..layer.input_weights.len() {
-        for j in 0..layer.input_weights[0].len() {
-            if matches!(layer.layer_type, LayerType::OutputLayer) {
-                layer.input_weights[i][j] = layer.input_weights[i][j].clone() + (T::from(0.01) *
-                    gradient[i][0].clone());
-            } else {
-                layer.input_weights[i][j] = layer.input_weights[i][j].clone()
-                    + (T::from(0.01) * layer.gradient[0][j].clone());
-            }
-
-            if layer.input_weights[i][j].clone().into() as f64 > 1.0 {
-                let value = rnd.gen_range(-0.6, 0.6);
-                layer.input_weights[i][j] = T::from(value);
-            }
-        }
-    }
-
-    // println!("update weights layer gradient {:?}, {:?}", layer.layer_type, layer.gradient);
-    // println!("------------------------------");
-
-    layers[ind] = layer;
+    layers[layer_ind].errors = layer.errors.clone();
+    layers[layer_ind].gradient = layer.gradient;
+    layers[layer_ind].gradient.clone()
 }

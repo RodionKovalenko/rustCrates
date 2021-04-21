@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::ops::{Mul, AddAssign, Sub, Add};
+use num::abs;
 
 pub fn multiple(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<f64>>)
                 -> Vec<Vec<f64>> {
@@ -123,6 +124,18 @@ pub fn create_generic<T: Debug + Clone + From<f64>>(num_rows: usize, num_columns
     matrix_result
 }
 
+pub fn create_generic_3D<T: Debug + Clone + From<f64>>(num_rows: usize, num_columns: usize, num_dim: usize) -> Vec<Vec<Vec<T>>> {
+    let mut matrix_result: Vec<Vec<Vec<T>>> = Vec::new();
+
+    for d in 0..num_dim {
+       matrix_result.push(create_generic(num_rows, num_columns));
+    }
+
+    // println!("created new matrix is {:?}", matrix_result);
+
+    matrix_result
+}
+
 pub fn create_generic_one_dim<T: Debug + Clone + From<f64>>
 (num_rows: usize) -> Vec<T> {
     let mut matrix_result: Vec<T> = Vec::new();
@@ -188,13 +201,23 @@ pub fn subtract<T: Debug + Clone + Sub<Output=T>>(matrix_a: &Vec<Vec<T>>, matrix
 }
 
 pub fn get_error<T: Debug + Clone + Sub<Output=T> + From<f64> + Into<f64>>
-(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<T>>) -> Vec<Vec<T>> {
-    let mut matrix_result: Vec<Vec<T>> = matrix_a.clone();
+(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<T>>) -> Vec<T> {
+    let mut matrix_result: Vec<T> = create_generic_one_dim(matrix_a.len() * matrix_a[0].len());
+
 
     for i in 0..matrix_a.len() {
         for j in 0..matrix_a[0].len() {
-            let error = matrix_a[i][j].clone() - matrix_b[i][j].clone();
-            matrix_result[i][j] = T::from(( error.into() as f64).powf(2.0) as f64);
+            let mut ind = i + j;
+
+            if i == 0 && j != 0 {
+                ind = j;
+            }
+            if j == 0 && i != 0 {
+                ind = i;
+            } else {
+                ind = i + j;
+            }
+            matrix_result[ind] = matrix_a[i][j].clone() - matrix_b[i][j].clone();
         }
     }
 
@@ -203,13 +226,11 @@ pub fn get_error<T: Debug + Clone + Sub<Output=T> + From<f64> + Into<f64>>
     matrix_result
 }
 
-pub fn add<T: Debug + Clone + Add<Output=T>>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<T>>) -> Vec<Vec<T>> {
+pub fn add<T: Debug + Clone + Add<Output=T>>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<T>) -> Vec<Vec<T>> {
     let mut matrix_result: Vec<Vec<T>> = matrix_a.clone();
 
-    for i in 0..matrix_a.len() {
-        for j in 0..matrix_a[0].len() {
-            matrix_result[i][j] = matrix_a[i][j].clone() + matrix_b[i][j].clone();
-        }
+    for j in 0..matrix_a[0].len() {
+        matrix_result[0][j] = matrix_result[0][j].clone() + matrix_b[j].clone();
     }
 
     // println!("created new matrix is {:?}", matrix_result);
