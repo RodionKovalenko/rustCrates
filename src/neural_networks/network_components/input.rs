@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-pub trait DataTrait<T> {
+pub trait DataTrait<T: Debug> {
     fn new(input: Vec<Vec<T>>, target: Vec<Vec<T>>) -> Self;
     fn get_input(&self) -> Vec<Vec<T>>;
     fn get_target(&self) -> Vec<Vec<T>>;
@@ -8,7 +8,7 @@ pub trait DataTrait<T> {
     fn set_target(&mut self, val: Vec<Vec<T>>);
 }
 
-pub struct Data<T> {
+pub struct Data<T: Debug> {
     pub input: Vec<Vec<T>>,
     pub target: Vec<Vec<T>>,
 }

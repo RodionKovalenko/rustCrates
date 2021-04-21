@@ -13,10 +13,6 @@ pub fn calculate_gradient<T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssi
 (layers: &mut Vec<Layer<T>>, layer_ind: usize, num_sets: usize, learn_rate: f64) -> Vec<Vec<T>> {
     let mut layer = layers[layer_ind].clone();
 
-    if layer.gradient.len() == 0 {
-        layer.gradient = create_generic(layer.input_weights.len(), layer.input_weights[0].len());
-    }
-
     // println!("input size: {}, {}, {}", layer.input_data.len(), layer.input_data[0].len(), layer.input_data[0][0].len());
     // println!("errors size: {}, {}", layer.errors.len(), layer.errors[0].len());
 
@@ -39,8 +35,6 @@ pub fn calculate_gradient<T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssi
                         / T::from(num_sets as f64));
             }
         }
-
-        //  println!("training errors : {:?}", layer.errors);
     } else {
         for inp_set_ind in 0..num_sets {
             for j in 0..layer.input_weights[0].len() {
@@ -51,7 +45,7 @@ pub fn calculate_gradient<T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssi
                 }
 
                 layer.errors[inp_set_ind][j] = layer.errors[inp_set_ind][j].clone() *
-                    get_derivative(layer.activated_output[0][j].clone(),
+                    get_derivative(layer.activated_output[inp_set_ind][0][j].clone(),
                                    layer.activation_type.clone());
 
                 for i in 0..layer.input_weights.len() {
