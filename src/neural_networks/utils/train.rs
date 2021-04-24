@@ -1,16 +1,18 @@
 use crate::network_components::layer::Layer;
 use crate::network_components::layer::LayerType;
 use crate::utils::derivative::get_derivative;
+use rand::Rng;
 
 pub fn calculate_gradient(layers: &mut Vec<Layer<f64>>,
                           layer_ind: usize,
                           num_sets: usize,
                           learn_rate: f64) -> Vec<Vec<f64>> {
     let mut layer = layers[layer_ind].clone();
+    let mut rng = rand::thread_rng();
+    let mut ada_grad_optimizer = 0.0;
 
     // println!("input size: {}, {}, {}", layer.input_data.len(), layer.input_data[0].len(), layer.input_data[0][0].len());
     // println!("errors size: {}, {}", layer.errors.len(), layer.errors[0].len());
-
     // println!("errors current layer size: {}, {}", layers[layer_ind].errors.len(), layers[layer_ind].errors[0].len());
     if matches!(layer.layer_type, LayerType::OutputLayer) {
         // calculate gradients and error
@@ -26,17 +28,27 @@ pub fn calculate_gradient(layers: &mut Vec<Layer<f64>>,
             }
         }
 
+        ada_grad_optimizer = get_ada_grad_optimizer(&layer.gradient);
+
         // update weights and bias
         for inp_set_ind in 0..num_sets {
             for j in 0..layer.input_weights[0].len() {
                 for i in 0..layer.input_weights.len() {
+                    // dropout
+                    if rng.gen_bool(0.02) {
+                        continue;
+                    }
                     // update layer weights
-                    layers[layer_ind].input_weights[i][j] -=
-                        (layer.gradient[i][j] * learn_rate) / num_sets as f64;
+                    layer.input_weights[i][j] -=
+                        (layer.gradient[i][j] * (learn_rate / ada_grad_optimizer)
+                            + layer.previous_gradient[i][j] * learn_rate) / num_sets as f64;
+                    // momentum
+                    layer.previous_gradient[i][j] = layer.gradient[i][j];
                 }
                 // update bias
-                layers[layer_ind].layer_bias[j] -=
-                    (learn_rate * layer.errors[inp_set_ind][j]) / num_sets as f64;
+                layer.layer_bias[j] -=
+                    ((learn_rate / ada_grad_optimizer)
+                        * layer.errors[inp_set_ind][j]) / num_sets as f64;
             }
         }
     } else {
@@ -65,23 +77,42 @@ pub fn calculate_gradient(layers: &mut Vec<Layer<f64>>,
                 }
             }
         }
+        ada_grad_optimizer = get_ada_grad_optimizer(&layer.gradient);
 
         // update weights and bias
         for inp_set_ind in 0..num_sets {
             for j in 0..layer.input_weights[0].len() {
                 for i in 0..layer.input_weights.len() {
+                    // dropout
+                    if rng.gen_bool(0.02) {
+                        continue;
+                    }
                     // update layer weights
-                    layers[layer_ind].input_weights[i][j] -=
-                        (layer.gradient[i][j] * learn_rate) / num_sets as f64;
+                    layer.input_weights[i][j] -=
+                        (layer.gradient[i][j] * (learn_rate / ada_grad_optimizer)
+                            + layer.previous_gradient[i][j] * learn_rate) / num_sets as f64;
+                    // momentum
+                    layer.previous_gradient[i][j] = layer.gradient[i][j];
                 }
                 // update bias
-
-                layers[layer_ind].layer_bias[j] -=
-                    (learn_rate * layer.errors[inp_set_ind][j]) / num_sets as f64;
+                layer.layer_bias[j] -=
+                    ((learn_rate / ada_grad_optimizer)
+                        * layer.errors[inp_set_ind][j]) / num_sets as f64;
             }
         }
     }
-    layers[layer_ind].errors = layer.errors.clone();
-    layers[layer_ind].gradient = layer.gradient.clone();
+    layers[layer_ind] = layer;
     layers[layer_ind].gradient.clone()
+}
+
+pub fn get_ada_grad_optimizer(gradients: &Vec<Vec<f64>>) -> f64 {
+    let mut sum = 0.05;
+
+    for i in 0..gradients.len() {
+        for j in 0..gradients[0].len() {
+            sum += gradients[i][j] * gradients[i][j];
+        }
+    }
+
+    sum.sqrt()
 }

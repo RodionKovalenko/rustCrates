@@ -3,7 +3,7 @@ use crate::utils::*;
 use crate::network_components::layer::{Layer, LayerType};
 use crate::network_components::input::*;
 use activation::sigmoid;
-use num::{range};
+use num::{range, abs};
 #[allow(unused_imports)]
 use matrix_generic::parse_2dim_to_float;
 use crate::network_types::feedforward_network_generic::FeedforwardNetwork;
@@ -37,8 +37,7 @@ pub fn create(
 }
 
 pub fn forward(data_structs: &mut Vec<Data<f64>>,
-               feed_net: &'a mut FeedforwardNetwork<f64>,
-               show_output: bool)
+               feed_net: &'a mut FeedforwardNetwork<f64>)
                -> &'a mut FeedforwardNetwork<f64> {
     let layers: &mut Vec<Layer<f64>> = &mut feed_net.layers;
 
@@ -65,18 +64,6 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
                                                        &layers[i].activated_output[input_index]);
 
                 layers[i].errors[input_index] = errors;
-
-                if show_output {
-                    if input_index == data_structs.len() - 1 {
-                        if show_output {
-                            for ind in 0..data_structs.len() {
-                                println!("target: {:?}", &data_structs[ind].get_target());
-                                println!("activated output {:?}", layers[i].activated_output[ind]);
-                            }
-                            println!("");
-                        }
-                    }
-                }
             }
         }
     }
@@ -84,14 +71,31 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
     feed_net
 }
 
-pub fn train(data_structs: &mut Vec<Data<f64>>, feed_net: &'a mut FeedforwardNetwork<f64>)
+pub fn train(data_structs: &mut Vec<Data<f64>>,
+             feed_net: &'a mut FeedforwardNetwork<f64>,
+             num_iteration: i32)
              -> &'a mut FeedforwardNetwork<f64> {
     println!("Training beginns");
-    for _iter in 0..8000 {
+    for _iter in 0..num_iteration {
         if _iter % 1000 == 0 {
-            forward(data_structs, feed_net, true);
+            forward(data_structs, feed_net);
+                    let mut total_loss = 0.0;
+                    for ind in 0..data_structs.len() {
+                        // println!("target: {:?}", &data_structs[ind].get_target());
+                        // println!("activated output {:?}", layers[i].activated_output[ind]);
+                        // println!("error {:?}", layers[i].errors[ind]);
+                        for e in 0..feed_net.layers[feed_net.layers.len() - 1].errors[ind].len() {
+                            total_loss += abs(feed_net.layers[feed_net.layers.len() - 1].errors[ind][e]);
+                        }
+                    }
+                    println!("total loss: {}", total_loss);
+
+            feed_net.learning_rate *= 0.99;
+            if total_loss <= 0.05 {
+                break;
+            }
         } else {
-            forward(data_structs, feed_net, false);
+            forward(data_structs, feed_net);
         }
 
         for i in range(0, feed_net.layers.len()).rev() {
@@ -115,12 +119,13 @@ pub fn train(data_structs: &mut Vec<Data<f64>>, feed_net: &'a mut FeedforwardNet
         }
     }
 
-    forward(data_structs, feed_net, true);
+    forward(data_structs, feed_net);
 
     feed_net
 }
 
 pub fn initialize() {
+    let num_iterations = 8000;
     let input: Vec<Vec<Vec<f64>>> = vec![
         vec![vec![1.0, 0.0]],
         vec![vec![0.0, 0.0]],
@@ -170,5 +175,5 @@ pub fn initialize() {
             learning_rate,
         );
 
-    train(&mut data_structs, &mut feedforward_network);
+    train(&mut data_structs, &mut feedforward_network, num_iterations);
 }
