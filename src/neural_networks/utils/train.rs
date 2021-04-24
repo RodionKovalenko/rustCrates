@@ -1,71 +1,86 @@
 use crate::network_components::layer::Layer;
 use crate::network_components::layer::LayerType;
-use crate::utils::matrix::*;
-use std::fmt::Debug;
-use std::ops::{Mul, AddAssign, Sub, Add, Div};
 use crate::utils::derivative::get_derivative;
-use num::Zero;
-use crate::network_components::input::Data;
-use rand::Rng;
 
-pub fn calculate_gradient<T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
-+ Into<f64> + Sub<Output=T> + Add<Output=T> + Div<Output=T>>
-(layers: &mut Vec<Layer<T>>, layer_ind: usize, num_sets: usize, learn_rate: f64) -> Vec<Vec<T>> {
+pub fn calculate_gradient(layers: &mut Vec<Layer<f64>>,
+                          layer_ind: usize,
+                          num_sets: usize,
+                          learn_rate: f64) -> Vec<Vec<f64>> {
     let mut layer = layers[layer_ind].clone();
 
     // println!("input size: {}, {}, {}", layer.input_data.len(), layer.input_data[0].len(), layer.input_data[0][0].len());
     // println!("errors size: {}, {}", layer.errors.len(), layer.errors[0].len());
 
+   // println!("errors current layer size: {}, {}", layers[layer_ind].errors.len(), layers[layer_ind].errors[0].len());
     if matches!(layer.layer_type, LayerType::OutputLayer) {
         for inp_set_ind in 0..num_sets {
+            // j number of output neurons
+            // i number of outputs in previous layer
+            // d number of rows in input to layer
             for j in 0..layer.input_weights[0].len() {
-                for i in 0..layer.input_weights.len() {
-                    layer.gradient[i][j] = layer.gradient[i][j].clone() +
-                        layer.errors[inp_set_ind][j].clone() *
-                            layer.input_data[inp_set_ind][0][j].clone();
 
-                    layers[layer_ind].input_weights[i][j] =
-                        layers[layer_ind].input_weights[i][j].clone() +
-                            ((layer.gradient[i][j].clone()
-                                * T::from(learn_rate)) / T::from(num_sets as f64));
+                for d in 0..layer.activated_output[inp_set_ind].len() {
+                    // multiply errors with derivative of output
+                    layer.errors[inp_set_ind][j] *= -1.0 * get_derivative(
+                        layer.activated_output[inp_set_ind][d][j],
+                        layer.activation_type.clone());
                 }
 
-                layers[layer_ind].layer_bias[j] = layers[layer_ind].layer_bias[j].clone() +
-                    ((T::from(learn_rate) * layer.errors[inp_set_ind][j].clone())
-                        / T::from(num_sets as f64));
+                for i in 0..layer.input_weights.len() {
+                    // calculate gradients and errors for output layer
+                    for d in 0..layer.activated_output[inp_set_ind].len() {
+                        layer.gradient[i][j] += layer.errors[inp_set_ind][j] *
+                            layer.input_data[inp_set_ind][d][j];
+                    }
+                    // update layer weights
+                    layers[layer_ind].input_weights[i][j] +=
+                        (layer.gradient[i][j] * learn_rate) / num_sets as f64;
+                }
+
+                // update bias
+                layers[layer_ind].layer_bias[j] +=
+                    (learn_rate * layer.errors[inp_set_ind][j]) / num_sets as f64;
             }
         }
     } else {
         for inp_set_ind in 0..num_sets {
+            // j number of output neurons
+            // i number of outputs in previous layer
+            // d number of rows in input to layer
             for j in 0..layer.input_weights[0].len() {
+
+                // errors of the next layer
                 for e in 0..layers[layer_ind + 1].errors[0].len() {
-                    layer.errors[inp_set_ind][j] = layer.errors[inp_set_ind][j].clone() +
-                        (layers[layer_ind + 1].errors[inp_set_ind][e].clone()
-                            * layers[layer_ind + 1].input_weights[j][e].clone())
+                    layer.errors[inp_set_ind][j] +=
+                        layers[layer_ind + 1].errors[inp_set_ind][e]
+                            * layers[layer_ind + 1].input_weights[j][e];
                 }
 
-                layer.errors[inp_set_ind][j] = layer.errors[inp_set_ind][j].clone() *
-                    get_derivative(layer.activated_output[inp_set_ind][0][j].clone(),
-                                   layer.activation_type.clone());
+                for d in 0..layer.activated_output[inp_set_ind].len() {
+                    // multiply errors with derivative of output
+                    layer.errors[inp_set_ind][j] *= get_derivative(
+                        layer.activated_output[inp_set_ind][d][j],
+                        layer.activation_type.clone());
+                }
 
                 for i in 0..layer.input_weights.len() {
-                    layer.gradient[i][j] = layer.gradient[i][j].clone() +
-                        layer.errors[inp_set_ind][j].clone() *
-                            layer.input_data[inp_set_ind][0][i].clone();
-
-                    layers[layer_ind].input_weights[i][j] =
-                        layers[layer_ind].input_weights[i][j].clone() +
-                            ((layer.gradient[i][j].clone()
-                                * T::from(learn_rate)) / T::from(num_sets as f64));
+                    // calculate gradients and errors for current layer
+                    for d in 0..layer.activated_output[inp_set_ind].len() {
+                        layer.gradient[i][j] += layer.errors[inp_set_ind][j] *
+                            layer.input_data[inp_set_ind][d][i];
+                    }
+                    // update layer weights
+                    layers[layer_ind].input_weights[i][j] +=
+                        (layer.gradient[i][j] * learn_rate) / num_sets as f64;
                 }
 
-                layers[layer_ind].layer_bias[j] = layers[layer_ind].layer_bias[j].clone() +
-                    ((T::from(learn_rate) * layer.errors[inp_set_ind][j].clone())
-                        / T::from(num_sets as f64));
+                // update bias
+                layers[layer_ind].layer_bias[j] +=
+                    (learn_rate * layer.errors[inp_set_ind][j]) / num_sets as f64;
             }
         }
     }
     layers[layer_ind].errors = layer.errors.clone();
-    layers[layer_ind].gradient = layer.gradient;
+    layers[layer_ind].gradient = layer.gradient.clone();
     layers[layer_ind].gradient.clone()
 }

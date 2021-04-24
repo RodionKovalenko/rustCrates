@@ -1,8 +1,8 @@
 use core::fmt::Debug;
-use crate::network_types::feedforward_network::FeedforwardNetwork;
+use crate::network_types::feedforward_network_generic::FeedforwardNetwork;
 use crate::utils::weights_initializer::initialize_weights;
 use num::Zero;
-use crate::utils::matrix::{create_generic, create_generic_one_dim, create_generic_3D};
+use crate::utils::matrix_generic::{create_generic, create_generic_one_dim, create_generic_3d};
 
 #[derive(Debug, Clone)]
 pub enum ActivationType {
@@ -90,8 +90,8 @@ pub fn initialize_layer<T: Debug + Clone + Zero + From<f64>>
 (feed_net: &mut FeedforwardNetwork<T>) -> &mut Vec<Layer<T>> {
     let layers = &mut feed_net.layers;
     let total_number_of_layers = feed_net.number_of_hidden_layers + 2;
-    let num_layer_inputs_dim1: usize = feed_net.input_dimensions[0];
-    let mut num_layer_inputs_dim2: usize = feed_net.input_dimensions[1];
+    let num_rows: usize = feed_net.number_rows_in_data as usize;
+    let mut num_columns: usize = feed_net.number_columns_in_data as usize;
     let mut num_hidden_neurons = feed_net.number_of_hidden_neurons;
     let mut layer_type;
 
@@ -106,25 +106,25 @@ pub fn initialize_layer<T: Debug + Clone + Zero + From<f64>>
         );
 
         if matches!(layer_type, LayerType::HiddenLayer) {
-            num_layer_inputs_dim2 = num_hidden_neurons;
+            num_columns = num_hidden_neurons;
         } else if matches!(layer_type, LayerType::OutputLayer) {
-            num_layer_inputs_dim2 = num_hidden_neurons;
+            num_columns = num_hidden_neurons;
             num_hidden_neurons = feed_net.number_of_output_neurons;
         }
 
         let input_layer: Layer<T> = Layer {
-            input_weights: initialize_weights(num_layer_inputs_dim2,
+            input_weights: initialize_weights(num_columns,
                                               num_hidden_neurons),
-            inactivated_output: create_generic_3D(num_layer_inputs_dim1, num_hidden_neurons, feed_net.input_dimensions[2]),
-            activated_output: create_generic_3D(num_layer_inputs_dim1, num_hidden_neurons, feed_net.input_dimensions[2]),
+            inactivated_output: create_generic_3d(num_rows, num_hidden_neurons, feed_net.input_dimensions[2]),
+            activated_output: create_generic_3d(num_rows, num_hidden_neurons, feed_net.input_dimensions[2]),
             layer_bias: create_generic_one_dim(num_hidden_neurons),
-            gradient: create_generic(num_layer_inputs_dim2, num_hidden_neurons),
+            gradient: create_generic(num_columns, num_hidden_neurons),
             errors: create_generic(feed_net.input_dimensions[2], num_hidden_neurons),
             activation_type: ActivationType::SIGMOID,
             layer_type,
             previous_layer: None,
             next_layer: None,
-            input_data: create_generic_3D(num_layer_inputs_dim1, num_hidden_neurons, feed_net.input_dimensions[2]),
+            input_data: create_generic_3d(num_rows, num_hidden_neurons, feed_net.input_dimensions[2]),
         };
 
         layers.push(input_layer);
