@@ -46,7 +46,7 @@ pub fn create<T: Debug + Clone + Zero + From<f64>>(
         number_of_hidden_layers,
         number_data_sets,
         number_rows_in_data,
-        number_columns_in_data
+        number_columns_in_data,
     };
 
     layer::initialize_layer(&mut feed_net);
@@ -63,16 +63,17 @@ pub fn forward<'a, T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
         for i in 0..layers.len() {
             if matches!(layers[i].layer_type, LayerType::InputLayer) {
                 layers[i].input_data[input_index] = data_structs[input_index].get_input();
-                layers[i].inactivated_output[input_index] = matrix_generic::multiple_generic_2d(&data_structs[input_index].get_input(),
-                                                                                                &layers[i].input_weights.clone());
+                layers[i].inactivated_output[input_index] =
+                    matrix_generic::multiple_generic_2d(&data_structs[input_index].get_input(),
+                                                        &layers[i].input_weights.clone());
             } else {
                 layers[i].input_data[input_index] = layers[i - 1].activated_output[input_index].clone();
-                layers[i].inactivated_output[input_index] = matrix_generic::multiple_generic_2d(&layers[i - 1].activated_output[input_index],
-                                                                                                &layers[i].input_weights.clone());
+                layers[i].inactivated_output[input_index] =
+                    matrix_generic::multiple_generic_2d(&layers[i - 1].activated_output[input_index],
+                                                        &layers[i].input_weights.clone());
             }
 
             layers[i].inactivated_output[input_index] = matrix_generic::add(&layers[i].inactivated_output[input_index], &layers[i].layer_bias);
-
             layers[i].activated_output[input_index] = sigmoid(&layers[i].inactivated_output[input_index]);
 
             if matches!(layers[i].layer_type, LayerType::OutputLayer) {
@@ -83,10 +84,12 @@ pub fn forward<'a, T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
 
                 if input_index == data_structs.len() - 1 {
                     if show_output {
-                        for ind in 0..data_structs.len() {
-                            println!("target: {:?}", &data_structs[ind].get_target());
-                            println!("activated output {:?}", layers[i].activated_output[ind]);
-                            println!("errors {:?}", layers[i].errors[ind]);
+                        if show_output {
+                            for ind in 0..data_structs.len() {
+                                println!("target: {:?}", &data_structs[ind].get_target());
+                                println!("activated output {:?}", layers[i].activated_output[ind]);
+                            }
+                            println!("");
                         }
                     }
                 }
@@ -101,10 +104,13 @@ pub fn train_generic<'a, T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssig
 + Into<f64> + Sub<Output=T> + Add<Output=T> + Div<Output=T>>
 (data_structs: &mut Vec<Data<T>>, feed_net: &'a mut FeedforwardNetwork<T>)
  -> &'a mut FeedforwardNetwork<T> {
-
     println!("Training beginns");
-    for _iter in 0..5000 {
-        forward(data_structs, feed_net, false);
+    for _iter in 0..8000 {
+        if _iter % 1000 == 0 {
+            forward(data_structs, feed_net, true);
+        } else {
+            forward(data_structs, feed_net, false);
+        }
 
         for i in range(0, feed_net.layers.len()).rev() {
             train_generic::calculate_gradient(&mut feed_net.layers, i,
@@ -164,11 +170,11 @@ pub fn initialize() {
     let number_of_hidden_layers = 1;
     let input_dimensions = vec![parsed_input[0].len(), parsed_input[0][0].len(), parsed_input.len()];
     let number_of_output_neurons = targets[0].len();
-    let number_of_hidden_neurons = 100;
-    let learning_rate = 0.1;
+    let number_of_hidden_neurons = 30;
     let number_of_data_sets = parsed_input.len() as i32;
     let number_rows_in_set = parsed_input[0].len() as i32;
     let num_columns_in_set = parsed_input[0][0].len() as i32;
+    let learning_rate = 0.1;
 
     let mut feedforward_network: FeedforwardNetwork<f64> =
         create(

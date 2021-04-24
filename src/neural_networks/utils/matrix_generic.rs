@@ -226,7 +226,7 @@ pub fn get_error<T: Debug + Clone + Sub<Output=T> + Add<Output=T> + Mul<Output=T
     }
 
     for j in 0..target_m[0].len() {
-        matrix_result[j] = target_one_dim[j].clone() - output_one_dim[j].clone();
+        matrix_result[j] = output_one_dim[j].clone() - target_one_dim[j].clone();
     }
 
     matrix_result

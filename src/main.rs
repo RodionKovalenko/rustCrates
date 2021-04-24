@@ -12,6 +12,7 @@ pub mod uphold_api;
 
 #[allow(unused_imports)]
 use uphold_api::collect_data_task;
+use std::time::Instant;
 
 
 /**
@@ -23,5 +24,8 @@ fn main() {
     println!("Test beginns");
 
     // collect_data_task::update_json_data_from_uphold_api();
-    feedforward_network::initialize();
+    let now = Instant::now();
+
+    feedforward_network_generic::initialize();
+    println!("time elapsed {}", now.elapsed().as_secs());
 }
