@@ -3,12 +3,29 @@ use crate::utils::*;
 use crate::network_components::layer::{Layer, LayerType};
 use crate::network_components::input::*;
 use activation::sigmoid;
-use num::{range, abs};
+use std::fmt::Debug;
+use std::ops::{Mul, AddAssign, Add, Div, Sub};
+use num::{Zero, range};
 #[allow(unused_imports)]
 use matrix_generic::parse_2dim_to_float;
-use crate::network_types::feedforward_network_generic::FeedforwardNetwork;
 
-pub fn create(
+pub struct FeedforwardNetwork<T> {
+    pub layers: Vec<Layer<T>>,
+    pub learning_rate: f32,
+    pub number_of_hidden_neurons: usize,
+    // number of input.rs parameters. For example if only 6 inputs, then input.rs dimensions will be
+    // [1][6]
+    // if there are 25x8 input.rs e.g. then [25][8]
+    // or [25][1][3] => means 25 data sets with data input [1][3]
+    pub input_dimensions: Vec<usize>,
+    pub number_of_output_neurons: usize,
+    pub number_of_hidden_layers: i8,
+    pub number_data_sets: i32,
+    pub number_rows_in_data: i32,
+    pub number_columns_in_data: i32,
+}
+
+pub fn create<T: Debug + Clone + Zero + From<f64>>(
     number_of_hidden_layers: i8,
     number_of_hidden_neurons: usize,
     input_dimensions: Vec<usize>,
@@ -17,7 +34,7 @@ pub fn create(
     number_rows_in_data: i32,
     number_columns_in_data: i32,
     learning_rate: f32,
-) -> FeedforwardNetwork<f64> {
+) -> FeedforwardNetwork<T> {
     let layers = vec![];
 
     let mut feed_net = FeedforwardNetwork {
@@ -29,36 +46,34 @@ pub fn create(
         number_of_hidden_layers,
         number_data_sets,
         number_rows_in_data,
-        number_columns_in_data,
+        number_columns_in_data
     };
 
     layer::initialize_layer(&mut feed_net);
     feed_net
 }
 
-pub fn forward(data_structs: &mut Vec<Data<f64>>,
-               feed_net: &'a mut FeedforwardNetwork<f64>,
-               show_output: bool)
-               -> &'a mut FeedforwardNetwork<f64> {
-    let layers: &mut Vec<Layer<f64>> = &mut feed_net.layers;
+pub fn forward<'a, T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
++ Into<f64> + Sub<Output=T> + Add<Output=T> + Div<Output=T>>
+(data_structs: &mut Vec<Data<T>>, feed_net: &'a mut FeedforwardNetwork<T>, show_output: bool)
+ -> &'a mut FeedforwardNetwork<T> {
+    let layers: &mut Vec<Layer<T>> = &mut feed_net.layers;
 
     for input_index in 0..data_structs.len() {
         for i in 0..layers.len() {
             if matches!(layers[i].layer_type, LayerType::InputLayer) {
                 layers[i].input_data[input_index] = data_structs[input_index].get_input();
-                layers[i].inactivated_output[input_index] =
-                    matrix_generic::multiple_generic_2d(&data_structs[input_index].get_input(),
-                                                        &layers[i].input_weights.clone());
+                layers[i].inactivated_output[input_index] = matrix_generic::multiple_generic_2d(&data_structs[input_index].get_input(),
+                                                                                                &layers[i].input_weights.clone());
             } else {
                 layers[i].input_data[input_index] = layers[i - 1].activated_output[input_index].clone();
-                layers[i].inactivated_output[input_index] =
-                    matrix_generic::multiple_generic_2d(&layers[i - 1].activated_output[input_index],
-                                                        &layers[i].input_weights.clone());
+                layers[i].inactivated_output[input_index] = matrix_generic::multiple_generic_2d(&layers[i - 1].activated_output[input_index],
+                                                                                                &layers[i].input_weights.clone());
             }
 
             layers[i].inactivated_output[input_index] = matrix_generic::add(&layers[i].inactivated_output[input_index], &layers[i].layer_bias);
-            layers[i].activated_output[input_index] = sigmoid(&layers[i].inactivated_output[input_index]);
 
+            layers[i].activated_output[input_index] = sigmoid(&layers[i].inactivated_output[input_index]);
 
             if matches!(layers[i].layer_type, LayerType::OutputLayer) {
                 let errors = matrix_generic::get_error(&data_structs[input_index].get_target(),
@@ -66,14 +81,12 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
 
                 layers[i].errors[input_index] = errors;
 
-                if show_output {
-                    if input_index == data_structs.len() - 1 {
-                        if show_output {
-                            for ind in 0..data_structs.len() {
-                                println!("target: {:?}", &data_structs[ind].get_target());
-                                println!("activated output {:?}", layers[i].activated_output[ind]);
-                                println!("errors {:?}", layers[i].errors[ind]);
-                            }
+                if input_index == data_structs.len() - 1 {
+                    if show_output {
+                        for ind in 0..data_structs.len() {
+                            println!("target: {:?}", &data_structs[ind].get_target());
+                            println!("activated output {:?}", layers[i].activated_output[ind]);
+                            println!("errors {:?}", layers[i].errors[ind]);
                         }
                     }
                 }
@@ -84,32 +97,32 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
     feed_net
 }
 
-pub fn train(data_structs: &mut Vec<Data<f64>>, feed_net: &'a mut FeedforwardNetwork<f64>)
-             -> &'a mut FeedforwardNetwork<f64> {
+pub fn train_generic<'a, T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
++ Into<f64> + Sub<Output=T> + Add<Output=T> + Div<Output=T>>
+(data_structs: &mut Vec<Data<T>>, feed_net: &'a mut FeedforwardNetwork<T>)
+ -> &'a mut FeedforwardNetwork<T> {
+
     println!("Training beginns");
     for _iter in 0..5000 {
         forward(data_structs, feed_net, false);
 
         for i in range(0, feed_net.layers.len()).rev() {
-            train::calculate_gradient(&mut feed_net.layers, i,
-                                      data_structs.len(),
-                                      feed_net.learning_rate as f64);
+            train_generic::calculate_gradient(&mut feed_net.layers, i,
+                                              data_structs.len(),
+                                              feed_net.learning_rate as f64);
         }
 
         // clear errors and gradients after update
         for i in range(0, feed_net.layers.len()).rev() {
             for k in 0..feed_net.layers[i].errors.len() {
                 for j in 0..feed_net.layers[i].errors[0].len() {
-                    feed_net.layers[i].errors[k][j] = 0.0;
+                    feed_net.layers[i].errors[k][j] = T::from(0.0);
                 }
             }
             for k in 0..feed_net.layers[i].gradient.len() {
                 for j in 0..feed_net.layers[i].gradient[0].len() {
-                    feed_net.layers[i].gradient[k][j] = 0.0;
+                    feed_net.layers[i].gradient[k][j] = T::from(0.0);
                 }
-            }
-            for k in 0..feed_net.layers[i].layer_bias.len() {
-                // feed_net.layers[i].layer_bias[k] = 0.0;
             }
         }
     }
@@ -152,10 +165,10 @@ pub fn initialize() {
     let input_dimensions = vec![parsed_input[0].len(), parsed_input[0][0].len(), parsed_input.len()];
     let number_of_output_neurons = targets[0].len();
     let number_of_hidden_neurons = 100;
+    let learning_rate = 0.1;
     let number_of_data_sets = parsed_input.len() as i32;
     let number_rows_in_set = parsed_input[0].len() as i32;
     let num_columns_in_set = parsed_input[0][0].len() as i32;
-    let learning_rate = 0.1;
 
     let mut feedforward_network: FeedforwardNetwork<f64> =
         create(
@@ -169,5 +182,5 @@ pub fn initialize() {
             learning_rate,
         );
 
-    train(&mut data_structs, &mut feedforward_network);
+    train_generic(&mut data_structs, &mut feedforward_network);
 }

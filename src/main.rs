@@ -22,6 +22,6 @@ tcp::test_connection();
 fn main() {
     println!("Test beginns");
 
-    //collect_data_task::update_json_data_from_uphold_api();
+    // collect_data_task::update_json_data_from_uphold_api();
     feedforward_network::initialize();
 }

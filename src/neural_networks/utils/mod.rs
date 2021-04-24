@@ -1,5 +1,6 @@
 pub mod weights_initializer;
-pub mod matrix;
+pub mod matrix_generic;
 pub mod activation;
-pub mod train;
+pub mod train_generic;
 pub mod derivative;
+pub mod train;
