@@ -3,7 +3,7 @@ use crate::utils::*;
 use crate::network_components::layer::{Layer, LayerType};
 use crate::network_components::input::*;
 use activation::sigmoid;
-use num::{range, abs};
+use num::{range};
 #[allow(unused_imports)]
 use matrix_generic::parse_2dim_to_float;
 use crate::network_types::feedforward_network_generic::FeedforwardNetwork;
@@ -72,8 +72,8 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
                             for ind in 0..data_structs.len() {
                                 println!("target: {:?}", &data_structs[ind].get_target());
                                 println!("activated output {:?}", layers[i].activated_output[ind]);
-                                println!("errors {:?}", layers[i].errors[ind]);
                             }
+                            println!("");
                         }
                     }
                 }
@@ -87,8 +87,12 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
 pub fn train(data_structs: &mut Vec<Data<f64>>, feed_net: &'a mut FeedforwardNetwork<f64>)
              -> &'a mut FeedforwardNetwork<f64> {
     println!("Training beginns");
-    for _iter in 0..5000 {
-        forward(data_structs, feed_net, false);
+    for _iter in 0..8000 {
+        if _iter % 1000 == 0 {
+            forward(data_structs, feed_net, true);
+        } else {
+            forward(data_structs, feed_net, false);
+        }
 
         for i in range(0, feed_net.layers.len()).rev() {
             train::calculate_gradient(&mut feed_net.layers, i,
@@ -107,9 +111,6 @@ pub fn train(data_structs: &mut Vec<Data<f64>>, feed_net: &'a mut FeedforwardNet
                 for j in 0..feed_net.layers[i].gradient[0].len() {
                     feed_net.layers[i].gradient[k][j] = 0.0;
                 }
-            }
-            for k in 0..feed_net.layers[i].layer_bias.len() {
-                // feed_net.layers[i].layer_bias[k] = 0.0;
             }
         }
     }
@@ -151,7 +152,7 @@ pub fn initialize() {
     let number_of_hidden_layers = 1;
     let input_dimensions = vec![parsed_input[0].len(), parsed_input[0][0].len(), parsed_input.len()];
     let number_of_output_neurons = targets[0].len();
-    let number_of_hidden_neurons = 100;
+    let number_of_hidden_neurons = 30;
     let number_of_data_sets = parsed_input.len() as i32;
     let number_rows_in_set = parsed_input[0].len() as i32;
     let num_columns_in_set = parsed_input[0][0].len() as i32;
