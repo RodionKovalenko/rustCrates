@@ -8,7 +8,7 @@ use std::ops::{Mul, AddAssign, Add, Div, Sub};
 use num::{Zero, range};
 #[allow(unused_imports)]
 use matrix::parse_2dim_to_float;
-use serde::{Serializer, Serialize, Deserialize};
+use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FeedforwardNetwork<T> {

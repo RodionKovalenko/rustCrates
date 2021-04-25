@@ -5,3 +5,4 @@ pub mod train_generic;
 pub mod derivative;
 pub mod train;
 pub mod file;
+pub mod normalization;
