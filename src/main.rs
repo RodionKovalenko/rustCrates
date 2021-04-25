@@ -92,28 +92,30 @@ pub fn initalize_data_sets() -> Vec<Data<f64>> {
         let mut currency_as_string: String = String::from("");
         let currency_as_num;
 
-        if !currency_to_num_map.contains_key(currency[0]) {
-            for c in 0..char_vec.len() {
-                let int_value = char_vec[c] as i32;
-                currency_as_string = format!("{}{}", currency_as_string.clone(), int_value);
+        if i < 50 {
+            if !currency_to_num_map.contains_key(currency[0]) {
+                for c in 0..char_vec.len() {
+                    let int_value = char_vec[c] as i32;
+                    currency_as_string = format!("{}{}", currency_as_string.clone(), int_value);
+                }
+                currency_as_num = currency_as_string.parse::<f64>().unwrap();
+                currency_to_num_map.insert(String::from(currency[0]),
+                                           currency_as_num);
+            } else {
+                currency_as_num = *currency_to_num_map.get(currency[0].clone()).unwrap();
             }
-            currency_as_num = currency_as_string.parse::<f64>().unwrap();
-            currency_to_num_map.insert(String::from(currency[0]),
-                                       currency_as_num);
-        } else {
-            currency_as_num = *currency_to_num_map.get(currency[0].clone()).unwrap();
+
+            input_data.push(vec![
+                date.day() as f64,
+                date.month() as f64,
+                date.year() as f64,
+                date.hour() as f64,
+                date.minute() as f64,
+                currency_as_num
+            ]);
+
+            target_data.push(vec![cryptocurrency_data[i].bid as f64]);
         }
-
-        input_data.push(vec![
-            date.day() as f64,
-            date.month() as f64,
-            date.year() as f64,
-            date.hour() as f64,
-            date.minute() as f64,
-            currency_as_num
-        ]);
-
-        target_data.push(vec![cryptocurrency_data[i].bid as f64]);
     }
 
     let normalized_target_data: Vec<Vec<f64>> = normalize_max_mean(&target_data);
