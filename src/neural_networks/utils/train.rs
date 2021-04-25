@@ -9,7 +9,7 @@ pub fn calculate_gradient(layers: &mut Vec<Layer<f64>>,
                           learn_rate: f64) -> Vec<Vec<f64>> {
     let mut layer = layers[layer_ind].clone();
     let mut rng = rand::thread_rng();
-    let mut ada_grad_optimizer = 0.0;
+    let ada_grad_optimizer;
 
     // println!("input size: {}, {}, {}", layer.input_data.len(), layer.input_data[0].len(), layer.input_data[0][0].len());
     // println!("errors size: {}, {}", layer.errors.len(), layer.errors[0].len());
@@ -35,13 +35,14 @@ pub fn calculate_gradient(layers: &mut Vec<Layer<f64>>,
             for j in 0..layer.input_weights[0].len() {
                 for i in 0..layer.input_weights.len() {
                     // dropout
-                    if rng.gen_bool(0.02) {
+                    if rng.gen_bool(0.05) {
                         continue;
                     }
                     // update layer weights
                     layer.input_weights[i][j] -=
                         (layer.gradient[i][j] * (learn_rate / ada_grad_optimizer)
-                            + layer.previous_gradient[i][j] * learn_rate) / num_sets as f64;
+                            + layer.previous_gradient[i][j] * (learn_rate / ada_grad_optimizer)) /
+                            num_sets as f64;
                     // momentum
                     layer.previous_gradient[i][j] = layer.gradient[i][j];
                 }
@@ -84,13 +85,14 @@ pub fn calculate_gradient(layers: &mut Vec<Layer<f64>>,
             for j in 0..layer.input_weights[0].len() {
                 for i in 0..layer.input_weights.len() {
                     // dropout
-                    if rng.gen_bool(0.02) {
+                    if rng.gen_bool(0.05) {
                         continue;
                     }
                     // update layer weights
                     layer.input_weights[i][j] -=
                         (layer.gradient[i][j] * (learn_rate / ada_grad_optimizer)
-                            + layer.previous_gradient[i][j] * learn_rate) / num_sets as f64;
+                            + layer.previous_gradient[i][j] * (learn_rate / ada_grad_optimizer))
+                            / num_sets as f64;
                     // momentum
                     layer.previous_gradient[i][j] = layer.gradient[i][j];
                 }
@@ -101,11 +103,13 @@ pub fn calculate_gradient(layers: &mut Vec<Layer<f64>>,
             }
         }
     }
-    layers[layer_ind] = layer;
+    layers[layer_ind] = layer.clone();
     layers[layer_ind].gradient.clone()
 }
 
 pub fn get_ada_grad_optimizer(gradients: &Vec<Vec<f64>>) -> f64 {
+    // https://mlfromscratch.com/optimizers-explained/#/
+    // sum must not be null, because of sqrt
     let mut sum = 0.05;
 
     for i in 0..gradients.len() {

@@ -2,22 +2,23 @@ use core::fmt::Debug;
 use crate::network_types::feedforward_network_generic::FeedforwardNetwork;
 use crate::utils::weights_initializer::initialize_weights;
 use num::Zero;
-use crate::utils::matrix_generic::{create_generic, create_generic_one_dim, create_generic_3d};
+use crate::utils::matrix::{create_generic, create_generic_one_dim, create_generic_3d};
+use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ActivationType {
     SIGMOID,
     LINEAR,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LayerType {
     InputLayer,
     HiddenLayer,
     OutputLayer,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Layer<T> {
     pub input_weights: Vec<Vec<T>>,
     pub inactivated_output: Vec<Vec<Vec<T>>>,
@@ -136,24 +137,24 @@ pub fn initialize_layer<T: Debug + Clone + Zero + From<f64>>
         layers.push(input_layer);
     }
 
-    // set reference for next and previous layer
-    for i in 0..layers.len() {
-        if matches!(layers[i].layer_type, LayerType::InputLayer) {
-            layers[i].previous_layer = None;
-            layers[i].next_layer = Some(Box::<Layer<T>>::new(layers[i + 1].clone()));
-        } else if matches!(layers[i].layer_type, LayerType::HiddenLayer) {
-            layers[i].previous_layer = Some(Box::<Layer<T>>::new(layers[i - 1].clone()));
-            layers[i].next_layer = Some(Box::<Layer<T>>::new(layers[i + 1].clone()));
-        } else {
-            layers[i].previous_layer = Some(Box::<Layer<T>>::new(layers[i - 1].clone()));
-            layers[i].next_layer = None;
-        }
-    }
+    // // set reference for next and previous layer
+    // for i in 0..layers.len() {
+    //     if matches!(layers[i].layer_type, LayerType::InputLayer) {
+    //         layers[i].previous_layer = None;
+    //         layers[i].next_layer = Some(Box::<Layer<T>>::new(layers[i + 1].clone()));
+    //     } else if matches!(layers[i].layer_type, LayerType::HiddenLayer) {
+    //         layers[i].previous_layer = Some(Box::<Layer<T>>::new(layers[i - 1].clone()));
+    //         layers[i].next_layer = Some(Box::<Layer<T>>::new(layers[i + 1].clone()));
+    //     } else {
+    //         layers[i].previous_layer = Some(Box::<Layer<T>>::new(layers[i - 1].clone()));
+    //         layers[i].next_layer = None;
+    //     }
+    // }
 
     layers
 }
 
-fn get_layer_type(num_layer: &i8, num_hidden_layers: &i8) -> LayerType {
+pub fn get_layer_type(num_layer: &i8, num_hidden_layers: &i8) -> LayerType {
     let layer_type;
 
     if num_layer == &0 {
