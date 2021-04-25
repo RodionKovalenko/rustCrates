@@ -5,8 +5,13 @@ use crate::network_components::input::*;
 use activation::sigmoid;
 use num::{range, abs};
 #[allow(unused_imports)]
-use matrix_generic::parse_2dim_to_float;
+use matrix::parse_2dim_to_float;
 use crate::network_types::feedforward_network_generic::FeedforwardNetwork;
+use crate::utils::file::{serialize, deserialize};
+use crate::utils::matrix::create_generic_3d;
+
+#[allow(unused_imports)]
+pub const FILE_NAME: &str = "feedforward_network.json";
 
 pub fn create(
     number_of_hidden_layers: i8,
@@ -46,49 +51,49 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
             if matches!(layers[i].layer_type, LayerType::InputLayer) {
                 layers[i].input_data[input_index] = data_structs[input_index].get_input();
                 layers[i].inactivated_output[input_index] =
-                    matrix_generic::multiple_generic_2d(&data_structs[input_index].get_input(),
-                                                        &layers[i].input_weights.clone());
+                    matrix::multiple_generic_2d(&data_structs[input_index].get_input(),
+                                                &layers[i].input_weights.clone());
             } else {
                 layers[i].input_data[input_index] = layers[i - 1].activated_output[input_index].clone();
                 layers[i].inactivated_output[input_index] =
-                    matrix_generic::multiple_generic_2d(&layers[i - 1].activated_output[input_index],
-                                                        &layers[i].input_weights.clone());
+                    matrix::multiple_generic_2d(&layers[i - 1].activated_output[input_index].clone(),
+                                                &layers[i].input_weights.clone());
             }
 
-            layers[i].inactivated_output[input_index] = matrix_generic::add(&layers[i].inactivated_output[input_index], &layers[i].layer_bias);
+            layers[i].inactivated_output[input_index] = matrix::add(&layers[i].inactivated_output[input_index], &layers[i].layer_bias);
             layers[i].activated_output[input_index] = sigmoid(&layers[i].inactivated_output[input_index]);
 
-
             if matches!(layers[i].layer_type, LayerType::OutputLayer) {
-                let errors = matrix_generic::get_error(&data_structs[input_index].get_target(),
-                                                       &layers[i].activated_output[input_index]);
+                let errors = matrix::get_error(&data_structs[input_index].get_target(),
+                                               &layers[i].activated_output[input_index]);
 
                 layers[i].errors[input_index] = errors;
             }
         }
     }
 
+    feed_net.layers = layers.clone();
     feed_net
 }
 
 pub fn train(data_structs: &mut Vec<Data<f64>>,
              feed_net: &'a mut FeedforwardNetwork<f64>,
-             num_iteration: i32)
-             -> &'a mut FeedforwardNetwork<f64> {
+             num_iteration: i32) {
     println!("Training beginns");
+
     for _iter in 0..num_iteration {
-        if _iter % 1000 == 0 {
+        if _iter % 100 == 0 {
             forward(data_structs, feed_net);
-                    let mut total_loss = 0.0;
-                    for ind in 0..data_structs.len() {
-                        // println!("target: {:?}", &data_structs[ind].get_target());
-                        // println!("activated output {:?}", layers[i].activated_output[ind]);
-                        // println!("error {:?}", layers[i].errors[ind]);
-                        for e in 0..feed_net.layers[feed_net.layers.len() - 1].errors[ind].len() {
-                            total_loss += abs(feed_net.layers[feed_net.layers.len() - 1].errors[ind][e]);
-                        }
-                    }
-                    println!("total loss: {}", total_loss);
+            let mut total_loss = 0.0;
+            for ind in 0..data_structs.len() {
+                // println!("target: {:?}", &data_structs[ind].get_target());
+                // println!("activated output {:?}", layers[i].activated_output[ind]);
+                // println!("error {:?}", layers[i].errors[ind]);
+                for e in 0..feed_net.layers[feed_net.layers.len() - 1].errors[ind].len() {
+                    total_loss += abs(feed_net.layers[feed_net.layers.len() - 1].errors[ind][e]);
+                }
+            }
+            println!("total loss: {}", total_loss);
 
             feed_net.learning_rate *= 0.99;
             if total_loss <= 0.05 {
@@ -120,8 +125,8 @@ pub fn train(data_structs: &mut Vec<Data<f64>>,
     }
 
     forward(data_structs, feed_net);
-
-    feed_net
+    // serialize network
+    serialize(&feed_net);
 }
 
 pub fn initialize() {
@@ -157,7 +162,7 @@ pub fn initialize() {
     let number_of_hidden_layers = 1;
     let input_dimensions = vec![parsed_input[0].len(), parsed_input[0][0].len(), parsed_input.len()];
     let number_of_output_neurons = targets[0].len();
-    let number_of_hidden_neurons = 30;
+    let mut number_of_hidden_neurons = 20;
     let number_of_data_sets = parsed_input.len() as i32;
     let number_rows_in_set = parsed_input[0].len() as i32;
     let num_columns_in_set = parsed_input[0][0].len() as i32;
@@ -175,5 +180,20 @@ pub fn initialize() {
             learning_rate,
         );
 
-    train(&mut data_structs, &mut feedforward_network, num_iterations);
+  let mut saved_network: FeedforwardNetwork<f64> = deserialize(feedforward_network);
+
+    for i in 0..saved_network.layers.len() {
+        let layer_type = layer::get_layer_type(
+            &(i as i8),
+            &number_of_hidden_layers,
+        );
+        if matches!(layer_type, LayerType::OutputLayer) {
+            number_of_hidden_neurons = number_of_output_neurons;
+        }
+        saved_network.layers[i].input_data = create_generic_3d(number_rows_in_set as usize,
+                                                               number_of_hidden_neurons,
+                                                               number_of_data_sets as usize);
+    }
+
+    train(&mut data_structs, &mut saved_network, num_iterations);
 }

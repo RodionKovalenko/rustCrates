@@ -7,8 +7,10 @@ use std::fmt::Debug;
 use std::ops::{Mul, AddAssign, Add, Div, Sub};
 use num::{Zero, range};
 #[allow(unused_imports)]
-use matrix_generic::parse_2dim_to_float;
+use matrix::parse_2dim_to_float;
+use serde::{Serializer, Serialize, Deserialize};
 
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FeedforwardNetwork<T> {
     pub layers: Vec<Layer<T>>,
     pub learning_rate: f32,
@@ -23,6 +25,52 @@ pub struct FeedforwardNetwork<T> {
     pub number_data_sets: i32,
     pub number_rows_in_data: i32,
     pub number_columns_in_data: i32,
+}
+
+impl<T: Debug + Clone + From<f64>> FeedforwardNetwork<T> {
+    pub fn get_layers(&self) -> Vec<Layer<T>> {
+        self.layers.clone()
+    }
+    pub fn get_learning_rate(&self) -> f32 {
+        self.learning_rate.clone()
+    }
+    pub fn get_input_dimensions(&self) -> Vec<usize> {
+        self.input_dimensions.clone()
+    }
+    pub fn get_number_of_hidden_neurons(&self) -> usize {
+        self.number_of_hidden_neurons.clone()
+    }
+    pub fn get_number_of_output_neurons(&self) -> usize {
+        self.number_of_output_neurons.clone()
+    }
+    pub fn get_number_of_hidden_layers(&self) -> i8 {
+        self.number_of_hidden_layers.clone()
+    }
+    pub fn get_number_data_sets(&self) -> i32 {
+        self.number_data_sets.clone()
+    }
+    pub fn get_number_rows_in_data(&self) -> i32 {
+        self.number_rows_in_data.clone()
+    }
+    pub fn get_number_columns_in_data(&self) -> i32 {
+        self.number_columns_in_data.clone()
+    }
+}
+
+impl<T: Debug + Clone + From<f64>> Clone for FeedforwardNetwork<T> {
+    fn clone(&self) -> Self {
+        FeedforwardNetwork {
+            layers: self.get_layers(),
+            learning_rate: self.get_learning_rate(),
+            number_of_hidden_neurons: self.get_number_of_hidden_neurons(),
+            input_dimensions: self.get_input_dimensions(),
+            number_of_output_neurons: self.get_number_of_output_neurons(),
+            number_of_hidden_layers: self.get_number_of_hidden_layers(),
+            number_data_sets: self.get_number_data_sets(),
+            number_rows_in_data: self.get_number_rows_in_data(),
+            number_columns_in_data: self.get_number_columns_in_data(),
+        }
+    }
 }
 
 pub fn create<T: Debug + Clone + Zero + From<f64>>(
@@ -64,21 +112,21 @@ pub fn forward<'a, T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
             if matches!(layers[i].layer_type, LayerType::InputLayer) {
                 layers[i].input_data[input_index] = data_structs[input_index].get_input();
                 layers[i].inactivated_output[input_index] =
-                    matrix_generic::multiple_generic_2d(&data_structs[input_index].get_input(),
-                                                        &layers[i].input_weights.clone());
+                    matrix::multiple_generic_2d(&data_structs[input_index].get_input(),
+                                                &layers[i].input_weights.clone());
             } else {
                 layers[i].input_data[input_index] = layers[i - 1].activated_output[input_index].clone();
                 layers[i].inactivated_output[input_index] =
-                    matrix_generic::multiple_generic_2d(&layers[i - 1].activated_output[input_index],
-                                                        &layers[i].input_weights.clone());
+                    matrix::multiple_generic_2d(&layers[i - 1].activated_output[input_index],
+                                                &layers[i].input_weights.clone());
             }
 
-            layers[i].inactivated_output[input_index] = matrix_generic::add(&layers[i].inactivated_output[input_index], &layers[i].layer_bias);
+            layers[i].inactivated_output[input_index] = matrix::add(&layers[i].inactivated_output[input_index], &layers[i].layer_bias);
             layers[i].activated_output[input_index] = sigmoid(&layers[i].inactivated_output[input_index]);
 
             if matches!(layers[i].layer_type, LayerType::OutputLayer) {
-                let errors = matrix_generic::get_error(&data_structs[input_index].get_target(),
-                                                       &layers[i].activated_output[input_index]);
+                let errors = matrix::get_error(&data_structs[input_index].get_target(),
+                                               &layers[i].activated_output[input_index]);
 
                 layers[i].errors[input_index] = errors;
 
