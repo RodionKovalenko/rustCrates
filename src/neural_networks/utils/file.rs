@@ -31,7 +31,11 @@ pub fn serialize(feed_net: &FeedforwardNetwork<f64>) {
     }
 
     let data_json = String::from(format!("{}", serde_json::to_string(&network).unwrap()));
-    file.write_all(data_json.as_bytes());
+
+    match file.write_all(data_json.as_bytes()) {
+        Err(e) => println!("{:?}", e),
+        _ => ()
+    }
 }
 
 pub fn deserialize(network: FeedforwardNetwork<f64>) -> FeedforwardNetwork<f64> {

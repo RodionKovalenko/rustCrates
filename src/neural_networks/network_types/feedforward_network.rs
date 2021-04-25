@@ -48,6 +48,9 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
 
     for input_index in 0..data_structs.len() {
         for i in 0..layers.len() {
+            // println!("input size: {}, {}", layers[i].input_data[input_index].len(), layers[i].input_data[input_index][0].len());
+            // println!("weight size: {}, {}", layers[i].input_weights.len(), layers[i].input_weights[0].len());
+
             if matches!(layers[i].layer_type, LayerType::InputLayer) {
                 layers[i].input_data[input_index] = data_structs[input_index].get_input();
                 layers[i].inactivated_output[input_index] =
@@ -129,46 +132,22 @@ pub fn train(data_structs: &mut Vec<Data<f64>>,
     serialize(&feed_net);
 }
 
-pub fn initialize() {
-    let num_iterations = 8000;
-    let input: Vec<Vec<Vec<f64>>> = vec![
-        vec![vec![1.0, 0.0]],
-        vec![vec![0.0, 0.0]],
-        vec![vec![0.0, 1.0]],
-        vec![vec![1.0, 1.0]]
-    ];
+pub fn initialize_network(data_structs: &mut Vec<Data<f64>>,
+                          num_hidden_layers: i8,
+                          num_hidden_neurons: usize,
+                          num_output_neurons: usize,
+                          learning_rate: f32) -> FeedforwardNetwork<f64> {
+    let number_of_hidden_layers = num_hidden_layers;
+    let number_of_output_neurons = num_output_neurons;
+    let mut number_of_hidden_neurons = num_hidden_neurons;
+    let number_of_data_sets = data_structs.len() as i32;
+    let number_rows_in_set = data_structs[0].input.len() as i32;
+    let num_columns_in_set = data_structs[0].input[0].len() as i32;
+    let input_dimensions = vec![number_rows_in_set as usize,
+                                num_columns_in_set as usize,
+                                number_of_data_sets as usize];
 
-    let targets = vec![
-        vec![1.0],
-        vec![0.0],
-        vec![1.0],
-        vec![0.0],
-    ];
-    let parsed_input = input;
-    let mut input_struct;
-    let mut data_structs = vec![];
-
-    for i in 0..parsed_input.len() {
-        input_struct = input::Data {
-            input: parsed_input[i].clone(),
-            target: vec![targets[i].clone()],
-        };
-
-        data_structs.push(input_struct);
-    }
-
-    println!("parsed input size:  {}, {}, {}", parsed_input.len(), parsed_input[0].len(), parsed_input[0][0].len());
-
-    let number_of_hidden_layers = 1;
-    let input_dimensions = vec![parsed_input[0].len(), parsed_input[0][0].len(), parsed_input.len()];
-    let number_of_output_neurons = targets[0].len();
-    let mut number_of_hidden_neurons = 20;
-    let number_of_data_sets = parsed_input.len() as i32;
-    let number_rows_in_set = parsed_input[0].len() as i32;
-    let num_columns_in_set = parsed_input[0][0].len() as i32;
-    let learning_rate = 0.1;
-
-    let mut feedforward_network: FeedforwardNetwork<f64> =
+    let feedforward_network: FeedforwardNetwork<f64> =
         create(
             number_of_hidden_layers,
             number_of_hidden_neurons,
@@ -180,7 +159,7 @@ pub fn initialize() {
             learning_rate,
         );
 
-  let mut saved_network: FeedforwardNetwork<f64> = deserialize(feedforward_network);
+    let mut saved_network: FeedforwardNetwork<f64> = deserialize(feedforward_network);
 
     for i in 0..saved_network.layers.len() {
         let layer_type = layer::get_layer_type(
@@ -195,5 +174,5 @@ pub fn initialize() {
                                                                number_of_data_sets as usize);
     }
 
-    train(&mut data_structs, &mut saved_network, num_iterations);
+    saved_network
 }

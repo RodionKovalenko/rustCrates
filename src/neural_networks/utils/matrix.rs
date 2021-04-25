@@ -8,6 +8,9 @@ pub fn multiple(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<f64>>)
     let matrix_a_clone = matrix_a.clone();
     let mut matrix_b_clone = matrix_b.clone();
 
+    println!("matrix a : {}, {}", matrix_a.len(), matrix_a[0].len());
+    println!("matrix b : {}, {}", matrix_b.len(), matrix_b[0].len());
+
     if matrix_a[0].len() != matrix_b.len() && matrix_a[0].len() != matrix_b[0].len() {
         panic!("Matrix A does not have the same number of columns as Matrix B rows.");
     }
@@ -41,6 +44,9 @@ pub fn multiple_generic_2d<T: Debug + Clone + Mul<Output=T> + AddAssign + From<f
     let mut num_columns = matrix_b[0].len();
     let matrix_a_clone: Vec<Vec<T>> = matrix_a.clone();
     let mut matrix_b_clone: Vec<Vec<T>> = matrix_b.clone();
+
+    // println!("matrix a : {}, {}", matrix_a.len(), matrix_a[0].len());
+    // println!("matrix b : {}, {}", matrix_b.len(), matrix_b[0].len());
 
     if matrix_a[0].len() != matrix_b.len() && matrix_a[0].len() != matrix_b[0].len() {
         panic!("Matrix A does not have the same number of columns as Matrix B rows.");
