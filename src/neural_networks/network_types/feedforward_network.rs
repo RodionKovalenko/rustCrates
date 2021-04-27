@@ -9,6 +9,7 @@ use matrix::parse_2dim_to_float;
 use crate::network_types::feedforward_network_generic::FeedforwardNetwork;
 use crate::utils::file::{serialize, deserialize};
 use crate::utils::matrix::create_generic_3d;
+use crate::utils::activation::{tanh_value, tanh};
 
 #[allow(unused_imports)]
 pub const FILE_NAME: &str = "feedforward_network.json";
@@ -48,6 +49,7 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
 
     for input_index in 0..data_structs.len() {
         for i in 0..layers.len() {
+            // println!("layer  {:?}", layers[i].layer_type);
             // println!("input size: {}, {}", layers[i].input_data[input_index].len(), layers[i].input_data[input_index][0].len());
             // println!("weight size: {}, {}", layers[i].input_weights.len(), layers[i].input_weights[0].len());
 
@@ -64,7 +66,17 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
             }
 
             layers[i].inactivated_output[input_index] = matrix::add(&layers[i].inactivated_output[input_index], &layers[i].layer_bias);
-            layers[i].activated_output[input_index] = sigmoid(&layers[i].inactivated_output[input_index]);
+
+         //  if !matches!(layers[i].layer_type, LayerType::OutputLayer) {
+                layers[i].activated_output[input_index] = tanh(&layers[i].inactivated_output[input_index]);
+            // } else {
+            //     layers[i].activated_output[input_index] = layers[i].inactivated_output[input_index].clone();
+            // }
+
+            // println!("output size: {}, {}", layers[i].inactivated_output[input_index].len(),
+            //          layers[i].inactivated_output[input_index][0].len());
+            //
+            // println!("");
 
             if matches!(layers[i].layer_type, LayerType::OutputLayer) {
                 let errors = matrix::get_error(&data_structs[input_index].get_target(),
@@ -89,17 +101,19 @@ pub fn train(data_structs: &mut Vec<Data<f64>>,
             forward(data_structs, feed_net);
             let mut total_loss = 0.0;
             for ind in 0..data_structs.len() {
-                // println!("target: {:?}", &data_structs[ind].get_target());
-                // println!("activated output {:?}", layers[i].activated_output[ind]);
-                // println!("error {:?}", layers[i].errors[ind]);
+                if _iter % 1000 == 0 {
+                    println!("target: {:?}", &data_structs[ind].get_target());
+                    println!("activated output {:?}",
+                             feed_net.layers[feed_net.layers.len() - 1].activated_output[ind]);
+                }
                 for e in 0..feed_net.layers[feed_net.layers.len() - 1].errors[ind].len() {
                     total_loss += abs(feed_net.layers[feed_net.layers.len() - 1].errors[ind][e]);
                 }
             }
             println!("total loss: {}", total_loss);
-
-            feed_net.learning_rate *= 0.99;
+            println!("propress: {} %", (_iter as f64 / num_iteration as f64) * 100.0);
             if total_loss <= 0.05 {
+                serialize(&feed_net);
                 break;
             }
         } else {
@@ -147,6 +161,8 @@ pub fn initialize_network(data_structs: &mut Vec<Data<f64>>,
                                 num_columns_in_set as usize,
                                 number_of_data_sets as usize];
 
+    println!("input dimenstions: {}, {}, {}", input_dimensions[0], input_dimensions[1], input_dimensions[2]);
+
     let feedforward_network: FeedforwardNetwork<f64> =
         create(
             number_of_hidden_layers,
@@ -169,6 +185,7 @@ pub fn initialize_network(data_structs: &mut Vec<Data<f64>>,
         if matches!(layer_type, LayerType::OutputLayer) {
             number_of_hidden_neurons = number_of_output_neurons;
         }
+        saved_network.learning_rate = learning_rate;
         saved_network.layers[i].input_data = create_generic_3d(number_rows_in_set as usize,
                                                                number_of_hidden_neurons,
                                                                number_of_data_sets as usize);

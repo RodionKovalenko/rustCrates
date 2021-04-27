@@ -117,7 +117,6 @@ pub fn get_median_3d(matx: &Vec<Vec<Vec<f64>>>) -> f64 {
 pub fn unfold_2d(matx: &Vec<Vec<f64>>) -> Vec<f64> {
     let mut result: Vec<f64> = create_generic_one_dim(matx.len() * matx[0].len());
 
-
     let mut ind = 0;
     for i in 0..matx.len() {
         for j in 0..matx[0].len() {
@@ -128,6 +127,7 @@ pub fn unfold_2d(matx: &Vec<Vec<f64>>) -> Vec<f64> {
 
     result.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
+    //println!("matrix sorted: {:?} ", result);
     result
 }
 
@@ -145,26 +145,32 @@ pub fn unfold_3d(matx: &Vec<Vec<Vec<f64>>>) -> Vec<f64> {
     }
     result.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-    println!("unfolded: {:?}", result);
+    // println!("unfolded: {:?}", result);
 
     result
 }
 
 
 pub fn normalize_max_mean(matr: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
-    let result = unfold_2d(&matr);
+    let tranposed = transpose(matr);
     let mut normalized_m = create_2d(matr.len(), matr[0].len());
-    let max = result[result.len() - 1];
-    let min = result[0];
 
-    for i in 0..matr.len() {
-        for j in 0..matr[0].len() {
-            normalized_m[i][j] = (matr[i][j] - min) / (max - min);
+    for i in 0..tranposed.len() {
+        let mut column: Vec<f64> = tranposed[i].clone();
+        column.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+        let max = column[column.len() - 1];
+        let min = column[0];
+
+        for j in 0..tranposed[0].len() {
+            normalized_m[j][i] = (tranposed[i][j] - min) / (max - min);
+
+            if normalized_m[j][i] > 1.0 {
+                println!("initial value: {}, max: {}, min: {}", matr[i][j], max, min);
+                panic!("normalization failed because the value is larger than 1");
+            }
         }
     }
-
-    println!("max: {}", max);
-    println!("min: {}", min);
 
     normalized_m
 }

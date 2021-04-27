@@ -8,6 +8,7 @@ use serde::{Serialize, Deserialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ActivationType {
     SIGMOID,
+    TANH,
     LINEAR,
 }
 
@@ -32,6 +33,7 @@ pub struct Layer<T> {
     pub next_layer: Option<Box<Layer<T>>>,
     pub input_data: Vec<Vec<Vec<T>>>,
     pub previous_gradient: Vec<Vec<T>>,
+    pub rmsp_p: T,
 }
 
 impl<T: Debug + Clone + From<f64>> Layer<T> {
@@ -71,6 +73,9 @@ impl<T: Debug + Clone + From<f64>> Layer<T> {
     pub fn get_previous_gradient(&self) -> Vec<Vec<T>> {
         self.previous_gradient.clone()
     }
+    pub fn get_rmsp_p(&self) -> T {
+        self.rmsp_p.clone()
+    }
 }
 
 impl<T: Debug + Clone + From<f64>> Clone for Layer<T> {
@@ -88,6 +93,7 @@ impl<T: Debug + Clone + From<f64>> Clone for Layer<T> {
             next_layer: self.get_next_layer(),
             input_data: self.get_input_data(),
             previous_gradient: self.get_previous_gradient(),
+            rmsp_p: self.get_rmsp_p(),
         }
     }
 }
@@ -126,12 +132,13 @@ pub fn initialize_layer<T: Debug + Clone + Zero + From<f64>>
             layer_bias: create_generic_one_dim(num_hidden_neurons),
             gradient: create_generic(num_columns, num_hidden_neurons),
             errors: create_generic(feed_net.input_dimensions[2], num_hidden_neurons),
-            activation_type: ActivationType::SIGMOID,
+            activation_type: ActivationType::TANH,
             layer_type,
             previous_layer: None,
             next_layer: None,
             input_data: create_generic_3d(num_rows, num_hidden_neurons, feed_net.input_dimensions[2]),
             previous_gradient: create_generic(num_columns, num_hidden_neurons),
+            rmsp_p: T::from(0.0)
         };
 
         layers.push(input_layer);
