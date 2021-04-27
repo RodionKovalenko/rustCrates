@@ -9,6 +9,9 @@ pub fn get_derivative<T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
     if matches!(deriv_type, ActivationType::SIGMOID) {
         derivative = value.clone() * (T::from(1.0) - value.clone())
     }
+    if matches!(deriv_type, ActivationType::TANH) {
+        derivative = (T::from(1.0) - (value.clone() * value.clone()))
+    }
 
     derivative
 }

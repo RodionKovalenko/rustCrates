@@ -6,10 +6,14 @@ use rand::Rng;
 pub fn calculate_gradient(layers: &mut Vec<Layer<f64>>,
                           layer_ind: usize,
                           num_sets: usize,
-                          learn_rate: f64) -> Vec<Vec<f64>> {
+                          mut learn_rate: f64) -> Vec<Vec<f64>> {
     let mut layer = layers[layer_ind].clone();
     let mut rng = rand::thread_rng();
-    let ada_grad_optimizer;
+    let gamma = 0.6;
+    let p = 0.7;
+    let ada_grad_optimizer = 0.0;
+    let mut delta_theta;
+    let mut r_sqrt = 0.0;
 
     // println!("input size: {}, {}, {}", layer.input_data.len(), layer.input_data[0].len(), layer.input_data[0][0].len());
     // println!("errors size: {}, {}", layer.errors.len(), layer.errors[0].len());
@@ -28,28 +32,30 @@ pub fn calculate_gradient(layers: &mut Vec<Layer<f64>>,
             }
         }
 
-        ada_grad_optimizer = get_ada_grad_optimizer(&layer.gradient);
+        // ada_grad_optimizer = get_ada_grad_optimizer(&layer.gradient);
+        r_sqrt = get_r_rms_prop(&layer.gradient, p, layer.rmsp_p);
+        learn_rate = learn_rate / r_sqrt;
+        layer.rmsp_p = r_sqrt;
 
         // update weights and bias
-        for inp_set_ind in 0..num_sets {
-            for j in 0..layer.input_weights[0].len() {
-                for i in 0..layer.input_weights.len() {
-                    // dropout
-                    if rng.gen_bool(0.05) {
-                        continue;
-                    }
-                    // update layer weights
-                    layer.input_weights[i][j] -=
-                        (layer.gradient[i][j] * (learn_rate / ada_grad_optimizer)
-                            + layer.previous_gradient[i][j] * (learn_rate / ada_grad_optimizer)) /
-                            num_sets as f64;
-                    // momentum
-                    layer.previous_gradient[i][j] = layer.gradient[i][j];
+        for j in 0..layer.input_weights[0].len() {
+            for i in 0..layer.input_weights.len() {
+                // dropout
+                if rng.gen_bool(0.05) {
+                    continue;
                 }
-                // update bias
+                // update layer weights
+                delta_theta = ((gamma * layer.previous_gradient[i][j]) -
+                    (layer.gradient[i][j] * learn_rate))
+                    / num_sets as f64;
+                layer.input_weights[i][j] += delta_theta;
+                // momentum
+                layer.previous_gradient[i][j] = delta_theta;
+            }
+            // update bias
+            for inp_set_ind in 0..num_sets {
                 layer.layer_bias[j] -=
-                    ((learn_rate / ada_grad_optimizer)
-                        * layer.errors[inp_set_ind][j]) / num_sets as f64;
+                    (learn_rate * layer.errors[inp_set_ind][j]) / num_sets as f64;
             }
         }
     } else {
@@ -78,28 +84,31 @@ pub fn calculate_gradient(layers: &mut Vec<Layer<f64>>,
                 }
             }
         }
-        ada_grad_optimizer = get_ada_grad_optimizer(&layer.gradient);
+        // ada_grad_optimizer = get_ada_grad_optimizer(&layer.gradient);
+        r_sqrt = get_r_rms_prop(&layer.gradient, p, layer.rmsp_p);
+        learn_rate = learn_rate / r_sqrt;
+        layer.rmsp_p = r_sqrt;
 
         // update weights and bias
-        for inp_set_ind in 0..num_sets {
-            for j in 0..layer.input_weights[0].len() {
-                for i in 0..layer.input_weights.len() {
-                    // dropout
-                    if rng.gen_bool(0.05) {
-                        continue;
-                    }
-                    // update layer weights
-                    layer.input_weights[i][j] -=
-                        (layer.gradient[i][j] * (learn_rate / ada_grad_optimizer)
-                            + layer.previous_gradient[i][j] * (learn_rate / ada_grad_optimizer))
-                            / num_sets as f64;
-                    // momentum
-                    layer.previous_gradient[i][j] = layer.gradient[i][j];
+        for j in 0..layer.input_weights[0].len() {
+            for i in 0..layer.input_weights.len() {
+                // dropout
+                if rng.gen_bool(0.05) {
+                    continue;
                 }
-                // update bias
+                // update layer weights
+                // update layer weights
+                delta_theta = ((gamma * layer.previous_gradient[i][j]) -
+                    (layer.gradient[i][j] * learn_rate))
+                    / num_sets as f64;
+                layer.input_weights[i][j] += delta_theta;
+                // momentum
+                layer.previous_gradient[i][j] = delta_theta;
+            }
+            // update bias
+            for inp_set_ind in 0..num_sets {
                 layer.layer_bias[j] -=
-                    ((learn_rate / ada_grad_optimizer)
-                        * layer.errors[inp_set_ind][j]) / num_sets as f64;
+                    (learn_rate * layer.errors[inp_set_ind][j]) / num_sets as f64;
             }
         }
     }
@@ -110,11 +119,25 @@ pub fn calculate_gradient(layers: &mut Vec<Layer<f64>>,
 pub fn get_ada_grad_optimizer(gradients: &Vec<Vec<f64>>) -> f64 {
     // https://mlfromscratch.com/optimizers-explained/#/
     // sum must not be null, because of sqrt
-    let mut sum = 0.05;
+    let mut sum = 0.0000000005;
 
     for i in 0..gradients.len() {
         for j in 0..gradients[0].len() {
             sum += gradients[i][j] * gradients[i][j];
+        }
+    }
+
+    sum.sqrt()
+}
+
+pub fn get_r_rms_prop(gradients: &Vec<Vec<f64>>, p: f64, r: f64) -> f64 {
+    // https://mlfromscratch.com/optimizers-explained/#/
+    // sum must not be null, because of sqrt
+    let mut sum = 0.0000005;
+
+    for i in 0..gradients.len() {
+        for j in 0..gradients[0].len() {
+            sum += p * r + (1.0 - p) * gradients[i][j] * gradients[i][j];
         }
     }
 
