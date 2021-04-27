@@ -68,9 +68,9 @@ pub fn start_neural_network() {
     let mut feed_net: FeedforwardNetwork<f64> = feedforward_network::initialize_network(
         &mut data_structs,
         1,
-        30,
+        40,
         1,
-        0.9,
+        0.7,
     );
 
     train(&mut data_structs, &mut feed_net, num_iterations);

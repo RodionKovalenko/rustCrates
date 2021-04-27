@@ -138,7 +138,7 @@ pub fn initialize_layer<T: Debug + Clone + Zero + From<f64>>
             next_layer: None,
             input_data: create_generic_3d(num_rows, num_hidden_neurons, feed_net.input_dimensions[2]),
             previous_gradient: create_generic(num_columns, num_hidden_neurons),
-            rmsp_p: T::from(0.0)
+            rmsp_p: T::from(0.0000001)
         };
 
         layers.push(input_layer);
