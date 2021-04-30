@@ -43,8 +43,7 @@ pub fn calculate_gradient(layers: &mut Vec<Layer<f64>>,
             }
         }
 
-        // ada_grad_optimizer = get_ada_grad_optimizer(&layer.gradient);
-        // learn_rate = learn_rate / ada_grad_optimizer;
+        //ada_grad_optimizer = get_ada_grad_optimizer(&layer.gradient);
 
         // update weights and bias
         for j in 0..layer.input_weights[0].len() {
@@ -58,14 +57,14 @@ pub fn calculate_gradient(layers: &mut Vec<Layer<f64>>,
 
                 // print!("m1, {}", m1);
                 // print!("v1, {}", v1);
-
                 m_hat = m1 / (1.0 - b1.powf((iter + 1) as f64));
                 v_hat = v1 / (1.0 - b2.powf((iter + 1) as f64));
                 delta_theta = ((learn_rate * m_hat) / (v_hat.sqrt() + e));
                 layer.input_weights[i][j] -= delta_theta;
+                // momentum
                 layer.previous_gradient[i][j] = layer.gradient[i][j];
-                layer.m1[i][j] = m1 + e;
-                layer.v1[i][j] = v1 + e;
+                layer.m1[i][j] = m1;
+                layer.v1[i][j] = v1;
             }
             // update bias
             for inp_set_ind in 0..num_sets {
@@ -100,8 +99,7 @@ pub fn calculate_gradient(layers: &mut Vec<Layer<f64>>,
             }
         }
 
-        // ada_grad_optimizer = get_ada_grad_optimizer(&layer.gradient);
-        // learn_rate = learn_rate / ada_grad_optimizer;
+        //ada_grad_optimizer = get_ada_grad_optimizer(&layer.gradient);
 
         // update weights and bias
         for j in 0..layer.input_weights[0].len() {
@@ -118,6 +116,7 @@ pub fn calculate_gradient(layers: &mut Vec<Layer<f64>>,
                 v_hat = v1 / (1.0 - b2.powf((iter + 1) as f64));
                 delta_theta = ((learn_rate * m_hat) / (v_hat.sqrt() + e));
                 layer.input_weights[i][j] -= delta_theta;
+                // momentum
                 layer.previous_gradient[i][j] = layer.gradient[i][j];
                 layer.m1[i][j] = m1;
                 layer.v1[i][j] = v1;
