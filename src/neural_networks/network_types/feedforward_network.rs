@@ -101,13 +101,13 @@ pub fn train(data_structs: &mut Vec<Data<f64>>,
             forward(data_structs, feed_net);
             let mut total_loss = 0.0;
             for ind in 0..data_structs.len() {
-                // if _iter % 1000 == 0 {
-                //     println!("target: {:?}", &data_structs[ind].get_target());
-                //     println!("activated output {:?}",
-                //              feed_net.layers[feed_net.layers.len() - 1].activated_output[ind]);
-                // }
+                if _iter % 5000 == 0 {
+                    println!("target: {:?}", &data_structs[ind].get_target());
+                    println!("activated output {:?}",
+                             feed_net.layers[feed_net.layers.len() - 1].activated_output[ind]);
+                }
                 for e in 0..feed_net.layers[feed_net.layers.len() - 1].errors[ind].len() {
-                    total_loss += abs(feed_net.layers[feed_net.layers.len() - 1].errors[ind][e]);
+                    total_loss += (feed_net.layers[feed_net.layers.len() - 1].errors[ind][e]).powf(2.0);
                 }
             }
             println!("total loss: {}", total_loss);
