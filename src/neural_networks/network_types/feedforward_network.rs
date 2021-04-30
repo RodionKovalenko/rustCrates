@@ -22,6 +22,7 @@ pub fn create(
     number_data_sets: i32,
     number_rows_in_data: i32,
     number_columns_in_data: i32,
+    minibatch_size: usize,
     learning_rate: f32,
 ) -> FeedforwardNetwork<f64> {
     let layers = vec![];
@@ -36,6 +37,7 @@ pub fn create(
         number_data_sets,
         number_rows_in_data,
         number_columns_in_data,
+        minibatch_size,
     };
 
     layer::initialize_layer(&mut feed_net);
@@ -43,11 +45,18 @@ pub fn create(
 }
 
 pub fn forward(data_structs: &mut Vec<Data<f64>>,
-               feed_net: &'a mut FeedforwardNetwork<f64>)
+               feed_net: &'a mut FeedforwardNetwork<f64>,
+               minibatch_start: usize, minibatch_size: usize)
                -> &'a mut FeedforwardNetwork<f64> {
     let layers: &mut Vec<Layer<f64>> = &mut feed_net.layers;
 
-    for input_index in 0..data_structs.len() {
+    let mut minibatch_end = minibatch_start + minibatch_size;
+
+    if minibatch_end > data_structs.len() {
+        minibatch_end = data_structs.len();
+    }
+
+    for input_index in minibatch_start..minibatch_end {
         for i in 0..layers.len() {
             // println!("layer  {:?}", layers[i].layer_type);
             // println!("input size: {}, {}", layers[i].input_data[input_index].len(), layers[i].input_data[input_index][0].len());
@@ -67,8 +76,8 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
 
             layers[i].inactivated_output[input_index] = matrix::add(&layers[i].inactivated_output[input_index], &layers[i].layer_bias);
 
-         //   if !matches!(layers[i].layer_type, LayerType::OutputLayer) {
-                layers[i].activated_output[input_index] = tanh(&layers[i].inactivated_output[input_index]);
+            //   if !matches!(layers[i].layer_type, LayerType::OutputLayer) {
+            layers[i].activated_output[input_index] = tanh(&layers[i].inactivated_output[input_index]);
             // } else {
             //     layers[i].activated_output[input_index] = layers[i].inactivated_output[input_index].clone();
             // }
@@ -93,12 +102,28 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
 
 pub fn train(data_structs: &mut Vec<Data<f64>>,
              feed_net: &'a mut FeedforwardNetwork<f64>,
+             minibatch_size: usize,
              num_iteration: i32) {
     println!("Training beginns");
 
+    let mut minibatch_start: usize = 0;
     for _iter in 0..num_iteration {
+        for minibatch_ind in 0..(data_structs.len() / minibatch_size) + 1 {
+            minibatch_start = minibatch_ind * minibatch_size;
+            forward(data_structs, feed_net, minibatch_start, minibatch_size);
+
+            for i in range(0, feed_net.layers.len()).rev() {
+                train::calculate_gradient(&mut feed_net.layers, i,
+                                          data_structs.len(),
+                                          feed_net.learning_rate as f64,
+                                          _iter,
+                                          minibatch_start,
+                                          minibatch_size,
+                );
+            }
+        }
+
         if _iter % 100 == 0 {
-            forward(data_structs, feed_net);
             let mut total_loss = 0.0;
             for ind in 0..data_structs.len() {
                 if _iter % 5000 == 0 {
@@ -116,16 +141,6 @@ pub fn train(data_structs: &mut Vec<Data<f64>>,
                 serialize(&feed_net);
                 break;
             }
-        } else {
-            forward(data_structs, feed_net);
-        }
-
-        for i in range(0, feed_net.layers.len()).rev() {
-            train::calculate_gradient(&mut feed_net.layers, i,
-                                      data_structs.len(),
-                                      feed_net.learning_rate as f64,
-                                      _iter,
-            );
         }
 
         // clear errors and gradients after update
@@ -143,7 +158,6 @@ pub fn train(data_structs: &mut Vec<Data<f64>>,
         }
     }
 
-    forward(data_structs, feed_net);
     // serialize network
     serialize(&feed_net);
 }
@@ -152,6 +166,7 @@ pub fn initialize_network(data_structs: &mut Vec<Data<f64>>,
                           num_hidden_layers: i8,
                           num_hidden_neurons: usize,
                           num_output_neurons: usize,
+                          minibatch_size: usize,
                           learning_rate: f32) -> FeedforwardNetwork<f64> {
     let number_of_hidden_layers = num_hidden_layers;
     let number_of_output_neurons = num_output_neurons;
@@ -174,6 +189,7 @@ pub fn initialize_network(data_structs: &mut Vec<Data<f64>>,
             number_of_data_sets,
             number_rows_in_set,
             num_columns_in_set,
+            minibatch_size,
             learning_rate,
         );
 
