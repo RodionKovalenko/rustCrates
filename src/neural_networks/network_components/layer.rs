@@ -33,7 +33,8 @@ pub struct Layer<T> {
     pub next_layer: Option<Box<Layer<T>>>,
     pub input_data: Vec<Vec<Vec<T>>>,
     pub previous_gradient: Vec<Vec<T>>,
-    pub rmsp_p: T,
+    pub m1: Vec<Vec<T>>,
+    pub v1: Vec<Vec<T>>,
 }
 
 impl<T: Debug + Clone + From<f64>> Layer<T> {
@@ -73,8 +74,11 @@ impl<T: Debug + Clone + From<f64>> Layer<T> {
     pub fn get_previous_gradient(&self) -> Vec<Vec<T>> {
         self.previous_gradient.clone()
     }
-    pub fn get_rmsp_p(&self) -> T {
-        self.rmsp_p.clone()
+    pub fn get_m1(&self) -> Vec<Vec<T>> {
+        self.m1.clone()
+    }
+    pub fn get_v1(&self) -> Vec<Vec<T>> {
+        self.v1.clone()
     }
 }
 
@@ -93,7 +97,8 @@ impl<T: Debug + Clone + From<f64>> Clone for Layer<T> {
             next_layer: self.get_next_layer(),
             input_data: self.get_input_data(),
             previous_gradient: self.get_previous_gradient(),
-            rmsp_p: self.get_rmsp_p(),
+            m1: self.get_m1(),
+            v1: self.get_v1(),
         }
     }
 }
@@ -138,7 +143,10 @@ pub fn initialize_layer<T: Debug + Clone + Zero + From<f64>>
             next_layer: None,
             input_data: create_generic_3d(num_rows, num_hidden_neurons, feed_net.input_dimensions[2]),
             previous_gradient: create_generic(num_columns, num_hidden_neurons),
-            rmsp_p: T::from(0.0000001)
+            m1: initialize_weights(num_columns,
+                                   num_hidden_neurons),
+            v1: initialize_weights(num_columns,
+                                   num_hidden_neurons),
         };
 
         layers.push(input_layer);

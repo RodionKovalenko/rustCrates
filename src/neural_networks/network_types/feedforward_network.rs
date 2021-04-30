@@ -67,7 +67,7 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
 
             layers[i].inactivated_output[input_index] = matrix::add(&layers[i].inactivated_output[input_index], &layers[i].layer_bias);
 
-         //  if !matches!(layers[i].layer_type, LayerType::OutputLayer) {
+         //   if !matches!(layers[i].layer_type, LayerType::OutputLayer) {
                 layers[i].activated_output[input_index] = tanh(&layers[i].inactivated_output[input_index]);
             // } else {
             //     layers[i].activated_output[input_index] = layers[i].inactivated_output[input_index].clone();
@@ -101,11 +101,11 @@ pub fn train(data_structs: &mut Vec<Data<f64>>,
             forward(data_structs, feed_net);
             let mut total_loss = 0.0;
             for ind in 0..data_structs.len() {
-                if _iter % 1000 == 0 {
-                    println!("target: {:?}", &data_structs[ind].get_target());
-                    println!("activated output {:?}",
-                             feed_net.layers[feed_net.layers.len() - 1].activated_output[ind]);
-                }
+                // if _iter % 1000 == 0 {
+                //     println!("target: {:?}", &data_structs[ind].get_target());
+                //     println!("activated output {:?}",
+                //              feed_net.layers[feed_net.layers.len() - 1].activated_output[ind]);
+                // }
                 for e in 0..feed_net.layers[feed_net.layers.len() - 1].errors[ind].len() {
                     total_loss += abs(feed_net.layers[feed_net.layers.len() - 1].errors[ind][e]);
                 }
@@ -123,7 +123,9 @@ pub fn train(data_structs: &mut Vec<Data<f64>>,
         for i in range(0, feed_net.layers.len()).rev() {
             train::calculate_gradient(&mut feed_net.layers, i,
                                       data_structs.len(),
-                                      feed_net.learning_rate as f64);
+                                      feed_net.learning_rate as f64,
+                                      _iter,
+            );
         }
 
         // clear errors and gradients after update
