@@ -64,16 +64,18 @@ pub fn start_neural_network() {
     let now = Instant::now();
     let num_iterations = 20000;
     let mut data_structs = initalize_data_sets();
+    let minibatch_size = 50;
 
     let mut feed_net: FeedforwardNetwork<f64> = feedforward_network::initialize_network(
         &mut data_structs,
         1,
         40,
         1,
-        0.01,
+        minibatch_size,
+        0.001,
     );
 
-    train(&mut data_structs, &mut feed_net, num_iterations);
+    train(&mut data_structs, &mut feed_net, minibatch_size, num_iterations);
 
     println!("time elapsed {}", now.elapsed().as_secs());
 }
@@ -94,7 +96,7 @@ pub fn initalize_data_sets() -> Vec<Data<f64>> {
         let mut currency_as_string: String = String::from("");
         let currency_as_num;
 
-        if currency[0] == "ETH" && input_data.len() < 20 {
+        if currency[0] == "ETH" {
             if !currency_to_num_map.contains_key(currency[0]) {
                 for c in 0..char_vec.len() {
                     let int_value = char_vec[c] as i32;
