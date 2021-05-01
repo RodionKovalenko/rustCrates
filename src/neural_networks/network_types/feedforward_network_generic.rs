@@ -9,6 +9,7 @@ use num::{Zero, range};
 #[allow(unused_imports)]
 use matrix::parse_2dim_to_float;
 use serde::{Serialize, Deserialize};
+use crate::utils::activation::sigmoid_generic;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FeedforwardNetwork<T> {
@@ -128,8 +129,8 @@ pub fn forward<'a, T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
                                                 &layers[i].input_weights.clone());
             }
 
-            layers[i].inactivated_output[input_index] = matrix::add(&layers[i].inactivated_output[input_index], &layers[i].layer_bias);
-            layers[i].activated_output[input_index] = sigmoid(&layers[i].inactivated_output[input_index]);
+            layers[i].inactivated_output[input_index] = matrix::add_generic(&layers[i].inactivated_output[input_index], &layers[i].layer_bias);
+            layers[i].activated_output[input_index] = sigmoid_generic(&layers[i].inactivated_output[input_index]);
 
             if matches!(layers[i].layer_type, LayerType::OutputLayer) {
                 let errors = matrix::get_error(&data_structs[input_index].get_target(),

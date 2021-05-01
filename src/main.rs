@@ -44,9 +44,9 @@ fn main() {
     println!("Test beginns");
 
     let args: Vec<String> = env::args().collect();
-    println!("{:?}", args[1]);
 
     if args.len() > 1 {
+        println!("{:?}", args[1]);
         let arg1: &str = &*args[1].clone();
 
         match arg1 {

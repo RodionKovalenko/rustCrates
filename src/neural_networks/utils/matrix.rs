@@ -8,8 +8,8 @@ pub fn multiple(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<f64>>)
     let matrix_a_clone = matrix_a.clone();
     let mut matrix_b_clone = matrix_b.clone();
 
-    println!("matrix a : {}, {}", matrix_a.len(), matrix_a[0].len());
-    println!("matrix b : {}, {}", matrix_b.len(), matrix_b[0].len());
+    // println!("matrix a : {}, {}", matrix_a.len(), matrix_a[0].len());
+    // println!("matrix b : {}, {}", matrix_b.len(), matrix_b[0].len());
 
     if matrix_a[0].len() != matrix_b.len() && matrix_a[0].len() != matrix_b[0].len() {
         panic!("Matrix A does not have the same number of columns as Matrix B rows.");
@@ -25,7 +25,7 @@ pub fn multiple(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<f64>>)
         num_rows
     ];
 
-    println!("result matrix rows {}, columns {}", result_matrix.len(), result_matrix[0].len());
+    // println!("result matrix rows {}, columns {}", result_matrix.len(), result_matrix[0].len());
 
     for i in 0..num_rows {
         for j in 0..num_columns {
@@ -238,11 +238,26 @@ pub fn get_error<T: Debug + Clone + Sub<Output=T> + Add<Output=T> + Mul<Output=T
     matrix_result
 }
 
-pub fn add<T: Debug + Clone + Add<Output=T>>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<T>) -> Vec<Vec<T>> {
+pub fn add_generic<T: Debug + Clone + Add<Output=T>>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<T>) -> Vec<Vec<T>> {
     let mut matrix_result: Vec<Vec<T>> = matrix_a.clone();
 
     for j in 0..matrix_a[0].len() {
         matrix_result[0][j] = matrix_result[0][j].clone() + matrix_b[j].clone();
+    }
+
+    // println!("created new matrix is {:?}", matrix_result);
+
+    matrix_result
+}
+
+pub fn add(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<f64>) -> Vec<Vec<f64>> {
+    let mut matrix_result: Vec<Vec<f64>> = vec![
+        vec![0.0; matrix_a[0].len()];
+        matrix_a.len()
+    ];
+
+    for j in 0..matrix_a[0].len() {
+        matrix_result[0][j] = matrix_result[0][j] + matrix_b[j];
     }
 
     // println!("created new matrix is {:?}", matrix_result);
