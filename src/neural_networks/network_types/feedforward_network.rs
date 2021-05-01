@@ -48,8 +48,6 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
                feed_net: &'a mut FeedforwardNetwork<f64>,
                minibatch_start: usize, minibatch_size: usize)
                -> &'a mut FeedforwardNetwork<f64> {
-    let layers: &mut Vec<Layer<f64>> = &mut feed_net.layers;
-
     let mut minibatch_end = minibatch_start + minibatch_size;
 
     if minibatch_end > data_structs.len() {
@@ -57,27 +55,27 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
     }
 
     for input_index in minibatch_start..minibatch_end {
-        for i in 0..layers.len() {
+        for i in 0..feed_net.layers.len() {
             // println!("layer  {:?}", layers[i].layer_type);
             // println!("input size: {}, {}", layers[i].input_data[input_index].len(), layers[i].input_data[input_index][0].len());
             // println!("weight size: {}, {}", layers[i].input_weights.len(), layers[i].input_weights[0].len());
 
-            if matches!(layers[i].layer_type, LayerType::InputLayer) {
-                layers[i].input_data[input_index] = data_structs[input_index].get_input();
-                layers[i].inactivated_output[input_index] =
-                    matrix::multiple_generic_2d(&data_structs[input_index].get_input(),
-                                                &layers[i].input_weights.clone());
+            if matches!(feed_net.layers[i].layer_type, LayerType::InputLayer) {
+                feed_net.layers[i].input_data[input_index] = data_structs[input_index].get_input();
+                feed_net.layers[i].inactivated_output[input_index] =
+                    matrix::multiple(&data_structs[input_index].get_input(),
+                                                &feed_net.layers[i].input_weights);
             } else {
-                layers[i].input_data[input_index] = layers[i - 1].activated_output[input_index].clone();
-                layers[i].inactivated_output[input_index] =
-                    matrix::multiple_generic_2d(&layers[i - 1].activated_output[input_index].clone(),
-                                                &layers[i].input_weights.clone());
+                feed_net.layers[i].input_data[input_index] = feed_net.layers[i - 1].activated_output[input_index].clone();
+                feed_net.layers[i].inactivated_output[input_index] =
+                    matrix::multiple(&feed_net.layers[i - 1].activated_output[input_index],
+                                                &feed_net.layers[i].input_weights);
             }
 
-            layers[i].inactivated_output[input_index] = matrix::add(&layers[i].inactivated_output[input_index], &layers[i].layer_bias);
+            feed_net.layers[i].inactivated_output[input_index] = matrix::add(&feed_net.layers[i].inactivated_output[input_index], &feed_net.layers[i].layer_bias);
 
             //   if !matches!(layers[i].layer_type, LayerType::OutputLayer) {
-            layers[i].activated_output[input_index] = tanh(&layers[i].inactivated_output[input_index]);
+            feed_net.layers[i].activated_output[input_index] = tanh(&feed_net.layers[i].inactivated_output[input_index]);
             // } else {
             //     layers[i].activated_output[input_index] = layers[i].inactivated_output[input_index].clone();
             // }
@@ -87,16 +85,15 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
             //
             // println!("");
 
-            if matches!(layers[i].layer_type, LayerType::OutputLayer) {
+            if matches!(feed_net.layers[i].layer_type, LayerType::OutputLayer) {
                 let errors = matrix::get_error(&data_structs[input_index].get_target(),
-                                               &layers[i].activated_output[input_index]);
+                                               &feed_net.layers[i].activated_output[input_index]);
 
-                layers[i].errors[input_index] = errors;
+                feed_net.layers[i].errors[input_index] = errors;
             }
         }
     }
 
-    feed_net.layers = layers.clone();
     feed_net
 }
 
@@ -110,6 +107,7 @@ pub fn train(data_structs: &mut Vec<Data<f64>>,
     for _iter in 0..num_iteration {
         for minibatch_ind in 0..(data_structs.len() / minibatch_size) + 1 {
             minibatch_start = minibatch_ind * minibatch_size;
+
             forward(data_structs, feed_net, minibatch_start, minibatch_size);
 
             for i in range(0, feed_net.layers.len()).rev() {
