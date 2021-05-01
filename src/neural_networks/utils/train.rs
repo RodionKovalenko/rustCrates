@@ -38,7 +38,8 @@ pub fn calculate_gradient(layers: &mut Vec<Layer<f64>>,
                 for i in 0..layers[layer_ind].input_weights.len() {
                     // calculate gradients and errors for output layer
                     for d in 0..layers[layer_ind].activated_output[inp_set_ind].len() {
-                        layers[layer_ind].gradient[i][j] += (layers[layer_ind].errors[inp_set_ind][j] *
+                        layers[layer_ind].gradient[i][j] +=
+                            (layers[layer_ind].errors[inp_set_ind][j] *
                             layers[layer_ind].input_data[inp_set_ind][d][j]) / num_sets as f64;
                     }
                 }

@@ -56,10 +56,6 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
 
     for input_index in minibatch_start..minibatch_end {
         for i in 0..feed_net.layers.len() {
-            // println!("layer  {:?}", layers[i].layer_type);
-            // println!("input size: {}, {}", layers[i].input_data[input_index].len(), layers[i].input_data[input_index][0].len());
-            // println!("weight size: {}, {}", layers[i].input_weights.len(), layers[i].input_weights[0].len());
-
             if matches!(feed_net.layers[i].layer_type, LayerType::InputLayer) {
                 feed_net.layers[i].input_data[input_index] = data_structs[input_index].get_input();
                 feed_net.layers[i].inactivated_output[input_index] =
@@ -72,24 +68,20 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
                                                 &feed_net.layers[i].input_weights);
             }
 
-            feed_net.layers[i].inactivated_output[input_index] = matrix::add(&feed_net.layers[i].inactivated_output[input_index], &feed_net.layers[i].layer_bias);
+            // add bias
+            feed_net.layers[i].inactivated_output[input_index] = matrix::add(
+                &feed_net.layers[i].inactivated_output[input_index],
+                &feed_net.layers[i].layer_bias);
 
-            //   if !matches!(layers[i].layer_type, LayerType::OutputLayer) {
-            feed_net.layers[i].activated_output[input_index] = tanh(&feed_net.layers[i].inactivated_output[input_index]);
-            // } else {
-            //     layers[i].activated_output[input_index] = layers[i].inactivated_output[input_index].clone();
-            // }
-
-            // println!("output size: {}, {}", layers[i].inactivated_output[input_index].len(),
-            //          layers[i].inactivated_output[input_index][0].len());
-            //
-            // println!("");
+            feed_net.layers[i].activated_output[input_index] = tanh(
+                &feed_net.layers[i].inactivated_output[input_index]);
 
             if matches!(feed_net.layers[i].layer_type, LayerType::OutputLayer) {
                 let errors = matrix::get_error(&data_structs[input_index].get_target(),
                                                &feed_net.layers[i].activated_output[input_index]);
 
                 feed_net.layers[i].errors[input_index] = errors;
+
             }
         }
     }
@@ -124,7 +116,7 @@ pub fn train(data_structs: &mut Vec<Data<f64>>,
         if _iter % 100 == 0 {
             let mut total_loss = 0.0;
             for ind in 0..data_structs.len() {
-                if _iter % 5000 == 0 {
+                if _iter % 500 == 0 {
                     println!("target: {:?}", &data_structs[ind].get_target());
                     println!("activated output {:?}",
                              feed_net.layers[feed_net.layers.len() - 1].activated_output[ind]);
