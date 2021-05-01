@@ -8,7 +8,7 @@ use num::{range, abs};
 use matrix::parse_2dim_to_float;
 use crate::network_types::feedforward_network_generic::FeedforwardNetwork;
 use crate::utils::file::{serialize, deserialize};
-use crate::utils::matrix::create_generic_3d;
+use crate::utils::matrix::{create_generic_3d, create_generic};
 use crate::utils::activation::{tanh_value, tanh};
 
 #[allow(unused_imports)]
@@ -60,12 +60,12 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
                 feed_net.layers[i].input_data[input_index] = data_structs[input_index].get_input();
                 feed_net.layers[i].inactivated_output[input_index] =
                     matrix::multiple(&data_structs[input_index].get_input(),
-                                                &feed_net.layers[i].input_weights);
+                                     &feed_net.layers[i].input_weights);
             } else {
                 feed_net.layers[i].input_data[input_index] = feed_net.layers[i - 1].activated_output[input_index].clone();
                 feed_net.layers[i].inactivated_output[input_index] =
                     matrix::multiple(&feed_net.layers[i - 1].activated_output[input_index],
-                                                &feed_net.layers[i].input_weights);
+                                     &feed_net.layers[i].input_weights);
             }
 
             // add bias
@@ -81,7 +81,6 @@ pub fn forward(data_structs: &mut Vec<Data<f64>>,
                                                &feed_net.layers[i].activated_output[input_index]);
 
                 feed_net.layers[i].errors[input_index] = errors;
-
             }
         }
     }
@@ -193,10 +192,15 @@ pub fn initialize_network(data_structs: &mut Vec<Data<f64>>,
         if matches!(layer_type, LayerType::OutputLayer) {
             number_of_hidden_neurons = number_of_output_neurons;
         }
+        println!("number of hidden neurons: {}", number_of_hidden_neurons);
         saved_network.learning_rate = learning_rate;
         saved_network.layers[i].input_data = create_generic_3d(number_rows_in_set as usize,
                                                                number_of_hidden_neurons,
                                                                number_of_data_sets as usize);
+        saved_network.layers[i].inactivated_output = create_generic_3d(number_rows_in_set as usize, number_of_output_neurons, number_of_data_sets as usize);
+        saved_network.layers[i].activated_output = create_generic_3d(number_rows_in_set as usize,
+                                                                     number_of_output_neurons,
+                                                                     number_of_data_sets as usize);
     }
 
     saved_network
