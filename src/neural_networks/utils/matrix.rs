@@ -251,16 +251,12 @@ pub fn add_generic<T: Debug + Clone + Add<Output=T>>(matrix_a: &Vec<Vec<T>>, mat
 }
 
 pub fn add(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<f64>) -> Vec<Vec<f64>> {
-    let mut matrix_result: Vec<Vec<f64>> = vec![
-        vec![0.0; matrix_a[0].len()];
-        matrix_a.len()
-    ];
-
+    let mut result_m = matrix_a.clone();
     for j in 0..matrix_a[0].len() {
-        matrix_result[0][j] = matrix_result[0][j] + matrix_b[j];
+        result_m[0][j] = result_m[0][j] + matrix_b[j];
     }
 
     // println!("created new matrix is {:?}", matrix_result);
 
-    matrix_result
+    result_m
 }
