@@ -62,7 +62,7 @@ fn main() {
 
 pub fn start_neural_network() {
     let now = Instant::now();
-    let num_iterations = 20000;
+    let num_iterations = 1;
     let mut data_structs = initalize_data_sets();
     let minibatch_size = 50;
 
@@ -170,9 +170,9 @@ pub fn initalize_data_sets() -> Vec<Data<f64>> {
     let normalized_input_data: Vec<Vec<f64>> = normalize_max_mean(&input_data);
     let normalized_target_data: Vec<Vec<f64>> = normalize_max_mean(&target_data);
 
-    println!("normalized input: {:?}", normalized_input_data);
-    println!("");
-    println!("normalized targets: {:?}", normalized_target_data);
+    // println!("normalized input: {:?}", normalized_input_data);
+    // println!("");
+    // println!("normalized targets: {:?}", normalized_target_data);
 
     for i in 0..input_data.len() {
         input_struct = input::Data {
