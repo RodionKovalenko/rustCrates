@@ -44,9 +44,9 @@ fn main() {
     println!("Test beginns");
 
     let args: Vec<String> = env::args().collect();
-    println!("{:?}", args[1]);
 
     if args.len() > 1 {
+        println!("{:?}", args[1]);
         let arg1: &str = &*args[1].clone();
 
         match arg1 {
@@ -62,7 +62,7 @@ fn main() {
 
 pub fn start_neural_network() {
     let now = Instant::now();
-    let num_iterations = 20000;
+    let num_iterations = 1;
     let mut data_structs = initalize_data_sets();
     let minibatch_size = 50;
 
@@ -72,10 +72,14 @@ pub fn start_neural_network() {
         40,
         1,
         minibatch_size,
+<<<<<<< HEAD
         0.003,
+=======
+        0.001,
+>>>>>>> 3c24c4a7f2363809f144d600cecd2417bf77b5e2
     );
 
-    train(&mut data_structs, &mut feed_net, num_iterations);
+    train(&mut data_structs, &mut feed_net, minibatch_size, num_iterations);
 
     println!("time elapsed {}", now.elapsed().as_secs());
 }
@@ -171,9 +175,9 @@ pub fn initalize_data_sets() -> Vec<Data<f64>> {
     let normalized_input_data: Vec<Vec<f64>> = normalize_max_mean(&input_data);
     let normalized_target_data: Vec<Vec<f64>> = normalize_max_mean(&target_data);
 
-    println!("normalized input: {:?}", normalized_input_data);
-    println!("");
-    println!("normalized targets: {:?}", normalized_target_data);
+    // println!("normalized input: {:?}", normalized_input_data);
+    // println!("");
+    // println!("normalized targets: {:?}", normalized_target_data);
 
     for i in 0..input_data.len() {
         input_struct = input::Data {
