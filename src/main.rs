@@ -64,13 +64,15 @@ pub fn start_neural_network() {
     let now = Instant::now();
     let num_iterations = 20000;
     let mut data_structs = initalize_data_sets();
+    let minibatch_size = 50;
 
     let mut feed_net: FeedforwardNetwork<f64> = feedforward_network::initialize_network(
         &mut data_structs,
         1,
         40,
         1,
-        0.01,
+        minibatch_size,
+        0.003,
     );
 
     train(&mut data_structs, &mut feed_net, num_iterations);
@@ -94,7 +96,7 @@ pub fn initalize_data_sets() -> Vec<Data<f64>> {
         let mut currency_as_string: String = String::from("");
         let currency_as_num;
 
-        if currency[0] == "ETH" && input_data.len() < 20 {
+        if currency[0] == "ETH" {
             if !currency_to_num_map.contains_key(currency[0]) {
                 for c in 0..char_vec.len() {
                     let int_value = char_vec[c] as i32;
@@ -126,7 +128,8 @@ pub fn initalize_data_sets() -> Vec<Data<f64>> {
             // ]);
             // target_data.push(vec![rng.gen_range(0.0,1.0) as f64]);
         }
-    }
+     }
+
 
     // input_data.push(vec![
     //     0.05,

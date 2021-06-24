@@ -25,6 +25,7 @@ pub struct FeedforwardNetwork<T> {
     pub number_data_sets: i32,
     pub number_rows_in_data: i32,
     pub number_columns_in_data: i32,
+    pub minibatch_size: usize,
 }
 
 impl<T: Debug + Clone + From<f64>> FeedforwardNetwork<T> {
@@ -55,6 +56,9 @@ impl<T: Debug + Clone + From<f64>> FeedforwardNetwork<T> {
     pub fn get_number_columns_in_data(&self) -> i32 {
         self.number_columns_in_data.clone()
     }
+    pub fn get_minibatch_size(&self) -> usize {
+        self.minibatch_size.clone()
+    }
 }
 
 impl<T: Debug + Clone + From<f64>> Clone for FeedforwardNetwork<T> {
@@ -69,6 +73,7 @@ impl<T: Debug + Clone + From<f64>> Clone for FeedforwardNetwork<T> {
             number_data_sets: self.get_number_data_sets(),
             number_rows_in_data: self.get_number_rows_in_data(),
             number_columns_in_data: self.get_number_columns_in_data(),
+            minibatch_size: self.get_minibatch_size(),
         }
     }
 }
@@ -82,6 +87,7 @@ pub fn create<T: Debug + Clone + Zero + From<f64>>(
     number_rows_in_data: i32,
     number_columns_in_data: i32,
     learning_rate: f32,
+    minibatch_size: usize,
 ) -> FeedforwardNetwork<T> {
     let layers = vec![];
 
@@ -95,6 +101,7 @@ pub fn create<T: Debug + Clone + Zero + From<f64>>(
         number_data_sets,
         number_rows_in_data,
         number_columns_in_data,
+        minibatch_size,
     };
 
     layer::initialize_layer(&mut feed_net);
@@ -223,6 +230,7 @@ pub fn initialize() {
     let number_rows_in_set = parsed_input[0].len() as i32;
     let num_columns_in_set = parsed_input[0][0].len() as i32;
     let learning_rate = 0.1;
+    let minibatch_size = 50;
 
     let mut feedforward_network: FeedforwardNetwork<f64> =
         create(
@@ -234,6 +242,7 @@ pub fn initialize() {
             number_rows_in_set,
             num_columns_in_set,
             learning_rate,
+            minibatch_size
         );
 
     train_generic(&mut data_structs, &mut feedforward_network);
