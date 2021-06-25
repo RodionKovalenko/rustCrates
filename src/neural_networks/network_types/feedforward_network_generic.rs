@@ -9,7 +9,6 @@ use num::{Zero, range};
 #[allow(unused_imports)]
 use matrix::parse_2dim_to_float;
 use serde::{Serialize, Deserialize};
-use crate::utils::activation::sigmoid_generic;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FeedforwardNetwork<T> {
@@ -89,7 +88,6 @@ pub fn create<T: Debug + Clone + Zero + From<f64>>(
     number_columns_in_data: i32,
     minibatch_size: usize,
     learning_rate: f32,
-    minibatch_size: usize,
 ) -> FeedforwardNetwork<T> {
     let layers = vec![];
 
@@ -130,8 +128,8 @@ pub fn forward<'a, T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
                                                 &layers[i].input_weights.clone());
             }
 
-            layers[i].inactivated_output[input_index] = matrix::add_generic(&layers[i].inactivated_output[input_index], &layers[i].layer_bias);
-            layers[i].activated_output[input_index] = sigmoid_generic(&layers[i].inactivated_output[input_index]);
+            layers[i].inactivated_output[input_index] = matrix::add(&layers[i].inactivated_output[input_index], &layers[i].layer_bias);
+            layers[i].activated_output[input_index] = sigmoid(&layers[i].inactivated_output[input_index]);
 
             if matches!(layers[i].layer_type, LayerType::OutputLayer) {
                 let errors = matrix::get_error(&data_structs[input_index].get_target(),
@@ -245,7 +243,6 @@ pub fn initialize() {
             num_columns_in_set,
             minibatch_size,
             learning_rate,
-            minibatch_size
         );
 
     train_generic(&mut data_structs, &mut feedforward_network);
