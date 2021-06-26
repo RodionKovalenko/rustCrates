@@ -7,7 +7,7 @@ Created on Mon Jun 14 07:03:38 2021
 
 import pandas as pd
 
-data = pd.read_json('../cryptocurrency_rates_history.json')
+data = pd.read_json('../../cryptocurrency_rates_history.json')
 
 currency_pairs = data[['full_date', 'pair', 'ask']]
 
