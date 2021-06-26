@@ -18,7 +18,7 @@ for currency in currencies:
     currency_pairs = data[['full_date', 'pair', 'ask']]
     currency_pairs_eth = currency_pairs['pair'] == currency
     
-    start_date = "2021-03-01"
+    start_date = "2021-02-01"
     end_date = "2021-06-24"
     
     after_start_date = currency_pairs["full_date"] >= start_date
@@ -33,4 +33,4 @@ for currency in currencies:
     currency_pairs['full_date'] = pd.to_datetime(currency_pairs['full_date'])
     
     
-    currency_pairs.plot(kind="line", x='full_date', y='ask', style='-o', xlabel = currency)
+    print(currency_pairs.plot(kind="line", x='full_date', y='ask', style='-o', xlabel = currency))
