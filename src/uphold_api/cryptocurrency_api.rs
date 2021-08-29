@@ -15,32 +15,63 @@ error_chain! {
     }
 }
 
-const ZRX_EUR: &str = "ZRX-EUR";
+const AAVE_EUR: &str = "AAVE-EUR";
+const ADA_EUR: &str = "ADA-EUR";
+const ATOM_EUR: &str = "ATOM-EUR";
 const BAL_EUR: &str = "BAL-EUR";
 const BTC_EUR: &str = "BTC-EUR";
 const BCH_EUR: &str = "BCH-EUR";
 const BTG_EUR: &str = "BTG-EUR";
 const BTC0_EUR: &str = "BTC0-EUR";
+const COMP_EUR: &str = "COMP-EUR";
 const DASH_EUR: &str = "DASH-EUR";
-const LINK_EUR: &str = "LINK-EUR";
-const ADA_EUR: &str = "ADA-EUR";
-const ATOM_EUR: &str = "ATOM-EUR";
+const DCR_EUR: &str = "DCR-EUR";
+const EOS_EUR: &str = "EOS-EUR";
+const ENJ_EUR: &str = "ENJ-EUR";
+const ETH_EUR: &str = "ETH-EUR";
+const FIL_EUR: &str = "FIL-EUR";
+const FLOW_EUR: &str = "FLOW-EUR";
+const HBAR_EUR: &str = "HBAR-EUR";
+const HNT_EUR: &str = "HNT-EUR";
+const IOTA_EUR: &str = "IOTA-EUR";
+const LTC_EUR: &str = "LTC-EUR";
+const MKR_EUR: &str = "MKR-EUR";
+const NEO_EUR: &str = "NEO-EUR";
+const NANO_EUR: &str = "NANO-EUR";
+const MATIC_EUR: &str = "MATIC-EUR";
+const REN_EUR: &str = "REN-EUR";
+const SRM_EUR: &str = "SRM-EUR";
+const SOL_EUR: &str = "SOL-EUR";
+const SNX_EUR: &str = "SNX-EUR";
+const XTZ_EUR: &str = "XTZ-EUR";
+const GRT_EUR: &str = "GRT-EUR";
+const THETA_EUR: &str = "THETA-EUR";
+const UMA_EUR: &str = "UMA-EUR";
+const UNI_EUR: &str = "UNI-EUR";
+const VET_EUR: &str = "VET-EUR";
+const WBTC_EUR: &str = "WBTC-EUR";
 const DGB_EUR: &str = "DGB-EUR";
 const DOGE_EUR: &str = "DOGE-EUR";
-const ETH_EUR: &str = "ETH-EUR";
-const IOTA_EUR: &str = "IOTA-EUR";
-const NEM_EUR: &str = "XEM-EUR";
 const DOT_EUR: &str = "DOT-EUR";
-const XLM_EUR: &str = "XLM-EUR";
+const LINK_EUR: &str = "LINK-EUR";
+const NEM_EUR: &str = "XEM-EUR";
 const TRX_EUR: &str = "TRX-EUR";
+const XLM_EUR: &str = "XLM-EUR";
+const XCH_EUR: &str = "XCH-EUR";
 const XRP_EUR: &str = "XRP-EUR";
 const ZIL_EUR: &str = "ZIL-EUR";
+const ZRX_EUR: &str = "ZRX-EUR";
 
 pub const FILE_NAME: &str = "cryptocurrency_rates_history";
 const FILE_FORMAT: &str = "json";
 
-static CRYPTOCURRENCIES: [&str; 20] = [ZRX_EUR, BAL_EUR, BTC_EUR, BCH_EUR, BTG_EUR, DASH_EUR, LINK_EUR, ADA_EUR,
-    BTC0_EUR, ATOM_EUR, DGB_EUR, DOGE_EUR, ETH_EUR, IOTA_EUR, NEM_EUR, DOT_EUR, XLM_EUR, TRX_EUR, XRP_EUR, ZIL_EUR];
+static CRYPTOCURRENCIES: [&str; 46] = [
+    AAVE_EUR, ADA_EUR, ATOM_EUR, BAL_EUR, BTC_EUR, BCH_EUR, BTG_EUR, BTC0_EUR, COMP_EUR, DASH_EUR,
+    DCR_EUR, EOS_EUR, ENJ_EUR, ETH_EUR, FIL_EUR, FLOW_EUR, HBAR_EUR, HNT_EUR, IOTA_EUR, LTC_EUR,
+    MKR_EUR, NEO_EUR, NANO_EUR, MATIC_EUR, REN_EUR, SRM_EUR, SOL_EUR, SNX_EUR, XTZ_EUR, GRT_EUR,
+    THETA_EUR, UMA_EUR, UNI_EUR, VET_EUR, WBTC_EUR, DGB_EUR, DOGE_EUR, DOT_EUR, LINK_EUR, NEM_EUR,
+    TRX_EUR, XLM_EUR, XCH_EUR, XRP_EUR, ZIL_EUR, ZRX_EUR,
+];
 
 
 // let mut res = reqwest::get("https://api.uphold.com/v0/ticker/BAL-EUR")?;

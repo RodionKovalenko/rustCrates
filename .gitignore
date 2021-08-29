@@ -4,3 +4,7 @@
 /.idea/modules.xml
 /.idea/rustCrates.iml
 /.idea/vcs.xml
+/backup
+/src/neural_networks/predictions/*
+/src/neural_networks/saved_models/*
+
