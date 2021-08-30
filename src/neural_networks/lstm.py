@@ -86,7 +86,7 @@ def split_sequence(sequence, n_steps):
 		y.append(seq_y)
 	return array(X), array(y)
 
-num_epochs = 1
+num_epochs = 20
 interval_between_predicted = 10
 num_prediction = 300
 # we have univariate variable that is why n_features = 1
