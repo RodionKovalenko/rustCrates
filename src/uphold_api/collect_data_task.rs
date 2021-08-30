@@ -4,7 +4,6 @@ use std::time::Instant;
 use crate::uphold_api::cryptocurrency_api;
 use crate::uphold_api::file_utils;
 use crate::crypto_predictions;
-use std::process::Command;
 
 // 30 min = 1800 seconds
 const COLLECT_PERIOD_IN_SECONDS: u64 = 1800;
@@ -54,7 +53,15 @@ pub fn update_json_data_from_uphold_api() {
         }
 
         if seconds_elapsed % CRYPTO_PREDICTIONS_IN_SECONDS == 0 {
-            crypto_predictions::make_prediction_daily();
+            thread::spawn(move || {
+                seconds_elapsed = now.elapsed().as_secs();
+
+                println!("");
+                println!("this is thread predictions number 3__________________start");
+                crypto_predictions::make_prediction_daily();
+                println!("");
+                println!("this is thread predictions number finish");
+            });
         }
 
         thread::sleep(Duration::from_secs(COLLECT_PERIOD_IN_SECONDS));
