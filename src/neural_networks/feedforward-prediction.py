@@ -87,8 +87,8 @@ interval_between_predicted = 50
 num_prediction = 200
 # we have univariate variable that is why n_features = 1
 
-
-save_plot_dir = 'predictions/prediction-feedforward'
+current_abs_path = str(pathlib.Path().resolve())
+save_plot_dir = current_abs_path + '/predictions/prediction-feedforward'
 intervals = num_prediction
 n_features = 1
 n_seq = 1
@@ -96,6 +96,7 @@ n_seq = 1
 n_steps = 5
 look_back = n_steps
 look_back_focast = 200
+
 
 #currency to be analysed and trained
 currency = 'ETH-EUR' 
@@ -119,8 +120,7 @@ lr = 0.001
 
 close_train = close_data[:]
 
-current_abs_path = str(pathlib.Path().resolve())
-saved_model_path = 'saved_models/feedforward/' + currency   
+saved_model_path = current_abs_path + '/saved_models/feedforward/' + currency   
 saved_model_dir = current_abs_path + '/' + saved_model_path
 
 
@@ -179,7 +179,7 @@ plt.legend(['original', 'trained', 'prediction'])
 ax.grid(True)
 save_plot(save_plot_dir)
 
-plt.show()
+# plt.show()
 
 
 

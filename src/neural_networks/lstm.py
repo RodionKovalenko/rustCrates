@@ -86,7 +86,7 @@ def split_sequence(sequence, n_steps):
 		y.append(seq_y)
 	return array(X), array(y)
 
-num_epochs = 10
+num_epochs = 1
 interval_between_predicted = 10
 num_prediction = 300
 # we have univariate variable that is why n_features = 1
@@ -101,7 +101,7 @@ current_abs_path = str(pathlib.Path().resolve())
 
 datatime = datetime.datetime.today()
 datestr = str(datatime.day) + '.' + str(datatime.month) + '.' + str(datatime.year) + '-' + str(datatime.hour) + '-' + str(datatime.minute)
-save_plot_dir = 'predictions/prediction-lstm-norm-1/' + str(datestr)
+save_plot_dir = current_abs_path + '/predictions/prediction-lstm-norm-1/' + str(datestr)
 
 
 data = pd.read_json('../../cryptocurrency_rates_history.json')
