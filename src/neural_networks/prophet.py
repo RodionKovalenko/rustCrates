@@ -53,7 +53,9 @@ def save_plot(directory):
 
 datatime = datetime.datetime.today()
 datestr = str(datatime.day) + '.' + str(datatime.month) + '.' + str(datatime.year) + '-' + str(datatime.hour) + '-' + str(datatime.minute)
-save_plot_dir = 'predictions/prediction-prophet/' + str(datestr)
+
+current_abs_path = str(pathlib.Path().resolve())
+save_plot_dir = current_abs_path + '/predictions/prediction-prophet/' + str(datestr)
 
 data = pd.read_json('../../cryptocurrency_rates_history.json')
 currency_pairs = data[['full_date', 'pair', 'ask']]
@@ -62,7 +64,7 @@ scaler = MinMaxScaler()
 
 datatime = datetime.datetime.today()
 datestr = str(datatime.day) + '.' + str(datatime.month) + '.' + str(datatime.year) + '-' + str(datatime.hour) + '-' + str(datatime.minute)
-save_plot_dir = 'predictions/prediction-prophet/' + str(datestr)
+save_plot_dir = current_abs_path + '/predictions/prediction-prophet/' + str(datestr)
 
 #24 * 30 = 720
 # 24 * 90 = 2160
