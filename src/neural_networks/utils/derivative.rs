@@ -1,6 +1,6 @@
-use crate::network_components::layer::ActivationType;
 use std::fmt::Debug;
 use std::ops::{Mul, AddAssign, Sub, Add, Div};
+use crate::neural_networks::network_components::layer::ActivationType;
 
 pub fn get_derivative<T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
 + Into<f64> + Sub<Output=T> + Add<Output=T> + Div<Output=T>>
@@ -10,7 +10,7 @@ pub fn get_derivative<T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
         derivative = value.clone() * (T::from(1.0) - value.clone())
     }
     if matches!(deriv_type, ActivationType::TANH) {
-        derivative = (T::from(1.0) - (value.clone() * value.clone()))
+        derivative = T::from(1.0) - (value.clone() * value.clone())
     }
 
     derivative

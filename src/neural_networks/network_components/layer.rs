@@ -1,9 +1,9 @@
 use core::fmt::Debug;
-use crate::network_types::feedforward_network_generic::FeedforwardNetwork;
-use crate::utils::weights_initializer::initialize_weights;
 use num::Zero;
-use crate::utils::matrix::{create_generic, create_generic_one_dim, create_generic_3d};
 use serde::{Serialize, Deserialize};
+use crate::neural_networks::network_types::feedforward_network_generic::FeedforwardNetwork;
+use crate::neural_networks::utils::matrix::{create_generic, create_generic_3d, create_generic_one_dim};
+use crate::neural_networks::utils::weights_initializer::initialize_weights;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ActivationType {
@@ -103,13 +103,12 @@ impl<T: Debug + Clone + From<f64>> Clone for Layer<T> {
     }
 }
 
-pub fn initialize_layer<T: Debug + Clone + Zero + From<f64>>
-(feed_net: &mut FeedforwardNetwork<T>) -> &mut Vec<Layer<T>> {
+pub fn initialize_layer<T: Clone>(feed_net: &mut FeedforwardNetwork<T>, type_value: T) -> &mut Vec<Layer<T>> {
     let layers = &mut feed_net.layers;
-    let total_number_of_layers = feed_net.number_of_hidden_layers + 2;
-    let num_rows: usize = feed_net.number_rows_in_data as usize;
-    let mut num_columns: usize = feed_net.number_columns_in_data as usize;
-    let mut num_hidden_neurons = feed_net.number_of_hidden_neurons;
+    let total_number_of_layers: i32 = feed_net.number_of_hidden_layers.clone() + 2;
+    let num_rows: i32 = feed_net.number_rows_in_data.clone();
+    let mut num_columns: i32 = feed_net.number_columns_in_data.clone();
+    let mut num_hidden_neurons: i32 = feed_net.number_of_hidden_neurons.clone();
     let mut layer_type;
 
     if total_number_of_layers == 0 {
@@ -123,30 +122,27 @@ pub fn initialize_layer<T: Debug + Clone + Zero + From<f64>>
         );
 
         if matches!(layer_type, LayerType::HiddenLayer) {
-            num_columns = num_hidden_neurons;
+            num_columns;
         } else if matches!(layer_type, LayerType::OutputLayer) {
             num_columns = num_hidden_neurons;
             num_hidden_neurons = feed_net.number_of_output_neurons;
         }
 
         let input_layer: Layer<T> = Layer {
-            input_weights: initialize_weights(num_columns,
-                                              num_hidden_neurons),
-            inactivated_output: create_generic_3d(num_rows, num_hidden_neurons, feed_net.input_dimensions[2]),
-            activated_output: create_generic_3d(num_rows, num_hidden_neurons, feed_net.input_dimensions[2]),
+            input_weights: initialize_weights(num_columns, num_hidden_neurons, &type_value),
+            inactivated_output: create_generic_3d(num_rows, num_hidden_neurons, feed_net.input_dimensions[2] as i32),
+            activated_output: create_generic_3d(num_rows, num_hidden_neurons, feed_net.input_dimensions[2] as i32),
             layer_bias: create_generic_one_dim(num_hidden_neurons),
             gradient: create_generic(num_columns, num_hidden_neurons),
-            errors: create_generic(feed_net.input_dimensions[2], num_hidden_neurons),
+            errors: create_generic(feed_net.input_dimensions[2] as i32, num_hidden_neurons),
             activation_type: ActivationType::TANH,
             layer_type,
             previous_layer: None,
             next_layer: None,
-            input_data: create_generic_3d(num_rows, num_hidden_neurons, feed_net.input_dimensions[2]),
+            input_data: create_generic_3d(num_rows, num_hidden_neurons, feed_net.input_dimensions[2] as i32),
             previous_gradient: create_generic(num_columns, num_hidden_neurons),
-            m1: initialize_weights(num_columns,
-                                   num_hidden_neurons),
-            v1: initialize_weights(num_columns,
-                                   num_hidden_neurons),
+            m1: initialize_weights(num_columns, num_hidden_neurons, &type_value),
+            v1: initialize_weights(num_columns, num_hidden_neurons, &type_value),
         };
 
         layers.push(input_layer);
@@ -169,7 +165,7 @@ pub fn initialize_layer<T: Debug + Clone + Zero + From<f64>>
     layers
 }
 
-pub fn get_layer_type(num_layer: &i8, num_hidden_layers: &i8) -> LayerType {
+pub fn get_layer_type(num_layer: &i32, num_hidden_layers: &i32) -> LayerType {
     let layer_type;
 
     if num_layer == &0 {

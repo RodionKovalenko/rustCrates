@@ -1,7 +1,9 @@
 use std::thread;
 use std::net::UdpSocket;
-fn main() {
-    let socket = UdpSocket::bind("0.0.0.0:8888")
+
+//server_address_with_port like "0.0.0.0:8888"
+pub fn start_server(server_address_with_port: String) {
+    let socket = UdpSocket::bind(server_address_with_port)
         .expect("Could not bind socket");
     loop {
         let mut buf = [0u8; 1500];

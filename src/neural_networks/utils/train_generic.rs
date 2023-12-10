@@ -1,8 +1,7 @@
-use crate::network_components::layer::Layer;
-use crate::network_components::layer::LayerType;
 use std::fmt::Debug;
 use std::ops::{Mul, AddAssign, Sub, Add, Div};
-use crate::utils::derivative::get_derivative;
+use crate::neural_networks::network_components::layer::{Layer, LayerType};
+use crate::neural_networks::utils::derivative::get_derivative;
 
 pub fn calculate_gradient<T: Debug + Clone + Mul<Output=T> + From<f64> + AddAssign
 + Into<f64> + Sub<Output=T> + Add<Output=T> + Div<Output=T>>

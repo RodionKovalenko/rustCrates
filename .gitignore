@@ -5,6 +5,6 @@
 /.idea/rustCrates.iml
 /.idea/vcs.xml
 /backup
-/src/neural_networks/predictions/*
-/src/neural_networks/saved_models/*
+/cryto_predictions_python/predictions/*
+/cryto_predictions_python/saved_models/*
 
