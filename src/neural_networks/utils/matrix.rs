@@ -40,8 +40,8 @@ pub fn multiple(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<f64>>)
 
 pub fn multiple_generic_2d<T: Debug + Clone + Mul<Output=T> + AddAssign + From<f64>>
 (matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<T>>) -> Vec<Vec<T>> {
-    let num_rows = matrix_a.len();
-    let mut num_columns = matrix_b[0].len();
+    let num_rows = matrix_a.len() as i32;
+    let mut num_columns = matrix_b[0].len() as i32;
     let matrix_a_clone: Vec<Vec<T>> = matrix_a.clone();
     let mut matrix_b_clone: Vec<Vec<T>> = matrix_b.clone();
 
@@ -54,13 +54,13 @@ pub fn multiple_generic_2d<T: Debug + Clone + Mul<Output=T> + AddAssign + From<f
 
     if matrix_a[0].len() != matrix_b.len() {
         matrix_b_clone = transpose(matrix_b);
-        num_columns = matrix_b_clone[0].len();
+        num_columns = matrix_b_clone[0].len() as i32;
     }
 
     let mut result_matrix: Vec<Vec<T>> = create_generic(num_rows, num_columns);
 
-    for i in 0..num_rows {
-        for j in 0..num_columns {
+    for i in 0..num_rows as usize {
+        for j in 0..num_columns as usize {
             for k in 0..matrix_b_clone.len() {
                 if j >= result_matrix[i].len() {
                     result_matrix[i].push(matrix_a_clone[i][k].clone() * matrix_b_clone[k][j].clone());
@@ -96,17 +96,17 @@ pub fn transpose<T: Debug + Clone>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
     matrix_result
 }
 
-pub fn create_generic<T: Debug + Clone + From<f64>>(num_rows: usize, num_columns: usize) -> Vec<Vec<T>> {
+pub fn create_generic<T>(num_rows: i32, num_columns: i32) -> Vec<Vec<T>> {
     let mut matrix_result: Vec<Vec<T>> = Vec::new();
 
-    for i in 0..num_rows {
+    for i in 0..num_rows as usize {
         matrix_result.push(Vec::new());
-        for j in 0..num_columns {
-            if j >= matrix_result[i].len() {
-                matrix_result[i].push(T::from(0.0));
-            }
-
-            matrix_result[i][j] = T::from(0.0);
+        for j in 0..num_columns as usize {
+            // if j >= matrix_result[i].len() {
+            //     matrix_result[i].push(0.0);
+            // }
+            //
+            // matrix_result[i][j] = 0.0;
         }
     }
 
@@ -131,7 +131,7 @@ pub fn create_2d(num_rows: usize, num_columns: usize) -> Vec<Vec<f64>> {
     matrix_result
 }
 
-pub fn create_generic_3d<T: Debug + Clone + From<f64>>(num_rows: usize, num_columns: usize, num_dim: usize) -> Vec<Vec<Vec<T>>> {
+pub fn create_generic_3d<T>(num_rows: i32, num_columns: i32, num_dim: i32) -> Vec<Vec<Vec<T>>> {
     let mut matrix_result: Vec<Vec<Vec<T>>> = Vec::new();
 
     for _d in 0..num_dim {
@@ -143,12 +143,11 @@ pub fn create_generic_3d<T: Debug + Clone + From<f64>>(num_rows: usize, num_colu
     matrix_result
 }
 
-pub fn create_generic_one_dim<T: Debug + Clone + From<f64>>
-(num_rows: usize) -> Vec<T> {
+pub fn create_generic_one_dim<T> (num_rows: i32) -> Vec<T> {
     let mut matrix_result: Vec<T> = Vec::new();
 
-    for _i in 0..num_rows {
-        matrix_result.push(T::from(0.0));
+    for _i in 0..num_rows as usize {
+        //matrix_result.push(T::from(0.0));
     }
 
     matrix_result
@@ -211,9 +210,9 @@ pub fn subtract<T: Debug + Clone + Sub<Output=T>>(matrix_a: &Vec<Vec<T>>, matrix
 pub fn get_error<T: Debug + Clone + Sub<Output=T> + Add<Output=T> + Mul<Output=T> + From<f64> + Into<f64>>
 (target_m: &Vec<Vec<T>>, output_m: &Vec<Vec<T>>) -> Vec<T> {
     // convert output into one dimensional array
-    let mut output_one_dim: Vec<T> = create_generic_one_dim(output_m[0].len());
-    let mut target_one_dim: Vec<T> = create_generic_one_dim(target_m[0].len());
-    let mut matrix_result: Vec<T> = create_generic_one_dim(output_m[0].len());
+    let mut output_one_dim: Vec<T> = create_generic_one_dim(output_m[0].len() as i32);
+    let mut target_one_dim: Vec<T> = create_generic_one_dim(target_m[0].len() as i32);
+    let mut matrix_result: Vec<T> = create_generic_one_dim(output_m[0].len() as i32);
 
     // println!("target matrix size: {}, {}", target_m.len(), target_m[0].len());
     // println!("output matrix size: {}, {}", output_m.len(), output_m[0].len());

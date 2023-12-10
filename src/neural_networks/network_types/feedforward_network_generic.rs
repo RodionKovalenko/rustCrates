@@ -1,31 +1,31 @@
-use crate::network_components::*;
-use crate::utils::*;
-use crate::network_components::layer::{Layer, LayerType};
-use crate::network_components::input::*;
-use activation::sigmoid;
 use std::fmt::Debug;
 use std::ops::{Mul, AddAssign, Add, Div, Sub};
-use num::{Zero, range};
+use num::{range};
 #[allow(unused_imports)]
-use matrix::parse_2dim_to_float;
 use serde::{Serialize, Deserialize};
+use crate::neural_networks::network_components::input::Data;
+use crate::neural_networks::network_components::{input, layer};
+use crate::neural_networks::network_components::layer::{Layer, LayerType};
+use crate::neural_networks::utils::activation::sigmoid;
+use crate::neural_networks::utils::{matrix, train_generic};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FeedforwardNetwork<T> {
     pub layers: Vec<Layer<T>>,
     pub learning_rate: f32,
-    pub number_of_hidden_neurons: usize,
+    pub number_of_hidden_neurons: i32,
     // number of input.rs parameters. For example if only 6 inputs, then input.rs dimensions will be
     // [1][6]
     // if there are 25x8 input.rs e.g. then [25][8]
     // or [25][1][3] => means 25 data sets with data input [1][3]
     pub input_dimensions: Vec<usize>,
-    pub number_of_output_neurons: usize,
-    pub number_of_hidden_layers: i8,
+    pub number_of_output_neurons: i32,
+    pub number_of_hidden_layers: i32,
     pub number_data_sets: i32,
     pub number_rows_in_data: i32,
     pub number_columns_in_data: i32,
-    pub minibatch_size: usize,
+    pub minibatch_size: i32,
+    pub data_type_value: T,
 }
 
 impl<T: Debug + Clone + From<f64>> FeedforwardNetwork<T> {
@@ -38,15 +38,13 @@ impl<T: Debug + Clone + From<f64>> FeedforwardNetwork<T> {
     pub fn get_input_dimensions(&self) -> Vec<usize> {
         self.input_dimensions.clone()
     }
-    pub fn get_number_of_hidden_neurons(&self) -> usize {
+    pub fn get_number_of_hidden_neurons(&self) -> i32 {
         self.number_of_hidden_neurons.clone()
     }
-    pub fn get_number_of_output_neurons(&self) -> usize {
+    pub fn get_number_of_output_neurons(&self) -> i32 {
         self.number_of_output_neurons.clone()
     }
-    pub fn get_number_of_hidden_layers(&self) -> i8 {
-        self.number_of_hidden_layers.clone()
-    }
+    pub fn get_number_of_hidden_layers(&self) -> i32 {  self.number_of_hidden_layers.clone()  }
     pub fn get_number_data_sets(&self) -> i32 {
         self.number_data_sets.clone()
     }
@@ -56,9 +54,10 @@ impl<T: Debug + Clone + From<f64>> FeedforwardNetwork<T> {
     pub fn get_number_columns_in_data(&self) -> i32 {
         self.number_columns_in_data.clone()
     }
-    pub fn get_minibatch_size(&self) -> usize {
+    pub fn get_minibatch_size(&self) -> i32 {
         self.minibatch_size.clone()
     }
+    pub fn get_data_type_value(&self) -> T { self.data_type_value.clone() }
 }
 
 impl<T: Debug + Clone + From<f64>> Clone for FeedforwardNetwork<T> {
@@ -74,20 +73,22 @@ impl<T: Debug + Clone + From<f64>> Clone for FeedforwardNetwork<T> {
             number_rows_in_data: self.get_number_rows_in_data(),
             number_columns_in_data: self.get_number_columns_in_data(),
             minibatch_size: self.get_minibatch_size(),
+            data_type_value: self.get_data_type_value(),
         }
     }
 }
 
-pub fn create<T: Debug + Clone + Zero + From<f64>>(
-    number_of_hidden_layers: i8,
-    number_of_hidden_neurons: usize,
+pub fn create<T: Clone>(
+    number_of_hidden_layers: i32,
+    number_of_hidden_neurons: i32,
     input_dimensions: Vec<usize>,
-    number_of_output_neurons: usize,
+    number_of_output_neurons: i32,
     number_data_sets: i32,
     number_rows_in_data: i32,
     number_columns_in_data: i32,
-    minibatch_size: usize,
+    minibatch_size: i32,
     learning_rate: f32,
+    data_type_value: T
 ) -> FeedforwardNetwork<T> {
     let layers = vec![];
 
@@ -102,9 +103,11 @@ pub fn create<T: Debug + Clone + Zero + From<f64>>(
         number_rows_in_data,
         number_columns_in_data,
         minibatch_size,
+        data_type_value
     };
 
-    layer::initialize_layer(&mut feed_net);
+    let data_type_value = feed_net.data_type_value.clone();
+    layer::initialize_layer(&mut feed_net, data_type_value);
     feed_net
 }
 
@@ -224,13 +227,15 @@ pub fn initialize() {
 
     let number_of_hidden_layers = 1;
     let input_dimensions = vec![parsed_input[0].len(), parsed_input[0][0].len(), parsed_input.len()];
-    let number_of_output_neurons = targets[0].len();
+    let number_of_output_neurons = targets[0].len() as i32;
     let number_of_hidden_neurons = 30;
     let number_of_data_sets = parsed_input.len() as i32;
     let number_rows_in_set = parsed_input[0].len() as i32;
     let num_columns_in_set = parsed_input[0][0].len() as i32;
     let learning_rate = 0.1;
     let minibatch_size = 50;
+
+    let data_type_value: f64 = 0.0;
 
     let mut feedforward_network: FeedforwardNetwork<f64> =
         create(
@@ -243,6 +248,7 @@ pub fn initialize() {
             num_columns_in_set,
             minibatch_size,
             learning_rate,
+            data_type_value
         );
 
     train_generic(&mut data_structs, &mut feedforward_network);

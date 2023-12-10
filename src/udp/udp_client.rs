@@ -1,13 +1,16 @@
 use std::net::UdpSocket;
 use std::{str,io};
-fn main() {
-    let socket = UdpSocket::bind("127.0.0.1:8000")
+pub fn start_client(server_address_with_port: String) {
+    let socket = UdpSocket::bind(server_address_with_port.clone())
         .expect("Could not bind client socket");
-    socket.connect("127.0.0.1:8888")
+
+    socket.connect(server_address_with_port.clone())
         .expect("Could not connect to server");
+
     loop {
         let mut input = String::new();
         let mut buffer = [0u8; 1500];
+
         io::stdin().read_line(&mut input)
             .expect("Failed to read from stdin");
         socket.send(input.as_bytes())

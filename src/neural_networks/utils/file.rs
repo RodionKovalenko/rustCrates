@@ -1,8 +1,8 @@
-use crate::network_types::feedforward_network_generic::FeedforwardNetwork;
-use crate::network_types::feedforward_network;
 use std::path::Path;
 use std::fs::{File, OpenOptions};
 use std::io::{Write, Read};
+use crate::neural_networks::network_types::feedforward_network;
+use crate::neural_networks::network_types::feedforward_network_generic::FeedforwardNetwork;
 
 pub fn create_new_file(filename: &str) {
     File::create(&filename).expect("cannot create file");
@@ -42,6 +42,7 @@ pub fn deserialize(network: FeedforwardNetwork<f64>) -> FeedforwardNetwork<f64> 
     let mut file = get_or_create_file(&feedforward_network::FILE_NAME, false);
     let mut data = String::new();
     let mut save_network: FeedforwardNetwork<f64> = network;
+
     file.read_to_string(&mut data).expect("Unable to open");
 
     if !data.is_empty() {
