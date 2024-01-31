@@ -1,7 +1,7 @@
 use crate::tcp::tcp_stream_actions::{send_msg, read_tcp_stream};
 use std::net::{TcpListener, TcpStream};
 use std::io::{Error};
-use std::{str, thread};
+use std::{thread};
 use rand::Rng;
 
 #[derive(Debug)]

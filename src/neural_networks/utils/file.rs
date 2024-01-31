@@ -1,5 +1,6 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs::{File, OpenOptions};
+use std::{fs, io};
 use std::io::{Write, Read};
 use crate::neural_networks::network_types::feedforward_network;
 use crate::neural_networks::network_types::feedforward_network_generic::FeedforwardNetwork;
@@ -20,6 +21,14 @@ pub fn get_or_create_file(filename: &str, create: bool) -> File {
         .read(true)
         .open(&filename)
         .unwrap()
+}
+
+pub fn get_files_in_directory(path: &str) -> io::Result<Vec<PathBuf>> {
+    let entries = fs::read_dir(path)?;
+    let all: Vec<PathBuf> = entries
+        .filter_map(|entry| Some(entry.ok()?.path()))
+        .collect();
+    Ok(all)
 }
 
 pub fn serialize(feed_net: &FeedforwardNetwork<f64>) {

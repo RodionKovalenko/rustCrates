@@ -1,7 +1,7 @@
 use crate::neural_networks::utils::matrix::{create_2d, create_generic, create_generic_one_dim, transpose};
 
 pub fn standardize(matrix: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
-    let mut standardized_mat = create_generic(matrix.len() as i32, matrix[0].len() as i32);
+    let mut standardized_mat = create_generic(matrix.len() as i32);
     let mean = get_mean_2d(&matrix);
     let variance = get_variance_2d(&matrix, mean);
 
@@ -15,7 +15,7 @@ pub fn standardize(matrix: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
 }
 
 pub fn standardize_mean(matrix: &Vec<Vec<f64>>, mean: f64, variance: f64) -> Vec<Vec<f64>> {
-    let mut standardized_mat = create_generic(matrix.len() as i32, matrix[0].len() as i32);
+    let mut standardized_mat = create_generic(matrix.len() as i32);
 
     for i in 0..matrix.len() {
         for j in 0..matrix[0].len() {
@@ -27,7 +27,7 @@ pub fn standardize_mean(matrix: &Vec<Vec<f64>>, mean: f64, variance: f64) -> Vec
 }
 
 pub fn standardize_median(matrix: &Vec<Vec<f64>>, mean: f64, variance: f64) -> Vec<Vec<f64>> {
-    let mut standardized_mat = create_generic(matrix.len() as i32, matrix[0].len() as i32);
+    let mut standardized_mat = create_generic(matrix.len() as i32);
 
     for i in 0..matrix.len() {
         for j in 0..matrix[0].len() {
@@ -115,7 +115,7 @@ pub fn get_median_3d(matx: &Vec<Vec<Vec<f64>>>) -> f64 {
 }
 
 pub fn unfold_2d(matx: &Vec<Vec<f64>>) -> Vec<f64> {
-    let mut result: Vec<f64> = create_generic_one_dim((matx.len() * matx[0].len()) as i32);
+    let mut result: Vec<f64> = create_generic_one_dim();
 
     let mut ind = 0;
     for i in 0..matx.len() {
@@ -132,7 +132,7 @@ pub fn unfold_2d(matx: &Vec<Vec<f64>>) -> Vec<f64> {
 }
 
 pub fn unfold_3d(matx: &Vec<Vec<Vec<f64>>>) -> Vec<f64> {
-    let mut result: Vec<f64> = create_generic_one_dim((matx.len() * matx[0].len() * matx[0][0].len()) as i32);
+    let mut result: Vec<f64> = create_generic_one_dim();
 
     let mut ind = 0;
     for i in 0..matx.len() {

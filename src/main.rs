@@ -15,11 +15,11 @@ use uphold_api::*;
 #[allow(unused_imports)]
 #[allow(unused_imports)]
 use std::time::Instant;
-use chrono::{Datelike, Timelike, DurationRound};
 #[allow(unused_imports)]
 #[allow(unused_imports)]
 use rand::Rng;
-use neural_networks::neural_networks::training::network_train_ffn::train_ffn;
+use neural_networks::wavelet_transform::dwt::{inverse_transform_1_d, transform_1_d};
+use neural_networks::wavelet_transform::dwt_types::DiscreteWaletetType;
 
 pub enum ARGUMENTS {
     UPHOLD,
@@ -37,14 +37,78 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     println!("{:?}", args[1]);
 
-    if args.len() > 1 {
-        let arg1: &str = &*args[1].clone();
+    // if args.len() > 1 {
+    //     let arg1: &str = &*args[1].clone();
+    //
+    //     match arg1 {
+    //         "uphold" => collect_data_task::update_json_data_from_uphold_api(),
+    //         "network" => train_ffn(),
+    //         _ => println!(" no argument recognized"),
+    //     }
+    // }
 
-        match arg1 {
-            "uphold" => collect_data_task::update_json_data_from_uphold_api(),
-            "network" => train_ffn(),
-            _ => println!(" no argument recognized"),
-        }
-    }
+    //get_pixels_from_images("training_data");
+
+    let n: Vec<i32> = vec![1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5];
+    //let n: Vec<i32> = vec![1, 2, 3, 4, 5, 6];
+
+    println!("db 1: ==================================================================");
+    let dw_transformed = transform_1_d(&n, &DiscreteWaletetType::DB_1);
+    println!("length: {:?}", dw_transformed.len());
+    println!("db 1 wavelet transform: {:?}", dw_transformed);
+
+    let inverse_transformed = inverse_transform_1_d(&dw_transformed, &DiscreteWaletetType::DB_1);
+    println!("length: {:?}", inverse_transformed.len());
+    println!("inverse transformed: {:?}", inverse_transformed);
+    println!("==================================================================");
+
+    println!("db 2: ==================================================================");
+    let dw_transformed = transform_1_d(&n, &DiscreteWaletetType::DB_2);
+    println!("length: {:?}", dw_transformed.len());
+    println!("db 2 wavelet transform: {:?}", dw_transformed);
+
+    let inverse_transformed = inverse_transform_1_d(&dw_transformed, &DiscreteWaletetType::DB_2);
+    println!("length: {:?}", inverse_transformed.len());
+    println!("inverse transformed: {:?}", inverse_transformed);
+    println!("==================================================================");
+
+    println!("db 4: ==================================================================");
+    let dw_transformed = transform_1_d(&n, &DiscreteWaletetType::DB_4);
+    println!("length: {:?}", dw_transformed.len());
+    println!("{:?}", dw_transformed);
+
+    let inverse_transformed = inverse_transform_1_d(&dw_transformed, &DiscreteWaletetType::DB_4);
+    println!("length: {:?}", inverse_transformed.len());
+    println!("inverse transformed: {:?}", inverse_transformed);
+    println!("==================================================================");
+
+    println!("db 8: ==================================================================");
+    let dw_transformed = transform_1_d(&n, &DiscreteWaletetType::DB_8);
+    println!("length: {:?}", dw_transformed.len());
+    println!("{:?}", dw_transformed);
+
+    let inverse_transformed = inverse_transform_1_d(&dw_transformed, &DiscreteWaletetType::DB_8);
+    println!("length: {:?}", inverse_transformed.len());
+    println!("inverse transformed: {:?}", inverse_transformed);
+    println!("==================================================================");
+
+    println!("db 16: ==================================================================");
+    let dw_transformed = transform_1_d(&n, &DiscreteWaletetType::DB_16);
+    println!("length: {:?}", dw_transformed.len());
+    println!("{:?}", dw_transformed);
+
+    let inverse_transformed = inverse_transform_1_d(&dw_transformed, &DiscreteWaletetType::DB_16);
+    println!("length: {:?}", inverse_transformed.len());
+    println!("inverse transformed: {:?}", inverse_transformed);
+    println!("==================================================================");
+
+    println!("db 25: ==================================================================");
+    let dw_transformed = transform_1_d(&n, &DiscreteWaletetType::DB_25);
+    println!("length: {:?}", dw_transformed.len());
+    println!("{:?}", dw_transformed);
+
+    let inverse_transformed = inverse_transform_1_d(&dw_transformed, &DiscreteWaletetType::DB_25);
+    println!("length: {:?}", inverse_transformed.len());
+    println!("inverse transformed: {:?}", inverse_transformed);
+    println!("==================================================================");
 }
-

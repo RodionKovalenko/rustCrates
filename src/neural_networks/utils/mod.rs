@@ -6,3 +6,4 @@ pub mod derivative;
 pub mod train;
 pub mod file;
 pub mod normalization;
+pub mod image;

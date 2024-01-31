@@ -26,3 +26,6 @@ tokio-core = "0.1"
 reqwest = "*"
 error-chain = "*"
 chrono = {version="0.4",features = ["serde"]}
+num-traits = "0.2.14"
+cast = "0.3.0"
+image = "0.24.7"

@@ -17,7 +17,7 @@ pub fn start_server(server_address_with_port: String) {
                 });
             },
             Err(e) => {
-                eprintln!("couldn't recieve a datagram: {}", e);
+                eprintln!("couldn't receive a datagram: {}", e);
             }
         }
     }
