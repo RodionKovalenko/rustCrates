@@ -1,6 +1,7 @@
-use rand::Rng;
-use core::num::FpCategory::Nan;
-use num::abs;
+
+// use rand::Rng;
+// use core::num::FpCategory::Nan;
+// use num::abs;
 
 
 // pub fn calculate_gradient(layers: &mut Vec<Layer<f64>>,

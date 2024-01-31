@@ -57,7 +57,7 @@ pub fn multiple_generic_2d<T: Debug + Clone + Mul<Output=T> + AddAssign + From<f
         num_columns = matrix_b_clone[0].len() as i32;
     }
 
-    let mut result_matrix: Vec<Vec<T>> = create_generic(num_rows, num_columns);
+    let mut result_matrix: Vec<Vec<T>> = create_generic(num_rows);
 
     for i in 0..num_rows as usize {
         for j in 0..num_columns as usize {
@@ -96,21 +96,12 @@ pub fn transpose<T: Debug + Clone>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
     matrix_result
 }
 
-pub fn create_generic<T>(num_rows: i32, num_columns: i32) -> Vec<Vec<T>> {
+pub fn create_generic<T>(num_rows: i32) -> Vec<Vec<T>> {
     let mut matrix_result: Vec<Vec<T>> = Vec::new();
 
     for i in 0..num_rows as usize {
         matrix_result.push(Vec::new());
-        for j in 0..num_columns as usize {
-            // if j >= matrix_result[i].len() {
-            //     matrix_result[i].push(0.0);
-            // }
-            //
-            // matrix_result[i][j] = 0.0;
-        }
     }
-
-    // println!("created new matrix is {:?}", matrix_result);
 
     matrix_result
 }
@@ -131,24 +122,18 @@ pub fn create_2d(num_rows: usize, num_columns: usize) -> Vec<Vec<f64>> {
     matrix_result
 }
 
-pub fn create_generic_3d<T>(num_rows: i32, num_columns: i32, num_dim: i32) -> Vec<Vec<Vec<T>>> {
+pub fn create_generic_3d<T>(num_rows: i32, num_dim: i32) -> Vec<Vec<Vec<T>>> {
     let mut matrix_result: Vec<Vec<Vec<T>>> = Vec::new();
 
     for _d in 0..num_dim {
-        matrix_result.push(create_generic(num_rows, num_columns));
+        matrix_result.push(create_generic(num_rows));
     }
-
-    // println!("created new matrix is {:?}", matrix_result);
 
     matrix_result
 }
 
-pub fn create_generic_one_dim<T> (num_rows: i32) -> Vec<T> {
+pub fn create_generic_one_dim<T> () -> Vec<T> {
     let mut matrix_result: Vec<T> = Vec::new();
-
-    for _i in 0..num_rows as usize {
-        //matrix_result.push(T::from(0.0));
-    }
 
     matrix_result
 }
@@ -210,9 +195,9 @@ pub fn subtract<T: Debug + Clone + Sub<Output=T>>(matrix_a: &Vec<Vec<T>>, matrix
 pub fn get_error<T: Debug + Clone + Sub<Output=T> + Add<Output=T> + Mul<Output=T> + From<f64> + Into<f64>>
 (target_m: &Vec<Vec<T>>, output_m: &Vec<Vec<T>>) -> Vec<T> {
     // convert output into one dimensional array
-    let mut output_one_dim: Vec<T> = create_generic_one_dim(output_m[0].len() as i32);
-    let mut target_one_dim: Vec<T> = create_generic_one_dim(target_m[0].len() as i32);
-    let mut matrix_result: Vec<T> = create_generic_one_dim(output_m[0].len() as i32);
+    let mut output_one_dim: Vec<T> = create_generic_one_dim();
+    let mut target_one_dim: Vec<T> = create_generic_one_dim();
+    let mut matrix_result: Vec<T> = create_generic_one_dim();
 
     // println!("target matrix size: {}, {}", target_m.len(), target_m[0].len());
     // println!("output matrix size: {}, {}", output_m.len(), output_m[0].len());

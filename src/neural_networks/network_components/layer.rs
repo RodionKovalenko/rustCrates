@@ -1,9 +1,8 @@
 use core::fmt::Debug;
-use num::Zero;
+use num_traits::{Float, FromPrimitive};
 use serde::{Serialize, Deserialize};
 use crate::neural_networks::network_types::feedforward_network_generic::FeedforwardNetwork;
 use crate::neural_networks::utils::matrix::{create_generic, create_generic_3d, create_generic_one_dim};
-use crate::neural_networks::utils::weights_initializer::initialize_weights;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ActivationType {
@@ -37,7 +36,7 @@ pub struct Layer<T> {
     pub v1: Vec<Vec<T>>,
 }
 
-impl<T: Debug + Clone + From<f64>> Layer<T> {
+impl<T: Debug + Clone> Layer<T> {
     pub fn get_input_weights(&self) -> Vec<Vec<T>> {
         self.input_weights.clone()
     }
@@ -82,7 +81,7 @@ impl<T: Debug + Clone + From<f64>> Layer<T> {
     }
 }
 
-impl<T: Debug + Clone + From<f64>> Clone for Layer<T> {
+impl<T: Debug + Clone> Clone for Layer<T> {
     fn clone(&self) -> Self {
         Layer {
             input_weights: self.get_input_weights(),
@@ -103,7 +102,7 @@ impl<T: Debug + Clone + From<f64>> Clone for Layer<T> {
     }
 }
 
-pub fn initialize_layer<T: Clone>(feed_net: &mut FeedforwardNetwork<T>, type_value: T) -> &mut Vec<Layer<T>> {
+pub fn initialize_layer<T: Debug + Clone + Float + FromPrimitive>(feed_net: &mut FeedforwardNetwork<T>) -> &Vec<Layer<T>> {
     let layers = &mut feed_net.layers;
     let total_number_of_layers: i32 = feed_net.number_of_hidden_layers.clone() + 2;
     let num_rows: i32 = feed_net.number_rows_in_data.clone();
@@ -122,45 +121,35 @@ pub fn initialize_layer<T: Clone>(feed_net: &mut FeedforwardNetwork<T>, type_val
         );
 
         if matches!(layer_type, LayerType::HiddenLayer) {
-            num_columns;
+            //num_columns.clone();
         } else if matches!(layer_type, LayerType::OutputLayer) {
-            num_columns = num_hidden_neurons;
-            num_hidden_neurons = feed_net.number_of_output_neurons;
+            num_columns = num_hidden_neurons.clone();
+            num_hidden_neurons = feed_net.number_of_output_neurons.clone();
         }
 
+        let mut weight_matrix: Vec<Vec<T>> = Vec::new();
+        let mut weight_matrix_m1: Vec<Vec<T>> = Vec::new();
+        let mut weight_matrix_m2: Vec<Vec<T>> = Vec::new();
+
         let input_layer: Layer<T> = Layer {
-            input_weights: initialize_weights(num_columns, num_hidden_neurons, &type_value),
-            inactivated_output: create_generic_3d(num_rows, num_hidden_neurons, feed_net.input_dimensions[2] as i32),
-            activated_output: create_generic_3d(num_rows, num_hidden_neurons, feed_net.input_dimensions[2] as i32),
-            layer_bias: create_generic_one_dim(num_hidden_neurons),
-            gradient: create_generic(num_columns, num_hidden_neurons),
-            errors: create_generic(feed_net.input_dimensions[2] as i32, num_hidden_neurons),
+            input_weights: weight_matrix,
+            inactivated_output: create_generic_3d(num_rows, num_hidden_neurons),
+            activated_output: create_generic_3d(num_rows, num_hidden_neurons),
+            layer_bias: create_generic_one_dim(),
+            gradient: create_generic(num_columns),
+            errors: create_generic(feed_net.input_dimensions[2] as i32),
             activation_type: ActivationType::TANH,
             layer_type,
             previous_layer: None,
             next_layer: None,
-            input_data: create_generic_3d(num_rows, num_hidden_neurons, feed_net.input_dimensions[2] as i32),
-            previous_gradient: create_generic(num_columns, num_hidden_neurons),
-            m1: initialize_weights(num_columns, num_hidden_neurons, &type_value),
-            v1: initialize_weights(num_columns, num_hidden_neurons, &type_value),
+            input_data: create_generic_3d(num_rows, num_hidden_neurons),
+            previous_gradient: create_generic(num_columns),
+            m1: weight_matrix_m1,
+            v1: weight_matrix_m2,
         };
 
         layers.push(input_layer);
     }
-
-    // // set reference for next and previous layer
-    // for i in 0..layers.len() {
-    //     if matches!(layers[i].layer_type, LayerType::InputLayer) {
-    //         layers[i].previous_layer = None;
-    //         layers[i].next_layer = Some(Box::<Layer<T>>::new(layers[i + 1].clone()));
-    //     } else if matches!(layers[i].layer_type, LayerType::HiddenLayer) {
-    //         layers[i].previous_layer = Some(Box::<Layer<T>>::new(layers[i - 1].clone()));
-    //         layers[i].next_layer = Some(Box::<Layer<T>>::new(layers[i + 1].clone()));
-    //     } else {
-    //         layers[i].previous_layer = Some(Box::<Layer<T>>::new(layers[i - 1].clone()));
-    //         layers[i].next_layer = None;
-    //     }
-    // }
 
     layers
 }

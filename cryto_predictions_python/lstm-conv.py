@@ -9,21 +9,15 @@ Created on Fri Aug 13 12:54:20 2021
 
 import pandas as pd
 import numpy as np
-import tensorflow as tf
 import pathlib
 from keras.models import load_model
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import math
 from keras import optimizers
-from keras.preprocessing.sequence import TimeseriesGenerator
 from keras.models import Sequential
 from keras.layers import LSTM, Dense
 from keras.layers import Flatten
-from keras.layers import TimeDistributed
-from keras.layers.convolutional import Conv1D
-from keras.layers.convolutional import MaxPooling1D
-from keras.layers import Bidirectional
 from keras.layers import ConvLSTM2D
 import datetime
 from pathlib import Path

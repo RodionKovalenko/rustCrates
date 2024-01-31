@@ -1,0 +1,30 @@
+suppose we have pixel with value of 9533793
+		
+     $pixel = 9533793
+
+     $alpha = ($pixel >> 24) &0xFF;
+     $red = ($pixel >> 16) &0xFF;
+     $green = ($pixel >> 8) &0xFF;
+     $blue = ($pixel >> 0) &0xFF;
+
+
+In this way we get:
+     $alpha = 0;
+     $red = 145;
+     $green = 121;
+     $blue = 97;
+
+
+How to get pixel from rgba? 
+
+    $alpha << 24 = 0
+ +	
+    $red << 16 = 9502720
+ + 
+    $green << 8 = 30976
+ + 
+    $blue << 0 = 97
+
+
+ 
+If we add all together we will get pixel value: 0 + 9502720 + 30976 + 97 = 9533793

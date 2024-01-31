@@ -1,4 +1,3 @@
-#[macro_use]
 use enigo::*;
 use std::process::Command;
 use std::thread;

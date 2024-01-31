@@ -4,10 +4,12 @@ use rand::Rng;
 use crate::neural_networks::network_components::input;
 use crate::neural_networks::network_components::input::Data;
 use crate::neural_networks::network_types::feedforward_network;
+use crate::neural_networks::network_types::feedforward_network::train;
 
 
 use crate::neural_networks::network_types::feedforward_network_generic::FeedforwardNetwork;
 use crate::neural_networks::utils::normalization::normalize_max_mean;
+use crate::neural_networks::utils::weights_initializer::initialize_weights;
 use crate::uphold_api::cryptocurrency_api::get_data;
 use crate::uphold_api::cryptocurrency_dto::CryptocurrencyDto;
 
@@ -16,6 +18,7 @@ pub fn train_ffn() {
     let num_iterations = 20000;
     let mut data_structs = initalize_data_sets();
     let minibatch_size = 50;
+    let mut layer_weights;
 
     let mut feed_net: FeedforwardNetwork<f64> = feedforward_network::initialize_network(
         &mut data_structs,
@@ -26,37 +29,24 @@ pub fn train_ffn() {
         0.001,
     );
 
-   // train(&mut data_structs, &mut feed_net, minibatch_size, num_iterations);
+    // Initialize weights here
+    for layer_ind in 0..feed_net.layers.len() {
+        layer_weights = &mut feed_net.layers[layer_ind].input_weights;
 
-    println!("time elapsed {}", now.elapsed().as_secs());
-}
+        initialize_weights(10, 20, &mut layer_weights);
+    }
 
-pub fn start_neural_network() {
-    let now = Instant::now();
-    let num_iterations = 20000;
-    let mut data_structs = initalize_data_sets();
-    let minibatch_size = 50;
-
-    let mut feed_net: FeedforwardNetwork<f64> = feedforward_network::initialize_network(
-        &mut data_structs,
-        1,
-        40,
-        1,
-        minibatch_size,
-        0.001,
-    );
-
-    // train(&mut data_structs, &mut feed_net, &minibatch_size, num_iterations);
+    train(&mut data_structs, &mut feed_net, num_iterations);
 
     println!("time elapsed {}", now.elapsed().as_secs());
 }
 
 
-pub fn initalize_data_sets() -> Vec<Data<f64>> {
+pub fn initalize_data_sets() -> Vec<Data<f64, f64>> {
     let cryptocurrency_data: Vec<CryptocurrencyDto> = get_data();
     let mut input_data: Vec<Vec<f64>> = vec![];
     let mut target_data: Vec<Vec<f64>> = vec![];
-    let mut data_structs: Vec<Data<f64>> = vec![];
+    let mut data_structs: Vec<Data<f64, f64>> = vec![];
     let mut currency_to_num_map: HashMap<String, f64> = HashMap::new();
     let mut input_struct;
     let mut rng = rand::thread_rng();
