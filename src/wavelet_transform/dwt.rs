@@ -4,12 +4,14 @@ use num_traits::{FromPrimitive, ToPrimitive};
 use crate::wavelet_transform::dwt_type_resolver::{get_high_pass_filter, get_inverse_high_pass_filter, get_inverse_low_pass_filter, get_low_pass_filter};
 use crate::wavelet_transform::dwt_types::DiscreteWaletetType;
 
-pub fn transform_2_d<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> + Into<f64> + AddAssign + ToPrimitive>(data: Vec<Vec<T>>, dw_type: &DiscreteWaletetType) {
+pub fn transform_2_d<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> + Into<f64> + AddAssign + ToPrimitive>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType) -> Vec<Vec<f64>> {
     let mut data_trans: Vec<Vec<f64>> = Vec::new();
 
     for r in data.iter() {
         data_trans.push(transform_1_d(&r, &dw_type));
     }
+
+    data_trans
 }
 
 pub fn transform_1_d<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> + Into<f64> + AddAssign + ToPrimitive>(data: &Vec<T>, dw_type: &DiscreteWaletetType) -> Vec<f64> {
@@ -134,6 +136,17 @@ pub fn inverse_transform_1_d<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> 
         ind_transform += 1;
         set_value(&mut data_trans, value_high.clone(), &(ind_transform.clone()));
         ind_transform += 1;
+    }
+
+    data_trans
+}
+
+pub fn inverse_transform_2_d<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> + Into<f64> + AddAssign + ToPrimitive>
+(data: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType) -> Vec<Vec<f64>> {
+    let mut data_trans: Vec<Vec<f64>> = Vec::new();
+
+    for r in data.iter() {
+        data_trans.push(inverse_transform_1_d(&r, &dw_type));
     }
 
     data_trans

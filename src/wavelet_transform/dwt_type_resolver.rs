@@ -128,12 +128,8 @@ pub fn get_inverse_low_pass_filter(dw_type: &DiscreteWaletetType) -> Vec<f64> {
     let mut high_pass_filter = Vec::new();
 
     let mut v: f64;
-    for (i, el) in low_pass_filter.iter().rev().enumerate() {
+    for (_i, el) in low_pass_filter.iter().rev().enumerate() {
         v = el.clone();
-
-        // if (i % 1 != 0) {
-        //     v *= -1.0;
-        // }
 
         high_pass_filter.push(v);
     }
@@ -147,12 +143,8 @@ pub fn get_inverse_high_pass_filter(dw_type: &DiscreteWaletetType) -> Vec<f64> {
     let mut high_pass_filter = Vec::new();
 
     let mut v: f64;
-    for (i, el) in low_pass_filter.iter().rev().enumerate() {
+    for (_i, el) in low_pass_filter.iter().rev().enumerate() {
         v = el.clone();
-
-        // if (i % 2 == 1 || i.clone() == 0) {
-        //     v *= -1.0;
-        // }
 
         high_pass_filter.push(v);
     }
