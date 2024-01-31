@@ -49,8 +49,8 @@ fn main() {
 
     //get_pixels_from_images("training_data");
 
-    let n: Vec<i32> = vec![1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5];
-    //let n: Vec<i32> = vec![1, 2, 3, 4, 5, 6];
+    let n: Vec<i32> = vec![1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1];
+    //let n: Vec<i32> = vec![1, 2, 3, 4];
 
     println!("db 1: ==================================================================");
     let dw_transformed = transform_1_d(&n, &DiscreteWaletetType::DB_1);
