@@ -1,23 +1,12 @@
 import pywt
 
-array = [1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5]
+array = [[1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5], [1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5]]
 # array = [1, 2, 3, 4, 5, 6]
 cA, cD = pywt.dwt(array, 'db1', 'zero')
 print('length: {}',len(cA));
 print('db 1')
 print(cA)
 print(cD)
-#
-# original_array = pywt.idwt(cA, cD, 'db1', 'zero');
-#
-# print('inverse transformed')
-# print(original_array)
-
-# w = pywt.Wavelet('db1')
-# w.filter_bank == (w.dec_lo, w.dec_hi, w.rec_lo, w.rec_hi)
-#
-# print('db 1 filter: ')
-# print(w.filter_bank)
 
 w = pywt.Wavelet('db2')
 w.filter_bank == (w.dec_lo, w.dec_hi, w.rec_lo, w.rec_hi)
@@ -65,3 +54,18 @@ cA, cD = pywt.dwt(array, 'db25', 'zero')
 print('length: {}',len(cA));
 print(cA)
 print(cD)
+
+print('bior 1_3')
+cA, cD = pywt.dwt(array, 'bior1.3', 'zero')
+print('length: {}',len(cA));
+print(cA)
+print(cD)
+
+original_array = pywt.idwt(cA, cD, 'bior1.3', 'zero')
+print('inverse transformed  of bior1.3')
+print(original_array)
+
+w = pywt.Wavelet('bior1.3')
+w.filter_bank == (w.dec_lo, w.dec_hi, w.rec_lo, w.rec_hi)
+print('bior1.3 filter: ')
+print(w.filter_bank)
