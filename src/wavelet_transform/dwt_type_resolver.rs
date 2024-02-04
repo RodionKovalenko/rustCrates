@@ -1,4 +1,5 @@
 use crate::wavelet_transform::dwt_coeffients::*;
+use crate::wavelet_transform::dwt_inverse_coeffients::*;
 use crate::wavelet_transform::dwt_types::DiscreteWaletetType;
 
 // Return a Low Pass Filter, a filter of moving averages for a specific discrete wavelet type
@@ -105,8 +106,8 @@ pub fn get_low_pass_filter(dw_type: &DiscreteWaletetType) -> Vec<f64> {
 
 // Return a High Pass Filter, a filter of moving difference for a specific discrete wavelet type
 pub fn get_high_pass_filter(dw_type: &DiscreteWaletetType) -> Vec<f64> {
-    let low_pass_filter = get_low_pass_filter(&dw_type);
-    let mut high_pass_filter = Vec::new();
+    let low_pass_filter = get_high_pass_filter_non_symmetric(&dw_type);
+    let mut high_pass_filter: Vec<f64> = Vec::new();
 
     let mut v: f64;
     for (i, el) in low_pass_filter.iter().rev().enumerate() {
@@ -124,7 +125,7 @@ pub fn get_high_pass_filter(dw_type: &DiscreteWaletetType) -> Vec<f64> {
 
 // Return a Inverse Low Pass Filter, a filter of moving difference for a specific discrete wavelet type
 pub fn get_inverse_low_pass_filter(dw_type: &DiscreteWaletetType) -> Vec<f64> {
-    let low_pass_filter = get_low_pass_filter(&dw_type);
+    let low_pass_filter = get_high_pass_filter_non_symmetric(&dw_type);
     let mut high_pass_filter = Vec::new();
 
     let mut v: f64;
@@ -139,15 +140,72 @@ pub fn get_inverse_low_pass_filter(dw_type: &DiscreteWaletetType) -> Vec<f64> {
 
 // Return a Inverse High Pass Filter, a filter of moving difference for a specific discrete wavelet type
 pub fn get_inverse_high_pass_filter(dw_type: &DiscreteWaletetType) -> Vec<f64> {
-    let low_pass_filter = get_high_pass_filter(&dw_type);
-    let mut high_pass_filter = Vec::new();
+    let high_pass_filter_coef;
+    let mut high_pass_filter: Vec<f64> = Vec::new();
+    let mut is_default: bool = false;
 
-    let mut v: f64;
-    for (_i, el) in low_pass_filter.iter().rev().enumerate() {
-        v = el.clone();
+    high_pass_filter_coef = match dw_type {
+        DiscreteWaletetType::BIOR_1_1 | DiscreteWaletetType::BIOR_1_3 | DiscreteWaletetType::BIOR_1_5
+        | DiscreteWaletetType::BIOR_2_2 | DiscreteWaletetType::BIOR_2_4 | DiscreteWaletetType::BIOR_2_6
+        | DiscreteWaletetType::BIOR_2_8 | DiscreteWaletetType::BIOR_3_1 | DiscreteWaletetType::BIOR_3_3
+        | DiscreteWaletetType::BIOR_3_5 | DiscreteWaletetType::BIOR_3_7 | DiscreteWaletetType::BIOR_3_9
+        | DiscreteWaletetType::BIOR_4_4 | DiscreteWaletetType::BIOR_5_5 | DiscreteWaletetType::BIOR_6_8
+        => get_low_pass_filter(dw_type),
+        _ => {
+            is_default = true;
+            get_high_pass_filter(&dw_type)
+        }
+    };
 
-        high_pass_filter.push(v);
+    if is_default {
+        let mut v: f64;
+        for (_i, el) in high_pass_filter_coef.iter().rev().enumerate() {
+            v = el.clone();
+
+            high_pass_filter.push(v);
+        }
+    } else {
+        fill_array_and_negate_odd(&high_pass_filter_coef, &mut high_pass_filter);
     }
 
     high_pass_filter
+}
+
+pub fn get_high_pass_filter_non_symmetric(dw_type: &DiscreteWaletetType) -> Vec<f64> {
+    let mut high_pass_filter: Vec<f64> = match dw_type {
+        DiscreteWaletetType::BIOR_1_1 => INVERSE_BIOR_1_1.to_vec().into_iter().rev().collect(),
+        DiscreteWaletetType::BIOR_1_3 => INVERSE_BIOR_1_3.to_vec().into_iter().rev().collect(),
+        DiscreteWaletetType::BIOR_1_5 => INVERSE_BIOR_1_5.to_vec().into_iter().rev().collect(),
+        DiscreteWaletetType::BIOR_2_2 => INVERSE_BIOR_2_2.to_vec().into_iter().rev().collect(),
+        DiscreteWaletetType::BIOR_2_4 => INVERSE_BIOR_2_4.to_vec().into_iter().rev().collect(),
+        DiscreteWaletetType::BIOR_2_6 => INVERSE_BIOR_2_6.to_vec().into_iter().rev().collect(),
+        DiscreteWaletetType::BIOR_2_8 => INVERSE_BIOR_2_8.to_vec().into_iter().rev().collect(),
+        DiscreteWaletetType::BIOR_3_1 => INVERSE_BIOR_3_1.to_vec().into_iter().rev().collect(),
+        DiscreteWaletetType::BIOR_3_3 => INVERSE_BIOR_3_3.to_vec().into_iter().rev().collect(),
+        DiscreteWaletetType::BIOR_3_5 => INVERSE_BIOR_3_5.to_vec().into_iter().rev().collect(),
+        DiscreteWaletetType::BIOR_3_7 => INVERSE_BIOR_3_7.to_vec().into_iter().rev().collect(),
+        DiscreteWaletetType::BIOR_3_9 => INVERSE_BIOR_3_9.to_vec().into_iter().rev().collect(),
+        DiscreteWaletetType::BIOR_4_4 => INVERSE_BIOR_4_4.to_vec().into_iter().rev().collect(),
+        DiscreteWaletetType::BIOR_5_5 => INVERSE_BIOR_5_5.to_vec().into_iter().rev().collect(),
+        DiscreteWaletetType::BIOR_6_8 => INVERSE_BIOR_6_8.to_vec().into_iter().rev().collect(),
+        _ => {
+            get_low_pass_filter(&dw_type)
+        }
+    };
+
+    high_pass_filter
+}
+
+pub fn fill_array_and_negate_odd(filter_coef: &Vec<f64>, data: &mut Vec<f64>) {
+    let mut v: f64;
+
+    for (i, el) in filter_coef.iter().enumerate() {
+        v = el.clone();
+
+        if i % 2 != 1 {
+            v *= -1.0;
+        }
+
+        data.push(v);
+    }
 }
