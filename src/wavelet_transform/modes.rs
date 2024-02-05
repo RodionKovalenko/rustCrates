@@ -27,9 +27,6 @@
      Periodic padding:
                 adding additional values in as module operator of the array length
                 e.g.      3, 4 | 1, 2, 3, 4| 1, 2
-      Smooth Padding:
-                signal is extended according to the first derivatives calculated on the edges (straight line)
-
  */
 
 pub enum WaveletMode {
@@ -39,7 +36,5 @@ pub enum WaveletMode {
     ANTISYMMETRIC,
     REFLECT,
     ANTIREFLECT,
-    PERIODIC,
-    SMOOTH,
-    PERIODIZATION
+    PERIODIC
 }

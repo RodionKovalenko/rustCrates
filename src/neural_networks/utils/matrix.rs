@@ -99,7 +99,7 @@ pub fn transpose<T: Debug + Clone>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
 pub fn create_generic<T>(num_rows: i32) -> Vec<Vec<T>> {
     let mut matrix_result: Vec<Vec<T>> = Vec::new();
 
-    for i in 0..num_rows as usize {
+    for _i in 0..num_rows as usize {
         matrix_result.push(Vec::new());
     }
 

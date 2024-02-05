@@ -52,7 +52,6 @@ pub fn simulate_click_events() {
 
         for account in 0..number_of_accounts {
             println!("clicked at {:?}", time);
-            now = Instant::now();
             thread::sleep(Duration::from_secs(2));
             enigo.mouse_move_to(1300, 730);
             enigo.mouse_down(MouseButton::Left);
