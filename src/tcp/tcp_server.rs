@@ -4,13 +4,6 @@ use std::io::{Error};
 use std::{thread};
 use rand::Rng;
 
-#[derive(Debug)]
-struct Point3D {
-    x: u32,
-    y: u32,
-    z: u32,
-}
-
 // Handles a single client
 fn handle_client(stream: TcpStream) -> Result<(), Error> {
     println!("Incoming connection from: {}", stream.peer_addr()?);
