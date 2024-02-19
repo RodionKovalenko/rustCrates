@@ -1,8 +1,9 @@
+use std::fs::File;
 use std::path::Path;
-use image::{GenericImageView, Pixel, Rgba};
-use crate::neural_networks::utils::file::get_files_in_directory;
+use image::{GenericImageView, ImageBuffer, Pixel, Rgb, Rgba, RgbaImage, RgbImage};
+use crate::neural_networks::utils::file::{get_files_in_directory, serialize_generic};
 
-pub fn get_pixels_from_images(directory: &str) -> Vec<Vec<Vec<Vec<i32>>>>{
+pub fn get_pixels_from_images(directory: &str) -> Vec<Vec<Vec<Vec<i32>>>> {
     let mut image_pixel_data: Vec<Vec<Vec<Vec<i32>>>> = vec![];
 
     match get_files_in_directory(directory) {
@@ -29,12 +30,10 @@ pub fn get_pixels_from_image(imagepath: &str) -> Vec<Vec<Vec<i32>>> {
     let mut pixel_vec: Vec<Vec<Vec<i32>>> = Vec::new();
 
     for i in 0..img_width {
-        let mut vec_x = Vec::new();
-        pixel_vec.push(vec_x);
+        pixel_vec.push(Vec::new());
 
         for _j in 0..img_height {
-            let mut vec_y: Vec<i32> = Vec::new();
-            pixel_vec[i.clone() as usize].push(vec_y);
+            pixel_vec[i.clone() as usize].push(Vec::new());
         }
     }
 
@@ -45,7 +44,7 @@ pub fn get_pixels_from_image(imagepath: &str) -> Vec<Vec<Vec<i32>>> {
         let x = p.0 as usize;
         let y = p.1 as usize;
 
-       // println!(" x, y:  {}, {}", x, y);
+        // println!(" x, y:  {}, {}", x, y);
 
         let r = rgba[0].clone() as i32;
         let g = rgba[1].clone() as i32;
@@ -56,4 +55,108 @@ pub fn get_pixels_from_image(imagepath: &str) -> Vec<Vec<Vec<i32>>> {
     }
 
     pixel_vec
+}
+
+pub fn save_as_grey_scale(original_image_path: &str, imagepath: &str) -> Vec<Vec<f64>> {
+    let img = image::open(&Path::new(original_image_path)).unwrap();
+    let img_width: u32 = img.width().clone();
+    let img_height: u32 = img.height().clone();
+
+    let mut buffer: RgbaImage = ImageBuffer::new(img_width, img_height);
+
+    let mut pixel_vec: Vec<Vec<f64>> = Vec::new();
+
+    for _i in 0..img_height {
+        pixel_vec.push(vec![0.0; img_width.clone() as usize]);
+    }
+
+    for (x, y, pixel) in buffer.enumerate_pixels_mut() {
+        let rgba = img.get_pixel(x, y);
+
+        let r = rgba[0].clone() as i32;
+        let g = rgba[1].clone() as i32;
+        let b = rgba[2].clone() as i32;
+        let a = rgba[3].clone() as i32;
+        let mean: u8 = ((r + g + b + a) / 4) as u8;
+
+        *pixel = Rgba([mean.clone(), mean.clone(), mean.clone(), mean.clone()]);
+
+        pixel_vec[y.clone() as usize][x.clone() as usize] = mean.clone() as f64;
+    }
+
+    //serialize_generic(&pixel_vec, "test_array.txt");
+    // println!("pixels: {:?}", pixel_vec);
+
+    buffer.save(imagepath).unwrap();
+
+    pixel_vec
+}
+
+pub fn get_pixels_as_rgba(original_image_path: &str) -> Vec<Vec<f64>> {
+    let img = image::open(&Path::new(original_image_path)).unwrap();
+    let img_width: u32 = img.width().clone();
+    let img_height: u32 = img.height().clone();
+
+    let mut buffer: RgbaImage = ImageBuffer::new(img_width, img_height);
+    let mut pixel_vec: Vec<Vec<f64>> = Vec::new();
+
+    let mut r: i32;
+    let mut g: i32;
+    let mut b: i32;
+    let mut a: i32;
+
+    for _i in 0..img_height {
+        pixel_vec.push(vec![0.0; img_width.clone() as usize]);
+    }
+
+    for (x, y, pixel) in buffer.enumerate_pixels_mut() {
+        let rgba = img.get_pixel(x, y);
+
+        r = rgba[0].clone() as i32;
+        g = rgba[1].clone() as i32;
+        b = rgba[2].clone() as i32;
+        a = rgba[3].clone() as i32;
+
+        pixel_vec[y.clone() as usize][x.clone() as usize] = ((a >> 24) + (r >> 16) + (g >> 8) + b) as f64;
+    }
+
+    pixel_vec
+}
+
+pub fn save_image_from_pixels(image_data: &Vec<Vec<f64>>, image_path: &str) {
+    let img_width: u32 = image_data[0].len() as u32;
+    let img_height: u32 = image_data.len() as u32;
+
+    let mut buffer: RgbaImage = ImageBuffer::new(img_width, img_height);
+    let mut pixel_vec: Vec<Vec<f64>> = Vec::new();
+    let mut r: u8;
+    let mut g: u8;
+    let mut b: u8;
+    let mut a: u8;
+    let mut v;
+    let mut mean: Vec<f32> = Vec::new();
+
+    for _i in 0..img_height {
+        mean.push(image_data[_i as usize].iter().sum::<f64>() as f32 / image_data[0].len() as f32);
+
+        pixel_vec.push(vec![0.0; img_width.clone() as usize]);
+    }
+
+    let mut brightness_factor: f32 = 0.5;
+
+    for (x, y, pixel) in buffer.enumerate_pixels_mut() {
+        v = image_data[y.clone() as usize][x.clone() as usize].clone() as i32;
+       // brightness_factor = (v as f32 / (mean[y as usize].clone() * 30.0));
+
+       // println!("brightness factor : {}", &brightness_factor);
+
+        // a = ((v.clone() >> 24) as f32 * (brightness_factor.clone())).clamp(0.0, 255.0) as u8;
+        // r = ((v.clone() >> 16) as f32 * (brightness_factor.clone())).clamp(0.0, 255.0) as u8;
+        // g = ((v.clone() >> 8) as f32 * (brightness_factor.clone())).clamp(0.0, 255.0) as u8;
+        b = ((v.clone() >> 0) as f32 * (brightness_factor.clone())).clamp(0.0, 255.0) as u8;
+
+        *pixel = Rgba([b, b.clone(), b.clone(), b.clone()]);
+    }
+
+    buffer.save(image_path).unwrap();
 }

@@ -7,7 +7,6 @@ use std::env;
 #[allow(unused_imports)]
 #[allow(unused_variables)]
 #[allow(unused_assignments)]
-
 pub mod uphold_api;
 
 #[allow(unused_imports)]
@@ -18,7 +17,9 @@ use std::time::Instant;
 #[allow(unused_imports)]
 #[allow(unused_imports)]
 use rand::Rng;
-use neural_networks::wavelet_transform::dwt::{inverse_transform_2_d, transform_2_d};
+use neural_networks::neural_networks::network_types::wavelet_network::test_decomposition;
+use neural_networks::neural_networks::utils::image::{get_pixels_as_rgba, get_pixels_from_images, save_as_grey_scale, save_image_from_pixels};
+use neural_networks::wavelet_transform::dwt::{get_ll_lh_hl_hh, inverse_transform_1_d, inverse_transform_2_d, transform_1_d, transform_2_d};
 use neural_networks::wavelet_transform::dwt_types::DiscreteWaletetType;
 use neural_networks::wavelet_transform::modes::WaveletMode;
 
@@ -48,29 +49,19 @@ fn main() {
     //     }
     // }
 
-    //get_pixels_from_images("training_data");
 
-    let n1: Vec<i32> = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
-   // let n1: Vec<i32> = vec![1, 2, 3, 4, 5];
-   //  let n2: Vec<i32> = vec![1, 2, 3, 4, 5];
-   //  let n3: Vec<i32> = vec![1, 2, 3, 4, 5];
-   //  let n4: Vec<i32> = vec![1, 2, 3, 4, 5];
-   //  let n5: Vec<i32> = vec![1, 2, 3, 4, 5];
-
-    let mut n: Vec<Vec<i32>> = vec![];
-    n.push(n1.clone());
+    // let n1: Vec<f64> = vec![9.0, 7.0, 6.0, 2.0];
+    // let n2: Vec<f64> = vec![5.0, 3.0, 4.0, 4.0];
+    // let n3: Vec<f64> = vec![8.0, 2.0, 4.0, 0.0];
+    // let n4: Vec<f64> = vec![6.0, 0.0, 2.0, 2.0];
+    // let n5: Vec<f64> = vec![3.0, 0.0, 25.0, 3.0];
+    //
+    // let mut n = vec![];
+    // n.push(n1.clone());
     // n.push(n2.clone());
     // n.push(n3.clone());
     // n.push(n4.clone());
     // n.push(n5.clone());
 
-    println!("n : {:?}", &n);
-    println!("DB1 : ==================================================================");
-    let dw_transformed = transform_2_d(&n, &DiscreteWaletetType::SYM16, &WaveletMode::ANTISYMMETRIC);
-    println!("length: {:?}", dw_transformed[0].len());
-    println!("DB1 wavelet transform: {:?}", dw_transformed);
-    let inverse_transformed = inverse_transform_2_d(&dw_transformed, &DiscreteWaletetType::SYM16, &WaveletMode::ANTISYMMETRIC);
-    println!("length: {:?}", inverse_transformed[0].len());
-    println!("DB1 inverse transformed: {:?}", inverse_transformed);
-    println!("==================================================================");
+    test_decomposition();
 }

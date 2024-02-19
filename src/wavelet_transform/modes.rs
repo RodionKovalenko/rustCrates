@@ -36,5 +36,6 @@ pub enum WaveletMode {
     ANTISYMMETRIC,
     REFLECT,
     ANTIREFLECT,
-    PERIODIC
+    PERIODIC,
+    PERIODIZATION
 }
