@@ -1,14 +1,45 @@
 import pywt
+import pywt.data
+import numpy as np
+import ast
+from ast import literal_eval
+from matplotlib import pyplot as plt
 
-array = [1, 2, 3, 4, 5, 6]
-array = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+# # String representation of the list of lists
+# with open('test_data/test_array.txt', 'r') as f:
+#     txt = f.read()
+#
+# # Safely evaluate the string into a Python list
+# list_data = ast.literal_eval(txt)
+# # Convert the Python list into a NumPy array
+# original = np.array(list_data)
+# print(original.shape)
+#
+# # Wavelet transform of image, and plot approximation and details
+# titles = ['Approximation', ' Horizontal detail',
+#           'Vertical detail', 'Diagonal detail']
+# coeffs2 = pywt.dwt2(original,  'rbio2.6')
+# LL, (LH, HL, HH) = coeffs2
+# fig = plt.figure(figsize=(12, 3))
+# for i, a in enumerate([LL, LH, HL, HH]):
+#     ax = fig.add_subplot(1, 4, i + 1)
+#     ax.imshow(a, interpolation="nearest", cmap=plt.cm.gray)
+#     ax.set_title(titles[i], fontsize=10)
+#     ax.set_xticks([])
+#     ax.set_yticks([])
+#
+# fig.tight_layout()
+# plt.show()
+
+array = [[9, 7, 6, 2], [5, 3, 4, 4], [8, 2, 4, 0], [6, 0, 2, 2], [3, 0, 25, 3]]
+
 # cA, cD = pywt.dwt(array, 'db1', 'zero')
 # print('length: {}',len(cA));
 # print('db 1')
 # print(cA)
 # print(cD)
 #
-w = pywt.Wavelet('db8')
+w = pywt.Wavelet('db2')
 w.filter_bank == (w.dec_lo, w.dec_hi, w.rec_lo, w.rec_hi)
 
 print(w.filter_bank)
@@ -16,6 +47,11 @@ print(w.filter_bank)
 #
 print(pywt.families())
 print(pywt.wavelist('gaus'))
+print(pywt.wavelist('sym'))
+print(pywt.wavelist('coif'))
+print(pywt.wavelist('dmey'))
+print(pywt.wavelist('bior'))
+print(pywt.wavelist('rbio'))
 #
 # # # for mode_name in ['zero', 'constant', 'symmetric', 'reflect', 'periodic', 'smooth', 'periodization']:
 import matplotlib.pyplot as plt
@@ -35,29 +71,22 @@ import matplotlib.pyplot as plt
 # plt.title("Gaussian Wavelet of order 8")
 # plt.show()
 
+coeffs2 = pywt.dwt2(array,  'db2', 'zero')
+LL, (LH, HL, HH) = coeffs2
+print('LL coefs transform')
+print(LL)
+print('LH coefs transform')
+print(LH)
+print('HL coefs transform')
+print(HL)
+print('HH coefs transform')
+print(HH)
 
 
-cA2, cD2 = pywt.dwt(array, 'db8', 'periodic')
-
-print('db2')
-print(cA2)
-print(cD2)
-
-original_array = pywt.idwt(cA2, cD2, 'db8', 'periodic')
-
-print('db2 inverse')
+original_array = pywt.idwt2(coeffs2, 'db2', 'zero')
+print('inverse transform')
 print(original_array)
 
-w = pywt.Wavelet('db2')
-print(w.orthogonal)
 
-(phi, psi, x) = w.wavefun(level=2)
 
-print('phi')
-print(phi)
 
-print('psi')
-print(psi)
-
-print('x')
-print(x)

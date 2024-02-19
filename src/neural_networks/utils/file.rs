@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::fs::{File, OpenOptions};
 use std::{fs, io};
 use std::io::{Write, Read};
+use serde::Serialize;
 use crate::neural_networks::network_types::feedforward_network;
 use crate::neural_networks::network_types::feedforward_network_generic::FeedforwardNetwork;
 
@@ -40,6 +41,18 @@ pub fn serialize(feed_net: &FeedforwardNetwork<f64>) {
     }
 
     let data_json = String::from(format!("{}", serde_json::to_string(&network).unwrap()));
+
+    match file.write_all(data_json.as_bytes()) {
+        Err(e) => println!("{:?}", e),
+        _ => ()
+    }
+}
+
+pub fn serialize_generic<T: Sized + Serialize>(array: &T, filename: &str) {
+    let cloned_array = array.clone();
+    let mut file = get_or_create_file(filename, true);
+
+    let data_json = String::from(format!("{}", serde_json::to_string(&cloned_array).unwrap()));
 
     match file.write_all(data_json.as_bytes()) {
         Err(e) => println!("{:?}", e),
