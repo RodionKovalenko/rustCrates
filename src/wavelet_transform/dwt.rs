@@ -306,12 +306,6 @@ pub fn get_ll_lh_hl_hh(data: &Vec<Vec<f64>>) -> Vec<Vec<Vec<f64>>> {
         if i < half_row_ind.clone() {
             set_value_2d(&mut ll, row[0..half_col_ind].to_vec(), &i);
             set_value_2d(&mut lh, row[half_col_ind..row.len()].to_vec(), &i);
-            // println!("row: {:?}", &row);
-            // println!("row slice 0..half: {:?}", &row[0..half_col_ind]);
-            // println!("row slice form half..row.len(): {:?}", &row[half_col_ind..row.len()]);
-            //
-            // println!("ll at index i {}: {:?}", &i, &ll);
-            // println!("ll at index i {}: {:?}", &i, &lh);
         } else {
             set_value_2d(&mut hl, row[0..half_col_ind].to_vec(), &i);
             set_value_2d(&mut hh, row[half_col_ind..row.len()].to_vec(), &i);
@@ -324,4 +318,37 @@ pub fn get_ll_lh_hl_hh(data: &Vec<Vec<f64>>) -> Vec<Vec<Vec<f64>>> {
     data_ll_lh_hl_hh.push(hh);
 
     data_ll_lh_hl_hh
+}
+
+pub fn combine_ll_lh_hl_hh(ll_lh_hl_hh: &Vec<Vec<Vec<f64>>>) -> Vec<Vec<f64>> {
+    let len_r = ll_lh_hl_hh[0].len() << 1;
+    let len_c = ll_lh_hl_hh[0][0].len() << 1;
+
+    let mut combined_vec: Vec<Vec<f64>> = ll_lh_hl_hh[0].clone();
+    let mut ind_r: usize = 0;
+    let mut ind_c: usize = 0;
+
+    for i in 0..len_r {
+        for j in 0..len_c {
+            if i.clone() >= combined_vec.len() {
+                combined_vec.push(Vec::new());
+            }
+
+            ind_r = &i % ll_lh_hl_hh[0].len();
+            ind_c = &j % ll_lh_hl_hh[0][0].len();
+
+            if j.clone() >= ll_lh_hl_hh[0][0].len() {
+                combined_vec[i.clone()].push(ll_lh_hl_hh[1][ind_r.clone()][ind_c.clone()].clone());
+            }
+            if i.clone() >= ll_lh_hl_hh[0].len() {
+                if j.clone() < ll_lh_hl_hh[0][0].len() {
+                    combined_vec[i.clone()].push(ll_lh_hl_hh[2][ind_r.clone()][ind_c.clone()].clone());
+                } else {
+                    combined_vec[i.clone()].push(ll_lh_hl_hh[3][ind_r.clone()][ind_c.clone()].clone());
+                }
+            }
+        }
+    }
+
+    combined_vec
 }

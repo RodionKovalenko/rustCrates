@@ -1,7 +1,6 @@
-use std::fs::File;
 use std::path::Path;
-use image::{GenericImageView, ImageBuffer, Pixel, Rgb, Rgba, RgbaImage, RgbImage};
-use crate::neural_networks::utils::file::{get_files_in_directory, serialize_generic};
+use image::{GenericImageView, ImageBuffer, Pixel, Rgba, RgbaImage};
+use crate::neural_networks::utils::file::{get_files_in_directory};
 
 pub fn get_pixels_from_images(directory: &str) -> Vec<Vec<Vec<Vec<i32>>>> {
     let mut image_pixel_data: Vec<Vec<Vec<Vec<i32>>>> = vec![];
@@ -117,7 +116,8 @@ pub fn get_pixels_as_rgba(original_image_path: &str) -> Vec<Vec<f64>> {
         b = rgba[2].clone() as i32;
         a = rgba[3].clone() as i32;
 
-        pixel_vec[y.clone() as usize][x.clone() as usize] = ((a >> 24) + (r >> 16) + (g >> 8) + b) as f64;
+        //pixel_vec[y.clone() as usize][x.clone() as usize] = ((a << 24) + (r << 16) + (g << 8) + b) as f64;
+        pixel_vec[y.clone() as usize][x.clone() as usize] = b as f64;
     }
 
     pixel_vec
@@ -142,7 +142,7 @@ pub fn save_image_from_pixels(image_data: &Vec<Vec<f64>>, image_path: &str) {
         pixel_vec.push(vec![0.0; img_width.clone() as usize]);
     }
 
-    let mut brightness_factor: f32 = 0.5;
+    let mut brightness_factor: f32 = 1.0;
 
     for (x, y, pixel) in buffer.enumerate_pixels_mut() {
         v = image_data[y.clone() as usize][x.clone() as usize].clone() as i32;
