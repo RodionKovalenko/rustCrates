@@ -15,17 +15,23 @@ pub fn test_decomposition() {
     let mut ll_lh_hl_hh: Vec<Vec<Vec<f64>>> = Vec::new();
 
     println!("length: height: {}, width: {}", n.len(), n[1].len());
-    let dec_levels = 3;
+    let dec_levels = 6;
+    let mut decomposed_levels = Vec::new();
 
+
+    // encode with wavelet transform
     for i in 0..dec_levels.clone() {
         // println!("before level: {}, length: height: {}, width: {}\n", &i, dw_transformed.len(), dw_transformed[1].len());
-        dw_transformed = transform_2_d(&n, &DiscreteWaletetType::DB3, &WaveletMode::SYMMETRIC);
+        dw_transformed = transform_2_d(&n, &DiscreteWaletetType::DB1, &WaveletMode::SYMMETRIC);
         println!("after level: {}, length: height: {}, width: {}\n", &i, dw_transformed.len(), dw_transformed[1].len());
         // n = dw_transformed.clone();
         // println!("transformed: {:?}\n", &dw_transformed);
 
         //  save as images
+
+        decomposed_levels.push(dw_transformed.clone());
         ll_lh_hl_hh = get_ll_lh_hl_hh(&dw_transformed);
+
         n = ll_lh_hl_hh[0].clone();
         let mut count = 1;
         for vec in ll_lh_hl_hh {
@@ -36,22 +42,19 @@ pub fn test_decomposition() {
         }
     }
 
-    inverse_transformed = dw_transformed.clone();
+
+    // decode into original data
     for i in (0..dec_levels.clone()).rev() {
         let level = i as u32;
+
+        inverse_transformed = decomposed_levels.get(i.clone()).unwrap().to_vec();
+
         println!("inverse level: before: {}, inverse transform: length: height: {}, width: {}\n", i, inverse_transformed.len(), inverse_transformed[1].len());
-        inverse_transformed = inverse_transform_2_d(&inverse_transformed, &DiscreteWaletetType::DB3, &WaveletMode::SYMMETRIC, level);
+        inverse_transformed = inverse_transform_2_d(&inverse_transformed, &DiscreteWaletetType::DB1, &WaveletMode::SYMMETRIC, level);
         println!("inverse level: after: {}, inverse transform: length: height: {}, width: {}\n", i, inverse_transformed.len(), inverse_transformed[1].len());
         // println!("inverse transformed: {:?} \n", &inverse_transformed);
-
-        let mut count = 1;
-        ll_lh_hl_hh = get_ll_lh_hl_hh(&inverse_transformed);
-        for vec in ll_lh_hl_hh {
-            let file_name = String::from(format!("{}_restored_level_{}_{}.jpg", "tests/dwt_", i.clone(), count.clone()));
-            save_image_from_pixels(&vec, &file_name);
-
-            count +=1;
-        }
+        let file_name = String::from(format!("{}_restored_level_{}.jpg", "tests/dwt_", i.clone()));
+        save_image_from_pixels(&inverse_transformed, &file_name);
     }
     println!("==================================================================");
 }

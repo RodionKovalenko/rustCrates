@@ -18,10 +18,6 @@ use std::time::Instant;
 #[allow(unused_imports)]
 use rand::Rng;
 use neural_networks::neural_networks::network_types::wavelet_network::test_decomposition;
-use neural_networks::neural_networks::utils::image::{get_pixels_as_rgba, get_pixels_from_images, save_as_grey_scale, save_image_from_pixels};
-use neural_networks::wavelet_transform::dwt::{get_ll_lh_hl_hh, inverse_transform_1_d, inverse_transform_2_d, transform_1_d, transform_2_d};
-use neural_networks::wavelet_transform::dwt_types::DiscreteWaletetType;
-use neural_networks::wavelet_transform::modes::WaveletMode;
 
 pub enum ARGUMENTS {
     UPHOLD,
