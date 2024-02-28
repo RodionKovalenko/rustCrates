@@ -18,11 +18,13 @@ pub fn test_decomposition() {
     let dec_levels = 6;
     let mut decomposed_levels = Vec::new();
 
+    let wavelet_type = DiscreteWaletetType::DB1;
+    let wavelet_mode = WaveletMode::ZERO;
 
     // encode with wavelet transform
     for i in 0..dec_levels.clone() {
         // println!("before level: {}, length: height: {}, width: {}\n", &i, dw_transformed.len(), dw_transformed[1].len());
-        dw_transformed = transform_2_d(&n, &DiscreteWaletetType::DB1, &WaveletMode::SYMMETRIC);
+        dw_transformed = transform_2_d(&n, &wavelet_type, &wavelet_mode);
         println!("after level: {}, length: height: {}, width: {}\n", &i, dw_transformed.len(), dw_transformed[1].len());
         // n = dw_transformed.clone();
         // println!("transformed: {:?}\n", &dw_transformed);
@@ -50,7 +52,7 @@ pub fn test_decomposition() {
         inverse_transformed = decomposed_levels.get(i.clone()).unwrap().to_vec();
 
         println!("inverse level: before: {}, inverse transform: length: height: {}, width: {}\n", i, inverse_transformed.len(), inverse_transformed[1].len());
-        inverse_transformed = inverse_transform_2_d(&inverse_transformed, &DiscreteWaletetType::DB1, &WaveletMode::SYMMETRIC, level);
+        inverse_transformed = inverse_transform_2_d(&inverse_transformed, &wavelet_type, &wavelet_mode, level);
         println!("inverse level: after: {}, inverse transform: length: height: {}, width: {}\n", i, inverse_transformed.len(), inverse_transformed[1].len());
         // println!("inverse transformed: {:?} \n", &inverse_transformed);
         let file_name = String::from(format!("{}_restored_level_{}.jpg", "tests/dwt_", i.clone()));

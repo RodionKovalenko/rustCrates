@@ -28,3 +28,4 @@ How to get pixel from rgba?
 
  
 If we add all together we will get pixel value: 0 + 9502720 + 30976 + 97 = 9533793
+
