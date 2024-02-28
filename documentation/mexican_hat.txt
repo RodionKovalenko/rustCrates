@@ -1,0 +1,3 @@
+
+// mexical hat wavelet
+https://pywavelets.readthedocs.io/en/latest/ref/cwt.html
