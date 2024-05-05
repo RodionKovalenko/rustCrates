@@ -47,11 +47,12 @@ print(w.filter_bank)
 #
 print(pywt.families())
 print(pywt.wavelist('gaus'))
-print(pywt.wavelist('sym'))
-print(pywt.wavelist('coif'))
-print(pywt.wavelist('dmey'))
-print(pywt.wavelist('bior'))
-print(pywt.wavelist('rbio'))
+print(pywt.wavelist('mexh'))
+print(pywt.wavelist('cgau'))
+print(pywt.wavelist('shan'))
+print(pywt.wavelist('fbsp'))
+print(pywt.wavelist('cmor'))
+
 #
 # # # for mode_name in ['zero', 'constant', 'symmetric', 'reflect', 'periodic', 'smooth', 'periodization']:
 import matplotlib.pyplot as plt

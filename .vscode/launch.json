@@ -1,0 +1,73 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": "false"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'neural_networks'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=rust_main_project"
+                ],
+                "filter": {
+                    "name": "neural_networks",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'rust_main_project'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=rust_main_project",
+                    "--package=rust_main_project"
+                ],
+                "filter": {
+                    "name": "rust_main_project",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'rust_main_project'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=rust_main_project",
+                    "--package=rust_main_project"
+                ],
+                "filter": {
+                    "name": "rust_main_project",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "justMyCode": "false",
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

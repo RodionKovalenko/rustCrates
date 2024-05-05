@@ -1,3 +1,134 @@
 
 // mexical hat wavelet
 https://pywavelets.readthedocs.io/en/latest/ref/cwt.html
+https://en.wikipedia.org/wiki/Ricker_wavelet
+https://reference.wolfram.com/language/ref/MexicanHatWavelet.html
+
+1. wavefun(precision):
+method creates 2-dim points according to the wavelet 
+
+the number of points is defined 2^(precision)
+default is precision is 8, in cwt is default precision 10: 1024 points
+
+for the interval [-8, 8] we build a linspace for 1024 points:
+x [-8.         -7.98435973 -7.96871945 ...  7.96871945  7.98435973
+  8.        ]
+
+according to these points we build mexican hat wavelet: 
+def mexican_hat_wavelet(t, a):
+    factor = 2 / (np.sqrt(3 * a) * np.pi**(1/4))
+    return factor * (1 - (t**2) / (a**2)) * np.exp(-t**2 / (2 * a**2))
+
+we get y:
+
+[-6.91988742e-13 -7.81014271e-13 -8.81270393e-13 ... -8.81270393e-13
+ -7.81014271e-13 -6.91988742e-13]
+
+ wavefun returns then [y, x] array
+ 
+ 2. integrate y with step of (x[1] - x[0]) using rectangle integration method
+step = x[1] - x[0], e.g. 0.01564027370478982
+integral (y, step)
+
+e.g. y1= -6.91988742e-13
+     step = 0.01564027370478982
+     integral_y1 = -6.91988742e-13 * 0.01564027370478982 = -1.08228933e-14 
+     y2 = -7.81014271e-13
+     integral_y2 = integral_y1 + (-7.81014271e-13 * 0.01564027370478982) =  −1.082132907e-14 −1.222464181e-14 = -2.30381703e-14
+     y3 = -8.81270393e-13
+     intergral_y3 = integral_y2 + (y3 * step) = -3.68214804e-14
+
+     produces array integral_y
+
+3. build array using arange method
+    let step = 0.01564027370478982;
+
+    let scale = 5.0;
+    let start = 0.0;
+    let range = 8 - (-8) = 16;
+    let end = ((scale * range) + 1.0);
+
+    
+    let arange = arange(&start, &end, &1.0);
+    #[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0, 32.0, 33.0, 34.0, 35.0, 36.0, 37.0, 38.0, 39.0, 40.0, 41.0, 42.0, 43.0, 44.0, 45.0, 46.0, 47.0, 48.0, 49.0, 50.0, 51.0, 52.0, 53.0, 54.0, 55.0, 56.0, 57.0, 58.0, 59.0, 60.0, 61.0, 62.0, 63.0, 64.0, 65.0, 66.0, 67.0, 68.0, 69.0, 70.0, 71.0, 72.0, 73.0, 74.0, 75.0, 76.0, 77.0, 78.0, 79.0, 80.0]
+    #array size 81;
+
+    let mut arange_scaled: Vec<f64> = Vec::new();
+
+    for i in 0..arange.len() {
+        let v = arange[i] / (scale * step);
+        arange_scaled.push(v);
+    }
+
+    #[0.0, 12.787500000000012, 25.575000000000024, 38.36250000000003, 51.15000000000005, 63.93750000000006, 76.72500000000007, 89.51250000000007, 102.3000000000001, 115.0875000000001, 127.87500000000011, 140.66250000000014, 153.45000000000013, 166.23750000000015, 179.02500000000015, 191.81250000000017, 204.6000000000002, 217.3875000000002, 230.1750000000002, 242.9625000000002, 255.75000000000023, 268.53750000000025, 281.3250000000003, 294.11250000000024, 306.90000000000026, 319.6875000000003, 332.4750000000003, 345.26250000000033, 358.0500000000003, 370.8375000000003, 383.62500000000034, 396.41250000000036, 409.2000000000004, 421.98750000000035, 434.7750000000004, 447.5625000000004, 460.3500000000004, 473.13750000000044, 485.9250000000004, 498.71250000000043, 511.50000000000045, 524.2875000000005, 537.0750000000005, 549.8625000000005, 562.6500000000005, 575.4375000000005, 588.2250000000005, 601.0125000000005, 613.8000000000005, 626.5875000000005, 639.3750000000006, 652.1625000000006, 664.9500000000006, 677.7375000000006, 690.5250000000007, 703.3125000000006, 716.1000000000006, 728.8875000000006, 741.6750000000006, 754.4625000000007, 767.2500000000007, 780.0375000000007, 792.8250000000007, 805.6125000000008, 818.4000000000008, 831.1875000000007, 843.9750000000007, 856.7625000000007, 869.5500000000008, 882.3375000000008, 895.1250000000008, 907.9125000000008, 920.7000000000008, 933.4875000000009, 946.2750000000009, 959.0625000000008, 971.8500000000008, 984.6375000000008, 997.4250000000009, 1010.2125000000009, 1023.0000000000009]
+    #array size 81
+
+    println!("end : {}", &end);
+    println!("arange : {:?}", &arange);
+
+    println!("arange scaled : {:?}", &arange_scaled);
+
+4. convert arange_scaled into integer arange_scaled_i und use these values as indexes for reversed array integral_y
+
+int_psi_scale = (integral_y).reverse()[arange_scaled_i]
+
+5. produce convolution using data and int_psi_scale as filter
+
+   convolution = convolve(data, int_psi_scale)
+
+   e.g.
+    Kernel (filter) array [1, 2, 3] with length 3
+    Input array [0, 1, 0.5] with length 3
+    The convolution result will have a length of len(input) + len(kernel) - 1 = 3 + 3 - 1 = 5 elements.
+    with "full" mode
+
+    Here's the breakdown of the computation:
+
+    in python np.convolve(filter, array) the result will be calculated as follows:
+
+     Full Mode:
+     1. Calculate the number of zeros (len(kernel) - 1) to pad the input array with.
+     2. Pad the input array with zeros.
+     in this case it will be [0, 0, 1, 2, 3, 0]
+
+    3. Slide the kernel across the input array and multiply the values of the input array with the kernel.
+
+    Index 0:
+    [0, 0, 1] will be multiplied with [0, 1, 0.5] and summed up to get the first element of the result.
+    0 * 0.5 + 0 * 1 + 0 *0 = 0
+    Index 1:
+    [0, 1, 2] will be multiplied with [0, 1, 0.5] and summed up to get the second element of the result.
+    0 * 0.5 + 1 * 1 + 2 * 0 = 1
+    Index 2:
+    [1, 2, 3] will be multiplied with [0, 1, 0.5] and summed up to get the third element of the result.
+    1 * 0.5 + 2 * 1 + 3 * 0 = 2.5
+    Index 3:
+    [2, 3, 0] will be multiplied with [0, 1, 0.5] and summed up to get the fourth element of the result.
+    2 * 0.5 + 3 * 1 + 0 * 0 = 4
+    Index 4:
+    [3, 0, 0] will be multiplied with [0, 1, 0.5] and summed up to get the fifth element of the result.
+    3 * 0.5 + 0 * 1 + 0 * 0 = 1.5
+
+    The result of the convolution will be [0, 1, 2.5, 4, 1.5]
+
+6. calculace coef:
+   - calculate differences in convolution:  np.diff(conv, axis=-1) 
+    e.g. 
+    conv = np.array([1, 3, 6, 10])
+
+    result = np.diff(conv, axis=-1)
+    print(result)
+    [2, 3, 4]
+
+    for multidimensional arrays one makes difference between columns 
+
+    coef = -np.sqrt(scale) * np.diff(conv, axis=-1)
+
+7. calculate index d = (len(coef) / (shape of last dimension of data)) / 2
+8. select all values with index coef[..., floor(d):-ceil(d)]
+
+   or coef[..., floor(d): len(coef) - ceil(d)]
+
+
+ 
+

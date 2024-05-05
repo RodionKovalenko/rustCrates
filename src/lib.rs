@@ -6,4 +6,6 @@ pub mod udp;
 pub mod uphold_api;
 pub mod wavelet_transform;
 
+pub mod utils;
+
 
