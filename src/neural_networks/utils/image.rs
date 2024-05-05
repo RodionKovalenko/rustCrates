@@ -118,7 +118,6 @@ pub fn get_pixels_as_rgba(original_image_path: &str) -> Vec<Vec<f64>> {
         a = rgba[3].clone() as i32;;
 
         pixel_vec[y.clone() as usize][x.clone() as usize] = ((a << 24) + (r << 16) + (g << 8) + b) as f64;
-        //pixel_vec[y.clone() as usize][x.clone() as usize] = b as f64;
     }
 
     pixel_vec
@@ -147,14 +146,11 @@ pub fn save_image_from_pixels(image_data: &Vec<Vec<f64>>, image_path: &str) {
 
     for (x, y, pixel) in buffer.enumerate_pixels_mut() {
         v = image_data[y.clone() as usize][x.clone() as usize].clone() as i32;
-       // brightness_factor = (v as f32 / (mean[y as usize].clone() * 30.0));
 
-       // println!("brightness factor : {}", &brightness_factor);
-
-        a = (((v.clone() >> 24) & 0xff) as f32 * (brightness_factor.clone())) as u8;
-        r = (((v.clone() >> 16) & 0xff) as f32 * (brightness_factor.clone())) as u8;
-        g = (((v.clone() >> 8) & 0xff) as f32 * (brightness_factor.clone())) as u8;
-        b = (((v.clone() >> 0) & 0xff) as f32 * (brightness_factor.clone())) as u8;
+        a = (((v.clone() >> 24) & 0xff) as f32 * (brightness_factor.clone())).clamp(0.0, 255.0) as u8;
+        r = (((v.clone() >> 16) & 0xff) as f32 * (brightness_factor.clone())).clamp(0.0, 255.0) as u8;
+        g = (((v.clone() >> 8) & 0xff) as f32 * (brightness_factor.clone())).clamp(0.0, 255.0) as u8;
+        b = (((v.clone() >> 0) & 0xff) as f32 * (brightness_factor.clone())).clamp(0.0, 255.0) as u8;
 
         *pixel = Rgba([r.clone(), g.clone(), b.clone(), a.clone()]);
     }
