@@ -117,7 +117,17 @@ pub fn convolve_2d(kernel: &Vec<f64>, data: &Vec<Vec<f64>>, conv_mode: &Convolut
     let mut convolved: Vec<Vec<f64>> = Vec::new();
 
     for (_i, row) in data.iter().enumerate() {
-        convolved.push(convolve(row, kernel, conv_mode));
+        convolved.push(convolve(kernel, row, conv_mode));
+    }
+
+    convolved
+}
+
+pub fn convolve_3d(kernel: &Vec<f64>, data: &Vec<Vec<Vec<f64>>>, conv_mode: &ConvolutionMode) -> Vec<Vec<Vec<f64>>> {
+    let mut convolved: Vec<Vec<Vec<f64>>> = Vec::new();
+
+    for (_i, row) in data.iter().enumerate() {
+        convolved.push(convolve_2d(kernel, row, conv_mode));
     }
 
     convolved
@@ -178,7 +188,19 @@ pub fn get_coef_2d(a: &Vec<Vec<f64>>, scale: &f64) -> Vec<Vec<f64>> {
     let mut vec: Vec<f64>;
 
     for i in 0..(a.len()) {
-        vec = get_coef(&a[i], &scale);
+        vec = get_coef(&a[i], scale);
+        diff.push(vec);
+    }
+
+    diff
+}
+
+pub fn get_coef_3d(a: &Vec<Vec<Vec<f64>>>, scale: &f64) -> Vec<Vec<Vec<f64>>> {
+    let mut diff: Vec<Vec<Vec<f64>>> = Vec::new();
+    let mut vec: Vec<Vec<f64>>;
+
+    for i in 0..(a.len()) {
+        vec = get_coef_2d(&a[i], scale);
         diff.push(vec);
     }
 
