@@ -17,7 +17,7 @@ use std::time::Instant;
 #[allow(unused_imports)]
 #[allow(unused_imports)]
 use rand::Rng;
-use neural_networks::wavelet_transform::cwt::{cwt_2d};
+use neural_networks::wavelet_transform::cwt::{cwt_2d, frequency_to_scale_by_cwt};
 use neural_networks::wavelet_transform::cwt_types::ContinuousWaletetType;
 
 pub enum ARGUMENTS {
@@ -47,18 +47,10 @@ fn main() {
     // }
 
 
-    let scales: Vec<f64> = (1..6).map(|x| x as f64).collect();
-
-    // let n: Vec<f64> = (1..2).map(|x| x as f64).collect();
-    let n: Vec<f64> = (1..4).map(|x| x as f64).collect();
-
+    let scales: Vec<f64> = (5..10).map(|x| x as f64).collect();
     println!("scales: {:?}", &scales);
-    println!("data: {:?}", &n);
 
-    let scales: Vec<f64> = (2..5).map(|x| x as f64).collect();
-    let n: Vec<Vec<f64>> = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
+    let n: Vec<Vec<f64>> = vec![vec![123.0, 253.0, 523.0], vec![134.0, 88.0, 46.0]];
     let (transform_cwt, frequencies) = cwt_2d(&n, &scales, &ContinuousWaletetType::MEXH, &1.0);
     println!("transformed: {:?}", &transform_cwt);
-    println!("frequencies: {:?}", &frequencies);
-
 }

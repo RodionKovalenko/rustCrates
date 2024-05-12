@@ -1,17 +1,17 @@
 use std::f32::consts::{E, PI};
 use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
 
-pub fn get_mexh_constant(sigma: &i32) -> f64 {
-    let mex_h_1: f64 = (3 * sigma) as f64;
+pub fn get_mexh_constant(sigma: &f64) -> f64 {
+    let mex_h_1: f64 = 3.0 * sigma;
 
     2.0 / (mex_h_1.powf(1.0 / 2.0) * (PI as f64).powf(1.0 / 4.0))
 }
 
-pub fn transform_by_type(v: &f64, sigma: &i32, cw_type: &ContinuousWaletetType) -> f64 {
+pub fn transform_by_type(v: &f64, sigma: &f64, cw_type: &ContinuousWaletetType) -> f64 {
     match cw_type {
-        ContinuousWaletetType::MORL => morl(v),
+        ContinuousWaletetType::MORL => morl(v, sigma),
         ContinuousWaletetType::CMOR => cmorl(v),
-        ContinuousWaletetType::MEXH => mexh(v, &sigma),
+        ContinuousWaletetType::MEXH => mexh(v, sigma),
         ContinuousWaletetType::FBSP => fbsp(v),
         ContinuousWaletetType::SHAN => shan(v),
         ContinuousWaletetType::GAUS1 => gauss1(v),
@@ -33,11 +33,14 @@ pub fn transform_by_type(v: &f64, sigma: &i32, cw_type: &ContinuousWaletetType) 
     }
 }
 
-pub fn morl(_v: &f64) -> f64 {
-    let t = 0.0;
+pub fn morl(t: &f64, &_sigma: &f64) -> f64 {
+    let exp_term: f64 = (E as f64).powf(-0.5 * t.powf(2.0));
+    let cos_term: f64 = (5.0 * t).cos();
 
+    let t = exp_term * cos_term;
     t
 }
+
 
 pub fn cmorl(_v: &f64) -> f64 {
     let t = 0.0;
@@ -45,10 +48,8 @@ pub fn cmorl(_v: &f64) -> f64 {
     t
 }
 
-pub fn mexh(v: &f64, sigma: &i32) -> f64 {
-    let sigma_f = sigma.clone() as f64;
-
-    let t = get_mexh_constant(sigma) * ((1.0 - (v / (sigma_f)).powf(2.0)) * (E as f64).powf(-0.5 * (v / sigma_f.clone()).powf(2.0)));
+pub fn mexh(v: &f64, sigma: &f64) -> f64 {
+    let t = get_mexh_constant(sigma) * ((1.0 - (v / (sigma)).powf(2.0)) * (E as f64).powf(-0.5 * (v / sigma.clone()).powf(2.0)));
 
     t
 }
