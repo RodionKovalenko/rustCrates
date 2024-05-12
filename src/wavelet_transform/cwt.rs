@@ -36,7 +36,7 @@ pub fn cwt_2d(data: &Vec<Vec<f64>>, scales: &Vec<f64>, cw_type: &ContinuousWalet
     let wavefun_result: Vec<Vec<f64>> = wavefun(10, &cw_type);
     let mut wavelets: Vec<Vec<Vec<f64>>> = Vec::new();
     let mut integral_scaled: Vec<f64>;
-    let mut convolved : Vec<Vec<f64>>;
+    let mut convolved: Vec<Vec<f64>>;
     let mut coef: Vec<Vec<f64>>;
     let mut row_slice: Vec<Vec<f64>>;
     let mut index: f64;
