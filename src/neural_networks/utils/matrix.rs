@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::ops::{Mul, AddAssign, Sub, Add};
+use num_traits::NumCast;
 
 pub fn multiple(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<f64>>)
                 -> Vec<Vec<f64>> {
@@ -96,6 +97,45 @@ pub fn transpose<T: Debug + Clone>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
     matrix_result
 }
 
+pub fn transpose_3d<T: Debug + Clone>(matrix_3d: &Vec<Vec<Vec<T>>>) -> Vec<Vec<Vec<T>>> {
+    let depth = matrix_3d.len();
+    let rows = matrix_3d[0].len();
+    let cols = matrix_3d[0][0].len();
+
+    // Initialize a new 3D vector with swapped depth and rows dimensions
+    let mut transposed_matrix = vec![vec![vec![matrix_3d[0][0][0].clone(); depth]; rows]; cols];
+
+    for k in 0..cols {
+        for j in 0..rows {
+            for i in 0..depth {
+                transposed_matrix[k][j][i] = matrix_3d[i][j][k].clone();
+            }
+        }
+    }
+
+    transposed_matrix
+}
+
+pub fn convert_3d_to_2d<T: Clone>(array_3d: &Vec<Vec<Vec<T>>>) -> Vec<Vec<T>> {
+    let mut array_2d = Vec::new();
+
+    // Assuming all layers have the same number of rows and columns
+    let depth = array_3d.len();
+    let rows = array_3d[0].len();
+
+    // Iterate over each layer
+    for layer in 0..depth {
+        let mut flat_layer = Vec::new();
+        for row in 0..rows {
+            // Extend the flat_layer by appending each row from the current layer
+            flat_layer.extend(array_3d[layer][row].clone());
+        }
+        array_2d.push(flat_layer);
+    }
+
+    array_2d
+}
+
 pub fn create_generic<T>(num_rows: i32) -> Vec<Vec<T>> {
     let mut matrix_result: Vec<Vec<T>> = Vec::new();
 
@@ -105,6 +145,24 @@ pub fn create_generic<T>(num_rows: i32) -> Vec<Vec<T>> {
 
     matrix_result
 }
+
+pub fn flatten_2d<T: NumCast + Copy>(array: &Vec<Vec<T>>) -> Vec<f64> {
+    let mut matrix_result: Vec<f64> = Vec::new();
+
+    for i in 0..array.len() {
+        for j in 0..array.len() {
+            if let Some(num) = NumCast::from(array[i][j]) {
+                matrix_result.push(num);
+            } else {
+                // Handle the error or panic if you expect all conversions to succeed
+                panic!("Failed to cast an element to f64");
+            }
+        }
+    }
+
+    matrix_result
+}
+
 
 pub fn create_2d(num_rows: usize, num_columns: usize) -> Vec<Vec<f64>> {
     let mut matrix_result: Vec<Vec<f64>> = Vec::new();
@@ -133,7 +191,7 @@ pub fn create_generic_3d<T>(num_rows: i32, num_dim: i32) -> Vec<Vec<Vec<T>>> {
 }
 
 pub fn create_generic_one_dim<T> () -> Vec<T> {
-    let mut matrix_result: Vec<T> = Vec::new();
+    let matrix_result: Vec<T> = Vec::new();
 
     matrix_result
 }

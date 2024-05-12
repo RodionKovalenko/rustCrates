@@ -9,7 +9,6 @@ use std::env;
 #[allow(unused_assignments)]
 pub mod uphold_api;
 
-use neural_networks::utils::array::{arange, linspace};
 #[allow(unused_imports)]
 use uphold_api::*;
 #[allow(unused_imports)]
@@ -18,9 +17,8 @@ use std::time::Instant;
 #[allow(unused_imports)]
 #[allow(unused_imports)]
 use rand::Rng;
-use neural_networks::neural_networks::network_types::wavelet_network::test_decomposition;
-use neural_networks::wavelet_transform::cwt::{cwt_1d};
-use neural_networks::wavelet_transform::cwt_types::ContiousWaletetType;
+use neural_networks::wavelet_transform::cwt::{cwt_2d};
+use neural_networks::wavelet_transform::cwt_types::ContinuousWaletetType;
 
 pub enum ARGUMENTS {
     UPHOLD,
@@ -35,7 +33,7 @@ tcp::test_connection();
 fn main() {
     println!("Test beginns");
 
-    let args: Vec<String> = env::args().collect();
+    let _args: Vec<String> = env::args().collect();
     //println!("{:?}", args[1]);
 
     // if args.len() > 1 {
@@ -49,17 +47,18 @@ fn main() {
     // }
 
 
-    let scales: Vec<f64> = (5..6).map(|x| x as f64).collect();
+    let scales: Vec<f64> = (1..6).map(|x| x as f64).collect();
 
     // let n: Vec<f64> = (1..2).map(|x| x as f64).collect();
-    let n: Vec<f64> = (1..8).map(|x| x as f64).collect();
+    let n: Vec<f64> = (1..4).map(|x| x as f64).collect();
 
     println!("scales: {:?}", &scales);
     println!("data: {:?}", &n);
 
-    let transform_cwt = cwt_1d(n, scales, &ContiousWaletetType::MEXH, &1.0);
-
+    let scales: Vec<f64> = (2..5).map(|x| x as f64).collect();
+    let n: Vec<Vec<f64>> = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
+    let (transform_cwt, frequencies) = cwt_2d(&n, &scales, &ContinuousWaletetType::MEXH, &1.0);
     println!("transformed: {:?}", &transform_cwt);
+    println!("frequencies: {:?}", &frequencies);
 
-    test_decomposition();
 }

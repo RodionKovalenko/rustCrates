@@ -127,12 +127,12 @@ pub fn initialize_layer<T: Debug + Clone + Float + FromPrimitive>(feed_net: &mut
             num_hidden_neurons = feed_net.number_of_output_neurons.clone();
         }
 
-        let mut weight_matrix: Vec<Vec<T>> = Vec::new();
-        let mut weight_matrix_m1: Vec<Vec<T>> = Vec::new();
-        let mut weight_matrix_m2: Vec<Vec<T>> = Vec::new();
+        let mut _weight_matrix: Vec<Vec<T>> = Vec::new();
+        let mut _weight_matrix_m1: Vec<Vec<T>> = Vec::new();
+        let mut _weight_matrix_m2: Vec<Vec<T>> = Vec::new();
 
         let input_layer: Layer<T> = Layer {
-            input_weights: weight_matrix,
+            input_weights: _weight_matrix,
             inactivated_output: create_generic_3d(num_rows, num_hidden_neurons),
             activated_output: create_generic_3d(num_rows, num_hidden_neurons),
             layer_bias: create_generic_one_dim(),
@@ -144,8 +144,8 @@ pub fn initialize_layer<T: Debug + Clone + Float + FromPrimitive>(feed_net: &mut
             next_layer: None,
             input_data: create_generic_3d(num_rows, num_hidden_neurons),
             previous_gradient: create_generic(num_columns),
-            m1: weight_matrix_m1,
-            v1: weight_matrix_m2,
+            m1: _weight_matrix_m1,
+            v1: _weight_matrix_m2,
         };
 
         layers.push(input_layer);
