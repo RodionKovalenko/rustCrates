@@ -8,7 +8,7 @@ use rand::Rng;
 
 pub fn simulate_click_events() {
     let mut enigo = Enigo::new();
-    let mut now = Instant::now();
+    let now = Instant::now();
     let number_of_accounts:i32 = 7;
     let search_items = ["backpropagation alternatives", "how to get much money",
         "it is possible to get access to browser api?", "be healthy", "are fruits healthy", "what is our future?", "verschwörungstheorie existiert?",
@@ -37,7 +37,7 @@ pub fn simulate_click_events() {
             enigo.key_up(Key::F4);
         }
 
-        let output = if cfg!(target_os = "windows") {
+        if cfg!(target_os = "windows") {
             Command::new("powershell")
                 .args(&["/C", "(new-object -com shell.application).minimizeall();start myfile.bat -window Maximized"])
                 .output()
@@ -50,7 +50,7 @@ pub fn simulate_click_events() {
                 .expect("failed to execute process");
         };
 
-        for account in 0..number_of_accounts {
+        for _account in 0..number_of_accounts {
             println!("clicked at {:?}", time);
             thread::sleep(Duration::from_secs(2));
             enigo.mouse_move_to(1300, 730);

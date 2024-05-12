@@ -11,19 +11,19 @@ use crate::neural_networks::utils::matrix::create_generic_3d;
 pub const FILE_NAME: &str = "feedforward_network.json";
 
 pub fn forward(feed_net: &mut FeedforwardNetwork<f64>,
-               data_input: &Data<f64, f64>) {
+               _data_input: &Data<f64, f64>) {
     let layers: &mut Vec<Layer<f64>> = &mut feed_net.layers;
 
 
-    for i in 0..layers.len() {
+    for _i in 0..layers.len() {
 
     }
 
     feed_net.layers = layers.clone();
 }
 
-pub fn backward(feed_net: &mut FeedforwardNetwork<f64>,
-                data_input: &Data<f64, f64>) {
+pub fn backward(_feed_net: &mut FeedforwardNetwork<f64>,
+                _data_input: &Data<f64, f64>) {
 
     // train::calculate_gradient(&mut feed_net.layers, &i,
     //                           &data_structs.len(),
@@ -105,7 +105,7 @@ pub fn initialize_network(data_structs: &mut Vec<Data<f64, f64>>,
                           learning_rate: f32) -> FeedforwardNetwork<f64> {
     let number_of_hidden_layers: i32 = num_hidden_layers as i32;
     let number_of_output_neurons = num_output_neurons;
-    let mut number_of_hidden_neurons = num_hidden_neurons;
+    let mut _number_of_hidden_neurons = num_hidden_neurons;
     let number_of_data_sets = data_structs.len() as i32;
     let number_rows_in_set = data_structs[0].input.len() as i32;
     let num_columns_in_set = data_structs[0].input[0].len() as i32;
@@ -121,7 +121,7 @@ pub fn initialize_network(data_structs: &mut Vec<Data<f64, f64>>,
     let feedforward_network: FeedforwardNetwork<f64> =
         create(
             number_of_hidden_layers,
-            number_of_hidden_neurons,
+            _number_of_hidden_neurons,
             input_dimensions,
             number_of_output_neurons,
             number_of_data_sets.clone(),
@@ -140,7 +140,7 @@ pub fn initialize_network(data_structs: &mut Vec<Data<f64, f64>>,
             &number_of_hidden_layers,
         );
         if matches!(layer_type, LayerType::OutputLayer) {
-            number_of_hidden_neurons = number_of_output_neurons.clone();
+            _number_of_hidden_neurons = number_of_output_neurons.clone();
         }
         saved_network.learning_rate = learning_rate.clone();
         saved_network.layers[i.clone()].input_data = create_generic_3d(number_rows_in_set.clone(),

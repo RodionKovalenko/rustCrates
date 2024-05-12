@@ -77,8 +77,9 @@ int_psi_scale = (integral_y).reverse()[arange_scaled_i]
    convolution = convolve(data, int_psi_scale)
 
    e.g.
-    Kernel (filter) array [1, 2, 3] with length 3
-    Input array [0, 1, 0.5] with length 3
+    Data (filter) array [1, 2, 3] with length 3
+    Kernel array [0, 1, 0.5] with length 3
+    KERNEL is always reverted => [0.5, 1, 0]
     The convolution result will have a length of len(input) + len(kernel) - 1 = 3 + 3 - 1 = 5 elements.
     with "full" mode
 

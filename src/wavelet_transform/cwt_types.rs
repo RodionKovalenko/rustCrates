@@ -1,6 +1,6 @@
 
 // types used for Continuous Wavelet Transform
-pub enum ContiousWaletetType {
+pub enum ContinuousWaletetType {
     // Morlet
     MORL,
     // Mexican Hat

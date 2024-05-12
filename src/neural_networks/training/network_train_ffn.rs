@@ -47,16 +47,16 @@ pub fn initalize_data_sets() -> Vec<Data<f64, f64>> {
     let mut input_data: Vec<Vec<f64>> = vec![];
     let mut target_data: Vec<Vec<f64>> = vec![];
     let mut data_structs: Vec<Data<f64, f64>> = vec![];
-    let mut currency_to_num_map: HashMap<String, f64> = HashMap::new();
+    let mut _currency_to_num_map: HashMap<String, f64> = HashMap::new();
     let mut input_struct;
     let mut rng = rand::thread_rng();
 
     for i in 0..cryptocurrency_data.len() {
-        let date = cryptocurrency_data[i].full_date;
+        let _date = cryptocurrency_data[i].full_date;
         let currency: Vec<&str> = cryptocurrency_data[i].pair.split('-').collect();
-        let char_vec: Vec<char> = currency[0].chars().collect();
-        let mut currency_as_string: String = String::from("");
-        let currency_as_num: f64;
+        let _char_vec: Vec<char> = currency[0].chars().collect();
+        let mut _currency_as_string: String = String::from("");
+        let _currency_as_num: f64;
 
         if currency[0] == "ETH" {
             // if !currency_to_num_map.contains_key(currency[0]) {

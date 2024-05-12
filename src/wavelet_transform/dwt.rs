@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 use std::ops::{AddAssign, Mul, Neg};
-use num_traits::{FromPrimitive, Pow, ToPrimitive};
+use num_traits::{FromPrimitive, ToPrimitive};
 use crate::wavelet_transform::dwt_type_resolver::{get_high_pass_filter, get_inverse_high_pass_filter, get_inverse_low_pass_filter, get_low_pass_filter};
 use crate::wavelet_transform::dwt_types::DiscreteWaletetType;
 use crate::wavelet_transform::modes::WaveletMode;
@@ -112,7 +112,7 @@ pub fn transform_1_d<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> + Into<f
 }
 
 pub fn inverse_transform_1_d<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> + Into<f64> + AddAssign + ToPrimitive + Neg<Output=T>>
-(data: &Vec<T>, dw_type: &DiscreteWaletetType, _mode: &WaveletMode, level: u32) -> Vec<f64> {
+(data: &Vec<T>, dw_type: &DiscreteWaletetType, _mode: &WaveletMode, _level: u32) -> Vec<f64> {
     // inverse low pass filter (moving averages filter)
     let inverse_low_pass_filter: Vec<f64> = get_inverse_low_pass_filter(&dw_type);
     // inverse high pass filter (moving differences filter)
@@ -294,8 +294,8 @@ pub fn get_ll_lh_hl_hh(data: &Vec<Vec<f64>>) -> Vec<Vec<Vec<f64>>> {
     let mut hl: Vec<Vec<f64>> = Vec::new();
     // bottom right: diagonal features
     let mut hh: Vec<Vec<f64>> = Vec::new();
-    let mut half_row_ind: usize;
-    let mut half_col_ind: usize;
+    let half_row_ind: usize;
+    let half_col_ind: usize;
 
     let mut data_ll_lh_hl_hh: Vec<Vec<Vec<f64>>> = Vec::new();
 
@@ -325,8 +325,8 @@ pub fn combine_ll_lh_hl_hh(ll_lh_hl_hh: &Vec<Vec<Vec<f64>>>) -> Vec<Vec<f64>> {
     let len_c = ll_lh_hl_hh[0][0].len() << 1;
 
     let mut combined_vec: Vec<Vec<f64>> = ll_lh_hl_hh[0].clone();
-    let mut ind_r: usize = 0;
-    let mut ind_c: usize = 0;
+    let mut ind_r: usize;
+    let mut ind_c: usize;
 
     for i in 0..len_r {
         for j in 0..len_c {

@@ -6,4 +6,8 @@ pub mod dwt_type_resolver;
 pub mod modes;
 pub mod cwt;
 pub mod cwt_types;
-mod cwt_type_resolver;
+pub mod cwt_type_resolver;
+
+pub mod fft;
+
+pub mod tests;
