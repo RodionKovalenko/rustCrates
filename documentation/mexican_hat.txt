@@ -3,6 +3,7 @@
 https://pywavelets.readthedocs.io/en/latest/ref/cwt.html
 https://en.wikipedia.org/wiki/Ricker_wavelet
 https://reference.wolfram.com/language/ref/MexicanHatWavelet.html
+https://github.com/PyWavelets/pywt/blob/main/pywt/_extensions/_cwt.pyx
 
 1. wavefun(precision):
 method creates 2-dim points according to the wavelet 

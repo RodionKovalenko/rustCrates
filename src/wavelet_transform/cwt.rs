@@ -1,33 +1,22 @@
 use std::cmp::{Ordering};
-use crate::utils::array::{convolve, convolve_2d, convolve_3d, get_coef, get_coef_2d, get_coef_3d, integrate, linspace};
+use crate::neural_networks::utils::matrix::transpose;
+use crate::utils::array::{convolve, get_coef, integrate, linspace};
 use crate::utils::convolution_modes::ConvolutionMode;
 use crate::wavelet_transform::cwt_type_resolver::transform_by_type;
+use crate::wavelet_transform::cwt_type_resolver::get_wavelet_range;
 use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
 use crate::wavelet_transform::fft::fft_real1_d;
+use std::ops::Index;
+use std::ops::{Add, Sub, Mul, Div};
+use std::fmt::Debug;
 
 pub fn cwt_1d(data: &Vec<f64>, scales: &Vec<f64>, cw_type: &ContinuousWaletetType, sampling_period: &f64) -> (Vec<Vec<f64>>, Vec<f64>) {
     let wavefun_result: Vec<Vec<f64>> = wavefun(&10, &cw_type);
     let freqencies: Vec<f64> = scale_to_frequency(scales, &wavefun_result, sampling_period);
 
     let mut wavelets: Vec<Vec<f64>> = Vec::new();
-    let mut integral_scaled: Vec<f64>;
-    let mut convolved: Vec<f64>;
-    let mut coef: Vec<f64>;
-    let mut index: f64;
-    let mut limit_down: usize;
-    let mut limit_up: usize;
-
     for s in 0..scales.len() {
-        let scale = &scales[s];
-        integral_scaled = integrate(&wavefun_result[0], &wavefun_result[1], scale);
-        convolved = convolve(data, &integral_scaled, &ConvolutionMode::FULL);
-        coef = get_coef(&convolved, scale);
-
-        index = (coef.len() - data.len()) as f64 / 2.0;
-        limit_down = index.floor() as usize;
-        limit_up = index.ceil() as usize;
-
-        wavelets.push(coef[limit_down..(coef.len() - limit_up)].to_vec());
+        wavelets.push(get_wavelet(data, &wavefun_result, &scales[s]));
     }
 
     (wavelets, freqencies)
@@ -38,32 +27,12 @@ pub fn cwt_2d(data: &Vec<Vec<f64>>, scales: &Vec<f64>, cw_type: &ContinuousWalet
     let freqencies: Vec<f64> = scale_to_frequency(scales, &wavefun_result, sampling_period);
 
     let mut wavelets: Vec<Vec<Vec<f64>>> = Vec::new();
-    let mut integral_scaled: Vec<f64>;
-    let mut convolved: Vec<Vec<f64>>;
-    let mut coef: Vec<Vec<f64>>;
-    let mut row_slice: Vec<Vec<f64>>;
-    let mut index: f64;
-    let mut limit_down: usize;
-    let mut limit_up: usize;
 
-    for s in 0..scales.len() {
-        let scale = &scales[s];
-        integral_scaled = integrate(&wavefun_result[0], &wavefun_result[1], scale);
-        convolved = convolve_2d(&integral_scaled, data, &ConvolutionMode::FULL);
-
-        coef = get_coef_2d(&convolved, scale);
-        index = (coef[0].len() - data[0].len()) as f64 / 2.0;
-
-        limit_down = index.floor() as usize;
-        limit_up = index.ceil() as usize;
-        row_slice = Vec::new();
-
-        for i in 0..coef.len() {
-            row_slice.push(coef[i][limit_down..(coef[i].len() - limit_up)].to_vec());
-        }
-
-        wavelets.push(row_slice);
+    for i in 0..data.len() {
+        wavelets.push(cwt_1d(&data[i], scales, cw_type, sampling_period).0);
     }
+
+    wavelets = transpose(&wavelets);
 
     (wavelets, freqencies)
 }
@@ -72,47 +41,42 @@ pub fn cwt_3d(data: &Vec<Vec<Vec<f64>>>, scales: &Vec<f64>, cw_type: &Continuous
     let wavefun_result: Vec<Vec<f64>> = wavefun(&10, &cw_type);
     let freqencies: Vec<f64> = scale_to_frequency(scales, &wavefun_result, sampling_period);
     let mut wavelets: Vec<Vec<Vec<Vec<f64>>>> = Vec::new();
-    let mut integral_scaled: Vec<f64>;
-    let mut convolved: Vec<Vec<Vec<f64>>>;
-    let mut coef: Vec<Vec<Vec<f64>>>;
-    let mut row_slice: Vec<Vec<Vec<f64>>>;
-    let mut record_slice: Vec<Vec<f64>>;
-    let mut index: f64;
-    let mut limit_down: usize;
-    let mut limit_up: usize;
 
-    for s in 0..scales.len() {
-        let scale = &scales[s];
-        integral_scaled = integrate(&wavefun_result[0], &wavefun_result[1], scale);
-        convolved = convolve_3d(&integral_scaled, data, &ConvolutionMode::FULL);
-
-        coef = get_coef_3d(&convolved, scale);
-        index = (coef[0][0].len() - data[0][0].len()) as f64 / 2.0;
-
-        limit_down = index.floor() as usize;
-        limit_up = index.ceil() as usize;
-        row_slice = Vec::new();
-
-        for i in 0..coef.len() {
-            record_slice = Vec::new();
-
-            for j in 0..coef[i].len() {
-                record_slice.push(coef[i][j][limit_down..(coef[i][j].len() - limit_up)].to_vec());
-            }
-            row_slice.push(record_slice);
-        }
-
-        wavelets.push(row_slice);
+    for i in 0..data.len() {
+        wavelets.push(cwt_2d(&data[i], scales, cw_type, sampling_period).0);
     }
 
+    wavelets = transpose(&wavelets);
+
     (wavelets, freqencies)
+}
+
+pub fn get_wavelet(data: &Vec<f64>, wavefun_result: &Vec<Vec<f64>>, scale: &f64) -> Vec<f64> {
+    let integral_scaled: Vec<f64>;
+    let convolved: Vec<f64>;
+    let coef: Vec<f64>;
+    let index: f64;
+    let limit_down: usize;
+    let limit_up: usize;
+
+    integral_scaled = integrate(&wavefun_result[0], &wavefun_result[1], scale);
+    convolved = convolve(data, &integral_scaled, &ConvolutionMode::FULL);
+    coef = get_coef(&convolved, scale);
+
+    index = (coef.len() - data.len()) as f64 / 2.0;
+    limit_down = index.floor() as usize;
+    limit_up = index.ceil() as usize;
+
+    coef[limit_down..(coef.len() - limit_up)].to_vec()
 }
 
 pub fn wavefun(precision: &i32, cw_type: &ContinuousWaletetType) -> Vec<Vec<f64>> {
     let mut y: Vec<f64> = Vec::new();
     let mut x_y_vec = Vec::new();
-    let start = -8.0;
-    let end = 8.0;
+    let range = get_wavelet_range(&cw_type);
+    let start = range.0;
+    let end = range.1;
+
     let two_i32 = 2.0 as i32;
     let n_points = two_i32.pow(precision.clone() as u32);
 
@@ -126,7 +90,6 @@ pub fn wavefun(precision: &i32, cw_type: &ContinuousWaletetType) -> Vec<Vec<f64>
 
     x_y_vec
 }
-
 
 fn get_central_frequency(wavefun: &Vec<Vec<f64>>) -> f64 {
     let (x, y) = (&wavefun[0], &wavefun[1]);
@@ -190,4 +153,23 @@ pub fn frequency_to_scale_by_cwt(frequencies: &Vec<f64>, cwt_type: &ContinuousWa
     }
 
     scales
+}
+
+pub fn cwt<T, U, V>(
+    data: &T,
+    scales: &Vec<f64>,
+    cw_type: &ContinuousWaletetType,
+    sampling_period: &f64,
+) -> (Vec<Vec<f64>>, Vec<f64>)
+    where
+        T: Index<usize, Output = U> + Clone,
+        U: Index<usize, Output = V> + Clone,
+        V: Add<Output = V> + Sub<Output = V> + Mul<Output = V> + Div<Output = V> + Clone + Debug + Mul<V, Output = V>,
+{
+    let wavefun_result: Vec<Vec<f64>> = wavefun(&10, cw_type);
+    let freqencies: Vec<f64> = scale_to_frequency(scales, &wavefun_result, sampling_period);
+
+    let mut wavelets: Vec<Vec<f64>> = Vec::new();
+
+    (wavelets, freqencies)
 }
