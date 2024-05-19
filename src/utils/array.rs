@@ -1,6 +1,5 @@
 use std::cmp::{max, min};
 use crate::utils::convolution_modes::ConvolutionMode;
-use std::ops::{Index, IndexMut};
 
 /*
     Aranges a vector of f64 values from start to end with a step value
@@ -206,44 +205,4 @@ pub fn get_coef_3d(a: &Vec<Vec<Vec<f64>>>, scale: &f64) -> Vec<Vec<Vec<f64>>> {
     }
 
     diff
-}
-
-// Define a trait to represent arrays of any dimension
-pub trait Array {
-    fn shape(&self) -> Vec<usize>;
-}
-
-// Implement the trait for a 1D array
-impl<T> Array for Vec<T> {
-    fn shape(&self) -> Vec<usize> {
-        vec![self.len()]
-    }
-}
-
-// Wrapper type for 2D arrays
-pub struct Array2D<T>(pub Vec<Vec<T>>);
-
-// Implement the trait for a 2D array
-impl<T> Array for Array2D<T> {
-    fn shape(&self) -> Vec<usize> {
-        vec![self.0.len(), self.0[0].len()]
-    }
-}
-
-// Wrapper type for 3D arrays
-pub struct Array3D<T>(pub Vec<Vec<Vec<T>>>);
-
-// Implement the trait for a 3D array
-impl<T> Array for Array3D<T> {
-    fn shape(&self) -> Vec<usize> {
-        vec![self.0.len(), self.0[0].len(), self.0[0][0].len()]
-    }
-}
-
-pub fn process_array<T>(array: &T)
-    where
-        T: Array,
-{
-    let shape = array.shape();
-    println!("Shape: {:?}", shape);
 }

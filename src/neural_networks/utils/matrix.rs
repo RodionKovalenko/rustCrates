@@ -97,25 +97,6 @@ pub fn transpose<T: Debug + Clone>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
     matrix_result
 }
 
-pub fn transpose_3d<T: Debug + Clone>(matrix_3d: &Vec<Vec<Vec<T>>>) -> Vec<Vec<Vec<T>>> {
-    let depth = matrix_3d.len();
-    let rows = matrix_3d[0].len();
-    let cols = matrix_3d[0][0].len();
-
-    // Initialize a new 3D vector with swapped depth and rows dimensions
-    let mut transposed_matrix = vec![vec![vec![matrix_3d[0][0][0].clone(); depth]; rows]; cols];
-
-    for k in 0..cols {
-        for j in 0..rows {
-            for i in 0..depth {
-                transposed_matrix[k][j][i] = matrix_3d[i][j][k].clone();
-            }
-        }
-    }
-
-    transposed_matrix
-}
-
 pub fn convert_3d_to_2d<T: Clone>(array_3d: &Vec<Vec<Vec<T>>>) -> Vec<Vec<T>> {
     let mut array_2d = Vec::new();
 
