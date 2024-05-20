@@ -9,7 +9,7 @@ use crate::utils::data_converter::{convert_to_f64_1d, convert_to_f64_2d, convert
 use crate::utils::num_trait::{Array, ArrayType};
 
 pub fn cwt_1d<T: ArrayType>(data: &T, scales: &Vec<f64>, cw_type: &ContinuousWaletetType, sampling_period: &f64) -> (Vec<Vec<f64>>, Vec<f64>) {
-    let data_f64 = convert_to_f64_1d(data);
+    let data_f64: Vec<f64> = convert_to_f64_1d(data);
     let wavefun_result: Vec<Vec<f64>> = wavefun(&10, &cw_type);
     let freqencies: Vec<f64> = scale_to_frequency(scales, &wavefun_result, sampling_period);
 
@@ -218,8 +218,8 @@ pub fn frequency_to_scale_by_cwt(frequencies: &Vec<f64>, cwt_type: &ContinuousWa
     scales
 }
 
-type ArrayWithFrequencies<T> = (T, Vec<f64>);
-pub fn cwt<T: ArrayType>(data: &T, scales: &Vec<f64>, cw_type: &ContinuousWaletetType, sampling_period: &f64) -> Option<ArrayWithFrequencies<Array>> {
+type ArrayWithFrequencies = (Array, Vec<f64>);
+pub fn cwt<T: ArrayType>(data: &T, scales: &Vec<f64>, cw_type: &ContinuousWaletetType, sampling_period: &f64) -> Option<ArrayWithFrequencies> {
     let num_dim = data.dimension();
 
     match num_dim {

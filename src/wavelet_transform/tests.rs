@@ -1,11 +1,14 @@
 #[cfg(test)]
 mod tests {
     use num::Complex;
-    use crate::utils::data_converter::extract_array_data;
-    use crate::utils::num_trait::{Array, ArrayType};
+    use crate::neural_networks::utils::image::{get_pixels_as_rgba, save_image_from_pixels};
+    use crate::utils::data_converter::{convert_to_f64_2d, convert_to_f64_3d, convert_to_f64_4d, convert_to_f64_5d, convert_to_f64_6d};
     use crate::wavelet_transform::cwt::{cwt, cwt_1d, cwt_2d, cwt_3d, cwt_4d, cwt_5d};
     use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
+    use crate::wavelet_transform::dwt::{get_ll_lh_hl_hh, inverse_transform_2_d, transform_2_d};
+    use crate::wavelet_transform::dwt_types::DiscreteWaletetType;
     use crate::wavelet_transform::fft::{fft_real1_d, fft_real2_d};
+    use crate::wavelet_transform::modes::WaveletMode;
 
     #[test]
     fn test_cwt_1d() {
@@ -353,14 +356,14 @@ mod tests {
                                                          vec![vec![vec![vec![17, 18], vec![19, 20]], vec![vec![21, 22], vec![23, 24]]], vec![vec![vec![25, 26], vec![27, 28]], vec![vec![29, 30], vec![31, 32]]]]];
 
         let (transform_cwt, _frequencies) = cwt(&data_1d, &scales, &ContinuousWaletetType::GAUS1, &1.0).unwrap();
-        let result = extract_array_data::<Vec<Vec<f64>>>(&transform_cwt).unwrap();
+        let result = convert_to_f64_2d(&transform_cwt);
 
         assert_eq!(result, [[-1.2395610940726745, -1.5060022157301245, -0.24828908285941376], [-2.3112286755930693, -1.8314240244836684, 0.23981896270549802],
             [-2.2095925166326147, -1.3341119315634973, 0.2289690082117302], [-1.813197927614067, -0.9559156277008043, 0.16963612511897352],
             [-1.4216652542521802, -0.7393736993611678, 0.14658688966741465]]);
 
         let (transform_cwt, _frequencies) = cwt(&data_2d, &scales, &ContinuousWaletetType::GAUS2, &1.0).unwrap();
-        let result = extract_array_data::<Vec<Vec<Vec<f64>>>>(&transform_cwt).unwrap();
+        let result = convert_to_f64_3d(&transform_cwt);
 
         assert_eq!(result, [[[-0.3060203534761658, 1.141662279114441], [-0.23148661391418068, 2.663878651267021]], [[0.5091909220235318, 1.701535791476272],
             [1.585560441205823, 3.970250180111296]], [[0.9951288262898925, 1.5950042163393108], [2.5219257246928897, 3.7216765047917213]],
@@ -368,7 +371,7 @@ mod tests {
                 [2.7147837387795093, 3.0379980174690244]]]);
 
         let (transform_cwt, _frequencies) = cwt(&data_3d, &scales, &ContinuousWaletetType::MORL, &1.0).unwrap();
-        let result = extract_array_data::<Vec<Vec<Vec<Vec<f64>>>>>(&transform_cwt).unwrap();
+        let result = convert_to_f64_4d(&transform_cwt);
 
         assert_eq!(result, [[[[0.11408953141269737, -0.36938551384769114], [0.10505055820950149, -0.861899532311287]], [[0.0960115850063058, -1.354413550774883],
             [0.08697261180310989, -1.8469275692384786]]], [[[-0.5248492745896832, 0.5297678169139295], [-0.8731092768747122, 1.23612490613248]],
@@ -379,7 +382,7 @@ mod tests {
                 [[2.018238022493315, 4.159881174117526], [2.8170410352673767, 5.672565237432988]]]]);
 
         let (transform_cwt, _frequencies) = cwt(&data_4d, &scales, &ContinuousWaletetType::GAUS3, &1.0).unwrap();
-        let result = extract_array_data::<Vec<Vec<Vec<Vec<Vec<f64>>>>>>(&transform_cwt).unwrap();
+        let result = convert_to_f64_5d(&transform_cwt);
 
         assert_eq!(result, [[[[[-0.40954365117858665, -0.6299757903758068], [-1.4490630927329833, -0.6299757903758006]], [[-2.48858253428738, -0.6299757903757941],
             [-3.5281019758417766, -0.6299757903757881]]], [[[-4.5676214173961736, -0.6299757903757817], [-5.60714085895057, -0.6299757903757754]],
@@ -397,7 +400,7 @@ mod tests {
                 [[-5.978930270999863, -0.11457244426378828], [-6.849430658894685, -0.11457244426377239]]]]]);
 
         let (transform_cwt, _frequencies) = cwt(&data_5d, &scales, &ContinuousWaletetType::GAUS4, &1.0).unwrap();
-        let result = extract_array_data::<Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>>>(&transform_cwt).unwrap();
+        let result = convert_to_f64_6d(&transform_cwt);
 
         assert_eq!(result, [[[[[[-0.2569349278547328, 0.3904669517575087], [-0.38371420512362464, 0.9110895541008439]], [[-0.5104934823925164, 1.4317121564441793],
             [-0.6372727596614083, 1.9523347587875146]]], [[[-0.7640520369303, 2.4729573611308497], [-0.8908313141991915, 2.9935799634741853]],
@@ -455,5 +458,59 @@ mod tests {
         assert_eq!(fft[0], [Complex::new(45.0, 0.0), Complex::new(-4.500000000000004, 2.5980762113533125), Complex::new(-4.499999999999993, -2.5980762113533267)]);
         assert_eq!(fft[1], [Complex::new(-13.500000000000007, 7.7942286340599445), Complex::new(2.1094237467877974e-15, 1.1102230246251565e-15), Complex::new(8.881784197001252e-16, 4.6629367034256575e-15)]);
         assert_eq!(fft[2], [Complex::new(-13.49999999999999, -7.794228634059962), Complex::new(0.0, 2.220446049250313e-15), Complex::new(-4.884981308350689e-15, 2.4424906541753444e-15)]);
+    }
+
+    #[test]
+    pub fn test_decomposition() {
+        let pixels: Vec<Vec<f64>> = get_pixels_as_rgba("training_data/1.jpg");
+        // let mut n: Vec<Vec<f64>> = Vec::new();
+        let mut n = pixels;
+
+        // println!("n : {:?}", &n);
+        println!("Transform : ==================================================================");
+        let mut dw_transformed: Vec<Vec<f64>>;
+        let mut inverse_transformed;
+        let mut ll_lh_hl_hh: Vec<Vec<Vec<f64>>>;
+
+        println!("length: height: {}, width: {}", n.len(), n[1].len());
+        let dec_levels = 6;
+        let mut decomposed_levels = Vec::new();
+
+        let wavelet_type = DiscreteWaletetType::BIOR11;
+        let wavelet_mode = WaveletMode::CONSTANT;
+
+        // encode with wavelet transform
+        for i in 0..dec_levels.clone() {
+            // println!("before level: {}, length: height: {}, width: {}\n", &i, dw_transformed.len(), dw_transformed[1].len());
+            dw_transformed = transform_2_d(&n, &wavelet_type, &wavelet_mode);
+
+            //  save as images
+            decomposed_levels.push(dw_transformed.clone());
+            ll_lh_hl_hh = get_ll_lh_hl_hh(&dw_transformed);
+
+            n = ll_lh_hl_hh[0].clone();
+            let mut count = 1;
+            for vec in ll_lh_hl_hh {
+                let file_name = String::from(format!("{}_decomp_level_{}_{}.jpg", "tests/dwt_", i.clone(), count.clone()));
+                save_image_from_pixels(&vec, &file_name);
+
+                count += 1;
+            }
+        }
+
+        // decode into original data
+        for i in (0..dec_levels.clone()).rev() {
+            let level = i as u32;
+
+            inverse_transformed = decomposed_levels.get(i.clone()).unwrap().to_vec();
+
+            println!("inverse level: before: {}, inverse transform: length: height: {}, width: {}\n", i, inverse_transformed.len(), inverse_transformed[1].len());
+            inverse_transformed = inverse_transform_2_d(&inverse_transformed, &wavelet_type, &wavelet_mode, level);
+            println!("inverse level: after: {}, inverse transform: length: height: {}, width: {}\n", i, inverse_transformed.len(), inverse_transformed[1].len());
+            // println!("inverse transformed: {:?} \n", &inverse_transformed);
+            let file_name = String::from(format!("{}_restored_level_{}.jpg", "tests/dwt_", i.clone()));
+            save_image_from_pixels(&inverse_transformed, &file_name);
+        }
+        println!("==================================================================");
     }
 }

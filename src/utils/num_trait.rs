@@ -31,6 +31,7 @@ impl NumTrait for i64 {
 }
 
 #[derive(Debug)]
+#[derive(Clone)]
 pub enum Array {
     Array1D(Vec<f64>),
     ArrayF321D(Vec<f32>),
@@ -79,6 +80,43 @@ pub trait ArrayType: Debug {
     fn len(&self) -> usize;
     fn as_f64_array(&self) -> Array;
     fn get_element_type(&self) -> Self::Element;
+}
+
+impl ArrayType for Array {
+    type Element = Vec<f64>;
+
+    fn dimension(&self) -> usize {
+        match self {
+            Array::Array2D(_) => 2,
+            Array::Array3D(_) => 3,
+            Array::Array4D(_) => 4,
+            Array::Array5D(_) => 5,
+            Array::Array6D(_) => 6,
+            _ => 0
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            Array::Array1D(vec) => vec.len(),
+            Array::Array2D(vec) => vec.len(),
+            Array::Array3D(vec) => vec.len(),
+            Array::Array4D(vec) => vec.len(),
+            Array::Array5D(vec) => vec.len(),
+            Array::Array6D(vec) => vec.len(),
+            Array::Array7D(vec) => vec.len(),
+            Array::Array8D(vec) => vec.len(),
+            _ => 0
+        }
+    }
+
+    fn as_f64_array(&self) -> Array {
+        self.clone()
+    }
+
+    fn get_element_type(&self) -> Self::Element {
+        Vec::new()
+    }
 }
 
 impl<T: NumTrait, const N: usize> ArrayType for [T; N] {
@@ -246,7 +284,7 @@ impl<T: NumTrait, const N: usize, const M: usize, const P: usize, const K: usize
 }
 
 impl<T: NumTrait> ArrayType for Vec<T> {
-    type Element = Vec<f64>;
+    type Element = Vec<T>;
     fn dimension(&self) -> usize {
         1
     }
@@ -265,7 +303,7 @@ impl<T: NumTrait> ArrayType for Vec<T> {
 }
 
 impl<T: NumTrait> ArrayType for Vec<Vec<T>> {
-    type Element = Vec<Vec<f64>>;
+    type Element = Vec<Vec<T>>;
     fn dimension(&self) -> usize {
         2
     }
@@ -284,7 +322,7 @@ impl<T: NumTrait> ArrayType for Vec<Vec<T>> {
 }
 
 impl<T: NumTrait> ArrayType for Vec<Vec<Vec<T>>> {
-    type Element = Vec<Vec<Vec<f64>>>;
+    type Element = Vec<Vec<Vec<T>>>;
     fn dimension(&self) -> usize {
         3
     }
@@ -307,7 +345,7 @@ impl<T: NumTrait> ArrayType for Vec<Vec<Vec<T>>> {
 }
 
 impl<T: NumTrait> ArrayType for Vec<Vec<Vec<Vec<T>>>> {
-    type Element = Vec<Vec<Vec<Vec<f64>>>>;
+    type Element = Vec<Vec<Vec<Vec<T>>>>;
     fn dimension(&self) -> usize {
         4
     }
@@ -327,7 +365,7 @@ impl<T: NumTrait> ArrayType for Vec<Vec<Vec<Vec<T>>>> {
 }
 
 impl<T: NumTrait> ArrayType for Vec<Vec<Vec<Vec<Vec<T>>>>> {
-    type Element = Vec<Vec<Vec<Vec<Vec<f64>>>>>;
+    type Element = Vec<Vec<Vec<Vec<Vec<T>>>>>;
     fn dimension(&self) -> usize {
         5
     }
@@ -348,7 +386,7 @@ impl<T: NumTrait> ArrayType for Vec<Vec<Vec<Vec<Vec<T>>>>> {
 }
 
 impl<T: NumTrait> ArrayType for Vec<Vec<Vec<Vec<Vec<Vec<T>>>>>> {
-    type Element = Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>>;
+    type Element = Vec<Vec<Vec<Vec<Vec<Vec<T>>>>>>;
     fn dimension(&self) -> usize {
         6
     }
@@ -370,7 +408,7 @@ impl<T: NumTrait> ArrayType for Vec<Vec<Vec<Vec<Vec<Vec<T>>>>>> {
 }
 
 impl<T: NumTrait> ArrayType for Vec<Vec<Vec<Vec<Vec<Vec<Vec<T>>>>>>> {
-    type Element = Vec<Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>>>;
+    type Element = Vec<Vec<Vec<Vec<Vec<Vec<Vec<T>>>>>>>;
     fn dimension(&self) -> usize {
         7
     }
@@ -394,7 +432,7 @@ impl<T: NumTrait> ArrayType for Vec<Vec<Vec<Vec<Vec<Vec<Vec<T>>>>>>> {
 }
 
 impl<T: NumTrait> ArrayType for Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<T>>>>>>>> {
-    type Element = Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>>>>;
+    type Element = Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<T>>>>>>>>;
     fn dimension(&self) -> usize {
         8
     }
