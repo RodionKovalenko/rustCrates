@@ -17,9 +17,9 @@ use std::time::Instant;
 #[allow(unused_imports)]
 #[allow(unused_imports)]
 use rand::Rng;
-use neural_networks::utils::data_converter::extract_array_data;
-use neural_networks::wavelet_transform::cwt::{cwt};
-use neural_networks::wavelet_transform::cwt_types::ContinuousWaletetType;
+use neural_networks::wavelet_transform::dwt::{get_ll_lh_hl_hh, transform_2_d};
+use neural_networks::wavelet_transform::dwt_types::DiscreteWaletetType;
+use neural_networks::wavelet_transform::modes::WaveletMode;
 
 pub enum ARGUMENTS {
     UPHOLD,
@@ -48,34 +48,14 @@ fn main() {
     //     }
     // }
 
+    let data_1ddata_1d = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
+    let data_2d = vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]];
 
-    let scales: Vec<f64> = (1..6).map(|x| x as f64).collect();
+    // let dwt_1d = transform_1_d(&data_1ddata_1d, &DiscreteWaletetType::DB3, &WaveletMode::SYMMETRIC);
+    //
+    // println!("{:?}", dwt_1d);
 
-    let data_1d = &[1, 2, 3];
-    let data_2d: Vec<Vec<i64>> = vec![vec![1, 2], vec![3, 4]];
-    let data_3d: Vec<Vec<Vec<i32>>> = vec![vec![vec![1, 2], vec![3, 4]], vec![vec![5, 6], vec![7, 8]]];
-    let data_4d: Vec<Vec<Vec<Vec<i32>>>> = vec![vec![vec![vec![1, 2], vec![3, 4]], vec![vec![5, 6], vec![7, 8]]], vec![vec![vec![9, 10], vec![11, 12]], vec![vec![13, 14], vec![15, 16]]]];
-    let data_5d: Vec<Vec<Vec<Vec<Vec<i32>>>>> = vec![vec![vec![vec![vec![1, 2], vec![3, 4]], vec![vec![5, 6], vec![7, 8]]], vec![vec![vec![9, 10], vec![11, 12]], vec![vec![13, 14], vec![15, 16]]]],
-                                                     vec![vec![vec![vec![17, 18], vec![19, 20]], vec![vec![21, 22], vec![23, 24]]], vec![vec![vec![25, 26], vec![27, 28]], vec![vec![29, 30], vec![31, 32]]]]];
-
-
-    let (transform_cwt, _frequencies) = cwt(data_1d, &scales, &ContinuousWaletetType::GAUS1, &1.0).unwrap();
-    let transform_cwt: Vec<Vec<f64>> = extract_array_data::<>(&transform_cwt).unwrap();
-    println!("\n\ntransformed: {:?}", &transform_cwt);
-
-    let (transform_cwt, _frequencies) = cwt(&data_2d, &scales, &ContinuousWaletetType::GAUS2, &1.0).unwrap();
-    println!("\n\ntransformed: {:?}", &transform_cwt);
-
-    let (transform_cwt, _frequencies) = cwt(&data_3d, &scales, &ContinuousWaletetType::MORL, &1.0).unwrap();
-    println!("\n\ntransformed: {:?}", &transform_cwt);
-
-    let (transform_cwt, _frequencies) = cwt(&data_4d, &scales, &ContinuousWaletetType::GAUS3, &1.0).unwrap();
-
-    println!("\n\ntransformed: {:?}", &transform_cwt);
-    let (transform_cwt, _frequencies) = cwt(&data_5d, &scales, &ContinuousWaletetType::GAUS4, &1.0).unwrap();
-    let result = extract_array_data::<Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>>>(&transform_cwt).unwrap();
-
-    println!("result: {:?}", result);
-    println!("_frequencies: {:?}", _frequencies);
-
+    let dwt = transform_2_d(&data_2d, &DiscreteWaletetType::DB5, &WaveletMode::CONSTANT);
+    let lllhhlhh = get_ll_lh_hl_hh(&dwt);
+    println!("{:?}", lllhhlhh);
 }

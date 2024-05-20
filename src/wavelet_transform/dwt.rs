@@ -93,7 +93,7 @@ pub fn transform_1_d<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> + Into<f
         value_high = 0.0;
 
         for (l_p_ind, low_p_f_value) in low_pass_filter.iter().enumerate() {
-            index_low = ((i.clone() + l_p_ind as i32) % n.clone()) as usize;
+            index_low = ((i.clone() + l_p_ind as i32) % (data_clone.len() as i32)) as usize;
             // High-Pass
             value_low += data_clone[index_low].to_f64().unwrap() * low_p_f_value.clone();
             // Low-Pass
@@ -313,8 +313,8 @@ pub fn get_ll_lh_hl_hh(data: &Vec<Vec<f64>>) -> Vec<Vec<Vec<f64>>> {
     }
 
     data_ll_lh_hl_hh.push(ll);
-    data_ll_lh_hl_hh.push(lh);
     data_ll_lh_hl_hh.push(hl);
+    data_ll_lh_hl_hh.push(lh);
     data_ll_lh_hl_hh.push(hh);
 
     data_ll_lh_hl_hh
