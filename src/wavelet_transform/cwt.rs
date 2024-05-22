@@ -7,6 +7,7 @@ use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
 use crate::wavelet_transform::fft::fft_real1_d;
 use crate::utils::data_converter::{convert_to_f64_1d, convert_to_f64_2d, convert_to_f64_3d, convert_to_f64_4d, convert_to_f64_5d};
 use crate::utils::num_trait::{Array, ArrayType};
+use crate::wavelet_transform::cwt_complex::cwt_complex;
 
 pub fn cwt_1d<T: ArrayType>(data: &T, scales: &Vec<f64>, cw_type: &ContinuousWaletetType, sampling_period: &f64) -> (Vec<Vec<f64>>, Vec<f64>) {
     let data_f64: Vec<f64> = convert_to_f64_1d(data);
@@ -151,6 +152,7 @@ pub fn wavefun(precision: &i32, cw_type: &ContinuousWaletetType) -> Vec<Vec<f64>
     x_y_vec.push(x);
     x_y_vec.push(y);
 
+
     x_y_vec
 }
 
@@ -219,32 +221,51 @@ pub fn frequency_to_scale_by_cwt(frequencies: &Vec<f64>, cwt_type: &ContinuousWa
 }
 
 type ArrayWithFrequencies = (Array, Vec<f64>);
+
 pub fn cwt<T: ArrayType>(data: &T, scales: &Vec<f64>, cw_type: &ContinuousWaletetType, sampling_period: &f64) -> Option<ArrayWithFrequencies> {
     let num_dim = data.dimension();
 
-    match num_dim {
-        1 => {
-            let (wavelets, frequencies) = cwt_1d(data, scales, cw_type, sampling_period);
-            Some((Array::Array2D(wavelets.clone()), frequencies.clone()))
-        },
-        2 => {
-            let (wavelets, frequencies) = cwt_2d(data, scales, cw_type, sampling_period);
-            Some((Array::Array3D(wavelets.clone()), frequencies.clone()))
-        },
-        3 => {
-            let (wavelets, frequencies) = cwt_3d(data, scales, cw_type, sampling_period);
-            Some((Array::Array4D(wavelets.clone()), frequencies.clone()))
-        },
-        4 => {
-            let (wavelets, frequencies) = cwt_4d(data, scales, cw_type, sampling_period);
-            Some((Array::Array5D(wavelets.clone()), frequencies.clone()))
-        },
-        5 => {
-            let (wavelets, frequencies) = cwt_5d(data, scales, cw_type, sampling_period);
-            Some((Array::Array6D(wavelets.clone()), frequencies.clone()))
+    match cw_type {
+        ContinuousWaletetType::CMOR |
+        ContinuousWaletetType::SHAN |
+        ContinuousWaletetType::FBSP |
+        ContinuousWaletetType::CGAU1 |
+        ContinuousWaletetType::CGAU2 |
+        ContinuousWaletetType::CGAU3 |
+        ContinuousWaletetType::CGAU4 |
+        ContinuousWaletetType::CGAU5 |
+        ContinuousWaletetType::CGAU6 |
+        ContinuousWaletetType::CGAU7 |
+        ContinuousWaletetType::CGAU8 => {
+            let (wavelets, frequencies) = cwt_complex(data, scales, cw_type, sampling_period).unwrap();
+            Some((wavelets, frequencies))
         },
         _ => {
-            None
+            match num_dim {
+                1 => {
+                    let (wavelets, frequencies) = cwt_1d(data, scales, cw_type, sampling_period);
+                    Some((Array::Array2D(wavelets.clone()), frequencies.clone()))
+                }
+                2 => {
+                    let (wavelets, frequencies) = cwt_2d(data, scales, cw_type, sampling_period);
+                    Some((Array::Array3D(wavelets.clone()), frequencies.clone()))
+                }
+                3 => {
+                    let (wavelets, frequencies) = cwt_3d(data, scales, cw_type, sampling_period);
+                    Some((Array::Array4D(wavelets.clone()), frequencies.clone()))
+                }
+                4 => {
+                    let (wavelets, frequencies) = cwt_4d(data, scales, cw_type, sampling_period);
+                    Some((Array::Array5D(wavelets.clone()), frequencies.clone()))
+                }
+                5 => {
+                    let (wavelets, frequencies) = cwt_5d(data, scales, cw_type, sampling_period);
+                    Some((Array::Array6D(wavelets.clone()), frequencies.clone()))
+                }
+                _ => {
+                    None
+                }
+            }
         }
     }
 }

@@ -13,6 +13,7 @@
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/venv" />
       <excludeFolder url="file://$MODULE_DIR$/.idea/copilot/chatSessions" />
+      <excludeFolder url="file://$MODULE_DIR$/src/wavelet_transform/cwt_complex/target" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.8" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />

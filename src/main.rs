@@ -17,9 +17,10 @@ use std::time::Instant;
 #[allow(unused_imports)]
 #[allow(unused_imports)]
 use rand::Rng;
-use neural_networks::wavelet_transform::dwt::{get_ll_lh_hl_hh, transform_2_d};
-use neural_networks::wavelet_transform::dwt_types::DiscreteWaletetType;
-use neural_networks::wavelet_transform::modes::WaveletMode;
+use neural_networks::utils::array::arange;
+use neural_networks::utils::data_converter::{convert_to_c_array_f64_2d};
+use neural_networks::wavelet_transform::cwt::{cwt};
+use neural_networks::wavelet_transform::cwt_types::ContinuousWaletetType;
 
 pub enum ARGUMENTS {
     UPHOLD,
@@ -48,14 +49,27 @@ fn main() {
     //     }
     // }
 
-    let data_1ddata_1d = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
-    let data_2d = vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]];
 
-    // let dwt_1d = transform_1_d(&data_1ddata_1d, &DiscreteWaletetType::DB3, &WaveletMode::SYMMETRIC);
-    //
-    // println!("{:?}", dwt_1d);
+    let scale = arange(&1.0, &3.0, &1.0);
+    let data_1d = vec![1, 2, 3];
 
-    let dwt = transform_2_d(&data_2d, &DiscreteWaletetType::DB5, &WaveletMode::CONSTANT);
-    let lllhhlhh = get_ll_lh_hl_hh(&dwt);
-    println!("{:?}", lllhhlhh);
+    let (transformed, frequencies) = cwt(&data_1d, &scale, &ContinuousWaletetType::CGAU5, &1.0).unwrap();
+    let result = convert_to_c_array_f64_2d(transformed);
+    println!("gauss 5{:?}", result);
+    println!("{:?}", frequencies);
+
+    let (transformed, frequencies) = cwt(&data_1d, &scale, &ContinuousWaletetType::CGAU6, &1.0).unwrap();
+    let result = convert_to_c_array_f64_2d(transformed);
+    println!(" CGA6 {:?}", result);
+    println!("{:?}", frequencies);
+
+    let (transformed, frequencies) = cwt(&data_1d, &scale, &ContinuousWaletetType::CGAU7, &1.0).unwrap();
+    let result = convert_to_c_array_f64_2d(transformed);
+    println!(" CGAU7 {:?}", result);
+    println!("{:?}", frequencies);
+
+    let (transformed, frequencies) = cwt(&data_1d, &scale, &ContinuousWaletetType::CGAU8, &1.0).unwrap();
+    let result = convert_to_c_array_f64_2d(transformed);
+    println!(" CGAU8 {:?}", result);
+    println!("{:?}", frequencies);
 }

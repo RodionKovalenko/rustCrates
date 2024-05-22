@@ -11,3 +11,4 @@ pub mod cwt_type_resolver;
 pub mod fft;
 
 pub mod tests;
+pub mod cwt_complex;
