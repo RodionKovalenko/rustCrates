@@ -5,13 +5,7 @@ pub enum ContinuousWaletetType {
     MORL,
     // Mexican Hat
     MEXH,
-    // Shannon
-    SHAN,
-    // frequency B-spline
-    FBSP,
 
-    // complex Morlet
-    CMOR,
     // Gaussian
     GAUS1,
     GAUS2,
@@ -22,7 +16,7 @@ pub enum ContinuousWaletetType {
     GAUS7,
     GAUS8,
 
-    // comple Gaussian
+    // complex Gaussian
     CGAU1,
     CGAU2,
     CGAU3,
@@ -30,5 +24,12 @@ pub enum ContinuousWaletetType {
     CGAU5,
     CGAU6,
     CGAU7,
-    CGAU8
+    CGAU8,
+    // Shannon
+    SHAN,
+    // frequency B-spline
+    FBSP,
+    // complex Morlet
+    CMOR,
+
 }
