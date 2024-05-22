@@ -500,49 +500,49 @@ mod tests {
 
         let result = convert_to_c_array_f64_2d(transformed);
 
-        assert_eq!(result, [[Complex { re: -0.7539309382537467, im: 0.20660629328041116 }, Complex { re: -0.8996749992471855, im: -0.03100951856389067 }, Complex { re: -0.3731375452609411, im: -0.7955459215923877 }],
-                       [Complex { re: -1.6630454106813366, im: 0.3253564390808993 }, Complex { re: -1.5788248947211585, im: -0.8328403534259957 }, Complex { re: 0.15111433618154138, im: -1.6100776507287728 }]]);
+        assert_eq!(result, [[Complex { re: -0.7539309382537467, im: -0.20660629328041116 }, Complex { re: -0.8996749992471855, im: 0.03100951856389067 }, Complex { re: -0.3731375452609411, im: 0.7955459215923877 }],
+                       [Complex { re: -1.6630454106813366, im: -0.3253564390808993 }, Complex { re: -1.5788248947211585, im: 0.8328403534259957 }, Complex { re: 0.15111433618154138, im: 1.6100776507287728 }]]);
         assert_eq!(frequencies, [0.3, 0.15]);
 
         let (transformed, frequencies) = cwt(&data_1d, &scale, &ContinuousWaletetType::CGAU2, &1.0).unwrap();
         let result = convert_to_c_array_f64_2d(transformed);
 
-        assert_eq!(result, [[Complex { re: 0.1975800079161206, im: 0.14366794301934255 }, Complex { re: 0.011834364706316436, im: 0.10780202792432093 }, Complex { re: -0.799741550397485, im: 0.49848000994956493 }], [Complex { re: 0.5495914780412967, im: 0.7293794878054979 }, Complex { re: -0.8524380899915001, im: 1.1517465517494845 }, Complex { re: -1.9714305654906998, im: -0.018083220814724354 }]]);
+        assert_eq!(result, [[Complex { re: 0.1975800079161206, im: -0.14366794301934255 }, Complex { re: 0.011834364706316436, im: -0.10780202792432093 }, Complex { re: -0.799741550397485, im: -0.49848000994956493 }], [Complex { re: 0.5495914780412967, im: -0.7293794878054979 }, Complex { re: -0.8524380899915001, im: -1.1517465517494845 }, Complex { re: -1.9714305654906998, im: 0.018083220814724354 }]]);
         assert_eq!(frequencies,[0.4, 0.2]);
 
         let (transformed, frequencies) = cwt(&data_1d, &scale, &ContinuousWaletetType::CGAU3, &1.0).unwrap();
         let result = convert_to_c_array_f64_2d(transformed);
 
-        assert_eq!(result, [[Complex { re: 0.15580905605646045, im: -0.023477632482858515 }, Complex { re: 0.02311996064205535, im: -0.08435939895067132 }, Complex { re: 0.5982966844595858, im: 0.17577929484288857 }], [Complex { re: 0.6157193972147343, im: -0.632903531178201 }, Complex { re: 1.24152683191323, im: 0.21626764859081818 }, Complex { re: 0.04400037726591941, im: 1.2974526319158703 }]]);
+        assert_eq!(result, [[Complex { re: 0.15580905605646045, im: 0.023477632482858515 }, Complex { re: 0.02311996064205535, im: 0.08435939895067132 }, Complex { re: 0.5982966844595858, im: -0.17577929484288857 }], [Complex { re: 0.6157193972147343, im: 0.632903531178201 }, Complex { re: 1.24152683191323, im: -0.21626764859081818 }, Complex { re: 0.04400037726591941, im: -1.2974526319158703 }]]);
         assert_eq!(frequencies, [0.5, 0.25]);
 
         let (transformed, frequencies) = cwt(&data_1d, &scale, &ContinuousWaletetType::CGAU4, &1.0).unwrap();
         let result = convert_to_c_array_f64_2d(transformed);
-        assert_eq!(result, [[Complex { re: 0.001099306694145083, im: -0.1171964410702254 }, Complex { re: -0.04458241218330426, im: 0.11413295217679564 }, Complex { re: 0.04715164428181236, im: -0.5164952244628431 }], [Complex { re: -0.629864097296805, im: -0.14623217107349645 }, Complex { re: 0.0657741341118853, im: -0.862010871478628 }, Complex { re: 1.2954722251372865, im: -0.15293677108473608 }]]);
+        assert_eq!(result, [[Complex { re: 0.001099306694145083, im: 0.1171964410702254 }, Complex { re: -0.04458241218330426, im: -0.11413295217679564 }, Complex { re: 0.04715164428181236, im: 0.5164952244628431 }], [Complex { re: -0.629864097296805, im: 0.14623217107349645 }, Complex { re: 0.0657741341118853, im: 0.862010871478628 }, Complex { re: 1.2954722251372865, im: 0.15293677108473608 }]]);
         assert_eq!(frequencies, [0.5, 0.25]);
 
         let (transformed, frequencies) = cwt(&data_1d, &scale, &ContinuousWaletetType::CGAU5, &1.0).unwrap();
         let result = convert_to_c_array_f64_2d(transformed);
 
-        assert_eq!(result, [[Complex { re: -0.1279675998535332, im: -0.03673583225138203 }, Complex { re: 0.08818397844039425, im: -0.027484402097013153 }, Complex { re: -0.5020887655762765, im: 0.16384287577565051 }], [Complex { re: -0.023863833028764218, im: 0.4298660420011176 }, Complex { re: -0.7680466758591481, im: 0.1834988163149279 }, Complex { re: -0.23468894768332627, im: -0.9462008531450352 }]]);
+        assert_eq!(result, [[Complex { re: -0.1279675998535332, im: 0.03673583225138203 }, Complex { re: 0.08818397844039425, im: 0.027484402097013153 }, Complex { re: -0.5020887655762765, im: -0.16384287577565051 }], [Complex { re: -0.023863833028764218, im: -0.4298660420011176 }, Complex { re: -0.7680466758591481, im: -0.1834988163149279 }, Complex { re: -0.23468894768332627, im: 0.9462008531450352 }]]);
         assert_eq!(frequencies, [0.6, 0.3]);
 
         let (transformed, frequencies) = cwt(&data_1d, &scale, &ContinuousWaletetType::CGAU6, &1.0).unwrap();
         let result = convert_to_c_array_f64_2d(transformed);
 
-        assert_eq!(result, [[Complex { re: -0.049091780037471285, im: 0.1195617509688047 }, Complex { re: -0.050363911196688524, im: -0.0167949707977382 }, Complex { re: 0.2518779632169532, im: 0.3813133193735203 }], [Complex { re: 0.31897905529406895, im: -0.1272637089307444 }, Complex { re: 0.2849632553003727, im: 0.48311146775601094 }, Complex { re: -0.8738710191582897, im: 0.3139003961603649 }]]);
+        assert_eq!(result, [[Complex { re: -0.049091780037471285, im: -0.1195617509688047 }, Complex { re: -0.050363911196688524, im: 0.0167949707977382 }, Complex { re: 0.2518779632169532, im: -0.3813133193735203 }], [Complex { re: 0.31897905529406895, im: 0.1272637089307444 }, Complex { re: 0.2849632553003727, im: -0.48311146775601094 }, Complex { re: -0.8738710191582897, im: -0.3139003961603649 }]]);
         assert_eq!(frequencies, [0.6, 0.3]);
 
         let (transformed, frequencies) = cwt(&data_1d, &scale, &ContinuousWaletetType::CGAU7, &1.0).unwrap();
         let result = convert_to_c_array_f64_2d(transformed);
 
-        assert_eq!(result, [[Complex { re: 0.12387609416270891, im: 0.06160202495565387 }, Complex { re: 0.0540917075444534, im: 0.061598579116619145 }, Complex { re: 0.3276325749438025, im: -0.3245096350844312 }], [Complex { re: -0.15278411588728819, im: -0.1282566034156457 }, Complex { re: 0.3465141413828615, im: -0.3659728317952695 }, Complex { re: 0.3867481182688814, im: 0.6675070939587349 }]]);
+        assert_eq!(result, [[Complex { re: 0.12387609416270891, im: -0.06160202495565387 }, Complex { re: 0.0540917075444534, im: -0.061598579116619145 }, Complex { re: 0.3276325749438025, im: 0.3245096350844312 }], [Complex { re: -0.15278411588728819, im: 0.1282566034156457 }, Complex { re: 0.3465141413828615, im: 0.3659728317952695 }, Complex { re: 0.3867481182688814, im: -0.6675070939587349 }]]);
         assert_eq!(frequencies, [0.7, 0.35]);
 
         let (transformed, frequencies) = cwt(&data_1d, &scale, &ContinuousWaletetType::CGAU8, &1.0).unwrap();
         let result = convert_to_c_array_f64_2d(transformed);
 
-        assert_eq!(result, [[Complex { re: 0.0766053184239858, im: -0.12197028564451548 }, Complex { re: 0.048339111819366315, im: -0.13560877652487657 }, Complex { re: -0.3633101221491256, im: -0.2295620132786386 }], [Complex { re: -0.02201995070211324, im: 0.14426308336102447 }, Complex { re: -0.40243903345004584, im: -0.14258296031136422 }, Complex { re: 0.5893797983054468, im: -0.4402814940342556 }]]);
+        assert_eq!(result, [[Complex { re: 0.0766053184239858, im: 0.12197028564451548 }, Complex { re: 0.048339111819366315, im: 0.13560877652487657 }, Complex { re: -0.3633101221491256, im: 0.2295620132786386 }], [Complex { re: -0.02201995070211324, im: -0.14426308336102447 }, Complex { re: -0.40243903345004584, im: 0.14258296031136422 }, Complex { re: 0.5893797983054468, im: 0.4402814940342556 }]]);
         assert_eq!(frequencies, [0.7, 0.35]);
     }
 
