@@ -7,7 +7,7 @@ use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
 use crate::wavelet_transform::fft::fft_real1_d;
 use crate::utils::data_converter::{convert_to_f64_1d, convert_to_f64_2d, convert_to_f64_3d, convert_to_f64_4d, convert_to_f64_5d};
 use crate::utils::num_trait::{Array, ArrayType};
-use crate::wavelet_transform::cwt_complex::cwt_complex;
+use crate::wavelet_transform::cwt_complex::{cwt_complex, CWTComplex};
 
 pub fn cwt_1d<T: ArrayType>(data: &T, scales: &Vec<f64>, cw_type: &ContinuousWaletetType, sampling_period: &f64) -> (Vec<Vec<f64>>, Vec<f64>) {
     let data_f64: Vec<f64> = convert_to_f64_1d(data);
@@ -222,8 +222,11 @@ pub fn frequency_to_scale_by_cwt(frequencies: &Vec<f64>, cwt_type: &ContinuousWa
 
 type ArrayWithFrequencies = (Array, Vec<f64>);
 
-pub fn cwt<T: ArrayType>(data: &T, scales: &Vec<f64>, cw_type: &ContinuousWaletetType, sampling_period: &f64) -> Option<ArrayWithFrequencies> {
+pub fn cwt<T: ArrayType>(data: &T, wavelet: &mut CWTComplex) -> Option<ArrayWithFrequencies> {
     let num_dim = data.dimension();
+    let cw_type = &wavelet.cw_type;
+    let scales = &wavelet.scales;
+    let sampling_period = &wavelet.sampling_period;
 
     match cw_type {
         ContinuousWaletetType::CMOR |
@@ -237,7 +240,7 @@ pub fn cwt<T: ArrayType>(data: &T, scales: &Vec<f64>, cw_type: &ContinuousWalete
         ContinuousWaletetType::CGAU6 |
         ContinuousWaletetType::CGAU7 |
         ContinuousWaletetType::CGAU8 => {
-            let (wavelets, frequencies) = cwt_complex(data, scales, cw_type, sampling_period).unwrap();
+            let (wavelets, frequencies) = cwt_complex(data, wavelet).unwrap();
             Some((wavelets, frequencies))
         },
         _ => {
