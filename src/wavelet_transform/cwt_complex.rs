@@ -9,10 +9,22 @@ use crate::wavelet_transform::fft::{fft_1d};
 use crate::utils::data_converter::{convert_to_c_f64_1d, convert_to_c_f64_2d, convert_to_c_f64_3d, convert_to_c_f64_4d, convert_to_c_f64_5d};
 use crate::utils::num_trait::{Array, ArrayType};
 
-pub fn cwt_c_1d<T: ArrayType>(data: &T, scales: &Vec<f64>, cw_type: &ContinuousWaletetType, sampling_period: &f64) -> (Vec<Vec<Complex<f64>>>, Vec<f64>) {
-    let data_f64: Vec<Complex<f64>> = convert_to_c_f64_1d(data);
+pub struct CWTComplex {
+    pub scales: Vec<f64>,
+    pub cw_type: ContinuousWaletetType,
+    pub sampling_period: f64,
+    pub fc: f64,
+    pub fb: f64,
+    pub m: f64,
+    pub frequencies: Vec<f64>,
+}
 
-    let wavefun_result: Vec<Vec<Complex<f64>>> = wavefun_complex(&10, &cw_type);
+pub fn cwt_c_1d<T: ArrayType>(data: &T, wavelet: &mut CWTComplex) -> (Vec<Vec<Complex<f64>>>, Vec<f64>) {
+    let scales = &wavelet.scales;
+    let sampling_period = &wavelet.sampling_period;
+
+    let data_f64: Vec<Complex<f64>> = convert_to_c_f64_1d(data);
+    let wavefun_result: Vec<Vec<Complex<f64>>> = wavefun_complex(&10, wavelet);
     let freqencies: Vec<f64> = scale_to_frequency_complex(scales, &wavefun_result, sampling_period);
 
     let mut wavelets: Vec<Vec<Complex<f64>>> = Vec::new();
@@ -23,9 +35,12 @@ pub fn cwt_c_1d<T: ArrayType>(data: &T, scales: &Vec<f64>, cw_type: &ContinuousW
     (wavelets, freqencies)
 }
 
-pub fn cwt_2d<T: ArrayType>(data: &T, scales: &Vec<f64>, cw_type: &ContinuousWaletetType, sampling_period: &f64) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<f64>) {
+pub fn cwt_2d<T: ArrayType>(data: &T, wavelet: &CWTComplex) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<f64>) {
+    let scales = &wavelet.scales;
+    let sampling_period = &wavelet.sampling_period;
+
     let data_f64 = convert_to_c_f64_2d(data);
-    let wavefun_result: Vec<Vec<Complex<f64>>> = wavefun_complex(&10, &cw_type);
+    let wavefun_result: Vec<Vec<Complex<f64>>> = wavefun_complex(&10, wavelet);
     let freqencies: Vec<f64> = scale_to_frequency_complex(scales, &wavefun_result, sampling_period);
 
     let mut wavelets: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
@@ -42,9 +57,12 @@ pub fn cwt_2d<T: ArrayType>(data: &T, scales: &Vec<f64>, cw_type: &ContinuousWal
 }
 
 
-pub fn cwt_3d<T: ArrayType>(data: &T, scales: &Vec<f64>, cw_type: &ContinuousWaletetType, sampling_period: &f64) -> (Vec<Vec<Vec<Vec<Complex<f64>>>>>, Vec<f64>) {
+pub fn cwt_3d<T: ArrayType>(data: &T, wavelet: &CWTComplex) -> (Vec<Vec<Vec<Vec<Complex<f64>>>>>, Vec<f64>) {
+    let scales = &wavelet.scales;
+    let sampling_period = &wavelet.sampling_period;
+
     let data_f64 = convert_to_c_f64_3d(data);
-    let wavefun_result: Vec<Vec<Complex<f64>>> = wavefun_complex(&10, &cw_type);
+    let wavefun_result: Vec<Vec<Complex<f64>>> = wavefun_complex(&10, wavelet);
     let freqencies: Vec<f64> = scale_to_frequency_complex(scales, &wavefun_result, sampling_period);
     let mut wavelets: Vec<Vec<Vec<Vec<Complex<f64>>>>> = Vec::new();
 
@@ -63,9 +81,12 @@ pub fn cwt_3d<T: ArrayType>(data: &T, scales: &Vec<f64>, cw_type: &ContinuousWal
     (wavelets, freqencies)
 }
 
-pub fn cwt_4d<T: ArrayType>(data: &T, scales: &Vec<f64>, cw_type: &ContinuousWaletetType, sampling_period: &f64) -> (Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>>, Vec<f64>) {
+pub fn cwt_4d<T: ArrayType>(data: &T, wavelet: &CWTComplex) -> (Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>>, Vec<f64>) {
+    let scales = &wavelet.scales;
+    let sampling_period = &wavelet.sampling_period;
+
     let data_f64 = convert_to_c_f64_4d(data);
-    let wavefun_result: Vec<Vec<Complex<f64>>> = wavefun_complex(&10, &cw_type);
+    let wavefun_result: Vec<Vec<Complex<f64>>> = wavefun_complex(&10, wavelet);
     let freqencies: Vec<f64> = scale_to_frequency_complex(scales, &wavefun_result, sampling_period);
     let mut wavelets: Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>> = Vec::new();
 
@@ -88,9 +109,12 @@ pub fn cwt_4d<T: ArrayType>(data: &T, scales: &Vec<f64>, cw_type: &ContinuousWal
     (wavelets, freqencies)
 }
 
-pub fn cwt_5d<T: ArrayType>(data: &T, scales: &Vec<f64>, cw_type: &ContinuousWaletetType, sampling_period: &f64) -> (Vec<Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>>>, Vec<f64>) {
+pub fn cwt_5d<T: ArrayType>(data: &T, wavelet: &CWTComplex) -> (Vec<Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>>>, Vec<f64>) {
+    let scales = &wavelet.scales;
+    let sampling_period = &wavelet.sampling_period;
+
     let data_f64 = convert_to_c_f64_5d(data);
-    let wavefun_result: Vec<Vec<Complex<f64>>> = wavefun_complex(&10, &cw_type);
+    let wavefun_result: Vec<Vec<Complex<f64>>> = wavefun_complex(&10, wavelet);
     let freqencies: Vec<f64> = scale_to_frequency_complex(scales, &wavefun_result, sampling_period);
     let mut wavelets: Vec<Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>>> = Vec::new();
 
@@ -137,10 +161,11 @@ pub fn get_wavelet_complex(data: &Vec<Complex<f64>>, wavefun_result: &Vec<Vec<Co
     coef[limit_down..(coef.len() - limit_up)].to_vec()
 }
 
-pub fn wavefun_complex(precision: &i32, cw_type: &ContinuousWaletetType) -> Vec<Vec<Complex<f64>>> {
+pub fn wavefun_complex(precision: &i32, wavelet: &CWTComplex) -> Vec<Vec<Complex<f64>>> {
+    let cw_type = &wavelet.cw_type;
     let mut y: Vec<Complex<f64>> = Vec::new();
     let mut x_y_vec: Vec<Vec<Complex<f64>>> = Vec::new();
-    let range = get_wavelet_range(&cw_type);
+    let range = get_wavelet_range(cw_type);
     let start = range.0;
     let end = range.1;
 
@@ -149,7 +174,7 @@ pub fn wavefun_complex(precision: &i32, cw_type: &ContinuousWaletetType) -> Vec<
 
     let x: Vec<Complex<f64>> = linspace_complex(&start, &end, &n_points, true);
     for i in 0..x.len() {
-        y.push(transform_by_complex_type(&x[i], &1.0, &cw_type));
+        y.push(transform_by_complex_type(&x[i], &wavelet));
     }
 
     x_y_vec.push(x);
@@ -198,8 +223,9 @@ fn scale_to_frequency_complex(scales: &Vec<f64>, wavefun: &Vec<Vec<Complex<f64>>
     freqencies
 }
 
-pub fn scale_to_frequency_by_cwt(scales: &Vec<f64>, cwt_type: &ContinuousWaletetType, sampling_period: &f64) -> Vec<f64> {
-    let wavefun: Vec<Vec<Complex<f64>>> = wavefun_complex(&10, &cwt_type);
+pub fn scale_to_frequency_by_cwt(scales: &Vec<f64>, wavelet: &CWTComplex) -> Vec<f64> {
+    let sampling_period = &wavelet.sampling_period;
+    let wavefun: Vec<Vec<Complex<f64>>> = wavefun_complex(&10, &wavelet);
     let mut freqencies: Vec<f64> = Vec::new();
     let central_frequency: f64 = get_central_frequency_complex(&wavefun);
 
@@ -210,8 +236,10 @@ pub fn scale_to_frequency_by_cwt(scales: &Vec<f64>, cwt_type: &ContinuousWaletet
     freqencies
 }
 
-pub fn frequency_to_scale_by_cwt(frequencies: &Vec<f64>, cwt_type: &ContinuousWaletetType, sampling_period: &f64) -> Vec<f64> {
-    let wavefun: Vec<Vec<Complex<f64>>> = wavefun_complex(&10, &cwt_type);
+pub fn frequency_to_scale_by_cwt(frequencies: &Vec<f64>, wavelet: &CWTComplex) -> Vec<f64> {
+    let sampling_period = &wavelet.sampling_period;
+
+    let wavefun: Vec<Vec<Complex<f64>>> = wavefun_complex(&10, wavelet);
     let mut scales: Vec<f64> = Vec::new();
     let central_frequency: f64 = get_central_frequency_complex(&wavefun);
 
@@ -224,30 +252,30 @@ pub fn frequency_to_scale_by_cwt(frequencies: &Vec<f64>, cwt_type: &ContinuousWa
 
 type ArrayWithFrequencies = (Array, Vec<f64>);
 
-pub fn cwt_complex<T: ArrayType>(data: &T, scales: &Vec<f64>, cw_type: &ContinuousWaletetType, sampling_period: &f64) -> Option<ArrayWithFrequencies> {
+pub fn cwt_complex<T: ArrayType>(data: &T, wavelet: &mut CWTComplex) -> Option<ArrayWithFrequencies> {
     let num_dim = data.dimension();
 
     match num_dim {
         1 => {
-            let (wavelets, frequencies) = cwt_c_1d(data, scales, cw_type, sampling_period);
+            let (wavelets, frequencies) = cwt_c_1d(data, wavelet);
             Some((Array::ArrayC2D(wavelets.clone()), frequencies.clone()))
         }
         2 => {
-            let (wavelets, frequencies) = cwt_2d(data, scales, cw_type, sampling_period);
+            let (wavelets, frequencies) = cwt_2d(data, wavelet);
             Some((Array::ArrayC3D(wavelets.clone()), frequencies.clone()))
-        },
+        }
         3 => {
-            let (wavelets, frequencies) = cwt_3d(data, scales, cw_type, sampling_period);
+            let (wavelets, frequencies) = cwt_3d(data, wavelet);
             Some((Array::ArrayC4D(wavelets.clone()), frequencies.clone()))
-        },
+        }
         4 => {
-            let (wavelets, frequencies) = cwt_4d(data, scales, cw_type, sampling_period);
+            let (wavelets, frequencies) = cwt_4d(data, wavelet);
             Some((Array::ArrayC5D(wavelets.clone()), frequencies.clone()))
-        },
+        }
         5 => {
-            let (wavelets, frequencies) = cwt_5d(data, scales, cw_type, sampling_period);
+            let (wavelets, frequencies) = cwt_5d(data, wavelet);
             Some((Array::ArrayC6D(wavelets.clone()), frequencies.clone()))
-        },
+        }
         _ => {
             None
         }

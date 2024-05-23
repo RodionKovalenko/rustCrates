@@ -4,6 +4,7 @@ mod tests {
     use crate::utils::array::arange;
     use crate::utils::data_converter::{convert_to_c_array_f64_2d, convert_to_f64_2d, convert_to_f64_3d, convert_to_f64_4d, convert_to_f64_5d, convert_to_f64_6d};
     use crate::wavelet_transform::cwt::{cwt, cwt_1d, cwt_2d, cwt_3d, cwt_4d, cwt_5d};
+    use crate::wavelet_transform::cwt_complex::CWTComplex;
     use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
     use crate::wavelet_transform::fft::{fft_real1_d, fft_real2_d};
 
@@ -398,14 +399,25 @@ mod tests {
         let data_5d: Vec<Vec<Vec<Vec<Vec<i32>>>>> = vec![vec![vec![vec![vec![1, 2], vec![3, 4]], vec![vec![5, 6], vec![7, 8]]], vec![vec![vec![9, 10], vec![11, 12]], vec![vec![13, 14], vec![15, 16]]]],
                                                          vec![vec![vec![vec![17, 18], vec![19, 20]], vec![vec![21, 22], vec![23, 24]]], vec![vec![vec![25, 26], vec![27, 28]], vec![vec![29, 30], vec![31, 32]]]]];
 
-        let (transform_cwt, _frequencies) = cwt(&data_1d, &scales, &ContinuousWaletetType::GAUS1, &1.0).unwrap();
+        let mut wavelet = CWTComplex {
+            scales: scales,
+            cw_type: ContinuousWaletetType::GAUS1,
+            sampling_period: 1.0,
+            fc: 1.0,
+            fb: 1.0,
+            m: 1.0,
+            frequencies: vec![],
+        };
+
+        let (transform_cwt, _frequencies) = cwt(&data_1d, &mut wavelet).unwrap();
         let result = convert_to_f64_2d(&transform_cwt);
 
         assert_eq!(result, [[-1.2395610951413416, -1.5060022173635126, -0.24828910344193833], [-2.3112287056301435, -1.8314240710405, 0.23981896444522327],
             [-2.2095925735270523, -1.3341119762132387, 0.228969014649697], [-1.8131979850419127, -0.9559156626454985, 0.16963613083352946],
             [-1.4216653038852611, -0.7393737274981087, 0.14658689502995653]]);
 
-        let (transform_cwt, _frequencies) = cwt(&data_2d, &scales, &ContinuousWaletetType::GAUS2, &1.0).unwrap();
+        wavelet.cw_type = ContinuousWaletetType::GAUS2;
+        let (transform_cwt, _frequencies) = cwt(&data_2d, &mut wavelet).unwrap();
         let result = convert_to_f64_3d(&transform_cwt);
 
         assert_eq!(result,  [[[-0.30602031200865504, 1.1416622879952905], [-0.23148652801887604, 2.6638786719890026]],
@@ -413,7 +425,8 @@ mod tests {
                 [2.521925734621841, 3.7216765269017458]], [[1.1127227854184643, 1.4745016540441773], [2.7169461221849884, 3.4405038594364115]],
             [[1.1403920168801673, 1.3019991589138185], [2.714783753398275, 3.037998037465575]]]);
 
-        let (transform_cwt, _frequencies) = cwt(&data_3d, &scales, &ContinuousWaletetType::MORL, &1.0).unwrap();
+        wavelet.cw_type = ContinuousWaletetType::MORL;
+        let (transform_cwt, _frequencies) = cwt(&data_3d, &mut wavelet).unwrap();
         let result = convert_to_f64_4d(&transform_cwt);
 
         assert_eq!(result, [[[[0.11408953074891337, -0.36938550831261857], [0.10505055872695773, -0.8618995193961178]], [[0.09601158670500198, -1.3544135304796168],
@@ -424,7 +437,8 @@ mod tests {
                 [1.621002196811372, 5.653160349207641]]], [[[0.4206319969503044, 1.1345130472867395], [1.2194350096628606, 2.647197110335715]],
                 [[2.0182380223754164, 4.159881173384692], [2.817041035087972, 5.672565236433667]]]]);
 
-        let (transform_cwt, _frequencies) = cwt(&data_4d, &scales, &ContinuousWaletetType::GAUS3, &1.0).unwrap();
+        wavelet.cw_type = ContinuousWaletetType::GAUS3;
+        let (transform_cwt, _frequencies) = cwt(&data_4d, &mut wavelet).unwrap();
         let result = convert_to_f64_5d(&transform_cwt);
 
         assert_eq!(result, [[[[[-0.4095436540277341, -0.629975794758475], [-1.4490631028139465, -0.6299757947584685]], [[-2.4885825516001594, -0.6299757947584619],
@@ -447,7 +461,8 @@ mod tests {
                 [[[-4.237929524692994, -0.11457244506089226], [-5.1084299186437905, -0.1145724450608724]],
                     [[-5.978930312594583, -0.11457244506085651], [-6.849430706545376, -0.11457244506083665]]]]]);
 
-        let (transform_cwt, _frequencies) = cwt(&data_5d, &scales, &ContinuousWaletetType::GAUS4, &1.0).unwrap();
+        wavelet.cw_type = ContinuousWaletetType::GAUS4;
+        let (transform_cwt, _frequencies) = cwt(&data_5d, &mut wavelet).unwrap();
         let result = convert_to_f64_6d(&transform_cwt);
 
         assert_eq!(result,  [[[[[[-0.2569349296421992, 0.39046695447394186], [-0.38371420779307963, 0.9110895604391881]],
@@ -495,8 +510,18 @@ mod tests {
     fn test_complex_cwt() {
         let scale = arange(&1.0, &3.0, &1.0);
 
+        let mut wavelet = CWTComplex {
+            scales: scale,
+            cw_type: ContinuousWaletetType::CGAU1,
+            sampling_period: 1.0,
+            fc: 1.0,
+            fb: 1.0,
+            m: 1.0,
+            frequencies: vec![0.0]
+        };
+
         let data_1d = vec![1, 2, 3];
-        let (transformed, frequencies) = cwt(&data_1d, &scale, &ContinuousWaletetType::CGAU1, &1.0).unwrap();
+        let (transformed, frequencies) = cwt(&data_1d, &mut wavelet).unwrap();
 
         let result = convert_to_c_array_f64_2d(transformed);
 
@@ -504,42 +529,49 @@ mod tests {
                        [Complex { re: -1.6630454106813366, im: -0.3253564390808993 }, Complex { re: -1.5788248947211585, im: 0.8328403534259957 }, Complex { re: 0.15111433618154138, im: 1.6100776507287728 }]]);
         assert_eq!(frequencies, [0.3, 0.15]);
 
-        let (transformed, frequencies) = cwt(&data_1d, &scale, &ContinuousWaletetType::CGAU2, &1.0).unwrap();
+        wavelet.cw_type = ContinuousWaletetType::CGAU2;
+        let (transformed, frequencies) = cwt(&data_1d, &mut wavelet).unwrap();
         let result = convert_to_c_array_f64_2d(transformed);
 
         assert_eq!(result, [[Complex { re: 0.1975800079161206, im: -0.14366794301934255 }, Complex { re: 0.011834364706316436, im: -0.10780202792432093 }, Complex { re: -0.799741550397485, im: -0.49848000994956493 }], [Complex { re: 0.5495914780412967, im: -0.7293794878054979 }, Complex { re: -0.8524380899915001, im: -1.1517465517494845 }, Complex { re: -1.9714305654906998, im: 0.018083220814724354 }]]);
         assert_eq!(frequencies,[0.4, 0.2]);
 
-        let (transformed, frequencies) = cwt(&data_1d, &scale, &ContinuousWaletetType::CGAU3, &1.0).unwrap();
+        wavelet.cw_type = ContinuousWaletetType::CGAU3;
+        let (transformed, frequencies) = cwt(&data_1d, &mut wavelet).unwrap();
         let result = convert_to_c_array_f64_2d(transformed);
 
         assert_eq!(result, [[Complex { re: 0.15580905605646045, im: 0.023477632482858515 }, Complex { re: 0.02311996064205535, im: 0.08435939895067132 }, Complex { re: 0.5982966844595858, im: -0.17577929484288857 }], [Complex { re: 0.6157193972147343, im: 0.632903531178201 }, Complex { re: 1.24152683191323, im: -0.21626764859081818 }, Complex { re: 0.04400037726591941, im: -1.2974526319158703 }]]);
         assert_eq!(frequencies, [0.5, 0.25]);
 
-        let (transformed, frequencies) = cwt(&data_1d, &scale, &ContinuousWaletetType::CGAU4, &1.0).unwrap();
+        wavelet.cw_type = ContinuousWaletetType::CGAU4;
+        let (transformed, frequencies) = cwt(&data_1d, &mut wavelet).unwrap();
         let result = convert_to_c_array_f64_2d(transformed);
         assert_eq!(result, [[Complex { re: 0.001099306694145083, im: 0.1171964410702254 }, Complex { re: -0.04458241218330426, im: -0.11413295217679564 }, Complex { re: 0.04715164428181236, im: 0.5164952244628431 }], [Complex { re: -0.629864097296805, im: 0.14623217107349645 }, Complex { re: 0.0657741341118853, im: 0.862010871478628 }, Complex { re: 1.2954722251372865, im: 0.15293677108473608 }]]);
         assert_eq!(frequencies, [0.5, 0.25]);
 
-        let (transformed, frequencies) = cwt(&data_1d, &scale, &ContinuousWaletetType::CGAU5, &1.0).unwrap();
+        wavelet.cw_type = ContinuousWaletetType::CGAU5;
+        let (transformed, frequencies) = cwt(&data_1d, &mut wavelet).unwrap();
         let result = convert_to_c_array_f64_2d(transformed);
 
         assert_eq!(result, [[Complex { re: -0.1279675998535332, im: 0.03673583225138203 }, Complex { re: 0.08818397844039425, im: 0.027484402097013153 }, Complex { re: -0.5020887655762765, im: -0.16384287577565051 }], [Complex { re: -0.023863833028764218, im: -0.4298660420011176 }, Complex { re: -0.7680466758591481, im: -0.1834988163149279 }, Complex { re: -0.23468894768332627, im: 0.9462008531450352 }]]);
         assert_eq!(frequencies, [0.6, 0.3]);
 
-        let (transformed, frequencies) = cwt(&data_1d, &scale, &ContinuousWaletetType::CGAU6, &1.0).unwrap();
+        wavelet.cw_type = ContinuousWaletetType::CGAU6;
+        let (transformed, frequencies) = cwt(&data_1d, &mut wavelet).unwrap();
         let result = convert_to_c_array_f64_2d(transformed);
 
         assert_eq!(result, [[Complex { re: -0.049091780037471285, im: -0.1195617509688047 }, Complex { re: -0.050363911196688524, im: 0.0167949707977382 }, Complex { re: 0.2518779632169532, im: -0.3813133193735203 }], [Complex { re: 0.31897905529406895, im: 0.1272637089307444 }, Complex { re: 0.2849632553003727, im: -0.48311146775601094 }, Complex { re: -0.8738710191582897, im: -0.3139003961603649 }]]);
         assert_eq!(frequencies, [0.6, 0.3]);
 
-        let (transformed, frequencies) = cwt(&data_1d, &scale, &ContinuousWaletetType::CGAU7, &1.0).unwrap();
+        wavelet.cw_type = ContinuousWaletetType::CGAU7;
+        let (transformed, frequencies) = cwt(&data_1d, &mut wavelet).unwrap();
         let result = convert_to_c_array_f64_2d(transformed);
 
         assert_eq!(result, [[Complex { re: 0.12387609416270891, im: -0.06160202495565387 }, Complex { re: 0.0540917075444534, im: -0.061598579116619145 }, Complex { re: 0.3276325749438025, im: 0.3245096350844312 }], [Complex { re: -0.15278411588728819, im: 0.1282566034156457 }, Complex { re: 0.3465141413828615, im: 0.3659728317952695 }, Complex { re: 0.3867481182688814, im: -0.6675070939587349 }]]);
         assert_eq!(frequencies, [0.7, 0.35]);
 
-        let (transformed, frequencies) = cwt(&data_1d, &scale, &ContinuousWaletetType::CGAU8, &1.0).unwrap();
+        wavelet.cw_type = ContinuousWaletetType::CGAU8;
+        let (transformed, frequencies) = cwt(&data_1d, &mut wavelet).unwrap();
         let result = convert_to_c_array_f64_2d(transformed);
 
         assert_eq!(result, [[Complex { re: 0.0766053184239858, im: 0.12197028564451548 }, Complex { re: 0.048339111819366315, im: 0.13560877652487657 }, Complex { re: -0.3633101221491256, im: 0.2295620132786386 }], [Complex { re: -0.02201995070211324, im: -0.14426308336102447 }, Complex { re: -0.40243903345004584, im: 0.14258296031136422 }, Complex { re: 0.5893797983054468, im: 0.4402814940342556 }]]);

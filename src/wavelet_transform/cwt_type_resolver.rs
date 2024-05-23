@@ -1,5 +1,6 @@
 use std::f64::consts::{E, PI};
 use num_complex::Complex;
+use crate::wavelet_transform::cwt_complex::CWTComplex;
 use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
 
 pub fn get_mexh_constant(sigma: &f64) -> f64 {
@@ -24,11 +25,13 @@ pub fn transform_by_type(v: &f64, sigma: &f64, cw_type: &ContinuousWaletetType) 
     }
 }
 
-pub fn transform_by_complex_type(v: &Complex<f64>, _sigma: &f64, cw_type: &ContinuousWaletetType) -> Complex<f64> {
+pub fn transform_by_complex_type(v: &Complex<f64>, wavelet: &CWTComplex) -> Complex<f64> {
+    let cw_type = &wavelet.cw_type;
+
     match cw_type {
-        ContinuousWaletetType::CMOR => cgauss1(v),
-        ContinuousWaletetType::FBSP => cgauss1(v),
-        ContinuousWaletetType::SHAN => cgauss1(v),
+        ContinuousWaletetType::CMOR => cmorl(v, wavelet),
+        ContinuousWaletetType::FBSP => fbsp(v, wavelet),
+        ContinuousWaletetType::SHAN => shan(v, wavelet),
         ContinuousWaletetType::CGAU1 => cgauss1(v),
         ContinuousWaletetType::CGAU2 => cgauss2(v),
         ContinuousWaletetType::CGAU3 => cgauss3(v),
@@ -45,9 +48,9 @@ pub fn get_wavelet_range(cw_type: &ContinuousWaletetType) -> (f64, f64) {
     match cw_type {
         ContinuousWaletetType::MORL
         | ContinuousWaletetType::CMOR
-        | ContinuousWaletetType::MEXH
-        | ContinuousWaletetType::FBSP
-        | ContinuousWaletetType::SHAN => (-8.0, 8.0),
+        | ContinuousWaletetType::MEXH => (-8.0, 8.0),
+        | ContinuousWaletetType::SHAN
+        | ContinuousWaletetType::FBSP => (-20.0, 20.0),
         _ => (-5.0, 5.0),
     }
 }
@@ -61,28 +64,66 @@ pub fn morl(t: &f64, &_sigma: &f64) -> f64 {
 }
 
 
-pub fn cmorl(_v: &f64) -> f64 {
-    let t = 0.0;
-
-    t
-}
-
 pub fn mexh(v: &f64, sigma: &f64) -> f64 {
     let t = get_mexh_constant(sigma) * ((1.0 - (v / (sigma)).powf(2.0)) * E.powf(-0.5 * (v / sigma.clone()).powf(2.0)));
 
     t
 }
 
-pub fn fbsp(_v: &f64) -> f64 {
-    let t = 0.0;
+pub fn fbsp(v: &Complex<f64>, wavelet: &CWTComplex) -> Complex<f64> {
+    let re = v.re;
 
-    t
+    let fb = &wavelet.fb;
+    let fc = &wavelet.fc;
+    let m = &wavelet.m;
+
+    if re != 0.0 {
+        let r = (2.0 * PI * fc * re).cos() * fb.sqrt() * (((PI * re * fb / m).sin()) / (PI * re * (fb / m))).powf(m.clone());
+        let i = -1.0 * ((2.0 * PI * fc * re).sin() * fb.sqrt() * (((PI * re * fb / m).sin()) / (PI * re * (fb / m))).powf(m.clone()));
+
+        Complex::new(r, i)
+    } else {
+        let cos_val = (2.0 * PI * fc * re).cos();
+        let sin_val = (2.0 * PI * fc * re).sin();
+        let sqrt_fb = fb.sqrt();
+
+        let r = cos_val * sqrt_fb;
+        let i = -1.0 * (sin_val * sqrt_fb);
+
+        Complex::new(r, i)
+    }
 }
 
-pub fn shan(_v: &f64) -> f64 {
-    let t = 0.0;
+pub fn shan(v: &Complex<f64>, wavelet: &CWTComplex) -> Complex<f64> {
+    let re = v.re;
+    let fb = &wavelet.fb;
+    let fc = &wavelet.fc;
 
-    t
+    let mut r = (2.0 * PI * fc * re).cos() * fb.sqrt();
+    let mut i = (2.0 * PI * fc * re).sin() * fb.sqrt();
+
+    if r != 0.0 {
+        let sin_val = (PI * fb * re).sin();
+        let normalizing_c = re * fb * PI;
+
+        r *= sin_val / normalizing_c;
+        i *= sin_val / normalizing_c;
+
+        return Complex::new(r, -1.0 * i);
+    }
+
+    Complex::new(r, -1.0 * i)
+}
+
+pub fn cmorl(v: &Complex<f64>, wavelet: &CWTComplex) -> Complex<f64> {
+    let fb = &wavelet.fb;
+    let fc = &wavelet.fc;
+
+    let re = v.re;
+    let r = (2.0 * PI * fc * re).cos() * E.powf(-re.powf(2.0) / fb) / (PI * fb).sqrt();
+    let i = (2.0 * PI * fc * re).sin() * E.powf(-re.powf(2.0) / fb) / (PI * fb).sqrt();
+
+    Complex::new(r, -1.0 * i)
 }
 
 pub fn cgauss1(v: &Complex<f64>) -> Complex<f64> {
