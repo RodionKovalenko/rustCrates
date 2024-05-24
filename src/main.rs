@@ -18,10 +18,9 @@ use std::time::Instant;
 #[allow(unused_imports)]
 use rand::Rng;
 use neural_networks::utils::array::arange;
-use neural_networks::utils::data_converter::{convert_to_c_array_f64_2d};
-use neural_networks::wavelet_transform::cwt::{cwt};
-use neural_networks::wavelet_transform::cwt_complex::CWTComplex;
-use neural_networks::wavelet_transform::cwt_types::ContinuousWaletetType;
+use neural_networks::wavelet_transform::dwt::{get_ll_lh_hl_hh, transform_2_d};
+use neural_networks::wavelet_transform::dwt_types::DiscreteWaletetType;
+use neural_networks::wavelet_transform::modes::WaveletMode;
 
 pub enum ARGUMENTS {
     UPHOLD,
@@ -51,45 +50,12 @@ fn main() {
     // }
 
 
-    let scale = arange(&1.0, &3.0, &1.0);
-    let data_1d = vec![1.0, 2.0, 3.0, 0.0];
+    let _scale = arange(&1.0, &3.0, &1.0);
+    let _data_1d = vec![1.0, 0.0, 2.0, 3.0];
+    let data_2d = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
 
-    let mut wavelet = CWTComplex {
-        scales: scale,
-        cw_type: ContinuousWaletetType::CGAU5,
-        sampling_period: 1.0,
-        m: 1.0,
-        fb: 1.5,
-        fc: 1.0,
-        frequencies: vec![],
-    };
-
-    let (transformed, frequencies) = cwt(&data_1d, &mut wavelet).unwrap();
-    let result = convert_to_c_array_f64_2d(transformed);
-    println!("gauss 5{:?}", result);
-    println!("{:?}", frequencies);
-
-    wavelet.cw_type = ContinuousWaletetType::CGAU6;
-    let (transformed, frequencies) = cwt(&data_1d, &mut wavelet).unwrap();
-    let result = convert_to_c_array_f64_2d(transformed);
-    println!(" CGA6 {:?}", result);
-    println!("{:?}", frequencies);
-
-    wavelet.cw_type = ContinuousWaletetType::CGAU7;
-    let (transformed, frequencies) = cwt(&data_1d, &mut wavelet).unwrap();
-    let result = convert_to_c_array_f64_2d(transformed);
-    println!(" CGAU7 {:?}", result);
-    println!("{:?}", frequencies);
-
-    wavelet.cw_type = ContinuousWaletetType::CGAU8;
-    let (transformed, frequencies) = cwt(&data_1d, &mut wavelet).unwrap();
-    let result = convert_to_c_array_f64_2d(transformed);
-    println!(" CGAU8 {:?}", result);
-    println!("{:?}", frequencies);
-
-    wavelet.cw_type = ContinuousWaletetType::CMOR;
-    let (transformed, frequencies) = cwt(&data_1d, &mut wavelet).unwrap();
-    let result = convert_to_c_array_f64_2d(transformed);
-    println!(" SHAN {:?}", result);
-    println!("{:?}", frequencies);
+    let transformed = transform_2_d(&data_2d, &DiscreteWaletetType::DB2, &WaveletMode::CONSTANT);
+    let llhllhhh = get_ll_lh_hl_hh(&transformed);
+    println!(" DB2 {:?}", transformed);
+    println!(" DB2 llhllhhh {:?}", llhllhhh);
 }

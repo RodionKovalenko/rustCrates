@@ -514,9 +514,9 @@ mod tests {
             scales: scale,
             cw_type: ContinuousWaletetType::CGAU1,
             sampling_period: 1.0,
-            fc: 1.0,
-            fb: 1.0,
             m: 1.0,
+            fb: 1.5,
+            fc: 1.0,
             frequencies: vec![0.0]
         };
 
@@ -576,6 +576,41 @@ mod tests {
 
         assert_eq!(result, [[Complex { re: 0.0766053184239858, im: 0.12197028564451548 }, Complex { re: 0.048339111819366315, im: 0.13560877652487657 }, Complex { re: -0.3633101221491256, im: 0.2295620132786386 }], [Complex { re: -0.02201995070211324, im: -0.14426308336102447 }, Complex { re: -0.40243903345004584, im: 0.14258296031136422 }, Complex { re: 0.5893797983054468, im: 0.4402814940342556 }]]);
         assert_eq!(frequencies, [0.7, 0.35]);
+
+
+        let data_1d = vec![1.0, 0.0, 2.0, 3.0];
+
+        wavelet.cw_type = ContinuousWaletetType::CMOR;
+        let (transformed, frequencies) = cwt(&data_1d, &mut wavelet).unwrap();
+        let result = convert_to_c_array_f64_2d(transformed);
+
+        assert_eq!(result, [[Complex { re: -0.004341207903904784, im: -0.04792095170673179 }, Complex { re: 0.009888120380320968, im: -0.03900742171070909 },
+            Complex { re: 0.008843541261772966, im: -0.14354137865436362 }, Complex { re: -0.03933261631675025, im: -0.03484465231455147 }],
+            [Complex { re: 0.018158346044917232, im: -0.26244860575825796 }, Complex { re: 0.022844562479819492, im: 0.26068461379594915 },
+                Complex { re: -0.06664009905986391, im: -0.11052301044784954 }, Complex { re: 0.06891862214051149, im: -0.12373587474793302 }]]);
+        assert_eq!(frequencies, [1.0, 0.5]);
+
+
+        wavelet.cw_type = ContinuousWaletetType::SHAN;
+        let (transformed, frequencies) = cwt(&data_1d, &mut wavelet).unwrap();
+        let result = convert_to_c_array_f64_2d(transformed);
+
+        assert_eq!(result,  [[Complex { re: 0.13868420276379032, im: -0.32873319962966796 }, Complex { re: -0.004301270536828675, im: 0.570377795584042 },
+            Complex { re: -0.1679168593768328, im: -0.5253330931258519 }, Complex { re: 0.14014513702809056, im: -0.36523696290330016 }],
+            [Complex { re: -0.047785714321184156, im: -0.1839579410891287 }, Complex { re: -0.21915699065710117, im: 0.438025450989463 },
+                Complex { re: -0.12360071854899149, im: -0.9226717030002943 }, Complex { re: 0.5778384030083942, im: -0.4535657179965862 }]]
+        );
+        assert_eq!(frequencies, [0.275, 0.1375]);
+
+        wavelet.cw_type = ContinuousWaletetType::FBSP;
+        let (transformed, frequencies) = cwt(&data_1d, &mut wavelet).unwrap();
+        let result = convert_to_c_array_f64_2d(transformed);
+
+        assert_eq!(result,  [[Complex { re: 0.1386842027637903, im: -0.32873319962966796 }, Complex { re: -0.004301270536828626, im: 0.570377795584042 },
+            Complex { re: -0.1679168593768329, im: -0.5253330931258517 }, Complex { re: 0.14014513702809045, im: -0.3652369629033001 }],
+            [Complex { re: -0.047785714321184225, im: -0.1839579410891287 }, Complex { re: -0.2191569906571012, im: 0.438025450989463 },
+                Complex { re: -0.12360071854899161, im: -0.9226717030002941 }, Complex { re: 0.577838403008394, im: -0.4535657179965863 }]]);
+        assert_eq!(frequencies, [0.275, 0.1375]);
     }
 
     #[test]

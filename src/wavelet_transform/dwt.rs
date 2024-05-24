@@ -1,12 +1,13 @@
 use std::fmt::Debug;
 use std::ops::{AddAssign, Mul, Neg};
 use num_traits::{FromPrimitive, ToPrimitive};
+use crate::utils::data_converter::convert_to_f64_1d;
+use crate::utils::num_trait::NumTrait;
 use crate::wavelet_transform::dwt_type_resolver::{get_high_pass_filter, get_inverse_high_pass_filter, get_inverse_low_pass_filter, get_low_pass_filter};
 use crate::wavelet_transform::dwt_types::DiscreteWaletetType;
 use crate::wavelet_transform::modes::WaveletMode;
 
-pub fn transform_2_d_partial<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> + Into<f64> + AddAssign + ToPrimitive + Neg<Output=T>>
-(data: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<Vec<f64>> {
+pub fn transform_2_d_partial<T: NumTrait>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<Vec<f64>> {
     let mut data_trans: Vec<Vec<f64>> = Vec::new();
 
     for r in data.iter() {
@@ -16,8 +17,7 @@ pub fn transform_2_d_partial<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> 
     data_trans
 }
 
-pub fn transform_2_d<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> + Into<f64> + AddAssign + ToPrimitive + Neg<Output=T>>
-(data: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<Vec<f64>> {
+pub fn transform_2_d<T: NumTrait>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<Vec<f64>> {
     let mut data_trans: Vec<Vec<f64>> = transform_2_d_partial(&data, &dw_type, &mode);
 
     // println!("before transposed array: {:?}", &data_trans);
@@ -42,8 +42,7 @@ fn transpose<T>(original: Vec<Vec<T>>) -> Vec<Vec<T>> {
     transposed
 }
 
-pub fn transform_1_d<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> + Into<f64> + AddAssign + ToPrimitive + Neg<Output=T>>
-(data: &Vec<T>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<f64> {
+pub fn transform_1_d<T: NumTrait>(data: &Vec<T>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<f64> {
     // moving averages filter
     let low_pass_filter: Vec<f64> = get_low_pass_filter(&dw_type);
     // moving differences filter
@@ -53,7 +52,7 @@ pub fn transform_1_d<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> + Into<f
     // println!("high pass filter : {:?}", &high_pass_filter);
 
     let mut middle_index;
-    let mut data_clone = data.clone();
+    let mut data_clone: Vec<f64> = convert_to_f64_1d(data);
 
     let mut value_high: f64;
     let mut value_low: f64;
@@ -95,9 +94,9 @@ pub fn transform_1_d<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> + Into<f
         for (l_p_ind, low_p_f_value) in low_pass_filter.iter().enumerate() {
             index_low = ((i.clone() + l_p_ind as i32) % (data_clone.len() as i32)) as usize;
             // High-Pass
-            value_low += data_clone[index_low].to_f64().unwrap() * low_p_f_value.clone();
+            value_low += data_clone[index_low].clone() * low_p_f_value.clone();
             // Low-Pass
-            value_high += data_clone[index_low.clone()].to_f64().unwrap() * high_pass_filter[l_p_ind.clone()].clone();
+            value_high += data_clone[index_low.clone()].clone() * high_pass_filter[l_p_ind.clone()].clone();
         }
 
         index_high = (ind_transform.clone() + middle_index.clone() as i32) as usize;
@@ -198,9 +197,7 @@ pub fn set_value_2d(data_trans: &mut Vec<Vec<f64>>, value: Vec<f64>, i: &usize) 
     }
 }
 
-pub fn insert_padding_before<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> + Into<f64> + AddAssign + ToPrimitive + Neg<Output=T>>
-(data_trans: &mut Vec<T>, mode: &WaveletMode, size: usize)
-{
+pub fn insert_padding_before(data_trans: &mut Vec<f64>, mode: &WaveletMode, size: usize) {
     let mut tmp_ind;
     let mut val: f64;
     let orig_len = data_trans.len();
@@ -208,7 +205,7 @@ pub fn insert_padding_before<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> 
 
     for _i in 0..size {
         match mode {
-            WaveletMode::ZERO => data_trans.insert(0, T::from_f64(0.0).unwrap()),
+            WaveletMode::ZERO => data_trans.insert(0, 0.0),
             WaveletMode::CONSTANT => data_trans.insert(0, data_trans[_i].clone()),
             WaveletMode::SYMMETRIC => {
                 tmp_ind = _i % orig_len.clone();
@@ -224,8 +221,8 @@ pub fn insert_padding_before<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> 
             }
             WaveletMode::ANTIREFLECT => {
                 tmp_ind = (_i + 1) % orig_len.clone();
-                val = 2.0 * T::into(origin_data[0].clone()) - T::into(origin_data[tmp_ind].clone());
-                data_trans.insert(0, T::from_f64(val).unwrap());
+                val = 2.0 * origin_data[0].clone() - origin_data[tmp_ind].clone();
+                data_trans.insert(0, val);
             }
             WaveletMode::PERIODIC => {
                 tmp_ind = origin_data.len() - 1 - ((_i) % origin_data.len());
@@ -239,8 +236,7 @@ pub fn insert_padding_before<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> 
     }
 }
 
-pub fn insert_padding_after<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> + Into<f64> + AddAssign + ToPrimitive + Neg<Output=T>>
-(data_trans: &mut Vec<T>, mode: &WaveletMode, size: usize, padding_len_before: usize)
+pub fn insert_padding_after(data_trans: &mut Vec<f64>, mode: &WaveletMode, size: usize, padding_len_before: usize)
 {
     let orig_len = data_trans.len() - padding_len_before.clone();
     let origin_data = data_trans.clone();
@@ -254,32 +250,32 @@ pub fn insert_padding_after<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> +
 
     for _i in 0..size {
         match mode {
-            WaveletMode::ZERO => data_trans.push(T::from_f64(0.0).unwrap()),
+            WaveletMode::ZERO => data_trans.push(0.0),
             WaveletMode::CONSTANT => data_trans.push(data_trans[data_trans.len() - 1].clone()),
             WaveletMode::SYMMETRIC => {
                 tmp_ind = (orig_len.clone() - (_i % orig_half_len.clone())) + padding_len_before.clone() - 1;
-                data_trans.push(origin_data[tmp_ind]);
+                data_trans.push(origin_data[tmp_ind].clone());
             }
             WaveletMode::ANTISYMMETRIC => {
                 tmp_ind = orig_len.clone() + padding_len_before.clone() - _i - 1;
-                data_trans.push(-origin_data[tmp_ind]);
+                data_trans.push(-origin_data[tmp_ind].clone());
             }
             WaveletMode::REFLECT => {
                 tmp_ind = origin_data.len() - ((_i + 2) % origin_data.len());
-                data_trans.push(origin_data[tmp_ind]);
+                data_trans.push(origin_data[tmp_ind].clone());
             }
             WaveletMode::ANTIREFLECT => {
                 tmp_ind = origin_data.len() - ((_i + 2) % origin_data.len());
-                val = 2.0 * T::into(origin_data[origin_data.len() - 1].clone()) - T::into(origin_data[tmp_ind].clone());
-                data_trans.push(T::from_f64(val).unwrap());
+                val = 2.0 * origin_data[origin_data.len() - 1].clone() - origin_data[tmp_ind].clone();
+                data_trans.push(val);
             }
             WaveletMode::PERIODIC => {
                 tmp_ind = _i % orig_len.clone() + padding_len_before.clone();
-                data_trans.push(origin_data[tmp_ind]);
+                data_trans.push(origin_data[tmp_ind].clone());
             }
             WaveletMode::PERIODIZATION => {
                 tmp_ind = _i % orig_len.clone() + padding_len_before.clone();
-                data_trans.push(origin_data[tmp_ind]);
+                data_trans.push(origin_data[tmp_ind].clone());
             }
         }
     }

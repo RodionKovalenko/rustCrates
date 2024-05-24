@@ -2,10 +2,6 @@
 import pywt
 import numpy as np
 
-widths = np.arange(1, 6)
-
-
-
 wavelist = pywt.wavelist(kind='continuous')
 print('wavelist', wavelist)
 
@@ -30,13 +26,8 @@ scales = np.arange(1, 3)
 # print('cd', cd)
 import cmath
 
-sig = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8, 9]])
-sig = np.array([1, 2, 3, 0])
-
-print('data', sig)
-print('scales', scales)
-wavelet, frequencies = pywt.cwt(sig, scales, 'cmor1.5-1.0')
-print('wavelet', wavelet)
-print('frequencies', frequencies)
+sig = np.array([[1, 2, 3], [4, 5, 6]])
 
 
+wavelet = pywt.dwt2(sig, 'db2', 'constant')
+print('db2 wavelet', wavelet)
