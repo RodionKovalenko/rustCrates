@@ -152,7 +152,6 @@ pub fn wavefun(precision: &i32, cw_type: &ContinuousWaletetType) -> Vec<Vec<f64>
     x_y_vec.push(x);
     x_y_vec.push(y);
 
-
     x_y_vec
 }
 
@@ -242,7 +241,7 @@ pub fn cwt<T: ArrayType>(data: &T, wavelet: &mut CWTComplex) -> Option<ArrayWith
         ContinuousWaletetType::CGAU8 => {
             let (wavelets, frequencies) = cwt_complex(data, wavelet).unwrap();
             Some((wavelets, frequencies))
-        },
+        }
         _ => {
             match num_dim {
                 1 => {

@@ -13,9 +13,9 @@ pub struct CWTComplex {
     pub scales: Vec<f64>,
     pub cw_type: ContinuousWaletetType,
     pub sampling_period: f64,
-    pub fc: f64,
-    pub fb: f64,
     pub m: f64,
+    pub fb: f64,
+    pub fc: f64,
     pub frequencies: Vec<f64>,
 }
 

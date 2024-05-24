@@ -2,6 +2,7 @@
 description = "Continuous Wavelet Transform"
 https://github.com/PyWavelets/pywt/blob/main/pywt/_extensions/_cwt.pyx
 
+https://pywavelets.readthedocs.io/en/latest/ref/signal-extension-modes.html#ref-modes
 
 https://github.com/PyWavelets/pywt/blob/f41261e7effbcf751fd3c6c485407292c7231904/pywt/_extensions/c/cwt.template.c
 
