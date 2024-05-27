@@ -91,7 +91,28 @@ pub fn save_as_grey_scale(original_image_path: &str, imagepath: &str) -> Vec<Vec
     pixel_vec
 }
 
-pub fn get_pixels_as_rgba(original_image_path: &str) -> Vec<Vec<f64>> {
+pub fn get_pixels_as_rgba(original_image_path: &str) -> Vec<Vec<Rgba<u8>>> {
+    let img = image::open(&Path::new(original_image_path)).unwrap();
+    let img_width: u32 = img.width().clone();
+    let img_height: u32 = img.height().clone();
+
+    let mut buffer: RgbaImage = ImageBuffer::new(img_width, img_height);
+    let mut pixel_vec: Vec<Vec<Rgba<u8>>> = Vec::new();
+
+    for _i in 0..img_height {
+        pixel_vec.push(vec![]);
+    }
+
+    for (x, y, _pixel) in buffer.enumerate_pixels_mut() {
+        let rgba = img.get_pixel(x, y);
+
+        pixel_vec[y.clone() as usize][x.clone() as usize] = rgba;
+    }
+
+    pixel_vec
+}
+
+pub fn get_pixels(original_image_path: &str) -> Vec<Vec<f64>> {
     let img = image::open(&Path::new(original_image_path)).unwrap();
     let img_width: u32 = img.width().clone();
     let img_height: u32 = img.height().clone();
@@ -146,12 +167,13 @@ pub fn save_image_from_pixels(image_data: &Vec<Vec<f64>>, image_path: &str) {
     for (x, y, pixel) in buffer.enumerate_pixels_mut() {
         v = image_data[y.clone() as usize][x.clone() as usize].clone() as i32;
 
-        a = (((v.clone() >> 24) & 0xff) as f32 * (brightness_factor.clone())).clamp(0.0, 255.0) as u8;
-        r = (((v.clone() >> 16) & 0xff) as f32 * (brightness_factor.clone())).clamp(0.0, 255.0) as u8;
-        g = (((v.clone() >> 8) & 0xff) as f32 * (brightness_factor.clone())).clamp(0.0, 255.0) as u8;
-        b = (((v.clone() >> 0) & 0xff) as f32 * (brightness_factor.clone())).clamp(0.0, 255.0) as u8;
+        a = (((v.clone() >> 24) & 0xff) as f32 * (brightness_factor.clone())) as u8;
+        r = (((v.clone() >> 16) & 0xff) as f32 * (brightness_factor.clone())) as u8;
+        g = (((v.clone() >> 8) & 0xff) as f32 * (brightness_factor.clone())) as u8;
+        b = (((v.clone() >> 0) & 0xff) as f32 * (brightness_factor.clone())) as u8;
 
         *pixel = Rgba([r.clone(), g.clone(), b.clone(), a.clone()]);
+        //*pixel = Rgba([b.clone(), b.clone(), b.clone(), b.clone()]);
     }
 
     buffer.save(image_path).unwrap();

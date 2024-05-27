@@ -1,5 +1,6 @@
 
 // types used for Discrete Wavelet Transform
+#[derive(Debug)]
 pub enum DiscreteWaletetType {
     DB1,
     DB2,
