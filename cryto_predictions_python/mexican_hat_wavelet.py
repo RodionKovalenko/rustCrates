@@ -33,17 +33,16 @@ scales = np.arange(1, 3)
 # print('ca', ca)
 # print('cd', cd)
 
-w_type = 'db3'
-mode = 'reflect'
-sig = np.array([[1.1515151515151515, 2.2626262626262626, 3.36363636363636363636, 4.0, 5.0, 6.0], 
-                [6.616161616161616161, 7.7272727272727272, 8.818181818181818181, 9.0, 10.0, 11.0]])
+w_type = 'coif2'
+mode = 'antireflect'
+sig = np.array([[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 
+                [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]])
 
-wavelet = pywt.dwt2(sig, w_type, mode)
+wavelet = pywt.dwt(sig[0], w_type, mode)
 print('db2 wavelet', wavelet)
 
-invesed = pywt.idwt2(wavelet, w_type, mode)
-print('inversed', invesed)
 
-sig = np.array([[6, 5, 4, 3]])
-padded = pywt.pad(sig, (10, 6), 'reflect')
+
+sig = np.array([5, 7, 2])
+padded = pywt.pad(sig, (5, 5), 'antireflect')
 print('padded', padded)
