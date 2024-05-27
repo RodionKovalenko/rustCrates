@@ -233,9 +233,14 @@ pub fn insert_padding_before(data_trans: &mut Vec<f64>, mode: &WaveletMode, size
                 data_trans.insert(0, data_trans[tmp_ind].clone());
             }
             WaveletMode::ANTIREFLECT => {
-                tmp_ind = (_i + 1) % orig_len.clone();
-                val = 2.0 * origin_data[0].clone() - origin_data[tmp_ind].clone();
+                if tmp_ind % (origin_data.len() - 1) == 0 {
+                    tmp_ind = 0;
+                }
+
+                val = 2.0 * data_trans[_i % (origin_data.len() - 1)].clone() - data_trans[(_i%(origin_data.len() - 1) + 1 + tmp_ind) % data_trans.len()].clone();
                 data_trans.insert(0, val);
+
+                tmp_ind += 1;
             }
             WaveletMode::PERIODIC => {
                 tmp_ind = origin_data.len() - 1 - ((_i) % origin_data.len());
@@ -251,9 +256,8 @@ pub fn insert_padding_before(data_trans: &mut Vec<f64>, mode: &WaveletMode, size
 
 pub fn insert_padding_after(data_trans: &mut Vec<f64>, mode: &WaveletMode, size: usize, padding_len_before: usize)
 {
-    let orig_len_without_padding: usize = data_trans.len() - padding_len_before.clone();
     let origin_data = data_trans.clone();
-    let mut tmp_ind;
+    let mut tmp_ind= 0;
     let mut val: f64;
 
     for _i in 0..size {
@@ -273,9 +277,16 @@ pub fn insert_padding_after(data_trans: &mut Vec<f64>, mode: &WaveletMode, size:
                 data_trans.push(origin_data[tmp_ind].clone());
             }
             WaveletMode::ANTIREFLECT => {
-                tmp_ind = origin_data.len() - ((_i + 2) % origin_data.len());
-                val = 2.0 * origin_data[origin_data.len() - 1].clone() - origin_data[tmp_ind].clone();
+                if tmp_ind % (origin_data.len() - 1) == 0 {
+                    tmp_ind = 0;
+                }
+
+                let ind = _i % (origin_data.len() - 1);
+
+                val = 2.0 * data_trans[data_trans.len() - ind - 1].clone() - data_trans[data_trans.len() - (ind + 2 + tmp_ind)].clone();
+
                 data_trans.push(val);
+                tmp_ind += 1;
             }
             WaveletMode::PERIODIC => {
                 tmp_ind = _i % origin_data.len() + padding_len_before.clone();

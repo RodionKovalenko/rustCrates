@@ -7,7 +7,7 @@ mod tests {
     use crate::wavelet_transform::cwt::{cwt, cwt_1d, cwt_2d, cwt_3d, cwt_4d, cwt_5d};
     use crate::wavelet_transform::cwt_complex::CWTComplex;
     use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
-    use crate::wavelet_transform::dwt::{get_ll_lh_hl_hh, inverse_transform_2_d, transform_2_d};
+    use crate::wavelet_transform::dwt::{get_ll_lh_hl_hh, insert_padding_after, insert_padding_before, inverse_transform_2_d, transform_2_d};
     use crate::wavelet_transform::dwt_types::DiscreteWaletetType;
     use crate::wavelet_transform::fft::{fft_real1_d, fft_real2_d};
     use crate::wavelet_transform::modes::WaveletMode;
@@ -711,6 +711,32 @@ mod tests {
             [-5.0869533601674535, -5.451306868750656, -5.522218660151507, -5.106924365405492, -4.9841118970400435, 0.03868157653841747, -0.1032856421338551, 0.0037482935878783118, -0.011322159031109696, -0.15004429118355295],
             [-5.0869533601674535, -5.451306868750656, -5.522218660151507, -5.106924365405492, -4.9841118970400435, 0.03868157653841747, -0.1032856421338551, 0.0037482935878783118, -0.011322159031109696, -0.15004429118355295],
             [-5.0869533601674535, -5.451306868750656, -5.522218660151507, -5.106924365405492, -4.9841118970400435, 0.03868157653841747, -0.1032856421338551, 0.0037482935878783118, -0.011322159031109696, -0.15004429118355295]]);
+
+        let mut array = vec![5.0, 7.0, 2.0];
+
+        insert_padding_before(&mut array, &WaveletMode::ANTIREFLECT, 10);
+        insert_padding_after(&mut array, &WaveletMode::ANTIREFLECT, 10, 10);
+
+        assert_eq!(array, [20.0, 15.0, 17.0, 19.0, 14.0, 9.0, 11.0, 13.0, 8.0, 3.0, 5.0, 7.0, 2.0, -3.0, -1.0, 1.0, -4.0, -9.0, -7.0, -5.0, -10.0, -15.0, -13.0]);
+
+        let data_2d = vec![vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                           vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0]];
+
+
+        let dwt_type = DiscreteWaletetType::DB3;
+        let mode = WaveletMode::ANTIREFLECT;
+        let transformed = transform_2_d(&data_2d, &dwt_type, &mode);
+
+        assert_eq!(transformed, [[-42.556383650647675, -38.55638365064768, -34.55638365064768, -30.556383650647675, -26.556383650647668, -6.567066884119701e-16,
+            6.853763933504303e-16, -3.997579540348742e-15, 0.0, 5.368332327049601e-15],
+            [-18.556383650647675, -14.556383650647675, -10.556383650647678, -6.556383650647678, -2.5563836506476747, -3.4268819667521514e-16,
+                5.733940987692024e-17, -1.485431606454701e-15, 0.0, 1.6001104262085414e-15],
+            [5.443616349352322, 9.443616349352318, 13.443616349352325, 17.44361634935232, 21.443616349352318, -2.866970493846012e-17,
+                -5.706975735965899e-16, 1.026716327439339e-15, 0.0, -2.1681114746325188e-15],
+            [-1.1102230246251565e-15, 0.0, 0.0, 0.0, -8.881784197001252e-16, 0.0, 2.465190328815662e-32, -4.930380657631324e-32, 0.0, 9.860761315262648e-32],
+            [-1.7763568394002505e-15, -1.7763568394002505e-15, 0.0, 0.0, -1.7763568394002505e-15, -1.232595164407831e-32, 4.930380657631324e-32, 0.0, 0.0, 0.0],
+            [-3.552713678800501e-15, 0.0, 1.7763568394002505e-15, -3.552713678800501e-15, 0.0, -2.465190328815662e-32, 0.0, -1.9721522630525295e-31, 0.0, 0.0]]);
+
     }
 
     #[test]
@@ -759,8 +785,8 @@ mod tests {
         let dec_levels = 6;
         let mut decomposed_levels = Vec::new();
 
-        let wavelet_type = DiscreteWaletetType::DB1;
-        let wavelet_mode = WaveletMode::CONSTANT;
+        let wavelet_type = DiscreteWaletetType::DB4;
+        let wavelet_mode = WaveletMode::SYMMETRIC;
 
         // encode with wavelet transform
         for i in 0..dec_levels.clone() {
