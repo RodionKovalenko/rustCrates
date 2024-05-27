@@ -112,7 +112,7 @@ pub fn get_high_pass_filter(dw_type: &DiscreteWaletetType) -> Vec<f64> {
     for (i, el) in low_pass_filter.iter().rev().enumerate() {
         v = el.clone();
 
-        if i % 2 != 0 {
+        if i % 2 == 1 {
             v *= -1.0;
         }
 
