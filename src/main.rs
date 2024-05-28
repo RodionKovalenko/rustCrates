@@ -52,17 +52,18 @@ fn main() {
 
     let _scale = arange(&1.0, &3.0, &1.0);
     let _data_1d = vec![1.0, 0.0, 2.0, 3.0];
-    let data_2d = vec![vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-                       vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0]];
+    let data_2d = [[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                       [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]];
 
     // let data_2d = vec![vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
     //                    vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0]];
 
-    let dwt_type = DiscreteWaletetType::COIF2;
-    let mode = WaveletMode::ANTIREFLECT;
+
+    let dwt_type = DiscreteWaletetType::DB4;
+    let mode = WaveletMode::PERIODIZATION;
     let transformed = transform_2_d(&data_2d, &dwt_type, &mode);
 
-    println!(" DB2 transformed {:?}", transformed);
+    println!("{:?} transformed {:?}", &dwt_type, transformed);
     let llhllhhh = get_ll_lh_hl_hh(&transformed);
 
     println!(" llhllhhh");
@@ -72,14 +73,14 @@ fn main() {
         }
     }
 
-    let inversed = inverse_transform_2_d(&transformed, &dwt_type, &mode, 1);
-    println!(" DB2 inversed {:?}", inversed);
+    // let inversed = inverse_transform_2_d(&transformed, &dwt_type, &mode, 1);
+    // println!(" DB2 inversed {:?}", inversed);
 
 
     let mut array = vec![5.0, 7.0, 2.0];
 
-    insert_padding_before(&mut array, &WaveletMode::ANTIREFLECT, 10);
-    insert_padding_after(&mut array, &WaveletMode::ANTIREFLECT, 10, 6);
+    insert_padding_before(&mut array, &WaveletMode::PERIODIZATION, 10);
+    insert_padding_after(&mut array, &WaveletMode::PERIODIZATION, 10, 10);
 
     println!("array {:?}", array);
 }
