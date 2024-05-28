@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 use std::ops::{AddAssign, Mul, Neg};
 use num_traits::{FromPrimitive, ToPrimitive};
-use crate::utils::data_converter::convert_to_f64_1d;
-use crate::utils::num_trait::NumTrait;
+use crate::utils::data_converter::{convert_to_f64_1d, convert_to_f64_2d};
+use crate::utils::num_trait::{ArrayType, NumTrait};
 use crate::wavelet_transform::dwt_type_resolver::{get_high_pass_filter, get_inverse_high_pass_filter, get_inverse_low_pass_filter, get_low_pass_filter};
 use crate::wavelet_transform::dwt_types::DiscreteWaletetType;
 use crate::wavelet_transform::modes::WaveletMode;
@@ -17,8 +17,9 @@ pub fn transform_2_d_partial<T: NumTrait>(data: &Vec<Vec<T>>, dw_type: &Discrete
     data_trans
 }
 
-pub fn transform_2_d<T: NumTrait>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<Vec<f64>> {
-    let mut data_trans: Vec<Vec<f64>> = transform_2_d_partial(&data, &dw_type, &mode);
+pub fn transform_2_d<T: ArrayType>(data: &T, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<Vec<f64>> {
+    let data_f64: Vec<Vec<f64>> = convert_to_f64_2d(data);
+    let mut data_trans: Vec<Vec<f64>> = transform_2_d_partial(&data_f64, &dw_type, &mode);
 
     // println!("before transposed array: {:?}", &data_trans);
     data_trans = transpose(data_trans);
@@ -63,8 +64,6 @@ pub fn transform_1_d<T: NumTrait>(data: &Vec<T>, dw_type: &DiscreteWaletetType, 
     let mut n: i32;
     let padding_size_before = high_pass_filter.len() - 2;
 
-    println!("data clone before padding: {:?}", &data_clone);
-
     // Padding before padding before data
     insert_padding_before(&mut data_clone, mode, padding_size_before);
 
@@ -73,15 +72,15 @@ pub fn transform_1_d<T: NumTrait>(data: &Vec<T>, dw_type: &DiscreteWaletetType, 
     middle_index = (n.clone() >> 1) as usize;
 
     // Padding after
-    let mut index = high_pass_filter.len() - (data_clone.len() % high_pass_filter.len()) + 1;
+    let mut padding_size_after = high_pass_filter.len() - (data_clone.len() % high_pass_filter.len()) + 1;
 
     if data_clone.len() % high_pass_filter.len() != 0 {
-        index = high_pass_filter.len() - (data_clone.len() % high_pass_filter.len()) + 2;
+        padding_size_after = high_pass_filter.len() - (data_clone.len() % high_pass_filter.len()) + 2;
     }
 
-    insert_padding_after(&mut data_clone, mode, index, padding_size_before.clone());
+    insert_padding_after(&mut data_clone, mode, padding_size_after, padding_size_before.clone());
 
-     println!("data clone after padding: {:?}", &data_clone);
+    // println!("data clone after padding: {:?}", &data_clone);
     // println!("data clone after padding length: {:?}", &data_clone.len());
 
     // for even number of elements in array add one and calculate middle index again
@@ -208,7 +207,7 @@ pub fn insert_padding_before(data_trans: &mut Vec<f64>, mode: &WaveletMode, size
     let mut tmp_ind: usize = 0;
     let mut val: f64;
     let orig_len = data_trans.len();
-    let origin_data = data_trans.clone();
+    let mut origin_data = data_trans.clone();
 
     for _i in 0..size {
         match mode {
@@ -223,7 +222,7 @@ pub fn insert_padding_before(data_trans: &mut Vec<f64>, mode: &WaveletMode, size
                 data_trans.insert(0, -data_trans[tmp_ind].clone());
             }
             WaveletMode::REFLECT => {
-                if  _i > 0 {
+                if _i > 0 {
                     tmp_ind = (tmp_ind + 2) % data_trans.len();
                 }
                 if tmp_ind == 0 {
@@ -237,7 +236,7 @@ pub fn insert_padding_before(data_trans: &mut Vec<f64>, mode: &WaveletMode, size
                     tmp_ind = 0;
                 }
 
-                val = 2.0 * data_trans[_i % (origin_data.len() - 1)].clone() - data_trans[(_i%(origin_data.len() - 1) + 1 + tmp_ind) % data_trans.len()].clone();
+                val = 2.0 * data_trans[_i % (origin_data.len() - 1)].clone() - data_trans[(_i % (origin_data.len() - 1) + 1 + tmp_ind) % data_trans.len()].clone();
                 data_trans.insert(0, val);
 
                 tmp_ind += 1;
@@ -247,6 +246,10 @@ pub fn insert_padding_before(data_trans: &mut Vec<f64>, mode: &WaveletMode, size
                 data_trans.insert(0, origin_data[tmp_ind].clone());
             }
             WaveletMode::PERIODIZATION => {
+                if _i == 0 {
+                    data_trans.push(origin_data[origin_data.len() - 1].clone());
+                    origin_data = data_trans.clone();
+                }
                 tmp_ind = origin_data.len() - 1 - ((_i) % origin_data.len());
                 data_trans.insert(0, origin_data[tmp_ind].clone());
             }
@@ -257,7 +260,7 @@ pub fn insert_padding_before(data_trans: &mut Vec<f64>, mode: &WaveletMode, size
 pub fn insert_padding_after(data_trans: &mut Vec<f64>, mode: &WaveletMode, size: usize, padding_len_before: usize)
 {
     let origin_data = data_trans.clone();
-    let mut tmp_ind= 0;
+    let mut tmp_ind = 0;
     let mut val: f64;
 
     for _i in 0..size {
@@ -282,18 +285,17 @@ pub fn insert_padding_after(data_trans: &mut Vec<f64>, mode: &WaveletMode, size:
                 }
 
                 let ind = _i % (origin_data.len() - 1);
-
                 val = 2.0 * data_trans[data_trans.len() - ind - 1].clone() - data_trans[data_trans.len() - (ind + 2 + tmp_ind)].clone();
 
                 data_trans.push(val);
                 tmp_ind += 1;
             }
             WaveletMode::PERIODIC => {
-                tmp_ind = _i % origin_data.len() + padding_len_before.clone();
+                tmp_ind = _i % (origin_data.len() - padding_len_before.clone()) + padding_len_before.clone();
                 data_trans.push(origin_data[tmp_ind].clone());
             }
             WaveletMode::PERIODIZATION => {
-                tmp_ind = _i % origin_data.len() + padding_len_before.clone();
+                tmp_ind = _i % (origin_data.len() - padding_len_before.clone()) + padding_len_before.clone();
                 data_trans.push(origin_data[tmp_ind].clone());
             }
         }

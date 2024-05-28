@@ -33,16 +33,15 @@ scales = np.arange(1, 3)
 # print('ca', ca)
 # print('cd', cd)
 
-w_type = 'coif2'
-mode = 'antireflect'
+w_type = 'db4'
+mode = 'periodization'
 sig = np.array([[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 
                 [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]])
 
-wavelet = pywt.dwt(sig[0], w_type, mode)
+wavelet = pywt.dwt2(sig, w_type, mode)
 print('db2 wavelet', wavelet)
 
 
-
 sig = np.array([5, 7, 2])
-padded = pywt.pad(sig, (5, 5), 'antireflect')
+padded = pywt.pad(sig, (10, 10), 'periodization')
 print('padded', padded)
