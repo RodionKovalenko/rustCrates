@@ -13,6 +13,11 @@ impl NumTrait for f64 {
     }
 }
 
+impl NumTrait for u8 {
+    fn to_f64(&self) -> f64 {
+        *self as f64
+    }
+}
 impl NumTrait for f32 {
     fn to_f64(&self) -> f64 {
         *self as f64
@@ -44,41 +49,49 @@ pub enum Array {
     ArrayF321D(Vec<f32>),
     ArrayI32_1D(Vec<i32>),
     ArrayI64_1D(Vec<i64>),
+    ArrayU8_1D(Vec<u8>),
 
     ArrayI32_2D(Vec<Vec<i32>>),
     ArrayI64_2D(Vec<Vec<i64>>),
     Array2D(Vec<Vec<f64>>),
     ArrayF32_2D(Vec<Vec<f32>>),
+    ArrayU8_2D(Vec<Vec<u8>>),
 
     ArrayI32_3D(Vec<Vec<Vec<i32>>>),
     ArrayI64_3D(Vec<Vec<Vec<i64>>>),
     Array3D(Vec<Vec<Vec<f64>>>),
     ArrayF32_3D(Vec<Vec<Vec<f32>>>),
+    ArrayU8_3D(Vec<Vec<Vec<u8>>>),
 
     ArrayI32_4D(Vec<Vec<Vec<Vec<i32>>>>),
     ArrayI64_4D(Vec<Vec<Vec<Vec<i64>>>>),
     Array4D(Vec<Vec<Vec<Vec<f64>>>>),
     ArrayF32_4D(Vec<Vec<Vec<Vec<f32>>>>),
+    ArrayU8_4D(Vec<Vec<Vec<Vec<u8>>>>),
 
     ArrayI32_5D(Vec<Vec<Vec<Vec<Vec<i32>>>>>),
     ArrayI64_5D(Vec<Vec<Vec<Vec<Vec<i64>>>>>),
     Array5D(Vec<Vec<Vec<Vec<Vec<f64>>>>>),
     ArrayF32_5D(Vec<Vec<Vec<Vec<Vec<f32>>>>>),
+    ArrayU8_5D(Vec<Vec<Vec<Vec<Vec<u8>>>>>),
 
     ArrayI32_6D(Vec<Vec<Vec<Vec<Vec<Vec<i32>>>>>>),
     ArrayI64_6D(Vec<Vec<Vec<Vec<Vec<Vec<i64>>>>>>),
     Array6D(Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>>),
     ArrayF32_6D(Vec<Vec<Vec<Vec<Vec<Vec<f32>>>>>>),
+    ArrayU8_6D(Vec<Vec<Vec<Vec<Vec<Vec<u8>>>>>>),
 
     ArrayI32_7D(Vec<Vec<Vec<Vec<Vec<Vec<Vec<i32>>>>>>>),
     ArrayI64_7D(Vec<Vec<Vec<Vec<Vec<Vec<Vec<i64>>>>>>>),
     Array7D(Vec<Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>>>),
     ArrayF32_7D(Vec<Vec<Vec<Vec<Vec<Vec<Vec<f32>>>>>>>),
+    ArrayU8_7D(Vec<Vec<Vec<Vec<Vec<Vec<Vec<u8>>>>>>>),
 
     ArrayI32_8D(Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<i32>>>>>>>>),
     ArrayI64_8D(Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<i64>>>>>>>>),
     Array8D(Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>>>>),
     ArrayF32_8D(Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<f32>>>>>>>>),
+    ArrayU8_8D(Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<u8>>>>>>>>),
 
 
     ArrayC1D(Vec<Complex<f64>>),

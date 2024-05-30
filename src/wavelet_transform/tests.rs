@@ -772,7 +772,6 @@ mod tests {
     #[ignore]
     pub fn test_decomposition() {
         let pixels: Vec<Vec<f64>> = get_pixels("training_data/1.jpg");
-        // let mut n: Vec<Vec<f64>> = Vec::new();
         let mut n = pixels;
 
         // println!("n : {:?}", &n);
@@ -785,7 +784,7 @@ mod tests {
         let dec_levels = 6;
         let mut decomposed_levels = Vec::new();
 
-        let wavelet_type = DiscreteWaletetType::DB4;
+        let wavelet_type = DiscreteWaletetType::DB1;
         let wavelet_mode = WaveletMode::SYMMETRIC;
 
         // encode with wavelet transform
