@@ -7,7 +7,7 @@ mod tests {
     use crate::wavelet_transform::cwt::{cwt, cwt_1d, cwt_2d, cwt_3d, cwt_4d, cwt_5d};
     use crate::wavelet_transform::cwt_complex::CWTComplex;
     use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
-    use crate::wavelet_transform::dwt::{get_ll_lh_hl_hh, insert_padding_after, insert_padding_before, inverse_transform_2_d, transform_2_d};
+    use crate::wavelet_transform::dwt::{get_ll_hl_lh_hh, insert_padding_after, insert_padding_before, inverse_transform_2_d, transform_2_d};
     use crate::wavelet_transform::dwt_types::DiscreteWaletetType;
     use crate::wavelet_transform::fft::{fft_real1_d, fft_real2_d};
     use crate::wavelet_transform::modes::WaveletMode;
@@ -627,7 +627,7 @@ mod tests {
         assert_eq!(transformed, [[8.0, 12.000000000000004, 15.000000000000004, -0.9999999999999998, -1.0000000000000004, 0.0],
             [-5.0, -5.000000000000001, -5.000000000000001, -4.440892098500626e-16, 3.3306690738754696e-16, 0.0]]);
 
-        let llhllhhh = get_ll_lh_hl_hh(&transformed);
+        let llhllhhh: Vec<Vec<Vec<f64>>> = get_ll_hl_lh_hh(&transformed);
 
         assert_eq!(llhllhhh,
                    [[[8.0, 12.000000000000004, 15.000000000000004]],
@@ -638,7 +638,7 @@ mod tests {
         let data_2d = vec![vec![1.15, 2.22, 3.36, 4.45, 5.59], vec![6.61, 7.72, 8.83, 9.94, 10.17]];
         let dwt_type = DiscreteWaletetType::DB2;
         let transformed = transform_2_d(&data_2d, &dwt_type, &WaveletMode::CONSTANT);
-        let llhllhhh = get_ll_lh_hl_hh(&transformed);
+        let llhllhhh: Vec<Vec<Vec<f64>>> = get_ll_hl_lh_hh(&transformed);
 
         assert_eq!(llhllhhh, [[[1.1055969296248855, 2.659056465474454, 7.315913630276377, 10.341801825333636],
             [9.290106548568122, 10.882806465474454, 15.449230777830874, 17.21180182533364]],
@@ -650,7 +650,7 @@ mod tests {
 
         let dwt_type = DiscreteWaletetType::DB3;
         let transformed = transform_2_d(&data_2d, &dwt_type, &WaveletMode::CONSTANT);
-        let llhllhhh = get_ll_lh_hl_hh(&transformed);
+        let llhllhhh: Vec<Vec<Vec<f64>>> = get_ll_hl_lh_hh(&transformed);
 
         assert_eq!(llhllhhh, [[[2.625357908947451, 2.2648791841237403, 4.287629314819762, 9.094444333091051, 11.40816414879493],
             [0.9228015138955594, 0.5637793430510476, 2.5684057922326975, 7.439410601157797, 9.980273011430379],
@@ -736,7 +736,6 @@ mod tests {
             [-1.1102230246251565e-15, 0.0, 0.0, 0.0, -8.881784197001252e-16, 0.0, 2.465190328815662e-32, -4.930380657631324e-32, 0.0, 9.860761315262648e-32],
             [-1.7763568394002505e-15, -1.7763568394002505e-15, 0.0, 0.0, -1.7763568394002505e-15, -1.232595164407831e-32, 4.930380657631324e-32, 0.0, 0.0, 0.0],
             [-3.552713678800501e-15, 0.0, 1.7763568394002505e-15, -3.552713678800501e-15, 0.0, -2.465190328815662e-32, 0.0, -1.9721522630525295e-31, 0.0, 0.0]]);
-
     }
 
     #[test]
@@ -794,7 +793,7 @@ mod tests {
 
             //  save as images
             decomposed_levels.push(dw_transformed.clone());
-            ll_lh_hl_hh = get_ll_lh_hl_hh(&dw_transformed);
+            ll_lh_hl_hh = get_ll_hl_lh_hh(&dw_transformed);
 
             n = ll_lh_hl_hh[0].clone();
             let mut count = 1;

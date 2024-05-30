@@ -17,8 +17,9 @@ use std::time::Instant;
 #[allow(unused_imports)]
 #[allow(unused_imports)]
 use rand::Rng;
+use neural_networks::neural_networks::network_types::wavelet_network::test_decomposition_dwt;
 use neural_networks::utils::array::arange;
-use neural_networks::wavelet_transform::dwt::{get_ll_lh_hl_hh, insert_padding_after, insert_padding_before, transform_2_d};
+use neural_networks::wavelet_transform::dwt::{get_ll_hl_lh_hh, insert_padding_after, insert_padding_before, transform_2_d};
 use neural_networks::wavelet_transform::dwt_types::DiscreteWaletetType;
 use neural_networks::wavelet_transform::modes::WaveletMode;
 
@@ -55,12 +56,12 @@ fn main() {
     let data_2d = [[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
                        [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]];
 
-    let dwt_type = DiscreteWaletetType::DB2;
-    let mode = WaveletMode::PERIODIZATION;
+    let dwt_type = DiscreteWaletetType::DB4;
+    let mode = WaveletMode::SYMMETRIC;
     let transformed = transform_2_d(&data_2d, &dwt_type, &mode);
 
     println!("{:?} transformed {:?}", &dwt_type, transformed);
-    let llhllhhh = get_ll_lh_hl_hh(&transformed);
+    let llhllhhh: Vec<Vec<Vec<f64>>> = get_ll_hl_lh_hh(&transformed);
 
     println!(" llhllhhh");
     for i in 0..llhllhhh.len() {
@@ -78,8 +79,6 @@ fn main() {
     insert_padding_after(&mut array, &WaveletMode::PERIODIZATION, 10, 10);
 
     println!("array {:?}", array);
-}
 
-/*
-(array([[11.3660254 , 11.26794919, 16.3660254 ]]), (array([[6., 6., 6.]]), array([[-1.09807621e+00,  2.22044605e-16,  4.09807621e+00]]), array([[-6.66133815e-16,  7.77156117e-16, -3.33066907e-16]])))
- */
+    test_decomposition_dwt();
+}

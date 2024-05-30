@@ -299,39 +299,29 @@ pub fn insert_padding_after(data_trans: &mut Vec<f64>, mode: &WaveletMode, size:
     }
 }
 
-pub fn get_ll_lh_hl_hh(data: &Vec<Vec<f64>>) -> Vec<Vec<Vec<f64>>> {
+pub fn get_ll_hl_lh_hh<T: Num + Clone + PartialOrd + ToPrimitive + Debug>(
+    data: &Vec<Vec<T>>
+) -> Vec<Vec<Vec<T>>> {
     // top left: average approximation
-    let mut ll: Vec<Vec<f64>> = Vec::new();
-    // top right: horizontal features
-    let mut lh: Vec<Vec<f64>> = Vec::new();
-    // bottom left: vertical features
-    let mut hl: Vec<Vec<f64>> = Vec::new();
-    // bottom right: diagonal features
-    let mut hh: Vec<Vec<f64>> = Vec::new();
-    let half_row_ind: usize;
-    let half_col_ind: usize;
+    let mut ll: Vec<Vec<T>> = Vec::new();
+    let mut lh: Vec<Vec<T>> = Vec::new();
+    let mut hl: Vec<Vec<T>> = Vec::new();
+    let mut hh: Vec<Vec<T>> = Vec::new();
 
-    let mut data_ll_lh_hl_hh: Vec<Vec<Vec<f64>>> = Vec::new();
-
-    half_row_ind = data.len() >> 1;
-    half_col_ind = data[0].len() >> 1;
+    let half_row_ind = data.len() >> 1;
+    let half_col_ind = data[0].len() >> 1;
 
     for (i, row) in data.iter().enumerate() {
-        if i < half_row_ind.clone() {
-            set_value_2d(&mut ll, row[0..half_col_ind].to_vec(), &i);
-            set_value_2d(&mut lh, row[half_col_ind..row.len()].to_vec(), &i);
+        if i < half_row_ind {
+            ll.push(row[0..half_col_ind].to_vec());
+            lh.push(row[half_col_ind..].to_vec());
         } else {
-            set_value_2d(&mut hl, row[0..half_col_ind].to_vec(), &i);
-            set_value_2d(&mut hh, row[half_col_ind..row.len()].to_vec(), &i);
+            hl.push(row[0..half_col_ind].to_vec());
+            hh.push(row[half_col_ind..].to_vec());
         }
     }
 
-    data_ll_lh_hl_hh.push(ll);
-    data_ll_lh_hl_hh.push(hl);
-    data_ll_lh_hl_hh.push(lh);
-    data_ll_lh_hl_hh.push(hh);
-
-    data_ll_lh_hl_hh
+    vec![ll, hl, lh, hh]
 }
 
 pub fn combine_ll_lh_hl_hh(ll_lh_hl_hh: &Vec<Vec<Vec<f64>>>) -> Vec<Vec<f64>> {
