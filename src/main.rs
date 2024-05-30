@@ -1,7 +1,3 @@
-extern crate serde_derive;
-extern crate serde;
-extern crate serde_json;
-
 use std::env;
 
 #[allow(unused_imports)]
@@ -17,11 +13,7 @@ use std::time::Instant;
 #[allow(unused_imports)]
 #[allow(unused_imports)]
 use rand::Rng;
-use neural_networks::neural_networks::network_types::wavelet_network::test_decomposition_dwt;
-use neural_networks::utils::array::arange;
-use neural_networks::wavelet_transform::dwt::{get_ll_hl_lh_hh, insert_padding_after, insert_padding_before, transform_2_d};
-use neural_networks::wavelet_transform::dwt_types::DiscreteWaletetType;
-use neural_networks::wavelet_transform::modes::WaveletMode;
+use neural_networks::neural_networks::network_types::wavelet_network::decompose_in_wavelets;
 
 pub enum ARGUMENTS {
     UPHOLD,
@@ -50,35 +42,5 @@ fn main() {
     //     }
     // }
 
-
-    let _scale = arange(&1.0, &3.0, &1.0);
-    let _data_1d = vec![1.0, 0.0, 2.0, 3.0];
-    let data_2d = [[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-                       [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]];
-
-    let dwt_type = DiscreteWaletetType::DB4;
-    let mode = WaveletMode::SYMMETRIC;
-    let transformed = transform_2_d(&data_2d, &dwt_type, &mode);
-
-    println!("{:?} transformed {:?}", &dwt_type, transformed);
-    let llhllhhh: Vec<Vec<Vec<f64>>> = get_ll_hl_lh_hh(&transformed);
-
-    println!(" llhllhhh");
-    for i in 0..llhllhhh.len() {
-        for j in 0..llhllhhh[i].len() {
-            println!("\n llhllhhh {} {:?}", i, llhllhhh[i][j]);
-        }
-    }
-
-    // let inversed = inverse_transform_2_d(&transformed, &dwt_type, &mode, 1);
-    // println!(" DB2 inversed {:?}", inversed);
-
-    let mut array = vec![1.0, 2.0, 3.0];
-
-    insert_padding_before(&mut array, &WaveletMode::PERIODIZATION, 10);
-    insert_padding_after(&mut array, &WaveletMode::PERIODIZATION, 10, 10);
-
-    println!("array {:?}", array);
-
-    test_decomposition_dwt();
+    decompose_in_wavelets();
 }
