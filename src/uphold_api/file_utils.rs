@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::fs::OpenOptions;
+use std::{fs, io};
 use std::path::Path;
 use std::io::Write;
 use std::io::Read;
@@ -62,4 +63,20 @@ pub fn make_backup_file(filename: &str) {
             backup_file.write_all(data.as_bytes()).expect("Could not write to file");
         }
     }
+}
+
+pub fn remove_dir_contents(full_file_name: &str) -> io::Result<()> {
+    let path_to_file = Path::new(&full_file_name);
+    if path_to_file.is_dir() {
+        for entry in fs::read_dir(path_to_file)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                fs::remove_dir_all(&path)?;
+            } else {
+                fs::remove_file(&path)?;
+            }
+        }
+    }
+    Ok(())
 }

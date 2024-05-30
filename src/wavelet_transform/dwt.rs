@@ -184,7 +184,7 @@ pub fn inverse_transform_2_d<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> 
     transpose(inverse_transform_2_d_partial(&data_trans, &dw_type, &mode, level.clone()))
 }
 
-pub fn set_value(data_trans: &mut Vec<f64>, value: f64, i: &usize) {
+pub fn set_value<T: Num + Clone>(data_trans: &mut Vec<T>, value: T, i: &usize) {
     if i >= &data_trans.len() {
         data_trans.push(value);
     } else {
@@ -299,9 +299,8 @@ pub fn insert_padding_after(data_trans: &mut Vec<f64>, mode: &WaveletMode, size:
     }
 }
 
-pub fn get_ll_hl_lh_hh<T: Num + Clone + PartialOrd + ToPrimitive + Debug>(
-    data: &Vec<Vec<T>>
-) -> Vec<Vec<Vec<T>>> {
+pub fn get_ll_hl_lh_hh<T>(data: &Vec<Vec<T>>) -> Vec<Vec<Vec<T>>>
+    where T: Num + Clone + PartialOrd + ToPrimitive + Debug + Copy {
     // top left: average approximation
     let mut ll: Vec<Vec<T>> = Vec::new();
     let mut lh: Vec<Vec<T>> = Vec::new();
