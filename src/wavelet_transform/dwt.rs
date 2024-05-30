@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 use std::ops::{AddAssign, Mul, Neg};
-use num_traits::{FromPrimitive, ToPrimitive};
+use num_traits::{FromPrimitive, Num, ToPrimitive};
 use crate::utils::data_converter::{convert_to_f64_1d, convert_to_f64_2d};
 use crate::utils::num_trait::{ArrayType, NumTrait};
 use crate::wavelet_transform::dwt_type_resolver::{get_high_pass_filter, get_inverse_high_pass_filter, get_inverse_low_pass_filter, get_low_pass_filter};
@@ -63,7 +63,6 @@ pub fn transform_1_d<T: NumTrait>(data: &Vec<T>, dw_type: &DiscreteWaletetType, 
     let mut ind_transform = 0;
     let mut n: i32;
     let padding_size_before = high_pass_filter.len() - 2;
-
     // Padding before padding before data
     insert_padding_before(&mut data_clone, mode, padding_size_before);
 
@@ -113,6 +112,7 @@ pub fn transform_1_d<T: NumTrait>(data: &Vec<T>, dw_type: &DiscreteWaletetType, 
         ind_transform += 1;
     }
 
+
     data_trans
 }
 
@@ -122,9 +122,6 @@ pub fn inverse_transform_1_d<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> 
     let inverse_low_pass_filter: Vec<f64> = get_inverse_low_pass_filter(&dw_type);
     // inverse high pass filter (moving differences filter)
     let inverse_high_pass_filter: Vec<f64> = get_inverse_high_pass_filter(&dw_type);
-
-    // println!("inverse low pass filter : {:?}", &inverse_low_pass_filter);
-    // println!("inverse high pass filter : {:?}", &inverse_high_pass_filter);
 
     let mut value_high: f64;
     let mut value_low: f64;
@@ -195,7 +192,7 @@ pub fn set_value(data_trans: &mut Vec<f64>, value: f64, i: &usize) {
     }
 }
 
-pub fn set_value_2d(data_trans: &mut Vec<Vec<f64>>, value: Vec<f64>, i: &usize) {
+pub fn set_value_2d<T: Num + Clone>(data_trans: &mut Vec<Vec<T>>, value: Vec<T>, i: &usize) {
     if i >= &data_trans.len() {
         data_trans.push(value);
     } else {
@@ -246,7 +243,7 @@ pub fn insert_padding_before(data_trans: &mut Vec<f64>, mode: &WaveletMode, size
                 data_trans.insert(0, origin_data[tmp_ind].clone());
             }
             WaveletMode::PERIODIZATION => {
-                if _i == 0 {
+                if _i == 0 && origin_data.len() % 2 == 1 {
                     data_trans.push(origin_data[origin_data.len() - 1].clone());
                     origin_data = data_trans.clone();
                 }
