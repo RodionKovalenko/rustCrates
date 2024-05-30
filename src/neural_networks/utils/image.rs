@@ -109,35 +109,33 @@ pub fn get_pixels_as_rgba(original_image_path: &str) -> Vec<Vec<Rgba<u8>>> {
     pixel_vec
 }
 
-pub fn get_pixel_separate_rgba(original_image_path: &str) -> Vec<Vec<Vec<u8>>> {
+pub fn get_pixel_separate_rgba(original_image_path: &str) -> Vec<Vec<Vec<f64>>> {
     let pixels_rgba: Vec<Vec<Rgba<u8>>> = get_pixels_as_rgba(original_image_path);
-    let mut r: u8;
-    let mut g: u8;
-    let mut b: u8;
-    let mut a: u8;
 
     let w = pixels_rgba[0].len();
     let h = pixels_rgba.len();
-    let mut r_arr: Vec<Vec<u8>> = vec![vec![0; w]; h];
-    let mut g_arr: Vec<Vec<u8>> = vec![vec![0; w]; h];
-    let mut b_arr: Vec<Vec<u8>> = vec![vec![0; w]; h];
-    let mut a_arr: Vec<Vec<u8>> = vec![vec![0; w]; h];
+    let mut r_arr: Vec<Vec<f64>> = vec![vec![0.0; w]; h];
+    let mut g_arr: Vec<Vec<f64>> = vec![vec![0.0; w]; h];
+    let mut b_arr: Vec<Vec<f64>> = vec![vec![0.0; w]; h];
+    let mut a_arr: Vec<Vec<f64>> = vec![vec![0.0; w]; h];
+    let mut pixels: Vec<Vec<f64>> = vec![vec![0.0; w]; h];
 
     for i in 0..pixels_rgba.len() {
         for j in 0..pixels_rgba[i].len() {
-            r = pixels_rgba[i][j][0].clone();
-            g = pixels_rgba[i][j][1].clone();
-            b = pixels_rgba[i][j][2].clone();
-            a = pixels_rgba[i][j][3].clone();
+            let r:i32 = (pixels_rgba[i][j][0].clone() as i32) << 16;
+            let g:i32 = (pixels_rgba[i][j][1].clone() as i32) << 8;
+            let b: i32 = pixels_rgba[i][j][2].clone() as i32;
+            let a:i32 = (pixels_rgba[i][j][3].clone() as i32) << 24;
 
-            r_arr[i][j] = r;
-            g_arr[i][j] = g;
-            b_arr[i][j] = b;
-            a_arr[i][j] = a;
+            r_arr[i][j] = r as f64;
+            g_arr[i][j] = g as f64;
+            b_arr[i][j] = b as f64;
+            a_arr[i][j] = a as f64;
+            pixels[i][j] = (a + r  + g + b) as f64;
         }
     }
 
-    vec![r_arr, g_arr, b_arr, a_arr]
+    vec![r_arr, g_arr, b_arr, a_arr, pixels]
 }
 
 pub fn get_pixels(original_image_path: &str) -> Vec<Vec<f64>> {
