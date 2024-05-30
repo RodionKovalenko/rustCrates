@@ -7,7 +7,6 @@
 /backup
 /cryto_predictions_python/predictions/*
 /cryto_predictions_python/saved_models/*
-
 /cryto_predictions_python/myenv/*
 /tests/*
-
+/tests/*.jpg
