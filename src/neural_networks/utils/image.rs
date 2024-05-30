@@ -119,6 +119,7 @@ pub fn get_pixel_separate_rgba(original_image_path: &str) -> Vec<Vec<Vec<f64>>> 
     let mut b_arr: Vec<Vec<f64>> = vec![vec![0.0; w]; h];
     let mut a_arr: Vec<Vec<f64>> = vec![vec![0.0; w]; h];
     let mut pixels: Vec<Vec<f64>> = vec![vec![0.0; w]; h];
+    let mut is_a_present: bool = false;
 
     for i in 0..pixels_rgba.len() {
         for j in 0..pixels_rgba[i].len() {
@@ -126,6 +127,10 @@ pub fn get_pixel_separate_rgba(original_image_path: &str) -> Vec<Vec<Vec<f64>>> 
             let g:i32 = (pixels_rgba[i][j][1].clone() as i32) << 8;
             let b: i32 = pixels_rgba[i][j][2].clone() as i32;
             let a:i32 = (pixels_rgba[i][j][3].clone() as i32) << 24;
+
+            if a > 0 {
+                is_a_present = true;
+            }
 
             r_arr[i][j] = r as f64;
             g_arr[i][j] = g as f64;
@@ -135,7 +140,11 @@ pub fn get_pixel_separate_rgba(original_image_path: &str) -> Vec<Vec<Vec<f64>>> 
         }
     }
 
-    vec![r_arr, g_arr, b_arr, a_arr, pixels]
+    if is_a_present {
+        return vec![r_arr, g_arr, b_arr, a_arr, pixels];
+    }
+
+    vec![r_arr, g_arr, b_arr, pixels]
 }
 
 pub fn get_pixels(original_image_path: &str) -> Vec<Vec<f64>> {

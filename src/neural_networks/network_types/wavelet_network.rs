@@ -1,14 +1,33 @@
+use num_complex::Complex;
 use crate::neural_networks::utils::image::{get_pixel_separate_rgba, save_image_from_pixels};
 use crate::uphold_api::file_utils::remove_dir_contents;
-use crate::wavelet_transform::dwt::{get_ll_hl_lh_hh, inverse_transform_2_d, transform_2_d};
+use crate::utils::data_converter::{convert_c_to_f64_3d, convert_to_c_array_f64_3d};
+use crate::wavelet_transform::cwt::cwt;
+use crate::wavelet_transform::cwt_complex::CWTComplex;
+use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
+use crate::wavelet_transform::dwt::{get_ll_hl_lh_hh, transform_2_d};
 use crate::wavelet_transform::dwt_types::DiscreteWaletetType;
 use crate::wavelet_transform::modes::WaveletMode;
 
-pub fn test_decomposition_dwt() {
+pub fn decompose_in_wavelets() {
     let pixels: Vec<Vec<Vec<f64>>> = get_pixel_separate_rgba("training_data/1.jpg");
 
-    let wavelet_type = DiscreteWaletetType::BIOR13;
+    let wavelet_type = DiscreteWaletetType::DB2;
+    let cw_type = ContinuousWaletetType::CMOR;
+    let scales: Vec<f64> = vec![1.0, 15.0, 30.0, 50.0];
     let wavelet_mode = WaveletMode::SYMMETRIC;
+    const MIN_HEIGHT: usize = 100;
+    const MIN_WIDTH: usize= 100;
+
+    let mut wavelet = CWTComplex {
+        scales,
+        cw_type,
+        sampling_period: 1.0,
+        m: 1.0,
+        fb: 1.5,
+        fc: 1.0,
+        frequencies: vec![0.0],
+    };
 
     let mut dw_transformed: Vec<Vec<f64>>;
     let dec_levels = 5;
@@ -23,39 +42,34 @@ pub fn test_decomposition_dwt() {
         // encode with wavelet transform
         let mut pixel_rgba: Vec<Vec<f64>> = pixels[p].clone();
 
-        for i in 0..dec_levels.clone() {
+        for _i in 0..dec_levels.clone() {
             dw_transformed = transform_2_d(&pixel_rgba, &wavelet_type, &wavelet_mode);
 
+            if dw_transformed.len() < MIN_HEIGHT || dw_transformed[0].len() < MIN_WIDTH {
+                break;
+            }
             //  save as images
-            decomposed_levels.push(dw_transformed.clone());
             let ll_lh_hl_hh: Vec<Vec<Vec<f64>>> = get_ll_hl_lh_hh(&dw_transformed);
 
             pixel_rgba = ll_lh_hl_hh[0].clone();
-
-            for (ind, vec) in ll_lh_hl_hh.iter().enumerate() {
-                if ind != 0 {
-                    continue;
-                }
-                println!("level: {}, length: height: {}, width: {}\n", (&i + 1), vec.len(), vec[1].len());
-
-                let file_name = String::from(format!("{}_decomp_level_{}_{}_{}.jpg", "tests/dwt_", p.clone(), i.clone(), ind));
-                save_image_from_pixels(&vec, &file_name);
-            }
         }
+        decomposed_levels.push(pixel_rgba);
     }
 
-    // decode into original data
-    for i in (0..dec_levels.clone() * pixels.len()).rev() {
-        let level = i as u32;
+    for p in 0..decomposed_levels.len() {
+        let wavelet_pixels: Vec<Vec<f64>> = decomposed_levels[p].clone();
+        let (transformed, _frequencies) = cwt(&wavelet_pixels, &mut wavelet).unwrap();
+        let cwt_transformed: Vec<Vec<Vec<Complex<f64>>>> = convert_to_c_array_f64_3d(transformed);
 
-       let mut decomposed_wavelet = decomposed_levels.get(i.clone()).unwrap().to_vec();
+        let cwt_pixels: Vec<Vec<Vec<f64>>> = convert_c_to_f64_3d(&cwt_transformed);
 
-        println!("inverse level: before: {}, inverse transform: length: HEIGHT: {}, width: {}\n", i, decomposed_wavelet.len(), decomposed_wavelet[1].len());
-        let inverse_transformed = inverse_transform_2_d(&decomposed_wavelet, &wavelet_type, &wavelet_mode, level);
-        println!("inverse level: after: {}, inverse transform: length: HEIGHT: {}, width: {}\n", i, inverse_transformed.len(), inverse_transformed[1].len());
-        // println!("inverse transformed: {:?} \n", &inverse_transformed);
-        let file_name = String::from(format!("{}_restored_level_{}.jpg", "tests/dwt_", i.clone()));
-        save_image_from_pixels(&inverse_transformed, &file_name);
+        for i in 0..cwt_pixels.len() {
+            let file_name = String::from(format!("{}_cwt_{}_{}_{}.jpg", "tests/cwt_", p.clone(), p.clone(), i));
+            save_image_from_pixels(&cwt_pixels[i], &file_name);
+        }
+
+        println!("level: {}, length: height: {}, width: {}\n", (&dec_levels), wavelet_pixels.len(), wavelet_pixels[1].len());
     }
+
     println!("==================================================================");
 }

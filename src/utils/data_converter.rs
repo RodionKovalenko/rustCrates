@@ -240,3 +240,18 @@ pub fn convert_to_c_f64_8d<T>(data: &T) -> Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<Compl
         _ => vec![vec![vec![vec![vec![vec![vec![vec![Complex::new(0.0, 0.0)]]]]]]]]
     }
 }
+
+pub fn convert_c_to_f64_3d(data: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<f64>>>
+{
+    let mut result: Vec<Vec<Vec<f64>>> = vec![vec![vec![0.0; data[0][0].len()]; data[0].len()]; data.len()];
+
+    for i in 0..data.len() {
+        for j in 0..data[i].len() {
+            for k in 0..data[i][j].len() {
+                result[i][j][k] = data[i][j][k].re;
+            }
+        }
+    }
+
+    result
+}
