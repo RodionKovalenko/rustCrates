@@ -98,11 +98,7 @@ pub fn get_pixels_as_rgba(original_image_path: &str) -> Vec<Vec<Rgba<u8>>> {
     let img_height: u32 = img.height().clone();
 
     let mut buffer: RgbaImage = ImageBuffer::new(img_width, img_height);
-    let mut pixel_vec: Vec<Vec<Rgba<u8>>> = Vec::new();
-
-    for _i in 0..img_height {
-        pixel_vec.push(vec![]);
-    }
+    let mut pixel_vec: Vec<Vec<Rgba<u8>>> = vec![vec![Rgba([0, 0, 0, 0]); img_width.clone() as usize]; img_height.clone() as usize];
 
     for (x, y, _pixel) in buffer.enumerate_pixels_mut() {
         let rgba = img.get_pixel(x, y);
