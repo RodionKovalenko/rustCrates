@@ -144,7 +144,7 @@ pub fn get_pixel_separate_rgba(original_image_path: &str) -> Vec<Vec<Vec<f64>>> 
         return vec![r_arr, g_arr, b_arr, a_arr, pixels];
     }
 
-    vec![pixels]
+    vec![r_arr, g_arr, b_arr,pixels]
 }
 
 pub fn get_pixels(original_image_path: &str) -> Vec<Vec<f64>> {
