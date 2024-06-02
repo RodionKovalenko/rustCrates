@@ -246,23 +246,23 @@ pub fn cwt<T: ArrayType>(data: &T, wavelet: &mut CWTComplex) -> Option<ArrayWith
             match num_dim {
                 1 => {
                     let (wavelets, frequencies) = cwt_1d(data, scales, cw_type, sampling_period);
-                    Some((Array::Array2D(wavelets.clone()), frequencies.clone()))
+                    Some((Array::Array2D(wavelets), frequencies))
                 }
                 2 => {
                     let (wavelets, frequencies) = cwt_2d(data, scales, cw_type, sampling_period);
-                    Some((Array::Array3D(wavelets.clone()), frequencies.clone()))
+                    Some((Array::Array3D(wavelets), frequencies))
                 }
                 3 => {
                     let (wavelets, frequencies) = cwt_3d(data, scales, cw_type, sampling_period);
-                    Some((Array::Array4D(wavelets.clone()), frequencies.clone()))
+                    Some((Array::Array4D(wavelets), frequencies))
                 }
                 4 => {
                     let (wavelets, frequencies) = cwt_4d(data, scales, cw_type, sampling_period);
-                    Some((Array::Array5D(wavelets.clone()), frequencies.clone()))
+                    Some((Array::Array5D(wavelets), frequencies))
                 }
                 5 => {
                     let (wavelets, frequencies) = cwt_5d(data, scales, cw_type, sampling_period);
-                    Some((Array::Array6D(wavelets.clone()), frequencies.clone()))
+                    Some((Array::Array6D(wavelets), frequencies))
                 }
                 _ => {
                     None

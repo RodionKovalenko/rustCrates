@@ -155,6 +155,7 @@ pub fn get_wavelet_complex(data: &Vec<Complex<f64>>, wavefun_result: &Vec<Vec<Co
     coef = get_coef_complex(&convolved, scale);
 
     index = (coef.len() - data.len()) as f64 / 2.0;
+
     limit_down = index.floor() as usize;
     limit_up = index.ceil() as usize;
 
@@ -258,23 +259,23 @@ pub fn cwt_complex<T: ArrayType>(data: &T, wavelet: &mut CWTComplex) -> Option<A
     match num_dim {
         1 => {
             let (wavelets, frequencies) = cwt_c_1d(data, wavelet);
-            Some((Array::ArrayC2D(wavelets.clone()), frequencies.clone()))
+            Some((Array::ArrayC2D(wavelets), frequencies))
         }
         2 => {
             let (wavelets, frequencies) = cwt_2d(data, wavelet);
-            Some((Array::ArrayC3D(wavelets.clone()), frequencies.clone()))
+            Some((Array::ArrayC3D(wavelets), frequencies))
         }
         3 => {
             let (wavelets, frequencies) = cwt_3d(data, wavelet);
-            Some((Array::ArrayC4D(wavelets.clone()), frequencies.clone()))
+            Some((Array::ArrayC4D(wavelets), frequencies))
         }
         4 => {
             let (wavelets, frequencies) = cwt_4d(data, wavelet);
-            Some((Array::ArrayC5D(wavelets.clone()), frequencies.clone()))
+            Some((Array::ArrayC5D(wavelets), frequencies))
         }
         5 => {
             let (wavelets, frequencies) = cwt_5d(data, wavelet);
-            Some((Array::ArrayC6D(wavelets.clone()), frequencies.clone()))
+            Some((Array::ArrayC6D(wavelets), frequencies))
         }
         _ => {
             None

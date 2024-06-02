@@ -248,7 +248,7 @@ pub fn convert_c_to_f64_3d(data: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<f6
     for i in 0..data.len() {
         for j in 0..data[i].len() {
             for k in 0..data[i][j].len() {
-                result[i][j][k] = data[i][j][k].re;
+                result[i][j][k] = data[i][j][k].norm();
             }
         }
     }
