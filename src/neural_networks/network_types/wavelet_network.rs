@@ -1,6 +1,7 @@
 use num_complex::Complex;
-use crate::neural_networks::utils::image::{get_pixel_separate_rgba};
-use crate::utils::data_converter::{convert_to_c_array_f64_3d};
+use crate::neural_networks::utils::image::{get_pixel_separate_rgba, save_image_from_pixels};
+use crate::uphold_api::file_utils::remove_dir_contents;
+use crate::utils::data_converter::{convert_c_to_f64_3d, convert_to_c_array_f64_3d};
 use crate::wavelet_transform::cwt::cwt;
 use crate::wavelet_transform::cwt_complex::CWTComplex;
 use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
@@ -12,12 +13,12 @@ pub fn decompose_in_wavelet_2d_default(image_path: &str) -> Vec<Vec<Vec<Complex<
     let wavelet_type = DiscreteWaletetType::DB1;
     let wavelet_mode = WaveletMode::SYMMETRIC;
 
-    let cw_type = ContinuousWaletetType::CMOR;
+    let cw_type = ContinuousWaletetType::SHAN;
     let scales: Vec<f64> = vec![2.0, 4.0, 8.0, 16.0];
-    let min_height: usize = 50;
-    let min_width: usize = 50;
+    let min_height: usize = 1250;
+    let min_width: usize = 1250;
 
-    let decomposition_level: i32 = 10;
+    let decomposition_level: i32 = 1;
 
     let mut cwt_complex_wavelet = CWTComplex {
         scales,
@@ -49,6 +50,7 @@ pub fn decompose_in_wavelets(image_path: &str,
 
     let mut dw_transformed: Vec<Vec<f64>>;
     let mut decomposed_levels: Vec<Vec<Vec<f64>>> = Vec::new();
+    let mut cwt_transformed: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
 
     for p in 0..pixels.len() {
         // encode with wavelet transform
@@ -68,9 +70,33 @@ pub fn decompose_in_wavelets(image_path: &str,
         decomposed_levels.push(pixel_rgba);
     }
 
-    let wavelet_pixels: Vec<Vec<f64>> = decomposed_levels[0].clone();
-    let (transformed, _frequencies) = cwt(&wavelet_pixels, cwt_complex_wavelet).unwrap();
-    let cwt_transformed: Vec<Vec<Vec<Complex<f64>>>> = convert_to_c_array_f64_3d(transformed);
+    remove_dir_contents("tests").unwrap_or_else(|why| {
+        println!("! {:?}", why.kind());
+    });
+
+    for p in 0..decomposed_levels.len() {
+        let wavelet_pixels: Vec<Vec<f64>> = decomposed_levels[p].clone();
+        let (transformed, _frequencies) = cwt(&wavelet_pixels, cwt_complex_wavelet).unwrap();
+        let cwt: Vec<Vec<Vec<Complex<f64>>>> = convert_to_c_array_f64_3d(transformed);
+
+
+        let cwt_pixels: Vec<Vec<Vec<f64>>> = convert_c_to_f64_3d(&cwt);
+
+        let file_name = String::from(format!("{}_cwt_{}_{}_dwt{}.jpg", "tests/cwt_", p.clone(), p.clone(), p));
+        save_image_from_pixels(&wavelet_pixels, &file_name);
+
+        for i in 0..cwt_pixels.len() {
+            let file_name = String::from(format!("{}_cwt_{}_{}_{}.jpg", "tests/cwt_", p.clone(), p.clone(), i));
+            save_image_from_pixels(&cwt_pixels[i], &file_name);
+        }
+
+        for i in 0..cwt.len() {
+            cwt_transformed.push(cwt[i].clone());
+        }
+
+        println!("level: {}, length: height: {}, width: {}\n", (&dec_levels), wavelet_pixels.len(), wavelet_pixels[1].len());
+    }
+
 
     cwt_transformed
 }

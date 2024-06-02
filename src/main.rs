@@ -38,7 +38,5 @@ fn main() {
     //     }
     // }
 
-    let decomposed_wavelets = decompose_in_wavelet_2d_default("training_data/1.jpg");
-
-    println!("decomposed: {:?}", decomposed_wavelets);
+    decompose_in_wavelet_2d_default("training_data/1.jpg");
 }
