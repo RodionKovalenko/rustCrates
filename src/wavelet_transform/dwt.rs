@@ -17,6 +17,16 @@ pub fn transform_2_d_partial<T: NumTrait>(data: &Vec<Vec<T>>, dw_type: &Discrete
     data_trans
 }
 
+pub fn transform_2_d_partial_f64(data: &Vec<Vec<f64>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<Vec<f64>> {
+    let mut data_trans: Vec<Vec<f64>> = Vec::new();
+
+    for r in data.iter() {
+        data_trans.push(transform_1_df64(&r, &dw_type, mode));
+    }
+
+    data_trans
+}
+
 pub fn transform_2_d<T: ArrayType>(data: &T, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<Vec<f64>> {
     let data_f64: Vec<Vec<f64>> = convert_to_f64_2d(data);
     let mut data_trans: Vec<Vec<f64>> = transform_2_d_partial(&data_f64, &dw_type, &mode);
@@ -43,7 +53,24 @@ fn transpose<T>(original: Vec<Vec<T>>) -> Vec<Vec<T>> {
     transposed
 }
 
+pub fn transform_2_df64(data: &Vec<Vec<f64>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<Vec<f64>> {
+    let mut data_trans: Vec<Vec<f64>> = transform_2_d_partial_f64(&data, &dw_type, &mode);
+
+    // println!("before transposed array: {:?}", &data_trans);
+    data_trans = transpose(data_trans);
+    // println!("transposed array: {:?}", &data_trans);
+
+    data_trans = transform_2_d_partial_f64(&data_trans, &dw_type, &mode);
+
+    transpose(data_trans)
+}
+
 pub fn transform_1_d<T: NumTrait>(data: &Vec<T>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<f64> {
+    let data_clone: Vec<f64> = convert_to_f64_1d(data);
+
+    transform_1_df64(&data_clone, &dw_type, &mode)
+}
+pub fn transform_1_df64(data: &Vec<f64>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<f64> {
     // moving averages filter
     let low_pass_filter: Vec<f64> = get_low_pass_filter(&dw_type);
     // moving differences filter

@@ -1,19 +1,15 @@
 use std::env;
 
 #[allow(unused_imports)]
-#[allow(unused_variables)]
-#[allow(unused_assignments)]
 pub mod uphold_api;
 
 #[allow(unused_imports)]
 use uphold_api::*;
 #[allow(unused_imports)]
-#[allow(unused_imports)]
 use std::time::Instant;
 #[allow(unused_imports)]
-#[allow(unused_imports)]
 use rand::Rng;
-use neural_networks::neural_networks::network_types::wavelet_network::decompose_in_wavelets;
+use neural_networks::neural_networks::network_types::wavelet_network::{decompose_in_wavelet_2d_default};
 
 pub enum ARGUMENTS {
     UPHOLD,
@@ -42,5 +38,7 @@ fn main() {
     //     }
     // }
 
-    decompose_in_wavelets();
+    let decomposed_wavelets = decompose_in_wavelet_2d_default("training_data/1.jpg");
+
+    println!("decomposed: {:?}", decomposed_wavelets);
 }
