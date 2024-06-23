@@ -13,12 +13,12 @@ pub fn decompose_in_wavelet_2d_default(image_path: &str) -> Vec<Vec<Vec<Complex<
     let wavelet_type = DiscreteWaletetType::DB1;
     let wavelet_mode = WaveletMode::SYMMETRIC;
 
-    let cw_type = ContinuousWaletetType::SHAN;
-    let scales: Vec<f64> = vec![2.0, 4.0, 8.0, 16.0];
-    let min_height: usize = 1250;
-    let min_width: usize = 1250;
+    let cw_type = ContinuousWaletetType::CMOR;
+    let scales: Vec<f64> = vec![2.0, 8.0, 16.0, 32.0];
+    let min_height: usize = 30;
+    let min_width: usize = 30;
 
-    let decomposition_level: i32 = 1;
+    let decomposition_level: i32 = 10;
 
     let mut cwt_complex_wavelet = CWTComplex {
         scales,
@@ -81,9 +81,6 @@ pub fn decompose_in_wavelets(image_path: &str,
 
 
         let cwt_pixels: Vec<Vec<Vec<f64>>> = convert_c_to_f64_3d(&cwt);
-
-        let file_name = String::from(format!("{}_cwt_{}_{}_dwt{}.jpg", "tests/cwt_", p.clone(), p.clone(), p));
-        save_image_from_pixels(&wavelet_pixels, &file_name);
 
         for i in 0..cwt_pixels.len() {
             let file_name = String::from(format!("{}_cwt_{}_{}_{}.jpg", "tests/cwt_", p.clone(), p.clone(), i));
