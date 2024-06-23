@@ -2,13 +2,6 @@ use std::fmt::Debug;
 use std::ops::{Add, Div, Mul, Sub};
 use crate::neural_networks::utils::activation::{gauss};
 
-// pub fn exp_max_1d<T, V, G>(data: &Vec<T>, m: &T, s: &T, p: &T)
-//     where T: Debug + Clone + Into<f64> + Mul<Output=T> + Add<Output=T> + Div<Output=T> + Sub<Output=T>,
-//           V: Debug + Clone + Into<f64> + Mul<Output=V> + Add<Output=V> + Div<Output=V>,
-//           G: Debug + Clone + Into<f64> + Mul<Output=G> + Add<Output=G> + Div<Output=G> {
-//     let gauss_v = guass_d1(&data, &3.0, &1);
-// }
-
 pub fn exp_max_2d<T, V, G>(data: &Vec<Vec<T>>, m: &Vec<V>, s: &Vec<G>, n_iter: &i32) -> (Vec<f64>, Vec<f64>, Vec<f64>)
     where T: Debug + Clone + Into<f64> + Mul<Output=T> + Add<Output=T> + Div<Output=T> + Sub<Output=T>,
           V: Debug + Clone + Into<f64> + Mul<Output=V> + Add<Output=V> + Div<Output=V>,
