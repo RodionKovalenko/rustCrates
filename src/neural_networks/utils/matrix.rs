@@ -41,8 +41,8 @@ pub fn multiple(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<f64>>)
 
 pub fn multiple_generic_2d<T: Debug + Clone + Mul<Output=T> + AddAssign + From<f64>>
 (matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<T>>) -> Vec<Vec<T>> {
-    let num_rows = matrix_a.len() as i32;
-    let mut num_columns = matrix_b[0].len() as i32;
+    let num_rows = matrix_a.len();
+    let mut num_columns = matrix_b[0].len();
     let matrix_a_clone: Vec<Vec<T>> = matrix_a.clone();
     let mut matrix_b_clone: Vec<Vec<T>> = matrix_b.clone();
 
@@ -55,13 +55,13 @@ pub fn multiple_generic_2d<T: Debug + Clone + Mul<Output=T> + AddAssign + From<f
 
     if matrix_a[0].len() != matrix_b.len() {
         matrix_b_clone = transpose(matrix_b);
-        num_columns = matrix_b_clone[0].len() as i32;
+        num_columns = matrix_b_clone[0].len();
     }
 
     let mut result_matrix: Vec<Vec<T>> = create_generic(num_rows);
 
     for i in 0..num_rows as usize {
-        for j in 0..num_columns as usize {
+        for j in 0..num_columns {
             for k in 0..matrix_b_clone.len() {
                 if j >= result_matrix[i].len() {
                     result_matrix[i].push(matrix_a_clone[i][k].clone() * matrix_b_clone[k][j].clone());
@@ -117,10 +117,10 @@ pub fn convert_3d_to_2d<T: Clone>(array_3d: &Vec<Vec<Vec<T>>>) -> Vec<Vec<T>> {
     array_2d
 }
 
-pub fn create_generic<T>(num_rows: i32) -> Vec<Vec<T>> {
+pub fn create_generic<T>(num_rows: usize) -> Vec<Vec<T>> {
     let mut matrix_result: Vec<Vec<T>> = Vec::new();
 
-    for _i in 0..num_rows as usize {
+    for _i in 0..num_rows {
         matrix_result.push(Vec::new());
     }
 
@@ -161,7 +161,7 @@ pub fn create_2d(num_rows: usize, num_columns: usize) -> Vec<Vec<f64>> {
     matrix_result
 }
 
-pub fn create_generic_3d<T>(num_rows: i32, num_dim: i32) -> Vec<Vec<Vec<T>>> {
+pub fn create_generic_3d<T>(num_rows: usize, num_dim: usize) -> Vec<Vec<Vec<T>>> {
     let mut matrix_result: Vec<Vec<Vec<T>>> = Vec::new();
 
     for _d in 0..num_dim {

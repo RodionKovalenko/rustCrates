@@ -1,6 +1,7 @@
 extern crate reqwest;
 
 use error_chain::*;
+use reqwest::Client;
 use std::io::Read;
 use std::io::prelude::*;
 use chrono::{DateTime, Timelike, Local, Datelike};
@@ -87,7 +88,7 @@ static CRYPTOCURRENCIES: [&str; 46] = [
 #[allow(unused_imports)]
 #[allow(unused_variables)]
 #[allow(unused_assignments)]
-pub fn update_currency_prices_from_uphold_web_api() -> Result<()> {
+pub async fn update_currency_prices_from_uphold_web_api() -> Result<()> {
     let mut data_array = self::get_data();
     let full_file_name = format!("{}.{}", FILE_NAME, FILE_FORMAT);
 
@@ -106,14 +107,14 @@ pub fn update_currency_prices_from_uphold_web_api() -> Result<()> {
     let mut request_url;
     let mut res;
     let mut body;
+    let client = Client::new();
 
     for pair in &self::CRYPTOCURRENCIES {
         // println!("Pair {:?} ", &pair);
         request_url = format!("https://api.uphold.com/v0/ticker/{}", &pair);
 
-        res = reqwest::get(&request_url)?;
-        body = String::new();
-        res.read_to_string(&mut body)?;
+        res = client.get(&request_url).send().await?;
+        body = res.text().await?;
 
         let json: serde_json::Value =
             serde_json::from_str(&mut body).expect("JSON was not well-formatted");

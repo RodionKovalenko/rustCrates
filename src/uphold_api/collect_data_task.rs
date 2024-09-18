@@ -28,7 +28,10 @@ pub fn update_json_data_from_uphold_api() {
                 println!("this is thread number 1__________________start");
                 println!("time elapsed {:?}", seconds_elapsed);
 
-                cryptocurrency_api::update_currency_prices_from_uphold_web_api().expect("cannot update json file");
+                let runtime = tokio::runtime::Runtime::new().unwrap();
+
+                // Block on the async function and get its result
+                let result = runtime.block_on(cryptocurrency_api::update_currency_prices_from_uphold_web_api()).unwrap();
 
                 println!("this is thread number 1__________________finish");
                 println!("");

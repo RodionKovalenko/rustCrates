@@ -1,11 +1,11 @@
-use std::cmp::{Ordering};
+use std::cmp::Ordering;
 use num_complex::Complex;
 use crate::utils::array_complex::{convolve_complex, get_coef_complex, integrate_complex, linspace_complex};
 use crate::utils::convolution_modes::ConvolutionMode;
-use crate::wavelet_transform::cwt_type_resolver::{transform_by_complex_type};
+use crate::wavelet_transform::cwt_type_resolver::transform_by_complex_type;
 use crate::wavelet_transform::cwt_type_resolver::get_wavelet_range;
 use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
-use crate::wavelet_transform::fft::{fft_1d};
+use crate::wavelet_transform::fft::fft_1d;
 use crate::utils::data_converter::{convert_to_c_f64_1d, convert_to_c_f64_2d, convert_to_c_f64_3d, convert_to_c_f64_4d, convert_to_c_f64_5d};
 use crate::utils::num_trait::{Array, ArrayType};
 

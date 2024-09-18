@@ -14,7 +14,7 @@ pub fn initialize_weights(
 
     for i in 0..num_layer_inputs_dim2 as usize {
         for j in 0..number_hidden_neurons.clone() as usize {
-            let random_value = rng.gen_range(-0.6, 0.6);
+            let random_value = rng.gen_range(-0.6..0.6);
 
             set_weights(weight_matrix, i.clone(), j.clone(), random_value);
            // print!(",weight: {:?}", weight_matrix[i][j]);

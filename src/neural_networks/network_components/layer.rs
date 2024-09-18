@@ -104,10 +104,10 @@ impl<T: Debug + Clone> Clone for Layer<T> {
 
 pub fn initialize_layer<T: Debug + Clone + Float + FromPrimitive>(feed_net: &mut FeedforwardNetwork<T>) -> &Vec<Layer<T>> {
     let layers = &mut feed_net.layers;
-    let total_number_of_layers: i32 = feed_net.number_of_hidden_layers.clone() + 2;
-    let num_rows: i32 = feed_net.number_rows_in_data.clone();
-    let mut num_columns: i32 = feed_net.number_columns_in_data.clone();
-    let mut num_hidden_neurons: i32 = feed_net.number_of_hidden_neurons.clone();
+    let total_number_of_layers: usize = feed_net.number_of_hidden_layers.clone() + 2;
+    let num_rows: usize = feed_net.number_rows_in_data.clone();
+    let mut num_columns: usize = feed_net.number_columns_in_data.clone();
+    let mut num_hidden_neurons: usize = feed_net.number_of_hidden_neurons.clone();
     let mut layer_type;
 
     if total_number_of_layers == 0 {
@@ -137,7 +137,7 @@ pub fn initialize_layer<T: Debug + Clone + Float + FromPrimitive>(feed_net: &mut
             activated_output: create_generic_3d(num_rows, num_hidden_neurons),
             layer_bias: create_generic_one_dim(),
             gradient: create_generic(num_columns),
-            errors: create_generic(feed_net.input_dimensions[2] as i32),
+            errors: create_generic(feed_net.input_dimensions[2]),
             activation_type: ActivationType::TANH,
             layer_type,
             previous_layer: None,
@@ -154,7 +154,7 @@ pub fn initialize_layer<T: Debug + Clone + Float + FromPrimitive>(feed_net: &mut
     layers
 }
 
-pub fn get_layer_type(num_layer: &i32, num_hidden_layers: &i32) -> LayerType {
+pub fn get_layer_type(num_layer: &usize, num_hidden_layers: &usize) -> LayerType {
     let layer_type;
 
     if num_layer == &0 {

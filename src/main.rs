@@ -9,7 +9,7 @@ use uphold_api::*;
 use std::time::Instant;
 #[allow(unused_imports)]
 use rand::Rng;
-use neural_networks::neural_networks::optimization::expecation_maximization::exp_max_2d;
+use neural_networks::neural_networks::network_types::wavelet_network::decompose_in_wavelet_2d_default;
 
 pub enum ARGUMENTS {
     UPHOLD,
@@ -58,11 +58,25 @@ fn main() {
     // println!("transform_cwt {:?}", &transform_cwt);
 
 
-    let numbers_2d = vec![vec![1.0, 1.5, 2.0, 2.5, 3.0, 6.0, 6.5, 7.0, 7.5, 8.0], vec![4.0, 5.5, 3.0, 6.5, 1.0, 3.0, 2.5, 5.0, 3.5, 9.0]];
+    let numbers_1d = vec![1, 1, 2, 2, 3, 6, 6, 7, 7, 8, 4, 5, 3, 6, 1, 3, 2, 5, 3, 9];
+    let numbers_2d = vec![vec![1.0, 1.5, 2.0, 2.5, 3.0, 6.0, 6.5, 7.0, 7.5, 8.0, 4.0, 5.5, 3.0, 6.5, 1.0, 3.0, 2.5, 5.0, 3.5, 9.0]];
+    let numbers_3d = vec![vec![vec![1.0, 1.5, 2.0, 2.5, 3.0, 6.0, 6.5, 7.0, 7.5, 8.0, 4.0, 5.5, 3.0, 6.5, 1.0, 3.0, 2.5, 5.0, 3.5, 9.0]]];
 
-    let (p, m, v) = exp_max_2d(&numbers_2d, &vec![1.0, 4.0, 3.0, 2.0], &vec![1.0, 1.0, 1.0, 1.0], &100);
 
-    println!("p {:?}", p);
-    println!("m_k {:?}", m);
-    println!("s_k {:?}", v);
+    // let dwt_partial = transform_2_d_partial(&numbers_2d, &DiscreteWaletetType::DB1, &WaveletMode::SYMMETRIC);
+
+    // let dwt = transform_2_d(&numbers_2d, &DiscreteWaletetType::DB1, &WaveletMode::SYMMETRIC);
+
+    // println!("partial {:?}", dwt_partial);
+    // println!("full {:?}", dwt);
+
+    let decomposed_1d = decompose_in_wavelet_2d_default(&numbers_1d);
+    println!("decomposed 1 d: {:?}", decomposed_1d);
+
+    let decomposed_2d = decompose_in_wavelet_2d_default(&numbers_2d);
+    println!("decomposed 2 d: {:?}", decomposed_2d);
+
+    let decomposed_3d = decompose_in_wavelet_2d_default(&numbers_3d);
+    println!("decomposed 3 d: {:?}", decomposed_3d);
+
 }

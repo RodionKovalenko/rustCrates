@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::time::Instant;
-use rand::Rng;
 use crate::neural_networks::network_components::input;
 use crate::neural_networks::network_components::input::Data;
 use crate::neural_networks::network_types::feedforward_network;
@@ -49,7 +48,6 @@ pub fn initalize_data_sets() -> Vec<Data<f64, f64>> {
     let mut data_structs: Vec<Data<f64, f64>> = vec![];
     let mut _currency_to_num_map: HashMap<String, f64> = HashMap::new();
     let mut input_struct;
-    let mut rng = rand::thread_rng();
 
     for i in 0..cryptocurrency_data.len() {
         let _date = cryptocurrency_data[i].full_date;
@@ -80,15 +78,6 @@ pub fn initalize_data_sets() -> Vec<Data<f64, f64>> {
             //
             // target_data.push(vec![cryptocurrency_data[i].bid as f64]);
 
-            input_data.push(vec![
-                rng.gen_range(0.0, 1.0) as f64,
-                rng.gen_range(0.0, 1.0) as f64,
-                rng.gen_range(0.0, 1.0) as f64,
-                rng.gen_range(0.0, 1.0) as f64,
-                rng.gen_range(0.0, 1.0) as f64,
-                rng.gen_range(0.0, 1.0) as f64,
-            ]);
-            target_data.push(vec![rng.gen_range(0.0,1.0) as f64]);
         }
     }
 

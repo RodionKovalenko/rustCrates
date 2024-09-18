@@ -38,37 +38,37 @@ pub fn copy_dir(file_dir_path: &str, target_dir_path: &str) {
     copy_recursive(&source_dir, &destination).unwrap();
 }
 
-trait CopyRecursive {
-    fn copy_recursive(&self, destination: &Path) -> std::io::Result<()>;
-}
+// trait CopyRecursive {
+//     fn copy_recursive(&self, destination: &Path) -> std::io::Result<()>;
+// }
 
-impl CopyRecursive for Path {
-    fn copy_recursive(&self, destination: &Path) -> std::io::Result<()> {
-        if !self.exists() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("Source path does not exist: {:?}", self),
-            ));
-        }
-        if self.is_dir() {
-            fs::create_dir_all(destination)?;
-            for entry in fs::read_dir(self)? {
-                let entry = entry?;
-                let file_type = entry.file_type()?;
-                let entry_path = entry.path();
-                let destination_path = destination.join(entry.file_name());
-                if file_type.is_dir() {
-                    entry_path.copy_recursive(&destination_path)?;
-                } else {
-                    fs::copy(&entry_path, &destination_path)?;
-                }
-            }
-        } else {
-            if let Some(parent) = destination.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::copy(self, destination)?;
-        }
-        Ok(())
-    }
-}
+// impl CopyRecursive for Path {
+//     fn copy_recursive(&self, destination: &Path) -> std::io::Result<()> {
+//         if !self.exists() {
+//             return Err(std::io::Error::new(
+//                 std::io::ErrorKind::NotFound,
+//                 format!("Source path does not exist: {:?}", self),
+//             ));
+//         }
+//         if self.is_dir() {
+//             fs::create_dir_all(destination)?;
+//             for entry in fs::read_dir(self)? {
+//                 let entry = entry?;
+//                 let file_type = entry.file_type()?;
+//                 let entry_path = entry.path();
+//                 let destination_path = destination.join(entry.file_name());
+//                 if file_type.is_dir() {
+//                     entry_path.copy_recursive(&destination_path)?;
+//                 } else {
+//                     fs::copy(&entry_path, &destination_path)?;
+//                 }
+//             }
+//         } else {
+//             if let Some(parent) = destination.parent() {
+//                 fs::create_dir_all(parent)?;
+//             }
+//             fs::copy(self, destination)?;
+//         }
+//         Ok(())
+//     }
+// }

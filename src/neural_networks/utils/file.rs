@@ -49,7 +49,7 @@ pub fn serialize(feed_net: &FeedforwardNetwork<f64>) {
 }
 
 pub fn serialize_generic<T: Sized + Serialize>(array: &T, filename: &str) {
-    let cloned_array = array.clone();
+    let cloned_array = array;
     let mut file = get_or_create_file(filename, true);
 
     let data_json = String::from(format!("{}", serde_json::to_string(&cloned_array).unwrap()));
