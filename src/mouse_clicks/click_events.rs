@@ -1,4 +1,3 @@
-use enigo::*;
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
@@ -6,8 +5,14 @@ use std::time::Instant;
 use webbrowser;
 use rand::Rng;
 
+use enigo::{
+    Coordinate,
+    Direction::{Click, Press, Release},
+    Enigo, Key, Keyboard, Mouse, Settings,
+};
+
 pub fn simulate_click_events() {
-    let mut enigo = Enigo::new();
+    let mut enigo = Enigo::new(&Settings::default()).unwrap();
     let now = Instant::now();
     let number_of_accounts:i32 = 7;
     let search_items = ["backpropagation alternatives", "how to get much money",
@@ -16,7 +21,7 @@ pub fn simulate_click_events() {
         "can we live forever?", "brave is the best browser?", "who am I?", "is it good to be faithful to your partner?",
         "why not give people enough money?"
     ];
-    let mut rng = rand::thread_rng();
+    let mut rng;
     let time = now.elapsed();
     println!("{:?}", time);
 
@@ -25,16 +30,20 @@ pub fn simulate_click_events() {
 
         if webbrowser::open("https://www.google.de/").is_ok() {
             thread::sleep(Duration::from_secs(2));
-            enigo.key_click(Key::Return);
+            let _ =enigo.key(Key::Return, Click);
 
-            enigo.key_sequence_parse(search_items[rng.gen_range(0, search_items.len())]);
+            rng = rand::thread_rng();
+            let range = 0..search_items.len();
+            let random_index = rng.gen_range(range);
 
-            enigo.key_click(Key::Return);
+            let _= enigo.text(search_items[random_index]);
+
+            let _ = enigo.key(Key::Return, Press);
             thread::sleep(Duration::from_secs(5));
-            enigo.key_down(Key::Control);
-            enigo.key_down(Key::F4);
-            enigo.key_up(Key::Control);
-            enigo.key_up(Key::F4);
+            let _ =enigo.key(Key::Control, Press);
+            let _ =enigo.key(Key::F4, Click);
+            let _ =enigo.key(Key::Control, Release);
+            let _ =enigo.key(Key::F4,Release);
         }
 
         if cfg!(target_os = "windows") {
@@ -53,9 +62,7 @@ pub fn simulate_click_events() {
         for _account in 0..number_of_accounts {
             println!("clicked at {:?}", time);
             thread::sleep(Duration::from_secs(2));
-            enigo.mouse_move_to(1300, 730);
-            enigo.mouse_down(MouseButton::Left);
-            enigo.mouse_up(MouseButton::Left);
+            let _ = enigo.move_mouse(1300, 730, Coordinate::Rel);
         }
 
         thread::sleep(Duration::from_secs(180));

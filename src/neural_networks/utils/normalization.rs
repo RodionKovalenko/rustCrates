@@ -1,7 +1,7 @@
 use crate::neural_networks::utils::matrix::{create_2d, create_generic, create_generic_one_dim, transpose};
 
 pub fn standardize(matrix: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
-    let mut standardized_mat = create_generic(matrix.len() as i32);
+    let mut standardized_mat = create_generic(matrix.len());
     let mean = get_mean_2d(&matrix);
     let variance = get_variance_2d(&matrix, mean);
 
@@ -15,7 +15,7 @@ pub fn standardize(matrix: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
 }
 
 pub fn standardize_mean(matrix: &Vec<Vec<f64>>, mean: f64, variance: f64) -> Vec<Vec<f64>> {
-    let mut standardized_mat = create_generic(matrix.len() as i32);
+    let mut standardized_mat = create_generic(matrix.len());
 
     for i in 0..matrix.len() {
         for j in 0..matrix[0].len() {
@@ -27,7 +27,7 @@ pub fn standardize_mean(matrix: &Vec<Vec<f64>>, mean: f64, variance: f64) -> Vec
 }
 
 pub fn standardize_median(matrix: &Vec<Vec<f64>>, mean: f64, variance: f64) -> Vec<Vec<f64>> {
-    let mut standardized_mat = create_generic(matrix.len() as i32);
+    let mut standardized_mat = create_generic(matrix.len());
 
     for i in 0..matrix.len() {
         for j in 0..matrix[0].len() {

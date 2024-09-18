@@ -150,11 +150,13 @@ impl ArrayType for Array {
 
     fn dimension(&self) -> usize {
         match self {
+            Array::Array1D(_) => 1,
             Array::Array2D(_) => 2,
             Array::Array3D(_) => 3,
             Array::Array4D(_) => 4,
             Array::Array5D(_) => 5,
             Array::Array6D(_) => 6,
+            Array::Array7D(_) => 7,
             _ => 0
         }
     }

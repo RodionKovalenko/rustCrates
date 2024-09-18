@@ -98,17 +98,17 @@ pub fn train(data_structs: &mut Vec<Data<f64, f64>>,
 }
 
 pub fn initialize_network(data_structs: &mut Vec<Data<f64, f64>>,
-                          num_hidden_layers: i8,
-                          num_hidden_neurons: i32,
-                          num_output_neurons: i32,
-                          minibatch_size: i32,
+                          num_hidden_layers: usize,
+                          num_hidden_neurons: usize,
+                          num_output_neurons: usize,
+                          minibatch_size: usize,
                           learning_rate: f32) -> FeedforwardNetwork<f64> {
-    let number_of_hidden_layers: i32 = num_hidden_layers as i32;
+    let number_of_hidden_layers: usize = num_hidden_layers;
     let number_of_output_neurons = num_output_neurons;
     let mut _number_of_hidden_neurons = num_hidden_neurons;
-    let number_of_data_sets = data_structs.len() as i32;
-    let number_rows_in_set = data_structs[0].input.len() as i32;
-    let num_columns_in_set = data_structs[0].input[0].len() as i32;
+    let number_of_data_sets = data_structs.len();
+    let number_rows_in_set = data_structs[0].input.len();
+    let num_columns_in_set = data_structs[0].input[0].len();
     let input_dimensions = vec![number_rows_in_set as usize,
                                 num_columns_in_set as usize,
                                 number_of_data_sets as usize];
@@ -136,7 +136,7 @@ pub fn initialize_network(data_structs: &mut Vec<Data<f64, f64>>,
 
     for i in 0..saved_network.layers.len() {
         let layer_type = layer::get_layer_type(
-            &(i as i32),
+            &i,
             &number_of_hidden_layers,
         );
         if matches!(layer_type, LayerType::OutputLayer) {
