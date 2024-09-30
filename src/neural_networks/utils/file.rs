@@ -32,13 +32,9 @@ pub fn get_files_in_directory(path: &str) -> io::Result<Vec<PathBuf>> {
     Ok(all)
 }
 
-pub fn serialize(feed_net: &FeedforwardNetwork<f64>) {
+pub fn serialize(feed_net: &FeedforwardNetwork) {
     let mut network = feed_net.clone();
     let mut file = get_or_create_file(&feedforward_network::FILE_NAME, true);
-
-    for l in 0..network.layers.len() {
-        network.layers[l].input_data = vec![];
-    }
 
     let data_json = String::from(format!("{}", serde_json::to_string(&network).unwrap()));
 
@@ -60,10 +56,10 @@ pub fn serialize_generic<T: Sized + Serialize>(array: &T, filename: &str) {
     }
 }
 
-pub fn deserialize(network: FeedforwardNetwork<f64>) -> FeedforwardNetwork<f64> {
+pub fn deserialize(network: FeedforwardNetwork) -> FeedforwardNetwork {
     let mut file = get_or_create_file(&feedforward_network::FILE_NAME, false);
     let mut data = String::new();
-    let mut save_network: FeedforwardNetwork<f64> = network;
+    let mut save_network: FeedforwardNetwork = network;
 
     file.read_to_string(&mut data).expect("Unable to open");
 

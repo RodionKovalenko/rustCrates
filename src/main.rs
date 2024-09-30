@@ -9,7 +9,7 @@ use uphold_api::*;
 use std::time::Instant;
 #[allow(unused_imports)]
 use rand::Rng;
-use neural_networks::neural_networks::network_types::wavelet_network::decompose_in_wavelet_2d_default;
+use neural_networks::neural_networks::network_types::{feedforward_network_generic::{create, FeedforwardNetwork}, network_trait::Network};
 
 pub enum ARGUMENTS {
     UPHOLD,
@@ -38,45 +38,26 @@ fn main() {
     //     }
     // }
 
-    //decompose_in_wavelet_2d_default("training_data/1.jpg");
+    let number_inputs: usize = 2;
+    let number_outputs = 10;
+    let number_of_hidden_layers: usize = 1;
+    let number_of_hidden_neurons:  usize = 10;
+    let minibatch_size: usize = 50;
+    let learning_rate: f32 = 0.5;
 
-    // let dwt_type = DiscreteWaletetType::DB2;
-    // let mode = WaveletMode::SYMMETRIC;
-    //
-    // let data_2d = vec![vec![1.1515151515151515, 2.2626262626262626, 3.36363636363636363636, 4.454545454545454545, 5.5959595959595959],
-    //                    vec![6.616161616161616161, 7.7272727272727272, 8.818181818181818181, 9.9191919191919191, 10.1313131313131313]];
-    //
-    // let transformed = transform_2_d(&data_2d, &dwt_type, &mode);
-    //
-    // println!("transformed {:?}", &transformed);
-    //
-    // let scales: Vec<f64> = (1..6).map(|x| x as f64).collect();
-    // let n: Vec<f64> = vec![1.0, 2.0, 3.0];
-    //
-    // let (transform_cwt, frequencies) = cwt_1d(&n, &scales, &ContinuousWaletetType::MEXH, &1.0);
-    //
-    // println!("transform_cwt {:?}", &transform_cwt);
+    let feedforward_network: FeedforwardNetwork = create(
+        number_inputs,
+        number_outputs,
+        number_of_hidden_layers,
+        number_of_hidden_neurons,
+        minibatch_size,
+        learning_rate,
+    );
 
+    // println!("{:?}", &feedforward_network);
 
-    let numbers_1d = vec![1, 1, 2, 2, 3, 6, 6, 7, 7, 8, 4, 5, 3, 6, 1, 3, 2, 5, 3, 9];
-    let numbers_2d = vec![vec![1.0, 1.5, 2.0, 2.5, 3.0, 6.0, 6.5, 7.0, 7.5, 8.0, 4.0, 5.5, 3.0, 6.5, 1.0, 3.0, 2.5, 5.0, 3.5, 9.0]];
-    let numbers_3d = vec![vec![vec![1.0, 1.5, 2.0, 2.5, 3.0, 6.0, 6.5, 7.0, 7.5, 8.0, 4.0, 5.5, 3.0, 6.5, 1.0, 3.0, 2.5, 5.0, 3.5, 9.0]]];
-
-
-    // let dwt_partial = transform_2_d_partial(&numbers_2d, &DiscreteWaletetType::DB1, &WaveletMode::SYMMETRIC);
-
-    // let dwt = transform_2_d(&numbers_2d, &DiscreteWaletetType::DB1, &WaveletMode::SYMMETRIC);
-
-    // println!("partial {:?}", dwt_partial);
-    // println!("full {:?}", dwt);
-
-    let decomposed_1d = decompose_in_wavelet_2d_default(&numbers_1d);
-    println!("decomposed 1 d: {:?}", decomposed_1d);
-
-    let decomposed_2d = decompose_in_wavelet_2d_default(&numbers_2d);
-    println!("decomposed 2 d: {:?}", decomposed_2d);
-
-    let decomposed_3d = decompose_in_wavelet_2d_default(&numbers_3d);
-    println!("decomposed 3 d: {:?}", decomposed_3d);
+    println!("learning rate {:?}", &feedforward_network.get_learning_rate());
+    println!("layers len {:?}", &feedforward_network.get_layers());
+    println!("minibatch size {:?}", &feedforward_network.get_minibatch_size());
 
 }

@@ -115,7 +115,7 @@ pub fn get_median_3d(matx: &Vec<Vec<Vec<f64>>>) -> f64 {
 }
 
 pub fn unfold_2d(matx: &Vec<Vec<f64>>) -> Vec<f64> {
-    let mut result: Vec<f64> = create_generic_one_dim();
+    let mut result: Vec<f64> = Vec::new();
 
     let mut ind = 0;
     for i in 0..matx.len() {
@@ -132,7 +132,7 @@ pub fn unfold_2d(matx: &Vec<Vec<f64>>) -> Vec<f64> {
 }
 
 pub fn unfold_3d(matx: &Vec<Vec<Vec<f64>>>) -> Vec<f64> {
-    let mut result: Vec<f64> = create_generic_one_dim();
+    let mut result: Vec<f64> = Vec::new();
 
     let mut ind = 0;
     for i in 0..matx.len() {

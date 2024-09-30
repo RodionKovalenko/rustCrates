@@ -1,10 +1,10 @@
 use std::fmt::Debug;
 use num_traits::{Float, FromPrimitive};
-use rand::{Rng};
+use rand::Rng;
 
 pub fn initialize_weights(
-    num_layer_inputs_dim2: i32,
-    number_hidden_neurons: i32,
+    num_layer_inputs_dim2: usize,
+    number_hidden_neurons: usize,
     weight_matrix: &mut Vec<Vec<f64>>) {
     let mut rng = rand::thread_rng();
 
