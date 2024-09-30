@@ -171,11 +171,10 @@ pub fn create_generic_3d<T>(num_rows: usize, num_dim: usize) -> Vec<Vec<Vec<T>>>
     matrix_result
 }
 
-pub fn create_generic_one_dim<T> () -> Vec<T> {
-    let matrix_result: Vec<T> = Vec::new();
-
-    matrix_result
+pub fn create_generic_one_dim<T: Default + Clone>(size: usize) -> Vec<T> {
+    vec![T::default(); size]
 }
+
 
 pub fn parse_3_dim_to_float(matrix: &Vec<Vec<Vec<i32>>>) -> Vec<Vec<Vec<f64>>> {
     let num_dim = matrix.len();
@@ -234,9 +233,9 @@ pub fn subtract<T: Debug + Clone + Sub<Output=T>>(matrix_a: &Vec<Vec<T>>, matrix
 pub fn get_error<T: Debug + Clone + Sub<Output=T> + Add<Output=T> + Mul<Output=T> + From<f64> + Into<f64>>
 (target_m: &Vec<Vec<T>>, output_m: &Vec<Vec<T>>) -> Vec<T> {
     // convert output into one dimensional array
-    let mut output_one_dim: Vec<T> = create_generic_one_dim();
-    let mut target_one_dim: Vec<T> = create_generic_one_dim();
-    let mut matrix_result: Vec<T> = create_generic_one_dim();
+    let mut output_one_dim: Vec<T> = Vec::new();
+    let mut target_one_dim: Vec<T> = Vec::new();
+    let mut matrix_result: Vec<T> = Vec::new();
 
     // println!("target matrix size: {}, {}", target_m.len(), target_m[0].len());
     // println!("output matrix size: {}, {}", output_m.len(), output_m[0].len());

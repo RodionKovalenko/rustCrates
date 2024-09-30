@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 use std::ops::{Add, Div, Mul, Sub};
-use crate::neural_networks::utils::activation::{gauss};
+use crate::neural_networks::utils::activation::gauss;
 
 pub fn exp_max_2d<T, V, G>(data: &Vec<Vec<T>>, m: &Vec<V>, s: &Vec<G>, n_iter: &i32) -> (Vec<f64>, Vec<f64>, Vec<f64>)
     where T: Debug + Clone + Into<f64> + Mul<Output=T> + Add<Output=T> + Div<Output=T> + Sub<Output=T>,
