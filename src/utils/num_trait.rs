@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::ops::{Add, Div, Mul, Sub};
 use num_complex::Complex;
 
-pub trait NumTrait: Add<Output=Self> + Sub<Output=Self> + Mul<Output=Self> + Div<Output=Self> + Sized + Debug + Clone
+pub trait NumTrait: Add<Output=Self> + Sub<Output=Self> + Mul<Output=Self> + Div<Output=Self> + Sized + Debug + Clone + Copy
 {
     fn to_f64(&self) -> f64;
 }
@@ -36,9 +36,31 @@ impl NumTrait for i64 {
     }
 }
 
+impl NumTrait for Complex<f32> {
+    fn to_f64(&self) -> f64 {
+       self.norm() as f64
+    }
+}
+
 impl NumTrait for Complex<f64> {
     fn to_f64(&self) -> f64 {
        self.norm()
+    }
+}
+
+impl NumTrait for Complex<i32> {
+    fn to_f64(&self) -> f64 {
+        let real_squared = (self.re * self.re) as f64;
+        let imag_squared = (self.im * self.im) as f64;
+        (real_squared + imag_squared).sqrt() 
+    }
+}
+
+impl NumTrait for Complex<i64> {
+    fn to_f64(&self) -> f64 {
+        let real_squared = (self.re * self.re) as f64;
+        let imag_squared = (self.im * self.im) as f64;
+        (real_squared + imag_squared).sqrt() 
     }
 }
 
