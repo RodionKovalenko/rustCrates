@@ -9,7 +9,7 @@ use uphold_api::*;
 use std::time::Instant;
 #[allow(unused_imports)]
 use rand::Rng;
-use neural_networks::neural_networks::network_types::{feedforward_network_generic::{create, FeedforwardNetwork}, network_trait::Network};
+use neural_networks::neural_networks::{network_types::{feedforward_network_generic::{create, FeedforwardNetwork}, network_trait::Network}, utils::matrix::{multiple, multiple_complex}};
 
 pub enum ARGUMENTS {
     UPHOLD,
@@ -39,9 +39,9 @@ fn main() {
     // }
 
     let number_inputs: usize = 2;
-    let number_outputs = 10;
+    let number_outputs = 5;
     let number_of_hidden_layers: usize = 1;
-    let number_of_hidden_neurons:  usize = 10;
+    let number_of_hidden_neurons:  usize = 2;
     let minibatch_size: usize = 50;
     let learning_rate: f32 = 0.5;
 
@@ -59,5 +59,4 @@ fn main() {
     println!("learning rate {:?}", &feedforward_network.get_learning_rate());
     println!("layers len {:?}", &feedforward_network.get_layers());
     println!("minibatch size {:?}", &feedforward_network.get_minibatch_size());
-
 }

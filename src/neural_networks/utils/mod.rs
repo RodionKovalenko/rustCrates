@@ -6,3 +6,4 @@ pub mod derivatives;
 pub mod file;
 pub mod normalization;
 pub mod image;
+pub mod tests;
