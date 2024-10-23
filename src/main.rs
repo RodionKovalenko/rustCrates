@@ -3,7 +3,13 @@ use std::env;
 #[allow(unused_imports)]
 pub mod uphold_api;
 
-use neural_networks::neural_networks::network_components::layer::{create_default_layer, ActivationType, Layer, LayerType};
+use neural_networks::neural_networks::{
+    network_components::layer::{ActivationType, LayerEnum},
+    network_types::{
+        feedforward_network_generic::{create, FeedforwardNetwork},
+        network_trait::Network,
+    },
+};
 #[allow(unused_imports)]
 use rand::Rng;
 #[allow(unused_imports)]
@@ -37,46 +43,52 @@ fn main() {
     //     }
     // }
 
-    // let number_inputs: usize = 32;
-    // let number_outputs = 32;
-    // let number_of_hidden_layers: usize = 1;
-    // let number_of_hidden_neurons: usize = 32;
-    // let minibatch_size: usize = 50;
-    // let learning_rate: f32 = 0.5;
+    let number_inputs: usize = 32;
+    let number_outputs = 32;
+    let number_of_hidden_layers: usize = 1;
+    let number_of_hidden_neurons: usize = 32;
+    let minibatch_size: usize = 50;
+    let learning_rate: f32 = 0.5;
 
-    // let feedforward_network: FeedforwardNetwork = create(
-    //     number_inputs,
-    //     number_outputs,
-    //     number_of_hidden_layers,
-    //     number_of_hidden_neurons,
-    //     minibatch_size,
-    //     learning_rate,
-    // );
+    const M: usize = 5;
+    const N: usize = 5;
+    let feedforward_network: FeedforwardNetwork<M, N> = create::<M, N>(
+        number_inputs,
+        number_outputs,
+        number_of_hidden_layers,
+        number_of_hidden_neurons,
+        minibatch_size,
+        learning_rate,
+        ActivationType::TANH,
+    );
 
-    // // println!("{:?}", &feedforward_network);
+    // println!("{:?}", &feedforward_network);
 
-    // println!(
-    //     "learning rate {:?}",
-    //     &feedforward_network.get_learning_rate()
-    // );
-    // println!(
-    //     "layers len {:?}",
-    //     &feedforward_network.get_layers()[0].weights
-    // );
-    // println!(
-    //     "minibatch size {:?}",
-    //     &feedforward_network.get_minibatch_size()
-    // );
-
-    let original_layer = create_default_layer::<20, 20>(&ActivationType::SIGMOID, LayerType::InputLayer);
+    println!(
+        "learning rate {:?}",
+        &feedforward_network.get_learning_rate()
+    );
+    println!(
+        "layers len {:?}",
+        &feedforward_network.get_layers()[0].weights
+    );
+    println!(
+        "minibatch size {:?}",
+        &feedforward_network.get_minibatch_size()
+    );
 
     // Serialize the layer to a JSON string
-     let serialized = serde_json::to_string(&original_layer).expect("Failed to serialize layer");
+    let serialized =
+        serde_json::to_string(&feedforward_network).expect("Failed to serialize layer");
 
     // // Deserialize the JSON string back into a layer instance
-    let deserialized_layer: Layer<20,  20> =  serde_json::from_str(&serialized).expect("Failed to deserialize layer");
-    
-    println!("deserialized{:?}", &deserialized_layer.weights);
+    let deserialized_network: FeedforwardNetwork<M, N> =
+        serde_json::from_str(&serialized).expect("Failed to deserialize layer");
+
+    println!(
+        "deserialized{:?}",
+        deserialized_network.extract_layers()[0].weights
+    );
 
     // let m1: Vec<f64> = vec![1.0, 2.0, 3.0];
     // let m2: Vec<Vec<f64>> = vec![vec![5.0, 6.0, 7.0], vec![7.0, 8.0, 9.0]];

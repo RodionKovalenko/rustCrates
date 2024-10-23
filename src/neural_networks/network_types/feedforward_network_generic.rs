@@ -50,6 +50,15 @@ impl<const M: usize, const N: usize> FeedforwardNetwork<M, N> {
     pub fn get_minibatch_size(&self) -> usize {
         self.minibatch_size
     }
+    pub fn extract_layers(&self) -> Vec<Layer<M, N>> {
+        self.layers.iter().filter_map(|layer_enum| {
+            match layer_enum {
+                LayerEnum::Dense(layer) => Some(*layer.clone()), // Dereference and clone the inner layer
+                LayerEnum::RMSNorm(layer) => Some(*layer.clone()), // Dereference and clone the inner layer
+                LayerEnum::SelfAttention(layer) => Some(*layer.clone()), // Dereference and clone the inner layer
+            }
+        }).collect() // Collect into a Vec<Layer<M, N>>
+    }
 }
 
 pub fn create<const M: usize, const N: usize>(
