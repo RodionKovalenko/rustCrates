@@ -38,7 +38,7 @@ fn main() {
     //     }
     // }
 
-    let number_inputs: usize = 2;
+    let number_inputs: usize = 32;
     let number_outputs = 32;
     let number_of_hidden_layers: usize = 1;
     let number_of_hidden_neurons:  usize = 32;

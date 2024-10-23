@@ -1,10 +1,10 @@
-use std::path::{Path, PathBuf};
-use std::fs::{File, OpenOptions};
-use std::{fs, io};
-use std::io::{Write, Read};
-use serde::Serialize;
 use crate::neural_networks::network_types::feedforward_network;
 use crate::neural_networks::network_types::feedforward_network_generic::FeedforwardNetwork;
+use serde::Serialize;
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use std::{fs, io};
 
 pub fn create_new_file(filename: &str) {
     File::create(&filename).expect("cannot create file");
@@ -36,12 +36,12 @@ pub fn serialize(feed_net: &FeedforwardNetwork) {
     let mut network = feed_net.clone();
     let mut file = get_or_create_file(&feedforward_network::FILE_NAME, true);
 
-    // let data_json = String::from(format!("{}", serde_json::to_string(&network).unwrap()));
+    let data_json = String::from(format!("{}", serde_json::to_string(&network).unwrap()));
 
-    // match file.write_all(data_json.as_bytes()) {
-    //     Err(e) => println!("{:?}", e),
-    //     _ => ()
-    // }
+    match file.write_all(data_json.as_bytes()) {
+        Err(e) => println!("{:?}", e),
+        _ => (),
+    }
 }
 
 pub fn serialize_generic<T: Sized + Serialize>(array: &T, filename: &str) {
@@ -52,7 +52,7 @@ pub fn serialize_generic<T: Sized + Serialize>(array: &T, filename: &str) {
 
     match file.write_all(data_json.as_bytes()) {
         Err(e) => println!("{:?}", e),
-        _ => ()
+        _ => (),
     }
 }
 
@@ -64,7 +64,7 @@ pub fn deserialize(network: FeedforwardNetwork) -> FeedforwardNetwork {
     file.read_to_string(&mut data).expect("Unable to open");
 
     if !data.is_empty() {
-       // save_network = serde_json::from_str(&data).expect("JSON was not well-formatted");
+        save_network = serde_json::from_str(&data).expect("JSON was not well-formatted");
     }
 
     save_network
