@@ -6,9 +6,9 @@ use std::fmt::Debug;
 
 use super::network_trait::Network;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct FeedforwardNetwork {
-    pub layers: Vec<Layer>,
+    pub layers: Vec<Layer<32, 32>>,
     learning_rate: f32,
     number_of_input_neurons: usize,
     number_of_output_neurons: usize,
@@ -18,7 +18,7 @@ pub struct FeedforwardNetwork {
 }
 
 impl Network for FeedforwardNetwork {
-    fn get_layers(&self) -> Vec<Layer> {
+    fn get_layers(&self) -> Vec<Layer<32, 32>> {
         self.layers.clone()
     }
     fn get_learning_rate(&self) -> f32 {
@@ -52,10 +52,8 @@ pub fn create(
     minibatch_size: usize,
     learning_rate: f32,
 ) -> FeedforwardNetwork {
-    let layers = vec![];
-
     let mut feed_net = FeedforwardNetwork {
-        layers,
+        layers: vec![],
         learning_rate,
         number_of_input_neurons: number_inputs,
         number_of_output_neurons: number_outputs,
