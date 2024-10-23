@@ -60,7 +60,7 @@ mod tests {
         assert_eq!(original_layer.v1, deserialized_layer.v1);
 
         
-    let original_layer: Layer<16, 16>=  create_default_layer(&16, &16, &ActivationType::SIGMOID, LayerType::InputLayer);
+    let original_layer: Layer<16, 16>=  create_default_layer::<16, 16>( &ActivationType::SIGMOID, LayerType::InputLayer);
 
     // Serialize the layer to a JSON string
     let serialized = serde_json::to_string(&original_layer).expect("Failed to serialize layer");

@@ -72,15 +72,13 @@ pub fn initialize_weights(
 }
 
 // Initialize weights for fixed-size array with Complex<f64>
-pub fn initialize_weights_complex<const N: usize, const M: usize>(
-    num_layer_inputs_dim2: usize,
-    number_hidden_neurons: usize,
-    weight_matrix: &mut [[Complex<f64>; N]; M],
+pub fn initialize_weights_complex<const M: usize, const N: usize>(
+    weight_matrix: &mut [[Complex<f64>; M]; N],
 ) {
     let mut rng = rand::thread_rng();
 
-    for i in 0..num_layer_inputs_dim2 {
-        for j in 0..number_hidden_neurons {
+    for i in 0..N {
+        for j in 0..M {
             let random_value = Complex::new(rng.gen_range(-0.6..0.6), rng.gen_range(-0.6..0.6));
             set_weights(weight_matrix, i, j, random_value);
         }

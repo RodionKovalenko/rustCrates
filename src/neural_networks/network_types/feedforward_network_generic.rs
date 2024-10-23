@@ -62,11 +62,9 @@ pub fn create(
         minibatch_size,
     };
 
-    let layers = initialize_default_layers(
-        &number_inputs,
+    let layers = initialize_default_layers::<16,16> (
         &number_outputs,
         &number_of_hidden_layers,
-        &number_of_hidden_neurons,
         &ActivationType::RANDOM,
     );
 
