@@ -3,15 +3,7 @@ use std::env;
 #[allow(unused_imports)]
 pub mod uphold_api;
 
-use neural_networks::neural_networks::{
-    network_components::layer::{create_default_layer, ActivationType, Layer, LayerType},
-    network_types::{
-        feedforward_network_generic::{create, FeedforwardNetwork},
-        network_trait::Network,
-        wavelet_network::decompose_in_wavelet_2d_default,
-    },
-    utils::matrix::{multiple, multiple_complex},
-};
+use neural_networks::neural_networks::network_components::layer::{create_default_layer, ActivationType, Layer, LayerType};
 #[allow(unused_imports)]
 use rand::Rng;
 #[allow(unused_imports)]

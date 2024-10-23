@@ -32,7 +32,7 @@ pub fn get_files_in_directory(path: &str) -> io::Result<Vec<PathBuf>> {
     Ok(all)
 }
 
-pub fn serialize(feed_net: &FeedforwardNetwork) {
+pub fn serialize<const M: usize, const N: usize>(feed_net: &FeedforwardNetwork<M, N>) {
     let mut network = feed_net.clone();
     let mut file = get_or_create_file(&feedforward_network::FILE_NAME, true);
 
@@ -56,10 +56,10 @@ pub fn serialize_generic<T: Sized + Serialize>(array: &T, filename: &str) {
     }
 }
 
-pub fn deserialize(network: FeedforwardNetwork) -> FeedforwardNetwork {
+pub fn deserialize<const M: usize, const N: usize>(network: FeedforwardNetwork<M, N>) -> FeedforwardNetwork<M, N> {
     let mut file = get_or_create_file(&feedforward_network::FILE_NAME, false);
     let mut data = String::new();
-    let mut save_network: FeedforwardNetwork = network;
+    let mut save_network: FeedforwardNetwork<M, N> = network;
 
     file.read_to_string(&mut data).expect("Unable to open");
 
