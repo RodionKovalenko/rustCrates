@@ -8,7 +8,7 @@ use super::network_trait::Network;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeedforwardNetwork {
-    pub layers: Vec<Layer<32, 32>>,
+    pub layers: Vec<Layer<16, 16>>,
     learning_rate: f32,
     number_of_input_neurons: usize,
     number_of_output_neurons: usize,
@@ -18,7 +18,7 @@ pub struct FeedforwardNetwork {
 }
 
 impl Network for FeedforwardNetwork {
-    fn get_layers(&self) -> Vec<Layer<32, 32>> {
+    fn get_layers(&self) -> Vec<Layer<16, 16>> {
         self.layers.clone()
     }
     fn get_learning_rate(&self) -> f32 {
