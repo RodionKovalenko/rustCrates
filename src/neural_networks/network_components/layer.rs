@@ -40,16 +40,16 @@ impl Default for LayerType {
 
 // Layer Enum
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum LayerEnum {
-    Layer(Layer<16, 16>),
+pub enum LayerEnum<const M: usize, const N: usize> {
+    Layer(Layer<M, N>),
     // Add more types of layers if necessary
 }
 
-impl BaseLayer for Layer<16, 16> {}
+impl <const M: usize, const N: usize> BaseLayer for Layer<M, N> {}
 
 // Layer struct
 #[derive(Debug, Clone)]
-pub struct Layer<const N: usize, const M: usize>  {
+pub struct Layer<const M: usize, const N: usize>  {
     pub weights: [[Complex<f64>; M]; N],
     pub layer_bias: [Complex<f64>; M],
     pub activation_type: ActivationType,
@@ -65,7 +65,7 @@ pub struct Layer<const N: usize, const M: usize>  {
 }
 
 // Implement Default for Layer
-impl<const N: usize, const M: usize> Default for Layer<N, M> {
+impl<const M: usize, const N: usize> Default for Layer<M, N> {
     fn default() -> Self {
         Layer {
             weights: [[Complex::new(0.0, 0.0); M]; N],
@@ -119,21 +119,21 @@ impl<const N: usize, const M: usize> Serialize for Layer<N, M> {
 }
 
 // Implement Deserialize manually
-impl<'de, const N: usize, const M: usize> Deserialize<'de> for Layer<N, M> {
+impl<'de, const M: usize, const N: usize> Deserialize<'de> for Layer<M, N> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct LayerVisitor<const N: usize, const M: usize>;
+        struct LayerVisitor<const M: usize, const N: usize>;
 
-        impl<'de, const N: usize, const M: usize> Visitor<'de> for LayerVisitor<N, M> {
-            type Value = Layer<N, M>;
+        impl<'de, const M: usize, const N: usize> Visitor<'de> for LayerVisitor<M, N> {
+            type Value = Layer<M, N>;
 
             fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
                 formatter.write_str("a Layer struct with 2D arrays of Complex<f64>")
             }
 
-            fn visit_seq<A>(self, mut seq: A) -> Result<Layer<N, M>, A::Error>
+            fn visit_seq<A>(self, mut seq: A) -> Result<Layer<M, N>, A::Error>
             where
                 A: SeqAccess<'de>,
             {
@@ -200,66 +200,64 @@ impl<'de, const N: usize, const M: usize> Deserialize<'de> for Layer<N, M> {
     }
 }
 
-impl Layer<16, 16> {
+impl<const M: usize, const N: usize> Layer<M, N> {
     // Method to set the entire input_weights (2D matrix)
-    pub fn set_input_weights(&mut self, new_weights: [[Complex<f64>; 16]; 16]) {
+    pub fn set_input_weights(&mut self, new_weights: [[Complex<f64>; M]; N]) {
         self.weights = new_weights;
     }
 
     // Methods for setting outputs and gradients
-    pub fn set_inactivated_output(&mut self, new_output: [[Complex<f64>; 16]; 16]) {
+    pub fn set_inactivated_output(&mut self, new_output: [[Complex<f64>; M]; N]) {
         self.inactivated_output = new_output;
     }
 
-    pub fn set_activated_output(&mut self, new_output: [[Complex<f64>; 16]; 16]) {
+    pub fn set_activated_output(&mut self, new_output: [[Complex<f64>; M]; N]) {
         self.activated_output = new_output;
     }
 
-    pub fn set_gradient_backward(&mut self, new_gradient: [[Complex<f64>; 16]; 16]) {
+    pub fn set_gradient_backward(&mut self, new_gradient: [[Complex<f64>; M]; N]) {
         self.gradient = new_gradient;
     }
 
-    pub fn set_gradient_w(&mut self, new_gradient_w: [[Complex<f64>; 16]; 16]) {
+    pub fn set_gradient_w(&mut self, new_gradient_w: [[Complex<f64>; M]; N]) {
         self.gradient_w = new_gradient_w;
     }
 
-    pub fn set_errors(&mut self, new_errors: [[Complex<f64>; 16]; 16]) {
+    pub fn set_errors(&mut self, new_errors: [[Complex<f64>; M]; N]) {
         self.errors = new_errors;
     }
 
-    pub fn set_layer_bias(&mut self, new_bias: [Complex<f64>; 16]) {
+    pub fn set_layer_bias(&mut self, new_bias: [Complex<f64>; M]) {
         self.layer_bias = new_bias;
     }
 
-    pub fn set_m1(&mut self, new_m1: [[Complex<f64>; 16]; 16]) {
+    pub fn set_m1(&mut self, new_m1: [[Complex<f64>; M]; N]) {
         self.m1 = new_m1;
     }
 
-    pub fn set_v1(&mut self, new_v1: [[Complex<f64>; 16]; 16]) {
+    pub fn set_v1(&mut self, new_v1: [[Complex<f64>; M]; N]) {
         self.v1 = new_v1;
     }
 }
 
 // Other structs and methods remain unchanged...
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SelfAttentionLayer {
-    base_layer: Layer<16, 16>,
+pub struct SelfAttentionLayer<const M: usize, const N: usize> {
+    base_layer: Layer<M, N>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RMSNormLayer {
-    base_layer: Layer<16, 16>,
+pub struct RMSNormLayer <const M: usize, const N: usize> {
+    base_layer: Layer<M, N>,
 }
 
 // Layer initialization function
-pub fn initialize_default_layers(
-    num_inputs: &usize,
+pub fn initialize_default_layers<const M: usize, const N: usize>(
     num_outputs: &usize,
     num_h_layers: &usize,
-    num_h_neurons: &usize,
     activation: &ActivationType,
-) -> Vec<Layer<16, 16>> {
-    let mut layers: Vec<Layer<16, 16>> = Vec::new();
+) -> Vec<Layer<M, N>> {
+    let mut layers: Vec<Layer<M, N>> = Vec::new();
     let total_layers: usize = *num_h_layers + 2;
 
     if *num_h_layers == 0 {
@@ -268,17 +266,8 @@ pub fn initialize_default_layers(
 
     for l in 0..total_layers {
         let layer_type = get_layer_type(l, total_layers);
-        let layer: Layer<16, 16> = create_default_layer(
-            match layer_type {
-                LayerType::InputLayer => num_inputs,
-                LayerType::HiddenLayer => num_h_neurons,
-                LayerType::OutputLayer => num_outputs,
-            },
-            match layer_type {
-                LayerType::InputLayer => num_h_neurons,
-                LayerType::HiddenLayer => num_h_neurons,
-                LayerType::OutputLayer => num_outputs,
-            },
+
+        let layer: Layer<M, N> = create_default_layer::<M, N>(
             activation,
             layer_type,
         );
@@ -289,21 +278,19 @@ pub fn initialize_default_layers(
     layers
 }
 
-pub fn create_default_layer(
-    num_i_neurons: &usize,
-    num_o_neurons: &usize,
+pub fn create_default_layer<const M: usize, const N: usize>(
     activation: &ActivationType,
     layer_type: LayerType,
-) -> Layer<16, 16> {
+) -> Layer<M,  N> {
     // Initialize the matrices with the correct dimensions
-    let mut weights: [[Complex<f64>; 16]; 16] = [[Complex::new(0.0, 0.0); 16]; 16];
+    let mut weights: [[Complex<f64>; M]; N] = [[Complex::new(0.0, 0.0); M]; N];
 
-    initialize_weights_complex::<16, 16>(16, 16, &mut weights); // 2D matrix
+    initialize_weights_complex::<M, N>(&mut weights); // 2D matrix
 
     // Create the layer with the initialized matrices
     Layer {
         weights,
-        layer_bias: [Complex::new(0.0, 0.0); 16], // 1D vector
+        layer_bias: [Complex::new(0.0, 0.0); M], // 1D vector
         activation_type: activation.clone(),
         layer_type,
         ..Default::default() // Fill the rest with default values

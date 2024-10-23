@@ -76,15 +76,14 @@ fn main() {
     //     &feedforward_network.get_minibatch_size()
     // );
 
-    let original_layer: Layer<16, 16> =
-     create_default_layer(&16, &16, &ActivationType::SIGMOID, LayerType::InputLayer);
+    let original_layer = create_default_layer::<20, 20>(&ActivationType::SIGMOID, LayerType::InputLayer);
 
     // Serialize the layer to a JSON string
-    let serialized = serde_json::to_string(&original_layer).expect("Failed to serialize layer");
+     let serialized = serde_json::to_string(&original_layer).expect("Failed to serialize layer");
 
-    // Deserialize the JSON string back into a layer instance
-    let deserialized_layer: Layer<16, 16> =  serde_json::from_str(&serialized).expect("Failed to deserialize layer");
-
+    // // Deserialize the JSON string back into a layer instance
+    let deserialized_layer: Layer<20,  20> =  serde_json::from_str(&serialized).expect("Failed to deserialize layer");
+    
     println!("deserialized{:?}", &deserialized_layer.weights);
 
     // let m1: Vec<f64> = vec![1.0, 2.0, 3.0];
