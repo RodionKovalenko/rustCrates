@@ -15,7 +15,7 @@ impl Default for ActivationType {
 }
 
 // Activation Type Enum
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum ActivationType {
     SIGMOID,
     TANH,
@@ -24,7 +24,7 @@ pub enum ActivationType {
 }
 
 // Layer Type Enum
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum LayerType {
     InputLayer,
     HiddenLayer,
@@ -41,11 +41,11 @@ impl Default for LayerType {
 // Layer Enum
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LayerEnum {
-    Layer(Layer<32, 32>),
+    Layer(Layer<16, 16>),
     // Add more types of layers if necessary
 }
 
-impl BaseLayer for Layer<32, 32> {}
+impl BaseLayer for Layer<16, 16> {}
 
 // Layer struct
 #[derive(Debug, Clone)]
@@ -200,42 +200,42 @@ impl<'de, const N: usize, const M: usize> Deserialize<'de> for Layer<N, M> {
     }
 }
 
-impl Layer<32, 32> {
+impl Layer<16, 16> {
     // Method to set the entire input_weights (2D matrix)
-    pub fn set_input_weights(&mut self, new_weights: [[Complex<f64>; 32]; 32]) {
+    pub fn set_input_weights(&mut self, new_weights: [[Complex<f64>; 16]; 16]) {
         self.weights = new_weights;
     }
 
     // Methods for setting outputs and gradients
-    pub fn set_inactivated_output(&mut self, new_output: [[Complex<f64>; 32]; 32]) {
+    pub fn set_inactivated_output(&mut self, new_output: [[Complex<f64>; 16]; 16]) {
         self.inactivated_output = new_output;
     }
 
-    pub fn set_activated_output(&mut self, new_output: [[Complex<f64>; 32]; 32]) {
+    pub fn set_activated_output(&mut self, new_output: [[Complex<f64>; 16]; 16]) {
         self.activated_output = new_output;
     }
 
-    pub fn set_gradient_backward(&mut self, new_gradient: [[Complex<f64>; 32]; 32]) {
+    pub fn set_gradient_backward(&mut self, new_gradient: [[Complex<f64>; 16]; 16]) {
         self.gradient = new_gradient;
     }
 
-    pub fn set_gradient_w(&mut self, new_gradient_w: [[Complex<f64>; 32]; 32]) {
+    pub fn set_gradient_w(&mut self, new_gradient_w: [[Complex<f64>; 16]; 16]) {
         self.gradient_w = new_gradient_w;
     }
 
-    pub fn set_errors(&mut self, new_errors: [[Complex<f64>; 32]; 32]) {
+    pub fn set_errors(&mut self, new_errors: [[Complex<f64>; 16]; 16]) {
         self.errors = new_errors;
     }
 
-    pub fn set_layer_bias(&mut self, new_bias: [Complex<f64>; 32]) {
+    pub fn set_layer_bias(&mut self, new_bias: [Complex<f64>; 16]) {
         self.layer_bias = new_bias;
     }
 
-    pub fn set_m1(&mut self, new_m1: [[Complex<f64>; 32]; 32]) {
+    pub fn set_m1(&mut self, new_m1: [[Complex<f64>; 16]; 16]) {
         self.m1 = new_m1;
     }
 
-    pub fn set_v1(&mut self, new_v1: [[Complex<f64>; 32]; 32]) {
+    pub fn set_v1(&mut self, new_v1: [[Complex<f64>; 16]; 16]) {
         self.v1 = new_v1;
     }
 }
@@ -243,12 +243,12 @@ impl Layer<32, 32> {
 // Other structs and methods remain unchanged...
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelfAttentionLayer {
-    base_layer: Layer<32, 32>,
+    base_layer: Layer<16, 16>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RMSNormLayer {
-    base_layer: Layer<32, 32>,
+    base_layer: Layer<16, 16>,
 }
 
 // Layer initialization function
@@ -258,8 +258,8 @@ pub fn initialize_default_layers(
     num_h_layers: &usize,
     num_h_neurons: &usize,
     activation: &ActivationType,
-) -> Vec<Layer<32, 32>> {
-    let mut layers: Vec<Layer<32, 32>> = Vec::new();
+) -> Vec<Layer<16, 16>> {
+    let mut layers: Vec<Layer<16, 16>> = Vec::new();
     let total_layers: usize = *num_h_layers + 2;
 
     if *num_h_layers == 0 {
@@ -268,7 +268,7 @@ pub fn initialize_default_layers(
 
     for l in 0..total_layers {
         let layer_type = get_layer_type(l, total_layers);
-        let layer: Layer<32, 32> = create_default_layer(
+        let layer: Layer<16, 16> = create_default_layer(
             match layer_type {
                 LayerType::InputLayer => num_inputs,
                 LayerType::HiddenLayer => num_h_neurons,
@@ -294,16 +294,16 @@ pub fn create_default_layer(
     num_o_neurons: &usize,
     activation: &ActivationType,
     layer_type: LayerType,
-) -> Layer<32, 32> {
+) -> Layer<16, 16> {
     // Initialize the matrices with the correct dimensions
-    let mut weights: [[Complex<f64>; 32]; 32] = [[Complex::new(0.0, 0.0); 32]; 32];
+    let mut weights: [[Complex<f64>; 16]; 16] = [[Complex::new(0.0, 0.0); 16]; 16];
 
-    initialize_weights_complex::<32, 32>(*num_i_neurons, *num_o_neurons, &mut weights); // 2D matrix
+    initialize_weights_complex::<16, 16>(16, 16, &mut weights); // 2D matrix
 
     // Create the layer with the initialized matrices
     Layer {
         weights,
-        layer_bias: [Complex::new(0.0, 0.0); 32], // 1D vector
+        layer_bias: [Complex::new(0.0, 0.0); 16], // 1D vector
         activation_type: activation.clone(),
         layer_type,
         ..Default::default() // Fill the rest with default values
