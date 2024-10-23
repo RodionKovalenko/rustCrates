@@ -6,7 +6,6 @@ use crate::neural_networks::network_types::feedforward_network;
 
 use crate::neural_networks::network_types::feedforward_network_generic::FeedforwardNetwork;
 use crate::neural_networks::utils::normalization::normalize_max_mean;
-use crate::neural_networks::utils::weights_initializer::initialize_weights;
 use crate::uphold_api::cryptocurrency_api::get_data;
 use crate::uphold_api::cryptocurrency_dto::CryptocurrencyDto;
 
