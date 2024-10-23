@@ -1,7 +1,9 @@
 use crate::neural_networks::utils::weights_initializer::initialize_weights_complex;
-use core::fmt::Debug;
+use core::fmt::{self, Debug};
+use std::fmt::Formatter;
 use num::Complex;
-use serde::{Deserialize, Serialize};
+use serde::ser::SerializeSeq;
+use serde::{de::{SeqAccess, Visitor}, Deserialize, Deserializer, Serialize, Serializer};
 
 // Base Layer trait
 pub trait BaseLayer {}
@@ -37,7 +39,7 @@ impl Default for LayerType {
 }
 
 // Layer Enum
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LayerEnum {
     Layer(Layer<32, 32>),
     // Add more types of layers if necessary
@@ -47,7 +49,7 @@ impl BaseLayer for Layer<32, 32> {}
 
 // Layer struct
 #[derive(Debug, Clone)]
-pub struct Layer<const N: usize, const M: usize> {
+pub struct Layer<const N: usize, const M: usize>  {
     pub weights: [[Complex<f64>; M]; N],
     pub layer_bias: [Complex<f64>; M],
     pub activation_type: ActivationType,
@@ -81,6 +83,123 @@ impl<const N: usize, const M: usize> Default for Layer<N, M> {
         }
     }
 }
+
+// Implement Serialize manually
+impl<const N: usize, const M: usize> Serialize for Layer<N, M> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(N * M * 9 + M + 2))?; // 2 for activation_type and layer_type
+
+        // Serialize 2D arrays
+        for array in &[
+            &self.weights, &self.inactivated_output, &self.activated_output,
+            &self.gradient, &self.gradient_w, &self.errors,
+            &self.previous_gradient, &self.m1, &self.v1
+        ] {
+            for row in array.iter() {
+                for element in row.iter() {
+                    seq.serialize_element(element)?;
+                }
+            }
+        }
+
+        // Serialize 1D array
+        for element in &self.layer_bias {
+            seq.serialize_element(element)?;
+        }
+
+        // Serialize remaining fields
+        seq.serialize_element(&self.activation_type)?;
+        seq.serialize_element(&self.layer_type)?;
+
+        seq.end() // Finish the sequence
+    }
+}
+
+// Implement Deserialize manually
+impl<'de, const N: usize, const M: usize> Deserialize<'de> for Layer<N, M> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct LayerVisitor<const N: usize, const M: usize>;
+
+        impl<'de, const N: usize, const M: usize> Visitor<'de> for LayerVisitor<N, M> {
+            type Value = Layer<N, M>;
+
+            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                formatter.write_str("a Layer struct with 2D arrays of Complex<f64>")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Layer<N, M>, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                // Initialize arrays
+                let mut weights = [[Complex::new(0.0, 0.0); M]; N];
+                let mut inactivated_output = [[Complex::new(0.0, 0.0); M]; N];
+                let mut activated_output = [[Complex::new(0.0, 0.0); M]; N];
+                let mut gradient = [[Complex::new(0.0, 0.0); M]; N];
+                let mut gradient_w = [[Complex::new(0.0, 0.0); M]; N];
+                let mut errors = [[Complex::new(0.0, 0.0); M]; N];
+                let mut previous_gradient = [[Complex::new(0.0, 0.0); M]; N];
+                let mut m1 = [[Complex::new(0.0, 0.0); M]; N];
+                let mut v1 = [[Complex::new(0.0, 0.0); M]; N];
+                let mut layer_bias = [Complex::new(0.0, 0.0); M];
+
+                // Deserialize 2D arrays
+                for array in [
+                    &mut weights, &mut inactivated_output, &mut activated_output,
+                    &mut gradient, &mut gradient_w, &mut errors,
+                    &mut previous_gradient, &mut m1, &mut v1,
+                ].iter_mut() {
+                    for row in array.iter_mut() {
+                        for element in row.iter_mut() {
+                            *element = seq.next_element()?.ok_or_else(|| {
+                                serde::de::Error::invalid_length(N * M, &self)
+                            })?;
+                        }
+                    }
+                }
+
+                // Deserialize layer_bias
+                for element in layer_bias.iter_mut() {
+                    *element = seq.next_element()?.ok_or_else(|| {
+                        serde::de::Error::invalid_length(M, &self)
+                    })?;
+                }
+
+                // Deserialize activation_type and layer_type
+                let activation_type: ActivationType = seq.next_element()?.ok_or_else(|| {
+                    serde::de::Error::missing_field("activation_type")
+                })?;
+                let layer_type: LayerType = seq.next_element()?.ok_or_else(|| {
+                    serde::de::Error::missing_field("layer_type")
+                })?;
+
+                Ok(Layer {
+                    weights,
+                    layer_bias,
+                    activation_type,
+                    layer_type,
+                    inactivated_output,
+                    activated_output,
+                    gradient,
+                    gradient_w,
+                    errors,
+                    previous_gradient,
+                    m1,
+                    v1,
+                })
+            }
+        }
+
+        deserializer.deserialize_seq(LayerVisitor)
+    }
+}
+
 impl Layer<32, 32> {
     // Method to set the entire input_weights (2D matrix)
     pub fn set_input_weights(&mut self, new_weights: [[Complex<f64>; 32]; 32]) {
@@ -122,12 +241,12 @@ impl Layer<32, 32> {
 }
 
 // Other structs and methods remain unchanged...
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelfAttentionLayer {
     base_layer: Layer<32, 32>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RMSNormLayer {
     base_layer: Layer<32, 32>,
 }

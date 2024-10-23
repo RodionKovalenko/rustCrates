@@ -6,7 +6,7 @@ use std::fmt::Debug;
 
 use super::network_trait::Network;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeedforwardNetwork {
     pub layers: Vec<Layer<32, 32>>,
     learning_rate: f32,
