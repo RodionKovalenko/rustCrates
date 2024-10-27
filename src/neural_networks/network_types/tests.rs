@@ -3,15 +3,12 @@
 mod tests {
     use num::Complex;
 
-    use crate::{
-        neural_networks::{
-            network_components::layer::{create_default_layer, ActivationType, Layer, LayerType},
-            network_types::{
-                feedforward_network_generic::{create, FeedforwardNetwork},
-                network_trait::Network,
-            },
-        },
-        utils::num_trait::ArrayType,
+    use crate::neural_networks::{
+        network_components::layer::{create_default_layer, ActivationType, Layer, LayerType},
+        network_types::{
+            feedforward_network_generic::{create, FeedforwardNetwork},
+            network_trait::Network,
+        }
     };
 
     #[test]
@@ -66,8 +63,12 @@ mod tests {
             serde_json::from_str(&serialized).expect("Failed to deserialize layer");
 
         // Assert that the original layer and the deserialized layer are equal
-        assert_eq!(original_layer.weights, deserialized_layer.weights);
-        assert_eq!(original_layer.layer_bias, deserialized_layer.layer_bias);
+        are_complex_arrays_equal::<M, N>(
+            &original_layer.weights,
+            &deserialized_layer.weights,
+            1e-10,
+        );
+        assert_eq!(original_layer.bias, deserialized_layer.bias);
         assert_eq!(
             original_layer.activation_type,
             deserialized_layer.activation_type
@@ -110,7 +111,7 @@ mod tests {
             &deserialized_layer.weights,
             1e-10,
         );
-        assert_eq!(original_layer.layer_bias, deserialized_layer.layer_bias);
+        assert_eq!(original_layer.bias, deserialized_layer.bias);
         assert_eq!(
             original_layer.activation_type,
             deserialized_layer.activation_type
