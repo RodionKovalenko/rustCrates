@@ -1,50 +1,233 @@
 use std::f64::consts::PI;
 use std::fmt::Debug;
 use std::f64::consts::E;
-use std::ops::{Mul, AddAssign, Add, Div};
+use std::ops::{Mul, Add, Div};
+use num::{Complex, Float, One};
+use std::marker::Copy;
 
-pub fn sigmoid<T: Debug + Clone + From<f64> + Into<f64> +
-Mul<Output=T> + AddAssign + Add<Output=T> + Div<Output=T>>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
-    let mut result_matrix = matrix_a.clone();
+use crate::neural_networks::network_components::layer::ActivationType;
 
-    for j in 0..matrix_a[0].len() {
-        for i in 0..matrix_a.len() {
-            result_matrix[i][j] = sigmoid_value(matrix_a[i][j].clone());
-        }
+// Define a trait for activation functions
+pub trait RealActivation: Float + Copy {
+    fn erf(self) -> Self; // Add erf method if required
+}
+
+// Implement the trait for f32 and f64
+impl RealActivation for f32 {
+    fn erf(self) -> Self {
+        // Constants for approximation
+        let a1 = 0.254829592;
+        let a2 = -0.284496736;
+        let a3 = 1.421413741;
+        let a4 = -1.453152027;
+        let a5 = 1.061405429;
+        let p = 0.3275911;
+
+        let sign = if self < 0.0 { -1.0 } else { 1.0 };
+        let x = self.abs();
+
+        // A&S formula 7.1.26
+        let t = 1.0 / (1.0 + p * x);
+        let y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * (E.powf((-x * x) as f64)) as f32;
+
+        sign * y
     }
-
-    result_matrix
 }
 
-pub fn sigmoid_value<T: Debug + Clone + From<f64> + Into<f64> +
-Mul<Output=T> + AddAssign + Add<Output=T> + Div<Output=T>>(value: T) -> T {
-    T::from(1.0) / (T::from(1.0) + T::from(E.powf(-1.0 * value.into())))
-}
+impl RealActivation for f64 {
+    fn erf(self) -> Self {
+        // Constants for approximation
+        let a1 = 0.254829592;
+        let a2 = -0.284496736;
+        let a3 = 1.421413741;
+        let a4 = -1.453152027;
+        let a5 = 1.061405429;
+        let p = 0.3275911;
 
-pub fn tanh(matrix_a: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
-    let mut result_matrix = matrix_a.clone();
+        let sign = if self < 0.0 { -1.0 } else { 1.0 };
+        let x = self.abs();
 
-    for j in 0..matrix_a[0].len() {
-        for i in 0..matrix_a.len() {
-            result_matrix[i][j] = tanh_value(matrix_a[i][j]);
-        }
+        // A&S formula 7.1.26
+        let t = 1.0 / (1.0 + p * x);
+        let y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * (E.powf(-x * x));
+
+        sign * y
     }
-
-    result_matrix
 }
 
-pub fn tanh_value(value: f64) -> f64 {
-    let output: f64 = (E.powf(value) - E.powf(-value))
-        / (E.powf(value) + E.powf(-1.0 * value));
+// Define activation functions
+fn sigmoid<T: RealActivation>(z: T) -> T {
+    T::one() / (T::one() + (-z).exp())
+}
 
-    output
+fn tanh<T: RealActivation>(z: T) -> T {
+    let exp_z = T::exp(z);
+    let exp_neg_z = T::exp(-z);
+    (exp_z - exp_neg_z) / (exp_z + exp_neg_z)
+}
+
+fn relu<T: RealActivation>(z: T) -> T {
+    if z > T::zero() {
+        z
+    } else {
+        T::zero()
+    }
+}
+
+fn leaky_relu<T: RealActivation>(z: T) -> T {
+    if z > T::zero() {
+        z
+    } else {
+        T::from(0.01).unwrap() * z // You can adjust the slope
+    }
+}
+
+fn elu<T: RealActivation>(z: T, alpha: T) -> T {
+    if z > T::zero() {
+        z
+    } else {
+        alpha * (T::exp(z) - T::one()) // Use T's exp method
+    }
+}
+
+fn selu<T: RealActivation>(z: T, scale: T, alpha: T) -> T {
+    if z > T::zero() {
+        scale * z
+    } else {
+        scale * (alpha * (-z).exp() - alpha) // Use T's exp method
+    }
+}
+
+fn gelu<T: RealActivation>(z: T) -> T {
+    let cdf = T::one() / T::from(2.0).unwrap() * (T::one() + (T::from(2.0 / PI).unwrap() * z).erf());
+    z * cdf
+}
+
+fn softsign<T: RealActivation>(z: T) -> T {
+    z / (T::one() + z.abs())
+}
+
+fn softplus<T: RealActivation>(z: T) -> T {
+    (T::exp(z) + T::one()).ln() // Use T's exp method
+}
+
+// Main activation function
+pub fn activate_output<T>(data: &Vec<Vec<T>>, activation: ActivationType) -> Vec<Vec<T>>
+where
+    T: RealActivation + std::marker::Copy,
+{
+    match activation {
+        ActivationType::SIGMOID => data.iter().map(|row| row.iter().map(|&x| sigmoid(x)).collect()).collect(),
+        ActivationType::TANH => data.iter().map(|row| row.iter().map(|&x| tanh(x)).collect()).collect(),
+        ActivationType::LINEAR => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Linear is identity
+        ActivationType::RELU => data.iter().map(|row| row.iter().map(|&x| relu(x)).collect()).collect(),
+        ActivationType::LEAKYRELU => data.iter().map(|row| row.iter().map(|&x| leaky_relu(x)).collect()).collect(),
+        ActivationType::ELU => data.iter().map(|row| row.iter().map(|&x| elu(x, T::one())).collect()).collect(), // Assuming alpha = 1.0
+        ActivationType::SELU => data.iter().map(|row| row.iter().map(|&x| selu(x, T::one(), T::one())).collect()).collect(), // Assuming scale = 1.0, alpha = 1.0
+        ActivationType::GELU => data.iter().map(|row| row.iter().map(|&x| gelu(x)).collect()).collect(),
+        ActivationType::SOFTSIGN => data.iter().map(|row| row.iter().map(|&x| softsign(x)).collect()).collect(),
+        ActivationType::SOFTPLUS => data.iter().map(|row| row.iter().map(|&x| softplus(x)).collect()).collect(),
+        ActivationType::PROBIT => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Just return the value as is
+        ActivationType::RANDOM => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Just return the value as is
+        ActivationType::SOFTMAX => unimplemented!(), // Handle separately if needed
+    }
+}
+
+
+// Implement activation functions for Complex<f64>
+fn sigmoid_complex(z: Complex<f64>) -> Complex<f64> {
+    let exp_neg_z = (-z).exp();
+    exp_neg_z / (exp_neg_z + Complex::one())
+}
+
+fn tanh_complex(z: Complex<f64>) -> Complex<f64> {
+    let exp_z = z.exp();
+    let exp_neg_z = (-z).exp();
+    (exp_z - exp_neg_z) / (exp_z + exp_neg_z)
+}
+
+fn relu_complex(z: Complex<f64>) -> Complex<f64> {
+    Complex::new(z.re.max(0.0), z.im) // Keep the imaginary part unchanged
+}
+
+fn leaky_relu_complex(z: Complex<f64>, slope: f64) -> Complex<f64> {
+    if z.re > 0.0 {
+        z
+    } else {
+        Complex::new(slope * z.re, z.im)
+    }
+}
+
+fn elu_complex(z: Complex<f64>, alpha: f64) -> Complex<f64> {
+    if z.re > 0.0 {
+        z
+    } else {
+        Complex::new(alpha * (z.exp().re - 1.0), z.im)
+    }
+}
+
+fn selu_complex(z: Complex<f64>, scale: f64, alpha: f64) -> Complex<f64> {
+    if z.re > 0.0 {
+        Complex::new(scale * z.re, z.im)
+    } else {
+        Complex::new(scale * (alpha * (-z).exp().re - alpha), z.im)
+    }
+}
+
+fn gelu_complex(z: Complex<f64>) -> Complex<f64> {
+    let cdf = Complex::new(0.5, 0.0) * erf_complex(Complex::new(1.0, 0.0) + (Complex::new(2.0 / PI, 0.0) * z));
+    z * cdf
+}
+
+fn softsign_complex(z: Complex<f64>) -> Complex<f64> {
+    z / (Complex::new(1.0, 0.0) + z.norm())
+}
+
+fn softplus_complex(z: Complex<f64>) -> Complex<f64> {
+    (z.exp() + Complex::new(1.0, 0.0)).ln()
+}
+
+fn erf_complex(z: Complex<f64>) -> Complex<f64> {
+    // Constants for approximation
+    let sqrt_pi = (PI).sqrt();
+
+    // Calculate the exponential of -z^2
+    let exp_neg_z_squared = (-z * z).exp();
+
+    // Calculate the real part
+    let real_part = (2.0 / sqrt_pi) * (z.re * exp_neg_z_squared.re - z.im * exp_neg_z_squared.im);
+    
+    // Calculate the imaginary part
+    let imaginary_part = (2.0 / sqrt_pi) * (z.im * exp_neg_z_squared.re + z.re * exp_neg_z_squared.im);
+
+    // Combine both parts to return the result
+    Complex::new(real_part, imaginary_part)
+}
+
+// Main activation function for complex numbers
+pub fn activate_output_complex(data: &Vec<Vec<Complex<f64>>>, activation: ActivationType) -> Vec<Vec<Complex<f64>>> {
+    match activation {
+        ActivationType::SIGMOID => data.iter().map(|row| row.iter().map(|&x| sigmoid_complex(x)).collect()).collect(),
+        ActivationType::TANH => data.iter().map(|row| row.iter().map(|&x| tanh_complex(x)).collect()).collect(),
+        ActivationType::LINEAR => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Linear is identity
+        ActivationType::RELU => data.iter().map(|row| row.iter().map(|&x| relu_complex(x)).collect()).collect(),
+        ActivationType::LEAKYRELU => data.iter().map(|row| row.iter().map(|&x| leaky_relu_complex(x, 0.01)).collect()).collect(),
+        ActivationType::ELU => data.iter().map(|row| row.iter().map(|&x| elu_complex(x, 1.0)).collect()).collect(), // Assuming alpha = 1.0
+        ActivationType::SELU => data.iter().map(|row| row.iter().map(|&x| selu_complex(x, 1.0, 1.0)).collect()).collect(), // Assuming scale = 1.0, alpha = 1.0
+        ActivationType::GELU => data.iter().map(|row| row.iter().map(|&x| gelu_complex(x)).collect()).collect(),
+        ActivationType::SOFTSIGN => data.iter().map(|row| row.iter().map(|&x| softsign_complex(x)).collect()).collect(),
+        ActivationType::SOFTPLUS => data.iter().map(|row| row.iter().map(|&x| softplus_complex(x)).collect()).collect(),
+        ActivationType::PROBIT => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Just return the value as is
+        ActivationType::RANDOM => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Just return the value as is
+        ActivationType::SOFTMAX => unimplemented!(), // Handle separately if needed
+    }
 }
 
 pub fn gauss<T, V, G>(v: &T, m: &V, var: &G) -> f64
-    where
-        T: Debug + Clone + Into<f64> + Mul<Output=T> + Add<Output=T> + Div<Output=T>,
-        V: Debug + Clone + Into<f64> + Mul<Output=V> + Add<Output=V> + Div<Output=V>,
-        G: Debug + Clone + Into<f64> + Mul<Output=G> + Add<Output=G> + Div<Output=G>
+where
+    T: Debug + Clone + Into<f64> + Mul<Output=T> + Add<Output=T> + Div<Output=T>,
+    V: Debug + Clone + Into<f64> + Mul<Output=V> + Add<Output=V> + Div<Output=V>,
+    G: Debug + Clone + Into<f64> + Mul<Output=G> + Add<Output=G> + Div<Output=G>
 {
     let value = v.clone().into();
     let mean = m.clone().into();
@@ -52,14 +235,13 @@ pub fn gauss<T, V, G>(v: &T, m: &V, var: &G) -> f64
 
     return (1.0 / (sigma * (2.0 * PI).sqrt()))
         * E.powf(-1.0 * (value - mean).powf(2.0) / (2.0 * var.clone().into()));
-
 }
 
 pub fn guass_d1<T, V, G>(v: &Vec<T>, m: &V, s: &G) -> Vec<f64>
-    where
-        T: Debug + Clone + Into<f64> + Mul<Output=T> + Add<Output=T> + Div<Output=T>,
-        V: Debug + Clone + Into<f64> + Mul<Output=V> + Add<Output=V> + Div<Output=V>,
-        G: Debug + Clone + Into<f64> + Mul<Output=G> + Add<Output=G> + Div<Output=G>
+where
+    T: Debug + Clone + Into<f64> + Mul<Output=T> + Add<Output=T> + Div<Output=T>,
+    V: Debug + Clone + Into<f64> + Mul<Output=V> + Add<Output=V> + Div<Output=V>,
+    G: Debug + Clone + Into<f64> + Mul<Output=G> + Add<Output=G> + Div<Output=G>
 {
     let mean = m.clone().into();
     let sigma = s.clone().into();
@@ -74,10 +256,10 @@ pub fn guass_d1<T, V, G>(v: &Vec<T>, m: &V, s: &G) -> Vec<f64>
 }
 
 pub fn guass_d2<T, V, G>(v: &Vec<Vec<T>>, m: &V, s: &G) -> Vec<Vec<f64>>
-    where
-        T: Debug + Clone + Into<f64> + Mul<Output=T> + Add<Output=T> + Div<Output=T>,
-        V: Debug + Clone + Into<f64> + Mul<Output=V> + Add<Output=V> + Div<Output=V>,
-        G: Debug + Clone + Into<f64> + Mul<Output=G> + Add<Output=G> + Div<Output=G>
+where
+    T: Debug + Clone + Into<f64> + Mul<Output=T> + Add<Output=T> + Div<Output=T>,
+    V: Debug + Clone + Into<f64> + Mul<Output=V> + Add<Output=V> + Div<Output=V>,
+    G: Debug + Clone + Into<f64> + Mul<Output=G> + Add<Output=G> + Div<Output=G>
 {
     let mean = m.clone().into();
     let sigma = s.clone().into();

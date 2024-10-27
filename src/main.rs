@@ -4,10 +4,10 @@ use std::env;
 pub mod uphold_api;
 
 use neural_networks::neural_networks::{
-    network_components::layer::{ActivationType, LayerEnum},
+    network_components::layer::{create_default_layer, ActivationType, LayerEnum, LayerType},
     network_types::{
         feedforward_network_generic::{create, FeedforwardNetwork},
-        network_trait::Network,
+        network_trait::Network, transformer::attention_layer::AttentionLayer,
     },
 };
 #[allow(unused_imports)]
@@ -62,33 +62,12 @@ fn main() {
         ActivationType::TANH,
     );
 
-    // println!("{:?}", &feedforward_network);
+    let layer = create_default_layer::<4, 4>(&ActivationType::LEAKYRELU, LayerType::HiddenLayer);
+    let layer =  AttentionLayer::<4, 4>::create_default_attention_layer(ActivationType::LEAKYRELU, LayerType::HiddenLayer);
 
-    println!(
-        "learning rate {:?}",
-        &feedforward_network.get_learning_rate()
-    );
-    println!(
-        "layers len {:?}",
-        &feedforward_network.get_layers()[0].weights
-    );
-    println!(
-        "minibatch size {:?}",
-        &feedforward_network.get_minibatch_size()
-    );
+    println!("{:?}", layer);
 
-    // Serialize the layer to a JSON string
-    let serialized =
-        serde_json::to_string(&feedforward_network).expect("Failed to serialize layer");
 
-    // // Deserialize the JSON string back into a layer instance
-    let deserialized_network: FeedforwardNetwork<M, N> =
-        serde_json::from_str(&serialized).expect("Failed to deserialize layer");
-
-    println!(
-        "deserialized{:?}",
-        deserialized_network.extract_layers()[0].weights
-    );
 
     // let m1: Vec<f64> = vec![1.0, 2.0, 3.0];
     // let m2: Vec<Vec<f64>> = vec![vec![5.0, 6.0, 7.0], vec![7.0, 8.0, 9.0]];
