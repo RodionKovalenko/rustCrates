@@ -1,7 +1,9 @@
 use tokenizers::Tokenizer;
 use std::{error::Error, path::Path};
 
-pub const TOKENIZER_GTP_NEOXT_PATH: &str = "src/tokenizers/gtp_neox_tokenizer.json";
+// https://huggingface.co/togethercomputer/GPT-NeoXT-Chat-Base-20B/tree/main
+// "vocab_size": 50432 defined in https://huggingface.co/togethercomputer/GPT-NeoXT-Chat-Base-20B/blob/main/config.json
+pub const TOKENIZER_GTP_NEOXT_PATH: &str = "src/neural_networks/tokenizers/gtp_neox_tokenizer.json";
 
 pub fn tokenize(text: &str) -> Result<(Vec<String>, Vec<u32>), Box<dyn Error + Send + Sync>> {
     let path = Path::new(TOKENIZER_GTP_NEOXT_PATH).to_path_buf();
