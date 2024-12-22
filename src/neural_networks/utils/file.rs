@@ -1,7 +1,7 @@
 use crate::neural_networks::network_types::feedforward_network;
 use crate::neural_networks::network_types::feedforward_network_generic::FeedforwardNetwork;
 use serde::Serialize;
-use std::fs::{File, OpenOptions};
+use std::fs::{create_dir_all, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::{fs, io};
@@ -12,6 +12,11 @@ pub fn create_new_file(filename: &str) {
 
 pub fn get_or_create_file(filename: &str, create: bool) -> File {
     let path = Path::new(&filename);
+
+    let dir = path.parent().unwrap();
+    if !dir.exists() {
+        create_dir_all(dir).expect("Failed to create directory");
+    }
 
     if !path.exists() || create {
         create_new_file(filename);

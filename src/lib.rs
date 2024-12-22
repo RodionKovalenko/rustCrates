@@ -7,4 +7,4 @@ pub mod wavelet_transform;
 
 pub mod utils;
 pub mod database;
-
+pub mod stock_predictions;

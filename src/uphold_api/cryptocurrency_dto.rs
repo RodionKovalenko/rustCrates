@@ -1,9 +1,7 @@
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
-#[derive(Serialize)]
-#[derive(Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CryptocurrencyDto {
     pub full_date: DateTime<Local>,
     pub day: u8,
@@ -15,4 +13,10 @@ pub struct CryptocurrencyDto {
     pub pair: String,
     pub ask: f32,
     pub bid: f32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DatePriceDto {
+    pub full_date: NaiveDate,
+    pub price: f64
 }

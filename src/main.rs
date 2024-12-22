@@ -3,6 +3,7 @@ use std::env;
 #[allow(unused_imports)]
 pub mod uphold_api;
 
+use cryptocurrency_api::BTC_EUR;
 use neural_networks::{
     database::crud_service::{get_value, insert_token},
     neural_networks::{
@@ -13,7 +14,7 @@ use neural_networks::{
             transformer::attention_layer::AttentionLayer,
             wavelet_network::decompose_in_wavelet_2d_default,
         }, utils::tokenizer::{detokenize, tokenize},
-    },
+    }, stock_predictions::{monte_carlo_simulation::{simulate, MontaCarloParams}, stock_apis::fetch_and_save_historical_data},
 };
 #[allow(unused_imports)]
 use rand::Rng;
@@ -99,6 +100,13 @@ fn main() {
 
     let decoded_text = detokenize(&ids).unwrap();
     println!("decoded text: {:?}", decoded_text);
+
+
+    let monto_carlo_params = MontaCarloParams{num_simulations: 100, year_to_predict: 3};
+
+    simulate(monto_carlo_params);
+
+    //fetch_and_save_historical_data(BTC_EUR);
 
     // let m1: Vec<f64> = vec![10000002222233334343434.0, 20000000000000000000000000.0, 3013333333333333333333333333333333333333333333.0];
     // let m2: Vec<Vec<f64>> = vec![vec![56666666666666666666666666.0, 64444444444444444444444.0, 74463357654666.0], vec![776444545454545454545.0, 8545454545444.0, 954545454545454545.0]];

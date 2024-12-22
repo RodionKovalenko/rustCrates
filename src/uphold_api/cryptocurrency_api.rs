@@ -16,52 +16,53 @@ error_chain! {
     }
 }
 
-const AAVE_EUR: &str = "AAVE-EUR";
-const ADA_EUR: &str = "ADA-EUR";
-const ATOM_EUR: &str = "ATOM-EUR";
-const BAL_EUR: &str = "BAL-EUR";
-const BTC_EUR: &str = "BTC-EUR";
-const BCH_EUR: &str = "BCH-EUR";
-const BTG_EUR: &str = "BTG-EUR";
-const BTC0_EUR: &str = "BTC0-EUR";
-const COMP_EUR: &str = "COMP-EUR";
-const DASH_EUR: &str = "DASH-EUR";
-const DCR_EUR: &str = "DCR-EUR";
-const EOS_EUR: &str = "EOS-EUR";
-const ENJ_EUR: &str = "ENJ-EUR";
-const ETH_EUR: &str = "ETH-EUR";
-const FIL_EUR: &str = "FIL-EUR";
-const FLOW_EUR: &str = "FLOW-EUR";
-const HBAR_EUR: &str = "HBAR-EUR";
-const HNT_EUR: &str = "HNT-EUR";
-const IOTA_EUR: &str = "IOTA-EUR";
-const LTC_EUR: &str = "LTC-EUR";
-const MKR_EUR: &str = "MKR-EUR";
-const NEO_EUR: &str = "NEO-EUR";
-const NANO_EUR: &str = "NANO-EUR";
-const MATIC_EUR: &str = "MATIC-EUR";
-const REN_EUR: &str = "REN-EUR";
-const SRM_EUR: &str = "SRM-EUR";
-const SOL_EUR: &str = "SOL-EUR";
-const SNX_EUR: &str = "SNX-EUR";
-const XTZ_EUR: &str = "XTZ-EUR";
-const GRT_EUR: &str = "GRT-EUR";
-const THETA_EUR: &str = "THETA-EUR";
-const UMA_EUR: &str = "UMA-EUR";
-const UNI_EUR: &str = "UNI-EUR";
-const VET_EUR: &str = "VET-EUR";
-const WBTC_EUR: &str = "WBTC-EUR";
-const DGB_EUR: &str = "DGB-EUR";
-const DOGE_EUR: &str = "DOGE-EUR";
-const DOT_EUR: &str = "DOT-EUR";
-const LINK_EUR: &str = "LINK-EUR";
-const NEM_EUR: &str = "XEM-EUR";
-const TRX_EUR: &str = "TRX-EUR";
-const XLM_EUR: &str = "XLM-EUR";
-const XCH_EUR: &str = "XCH-EUR";
-const XRP_EUR: &str = "XRP-EUR";
-const ZIL_EUR: &str = "ZIL-EUR";
-const ZRX_EUR: &str = "ZRX-EUR";
+pub const AAVE_EUR: &str = "AAVE-EUR";
+pub const ADA_EUR: &str = "ADA-EUR";
+pub const ATOM_EUR: &str = "ATOM-EUR";
+pub const BAL_EUR: &str = "BAL-EUR";
+pub const BTC_EUR: &str = "BTC-EUR";
+pub const BCH_EUR: &str = "BCH-EUR";
+pub const BTG_EUR: &str = "BTG-EUR";
+pub const BTC0_EUR: &str = "BTC0-EUR";
+pub const COMP_EUR: &str = "COMP-EUR";
+pub const DASH_EUR: &str = "DASH-EUR";
+pub const DCR_EUR: &str = "DCR-EUR";
+pub const EOS_EUR: &str = "EOS-EUR";
+pub const ENJ_EUR: &str = "ENJ-EUR";
+pub const ETH_EUR: &str = "ETH-EUR";
+pub const FIL_EUR: &str = "FIL-EUR";
+pub const FLOW_EUR: &str = "FLOW-EUR";
+pub const HBAR_EUR: &str = "HBAR-EUR";
+pub const HNT_EUR: &str = "HNT-EUR";
+pub const IOTA_EUR: &str = "IOTA-EUR";
+pub const LTC_EUR: &str = "LTC-EUR";
+pub const MKR_EUR: &str = "MKR-EUR";
+pub const NEO_EUR: &str = "NEO-EUR";
+pub const NANO_EUR: &str = "NANO-EUR";
+pub const MATIC_EUR: &str = "MATIC-EUR";
+pub const REN_EUR: &str = "REN-EUR";
+pub const SRM_EUR: &str = "SRM-EUR";
+pub const SOL_EUR: &str = "SOL-EUR";
+pub const SNX_EUR: &str = "SNX-EUR";
+pub const XTZ_EUR: &str = "XTZ-EUR";
+pub const GRT_EUR: &str = "GRT-EUR";
+pub const THETA_EUR: &str = "THETA-EUR";
+pub const UMA_EUR: &str = "UMA-EUR";
+pub const UNI_EUR: &str = "UNI-EUR";
+pub const VET_EUR: &str = "VET-EUR";
+pub const WBTC_EUR: &str = "WBTC-EUR";
+pub const DGB_EUR: &str = "DGB-EUR";
+pub const DOGE_EUR: &str = "DOGE-EUR";
+pub const DOT_EUR: &str = "DOT-EUR";
+pub const LINK_EUR: &str = "LINK-EUR";
+pub const NEM_EUR: &str = "XEM-EUR";
+pub const TRX_EUR: &str = "TRX-EUR";
+pub const XLM_EUR: &str = "XLM-EUR";
+pub const XCH_EUR: &str = "XCH-EUR";
+pub const XRP_EUR: &str = "XRP-EUR";
+pub const ZIL_EUR: &str = "ZIL-EUR";
+pub const ZRX_EUR: &str = "ZRX-EUR";
+
 
 pub const FILE_NAME: &str = "cryptocurrency_rates_history";
 const FILE_FORMAT: &str = "json";
@@ -149,13 +150,13 @@ pub fn get_data() -> Vec<CryptocurrencyDto> {
     let full_file_name = format!("{}.{}", FILE_NAME, FILE_FORMAT);
     let mut file = file_utils::get_or_create_file(&full_file_name, false);
     let mut data = String::new();
-    let mut json: Vec<CryptocurrencyDto> = vec![];
+    let mut crypto_dtos: Vec<CryptocurrencyDto> = vec![];
 
     file.read_to_string(&mut data).expect("Unable to open");
 
     if !data.is_empty() {
-        json = serde_json::from_str(&data).expect("JSON was not well-formatted");
+        crypto_dtos = serde_json::from_str(&data).expect("JSON was not well-formatted");
     }
 
-    json
+    crypto_dtos
 }
