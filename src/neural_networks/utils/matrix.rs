@@ -2,9 +2,8 @@ use num::Complex;
 use num_traits::NumCast;
 use std::fmt::Debug;
 use std::ops::{Add, Mul, Sub};
-
+use std::sync::{Arc, Mutex};
 use crate::utils::{data_converter::convert_to_c_f64_2d, num_trait::ArrayType};
-
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 
@@ -76,9 +75,7 @@ pub fn multiple_complex<T: ArrayType, V: ArrayType>(
     // println!("matrix a : {}, {}", matrix_a_clone.len(), matrix_a_clone[0].len());
     // println!("matrix b : {}, {}", matrix_b_clone.len(), matrix_b_clone[0].len());
 
-    if matrix_a_clone[0].len() != matrix_b_clone.len()
-        && matrix_a_clone.len() != matrix_b_clone.len()
-    {
+    if matrix_a_clone[0].len() != matrix_b_clone.len() && matrix_a_clone.len() != matrix_b_clone.len() {
         panic!("Matrix A does not have the same number of columns as Matrix B rows.");
     }
 
@@ -92,42 +89,54 @@ pub fn multiple_complex<T: ArrayType, V: ArrayType>(
     let mut result_matrix: Vec<Vec<Complex<f64>>> =
         vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
 
-    // println!(
-    //     "result matrix rows {}, columns {}",
-    //     result_matrix.len(),
-    //     result_matrix[0].len()
-    // );
+    // Create a custom thread pool with exactly 10 threads
+    let pool = ThreadPoolBuilder::new().num_threads(16).build().unwrap();
 
-    // println!("matrix a clone: {}, {}", matrix_a_clone.len(), matrix_a_clone[0].len());
-    // println!("matrix b clone: {}, {}", matrix_b_clone.len(), matrix_b_clone[0].len());
-
-    for i in 0..num_rows {
-        for j in 0..num_columns {
-            for k in 0..matrix_b_clone.len() {
-                result_matrix[i][j] += matrix_a_clone[i][k] * matrix_b_clone[k][j];
-            }
-        }
-    }
+    // Run the multiplication within this custom thread pool
+    pool.install(|| {
+        // Parallelize the rows of the result matrix using Rayon
+        result_matrix
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(i, row)| {
+                for j in 0..num_columns {
+                    row[j] = (0..matrix_b_clone.len())
+                        .map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j])
+                        .sum();
+                }
+            });
+    });
 
     result_matrix
 }
 
-pub fn transpose<T: Debug + Clone>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
-    let mut matrix_result = Vec::new();
-    let mut row_vector;
+pub fn transpose<T: Debug + Clone + Sync + Send>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
+    let num_rows = matrix_a.len();
+    let num_cols = matrix_a[0].len();
 
-    for j in 0..matrix_a[0].len() {
-        row_vector = Vec::new();
-        for i in 0..matrix_a.len() {
-            row_vector.push(matrix_a[i][j].clone());
-        }
-        matrix_result.push(row_vector);
-    }
+    // Use Arc and Mutex to wrap the result matrix
+    let matrix_result = Arc::new(Mutex::new(vec![Vec::with_capacity(num_rows); num_cols]));
 
-    // println!("matrix to transpose rows: {}, columns: {}", matrix_a.len(), matrix_a[0].len());
-    // println!("matrix generic transposed rows: {:?}, columns: {}", matrix_b_clone.len(), matrix_b_clone[0].len());
+    // Create a custom thread pool with a specific number of threads (e.g., 10 threads)
+    let pool = ThreadPoolBuilder::new().num_threads(10).build().unwrap();
 
-    matrix_result
+    // Parallelize the column processing using the custom thread pool
+    pool.install(|| {
+        (0..num_cols).into_par_iter().for_each(|j| {
+            let mut row = Vec::with_capacity(num_rows);  // Create a local row for the result matrix
+            for i in 0..num_rows {
+                row.push(matrix_a[i][j].clone());  // Collect the elements for the j-th column
+            }
+            
+            // Lock the Mutex to safely modify matrix_result
+            let mut result_lock = matrix_result.lock().unwrap();
+            result_lock[j] = row; // Assign the row to the transposed matrix
+        });
+    });
+
+    // Return the result after unlocking
+    let result_lock = matrix_result.lock().unwrap();
+    (*result_lock).clone()
 }
 
 pub fn convert_3d_to_2d<T: Clone>(array_3d: &Vec<Vec<Vec<T>>>) -> Vec<Vec<T>> {
