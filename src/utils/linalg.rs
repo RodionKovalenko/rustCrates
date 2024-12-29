@@ -1,6 +1,6 @@
 use rand::Rng;
 
-use crate::neural_networks::utils::matrix::{multiple, transpose};
+use crate::neural_networks::utils::matrix::{multiply, transpose};
 
 pub fn multiply_matrices(a: &Vec<Vec<f64>>, b: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
     let size = a.len();
@@ -103,13 +103,13 @@ pub fn pseudoinverse(matrix: &Vec<Vec<f64>>) -> Option<Vec<Vec<f64>>> {
     let transposed: Vec<Vec<f64>> = transpose(&matrix_c);
 
     // Step 2: Compute the product of matrix^T and matrix
-    let product: Vec<Vec<f64>> = multiple(&transposed, &matrix_c);
+    let product: Vec<Vec<f64>> = multiply(&transposed, &matrix_c);
 
     // Step 3: Compute the inverse of the product matrix (matrix^T * matrix)
     let product_inv: Vec<Vec<f64>> = gaussian_elimination_inverse(&product)?;
 
     // Step 4: Compute the pseudoinverse (matrix^T * inverse(matrix^T * matrix) )
-    let pseudoinverse_matrix: Vec<Vec<f64>> = multiple(&transposed, &product_inv);
+    let pseudoinverse_matrix: Vec<Vec<f64>> = multiply(&transposed, &product_inv);
 
     Some(pseudoinverse_matrix)
 }
@@ -133,7 +133,7 @@ pub fn gaussian_elimination_inverse(matrix: &Vec<Vec<f64>>) -> Option<Vec<Vec<f6
     for i in 0..size {
         // Find the row with the largest value in column i (partial pivoting)
         let mut max_row = i;
-        for j in i + 1..size {
+        for j in (i + 1)..size {
             if augmented[j][i].abs() > augmented[max_row][i].abs() {
                 max_row = j;
             }
@@ -153,10 +153,7 @@ pub fn gaussian_elimination_inverse(matrix: &Vec<Vec<f64>>) -> Option<Vec<Vec<f6
         // Normalize the pivot row
         let pivot = augmented[i][i];
         for j in i..size * 2 {
-            // Ensure `j` is within bounds of augmented matrix
-            if j < size * 2 {
-                augmented[i][j] /= pivot;
-            }
+            augmented[i][j] /= pivot;
         }
 
         // Eliminate the current column from all other rows
@@ -164,10 +161,7 @@ pub fn gaussian_elimination_inverse(matrix: &Vec<Vec<f64>>) -> Option<Vec<Vec<f6
             if j != i {
                 let factor = augmented[j][i];
                 for k in i..size * 2 {
-                    // Ensure `k` is within bounds of augmented matrix
-                    if k < size * 2 {
-                        augmented[j][k] -= factor * augmented[i][k];
-                    }
+                    augmented[j][k] -= factor * augmented[i][k];
                 }
             }
         }
