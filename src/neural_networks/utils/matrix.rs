@@ -3,42 +3,62 @@ use num_traits::NumCast;
 use std::fmt::Debug;
 use std::ops::{Add, Mul, Sub};
 
-use crate::utils::{
-    data_converter::convert_to_c_f64_2d,
-    num_trait::ArrayType,
-};
+use crate::utils::{data_converter::convert_to_c_f64_2d, num_trait::ArrayType};
+
+use rayon::prelude::*;
+use rayon::ThreadPoolBuilder;
 
 pub fn multiply<T, V>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<V>>) -> Vec<Vec<f64>>
 where
     T: Into<f64> + Clone + Debug,
     V: Into<f64> + Clone + Debug,
 {
-    let mut matrix_a_clone = matrix_a.clone();
-    let mut num_rows = matrix_a.len();
-    let num_columns = matrix_b[0].len();
+    // Convert matrix_a and matrix_b to Vec<Vec<f64>> for thread safety
+    let mut matrix_a_clone: Vec<Vec<f64>> = matrix_a
+        .iter()
+        .map(|row| row.iter().map(|x| x.clone().into()).collect())
+        .collect();
 
-    if matrix_a[0].len() != matrix_b.len()
-        && matrix_a.len() != matrix_b.len()
-    {
+    let matrix_b_clone: Vec<Vec<f64>> = matrix_b
+        .iter()
+        .map(|row| row.iter().map(|x| x.clone().into()).collect())
+        .collect();
+
+    let mut num_rows = matrix_a_clone.len();
+    let num_columns = matrix_b_clone[0].len();
+
+    // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
+    if matrix_a[0].len() != matrix_b.len() && matrix_a.len() != matrix_b.len() {
         panic!("Matrix A does not have the same number of columns as Matrix B rows.");
     }
 
-    if matrix_a[0].len() != matrix_b.len() {
-        if matrix_a.len() == matrix_b.len() {
+    if matrix_a_clone[0].len() != matrix_b.len() {
+        if matrix_a_clone.len() == matrix_b.len() {
             matrix_a_clone = transpose(&matrix_a_clone);
             num_rows = matrix_a_clone.len();
         }
     }
 
+    // Initialize result matrix with 0.0 values
     let mut result_matrix: Vec<Vec<f64>> = vec![vec![0.0; num_columns]; num_rows];
 
-    for i in 0..num_rows {
-        for j in 0..num_columns {
-            for k in 0..matrix_b.len() {
-                result_matrix[i][j] += matrix_a_clone[i][k].clone().into() * matrix_b[k][j].clone().into();
-            }
-        }
-    }
+    // Create a custom thread pool with exactly 10 threads
+    let pool = ThreadPoolBuilder::new().num_threads(10).build().unwrap();
+
+    // Run the multiplication within this custom thread pool
+    pool.install(|| {
+        // Parallelize the rows of the result matrix using Rayon
+        result_matrix
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(i, row)| {
+                for j in 0..num_columns {
+                    row[j] = (0..matrix_b_clone.len())
+                        .map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j])
+                        .sum();
+                }
+            });
+    });
 
     result_matrix
 }
