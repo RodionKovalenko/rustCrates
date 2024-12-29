@@ -1,46 +1,41 @@
-use std::ops::{Mul, Sub, Add};
 use num::Complex;
 use num_traits::NumCast;
 use std::fmt::Debug;
+use std::ops::{Add, Mul, Sub};
 
-use crate::utils::{data_converter::{convert_to_c_f64_2d, convert_to_f64_2d}, num_trait::ArrayType};
+use crate::utils::{
+    data_converter::convert_to_c_f64_2d,
+    num_trait::ArrayType,
+};
 
-pub fn multiple<T: ArrayType, V: ArrayType>(matrix_a: &T, matrix_b: &V) -> Vec<Vec<f64>> {
-    let mut matrix_a_clone: Vec<Vec<f64>> = convert_to_f64_2d(matrix_a);
-    let matrix_b_clone: Vec<Vec<f64>> = convert_to_f64_2d(matrix_b);
+pub fn multiply<T, V>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<V>>) -> Vec<Vec<f64>>
+where
+    T: Into<f64> + Clone + Debug,
+    V: Into<f64> + Clone + Debug,
+{
+    let mut matrix_a_clone = matrix_a.clone();
+    let mut num_rows = matrix_a.len();
+    let num_columns = matrix_b[0].len();
 
-    let mut num_rows = matrix_a_clone.len();
-    let num_columns = matrix_b_clone[0].len();
-
-    // println!("matrix a : {}, {}", matrix_a_clone.len(), matrix_a_clone[0].len());
-    // println!("matrix b : {}, {}", matrix_b_clone.len(), matrix_b_clone[0].len());
-
-    if matrix_a_clone[0].len() != matrix_b_clone.len() && matrix_a_clone.len() != matrix_b_clone.len() {
+    if matrix_a[0].len() != matrix_b.len()
+        && matrix_a.len() != matrix_b.len()
+    {
         panic!("Matrix A does not have the same number of columns as Matrix B rows.");
     }
 
-    if matrix_a_clone[0].len() != matrix_b_clone.len() {
-        if matrix_a_clone.len() == matrix_b_clone.len() {
+    if matrix_a[0].len() != matrix_b.len() {
+        if matrix_a.len() == matrix_b.len() {
             matrix_a_clone = transpose(&matrix_a_clone);
             num_rows = matrix_a_clone.len();
-        } 
+        }
     }
 
     let mut result_matrix: Vec<Vec<f64>> = vec![vec![0.0; num_columns]; num_rows];
 
-    // println!(
-    //     "result matrix rows {}, columns {}",
-    //     result_matrix.len(),
-    //     result_matrix[0].len()
-    // );
-
-    // println!("matrix a clone: {}, {}", matrix_a_clone.len(), matrix_a_clone[0].len());
-    // println!("matrix b clone: {}, {}", matrix_b_clone.len(), matrix_b_clone[0].len());
-
     for i in 0..num_rows {
         for j in 0..num_columns {
-            for k in 0..matrix_b_clone.len() {
-                result_matrix[i][j] += matrix_a_clone[i][k] * matrix_b_clone[k][j];
+            for k in 0..matrix_b.len() {
+                result_matrix[i][j] += matrix_a_clone[i][k].clone().into() * matrix_b[k][j].clone().into();
             }
         }
     }
@@ -48,7 +43,10 @@ pub fn multiple<T: ArrayType, V: ArrayType>(matrix_a: &T, matrix_b: &V) -> Vec<V
     result_matrix
 }
 
-pub fn multiple_complex<T: ArrayType, V: ArrayType>(matrix_a: &T, matrix_b: &V) -> Vec<Vec<Complex<f64>>> {
+pub fn multiple_complex<T: ArrayType, V: ArrayType>(
+    matrix_a: &T,
+    matrix_b: &V,
+) -> Vec<Vec<Complex<f64>>> {
     let mut matrix_a_clone: Vec<Vec<Complex<f64>>> = convert_to_c_f64_2d(matrix_a);
     let matrix_b_clone: Vec<Vec<Complex<f64>>> = convert_to_c_f64_2d(matrix_b);
 
@@ -58,7 +56,9 @@ pub fn multiple_complex<T: ArrayType, V: ArrayType>(matrix_a: &T, matrix_b: &V) 
     // println!("matrix a : {}, {}", matrix_a_clone.len(), matrix_a_clone[0].len());
     // println!("matrix b : {}, {}", matrix_b_clone.len(), matrix_b_clone[0].len());
 
-    if matrix_a_clone[0].len() != matrix_b_clone.len() && matrix_a_clone.len() != matrix_b_clone.len() {
+    if matrix_a_clone[0].len() != matrix_b_clone.len()
+        && matrix_a_clone.len() != matrix_b_clone.len()
+    {
         panic!("Matrix A does not have the same number of columns as Matrix B rows.");
     }
 
@@ -66,10 +66,11 @@ pub fn multiple_complex<T: ArrayType, V: ArrayType>(matrix_a: &T, matrix_b: &V) 
         if matrix_a_clone.len() == matrix_b_clone.len() {
             matrix_a_clone = transpose(&matrix_a_clone);
             num_rows = matrix_a_clone.len();
-        } 
+        }
     }
 
-    let mut result_matrix: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
+    let mut result_matrix: Vec<Vec<Complex<f64>>> =
+        vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
 
     // println!(
     //     "result matrix rows {}, columns {}",
@@ -90,7 +91,6 @@ pub fn multiple_complex<T: ArrayType, V: ArrayType>(matrix_a: &T, matrix_b: &V) 
 
     result_matrix
 }
-
 
 pub fn transpose<T: Debug + Clone>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
     let mut matrix_result = Vec::new();
@@ -283,9 +283,9 @@ pub fn add<T: Debug + Clone + Add<Output = T>>(
     matrix_result
 }
 
-
 pub fn multiply_scalar_with_matrix(scalar: f64, matrix: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
-    matrix.iter()
+    matrix
+        .iter()
         .map(|row| row.iter().map(|&x| scalar * x).collect())
         .collect()
 }
