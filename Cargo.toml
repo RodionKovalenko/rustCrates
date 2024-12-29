@@ -40,6 +40,9 @@ yahoo_finance_api = "2.4.0"
 time = "0.3.37"
 csv = "1.1"
 nalgebra = "0.33.2"
+ndarray-rand = "0.15"
+ndarray-linalg = "0.16" 
+
 
 [profile.release]
 opt-level = "z" # Optimize for size

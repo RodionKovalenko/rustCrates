@@ -104,7 +104,7 @@ impl<const M: usize, const N: usize> Default for Layer<M, N> {
 
 // Layer initialization function with Box<dyn BaseLayer>
 pub fn initialize_default_layers<const M: usize, const N: usize>(
-    num_outputs: &usize,
+    _num_outputs: &usize,
     num_h_layers: &usize,
     activation: &ActivationType,
 ) -> Vec<LayerEnum<M, N>> {
@@ -155,7 +155,7 @@ impl<const M: usize, const N: usize> BaseLayer<M, N> for Layer<M, N> {
         self.activated_output.clone()
     }
 
-    fn backward(&mut self, gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    fn backward(&mut self, _gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
         self.gradient.clone()
     }
 }
@@ -169,13 +169,13 @@ pub struct RMSNormLayer<const M: usize, const N: usize> {
 
 // Implement BaseLayer for RMSNormLayer
 impl<const M: usize, const N: usize> BaseLayer<M, N> for RMSNormLayer<M, N> {
-    fn forward(&mut self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    fn forward(&mut self, _input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
         // Implement forward logic for RMSNorm
 
         self.base_layer.activated_output.clone()
     }
 
-    fn backward(&mut self, gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    fn backward(&mut self, _gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
         // Implement backward logic for RMSNorm
 
         self.base_layer.gradient.clone()

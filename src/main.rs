@@ -1,27 +1,12 @@
 use std::env;
 
-#[allow(unused_imports)]
-pub mod uphold_api;
-
-use cryptocurrency_api::BTC_EUR;
-use neural_networks::{
-    database::crud_service::{get_value, insert_token},
-    neural_networks::{
-        network_components::layer::{create_default_layer, ActivationType, LayerEnum, LayerType},
-        network_types::{
-            feedforward_network_generic::{create, FeedforwardNetwork},
-            network_trait::Network,
-            transformer::attention_layer::AttentionLayer,
-            wavelet_network::decompose_in_wavelet_2d_default,
-        }, utils::tokenizer::{detokenize, tokenize},
-    }, stock_predictions::{monte_carlo_simulation::{simulate, MontaCarloParams}, stock_apis::fetch_and_save_historical_data}, utils::linalg::test_inverse_matrix_lib,
+use neural_networks::neural_networks::{
+    network_components::layer::{ActivationType, LayerType},
+    network_types::{
+        feedforward_network_generic::{create, FeedforwardNetwork},
+        transformer::attention_layer::AttentionLayer,
+    },
 };
-#[allow(unused_imports)]
-use rand::Rng;
-#[allow(unused_imports)]
-use std::time::Instant;
-#[allow(unused_imports)]
-use uphold_api::*;
 
 pub enum ARGUMENTS {
     UPHOLD,
@@ -58,6 +43,7 @@ fn main() {
 
     const M: usize = 5;
     const N: usize = 5;
+
     let feedforward_network: FeedforwardNetwork<M, N> = create::<M, N>(
         number_inputs,
         number_outputs,
@@ -68,56 +54,11 @@ fn main() {
         ActivationType::TANH,
     );
 
-    let layer = create_default_layer::<4, 4>(&ActivationType::LEAKYRELU, LayerType::HiddenLayer);
     let layer = AttentionLayer::<4, 4>::create_default_attention_layer(
         ActivationType::LEAKYRELU,
         LayerType::HiddenLayer,
     );
 
-    //println!("{:?}", layer);
-    // let _ = insert_token("A");
-    // let value = get_value("A").unwrap();
-    // println!("value is {}", &value);
-
-    // let _ = insert_token("B");
-    // let value = get_value("B").unwrap();
-    // println!("value is {}", &value);
-
-
-    // let _ = insert_token("C");
-    // let value = get_value("C").unwrap();
-    // println!("value is {}", &value);
-
-    // let _ = insert_token("D");
-    // let value = get_value("D").unwrap();
-    // println!("value is {}", &value);
-
-
-    // let (tokens, ids) = tokenize("Hallo, wie geht es dir? Как твои дела? В мене справи добре").unwrap();
-
-    // println!("tokens: {:?}", &tokens.len());
-    // println!("ids: {:?}", &ids.len());
-
-    // let decoded_text = detokenize(&ids).unwrap();
-    // println!("decoded text: {:?}", decoded_text);
-
-
-    let monto_carlo_params = MontaCarloParams{num_simulations: 15, year_to_predict: 3};
-
-    simulate(monto_carlo_params);
-
-    test_inverse_matrix_lib();
-
-    //fetch_and_save_historical_data(BTC_EUR);
-
-    // let m1: Vec<f64> = vec![10000002222233334343434.0, 20000000000000000000000000.0, 3013333333333333333333333333333333333333333333.0];
-    // let m2: Vec<Vec<f64>> = vec![vec![56666666666666666666666666.0, 64444444444444444444444.0, 74463357654666.0], vec![776444545454545454545.0, 8545454545444.0, 954545454545454545.0]];
-
-    // let result = decompose_in_wavelet_2d_default(&m1);
-
-    // println!("1 d input: {:?}", result);
-
-    // let result = decompose_in_wavelet_2d_default(&m2);
-
-    // println!("2d input {:?}", result);
+    println!("ffn: {:?}", feedforward_network.layers.len());
+    println!("layer: {:?}", layer.layer_type);
 }

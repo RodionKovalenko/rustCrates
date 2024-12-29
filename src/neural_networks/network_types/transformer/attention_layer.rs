@@ -96,13 +96,13 @@ impl<const M: usize, const N: usize> AttentionLayer<M, N> {
 
 // Implement BaseLayer for Layer struct
 impl<const M: usize, const N: usize> BaseLayer<M, N> for AttentionLayer<M, N> {
-    fn forward(&mut self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    fn forward(&mut self, _input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
 
         self.activated_output.clone()
         // Implement forward pass logic for the layer
     }
 
-    fn backward(&mut self, gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    fn backward(&mut self, _gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
         // Implement backward pass logic for the layer
 
         self.gradient.clone()

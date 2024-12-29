@@ -1,4 +1,4 @@
-use crate::neural_networks::utils::matrix::{create_2d, create_generic, create_generic_one_dim, transpose};
+use crate::neural_networks::utils::matrix::{create_2d, create_generic, transpose};
 
 pub fn standardize(matrix: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
     let mut standardized_mat = create_generic(matrix.len());
