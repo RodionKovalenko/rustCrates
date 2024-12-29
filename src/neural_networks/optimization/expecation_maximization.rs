@@ -1,5 +1,5 @@
 use crate::neural_networks::utils::activation::gauss;
-use crate::utils::linalg::{gaussian_elimination_inverse, get_determinant};
+use crate::utils::linalg::{get_determinant, pseudoinverse};
 use std::f64::consts::PI;
 use std::fmt::Debug;
 use std::ops::{Add, Div, Mul, Sub};
@@ -193,8 +193,7 @@ where
             let sigma_i = &sigma[i]; // covariance for the i-th cluster
 
             for j in 0..n {
-                let data_point = &data[j];
-                let likelihood = compute_likelihood(data_point, mu_i, sigma_i); // Implement this
+                let likelihood = compute_likelihood(&data[j], mu_i, sigma_i); 
                 resp[j][i] = pi[i] * likelihood;
             }
         }
@@ -218,6 +217,7 @@ where
                     mu_new[m] += weight * data_f64[j][m];
                 }
             }
+
             n_k[i] = resp.iter().map(|r| r[i]).sum();
             for m in 0..d {
                 mu_new[m] /= n_k[i];
@@ -270,21 +270,24 @@ where
 
         log_likelihoods.push(log_likelihood);
 
+        let iter_u = iteration as usize;
+
         // Check for convergence (could break here based on tolerance)
-        if iteration > 0
-            && (log_likelihoods[iteration as usize] - log_likelihoods[(iteration - 1) as usize])
-                .abs()
-                < 1e-6
-        {
-            println!("Converged at iteration: {}", iteration);
-            break;
+        if iteration > 0 {
+            let log_likeli_diff: f64 =
+                (log_likelihoods[iter_u] - log_likelihoods[iter_u - 1]).abs();
+
+            println!("log_likelihoods diff: {}", &log_likeli_diff);
+            if log_likeli_diff < 1e-6 {
+                println!("Converged at iteration: {}", iteration);
+                break;
+            }
         }
     }
 
     // Return the final parameters
     (pi, mu, sigma)
 }
-
 
 fn compute_likelihood<T, V, G>(data: &Vec<T>, mu: &Vec<V>, sigma: &Vec<Vec<G>>) -> f64
 where
@@ -311,9 +314,13 @@ where
         .map(|(data_val, mu_val)| data_val - mu_val)
         .collect();
 
-    // Calculate the covariance matrix inverse and determinant
-    let sigma_inv = gaussian_elimination_inverse(&sigma_m).unwrap(); // Ensure robust error handling
-    let sigma_det = get_determinant(&sigma_m); // Ensure this handles edge cases (singular matrices)
+    // Calculate the covariance matrix inverse and determinantz
+    let sigma_inv = pseudoinverse(&sigma_m).unwrap(); // Ensure robust error handling
+    let mut sigma_det = get_determinant(&sigma_m); // Ensure this handles edge cases (singular matrices)
+
+    if sigma_det == 0.0 {
+        sigma_det = 0.001;
+    }
 
     // Compute the quadratic form: (x - mu)^T * Sigma_inv * (x - mu)
     // Step 1: (x - mu) * Sigma_inv, result is a vector
