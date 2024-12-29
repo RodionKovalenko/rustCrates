@@ -2,14 +2,14 @@
 mod tests {
     use num::Complex;
 
-    use crate::neural_networks::utils::matrix::{multiple, multiple_complex};
+    use crate::neural_networks::utils::matrix::{multiply, multiple_complex};
 
     #[test]
     fn test_multiply_arrays() {
         let m1: Vec<Vec<f64>> = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
         let m2: Vec<Vec<f64>> = vec![vec![5.0, 6.0, 7.0], vec![7.0, 8.0, 9.0]];
 
-        let product = multiple(&m1, &m2);
+        let product = multiply(&m1, &m2);
 
         assert_eq!(
             product,
@@ -19,7 +19,7 @@ mod tests {
         let m1: Vec<Vec<i32>> = vec![vec![1, 2, 3], vec![4, 5, 6]];
         let m2: Vec<Vec<i32>> = vec![vec![5, 6, 7], vec![7, 8, 9]];
 
-        let product = multiple(&m1, &m2);
+        let product = multiply(&m1, &m2);
 
         assert_eq!(
             product,
@@ -29,7 +29,7 @@ mod tests {
         let m1: Vec<Vec<i32>> = vec![vec![1, 4], vec![2, 5], vec![3, 6]];
         let m2: Vec<Vec<i32>> = vec![vec![5, 6, 7], vec![7, 8, 9]];
 
-        let product = multiple(&m1, &m2);
+        let product = multiply(&m1, &m2);
 
         assert_eq!(
             product,
@@ -39,7 +39,7 @@ mod tests {
         let m1: Vec<Vec<f32>> = vec![vec![1.0, 4.0], vec![2.0, 5.0], vec![3.0, 6.0]];
         let m2: Vec<Vec<i32>> = vec![vec![5, 6, 7], vec![7, 8, 9]];
 
-        let product = multiple(&m1, &m2);
+        let product = multiply(&m1, &m2);
 
         assert_eq!(
             product,
@@ -50,7 +50,7 @@ mod tests {
         let m1: Vec<Vec<i32>> = vec![vec![1, 2, 3], vec![4, 5, 6], vec![4, 5, 6], vec![4, 5, 6]];
         let m2: Vec<Vec<i32>> = vec![vec![5, 6], vec![7, 8], vec![9, 5], vec![9, 5]];
 
-        let product = multiple(&m1, &m2);
+        let product = multiply(&m1, &m2);
 
         assert_eq!(product, [[105.0, 78.0], [135.0, 102.0], [165.0, 126.0]]);
 
