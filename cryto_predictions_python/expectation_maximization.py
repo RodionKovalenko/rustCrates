@@ -2,11 +2,10 @@ import numpy as np
 from scipy.stats import multivariate_normal
 
 # Generate synthetic 2D data
-np.random.seed(42)
-data = np.vstack([
-    np.random.multivariate_normal([2, 3], [[1, 0.5], [0.5, 1]], 100),
-    np.random.multivariate_normal([7, 8], [[1, -0.5], [-0.5, 1]], 100),
-])
+data = np.array([[0.67757034, 3.2006002],
+            [2.31985125, 3.08571429],
+            [0.24864422, 2.01607895],
+            [2.13529672, 3.67785677]])
 
 # Number of clusters
 k = 2
@@ -14,8 +13,11 @@ k = 2
 # Initialize parameters
 n, d = data.shape
 pi = np.ones(k) / k  # Equal mixing coefficients
-mu = np.array([[0, 0], [10, 10]])  # Initial means
-sigma = np.array([np.eye(d)] * k)  # Initial covariances
+mu = np.array([[0.5, 2.5], [2.0, 3.5]])  # Initial means
+sigma = np.array([
+    [[1.0, 0.5], [0.5, 1.0]],
+    [[1.5, 0.5], [0.5, 1.5]],
+    ])  # Initial covariances
 
 print("pi", pi);
 print("mu", mu);

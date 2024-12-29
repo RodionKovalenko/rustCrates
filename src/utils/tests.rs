@@ -2,7 +2,8 @@
 mod tests {
     use crate::utils::array::convolve;
     use crate::utils::convolution_modes::ConvolutionMode;
-    use crate::utils::linalg::get_determinant;
+    use crate::utils::linalg::{gaussian_elimination_inverse, generate_random_matrix, get_determinant, is_identity_matrix, multiply_matrices};
+    use std::time::Instant;
 
     #[test]
     fn test_convolve_mode_full() {
@@ -78,4 +79,42 @@ mod tests {
 
         assert_eq!(rounded_determinant, -254.0);
     }
+
+    #[test]
+    fn test_inverse_matrix_lib() {
+        let start = Instant::now(); // Record the start time
+    
+        let matrix = generate_random_matrix(5);
+        match gaussian_elimination_inverse(&matrix) {
+            Some(inverse) => {
+                println!("Inverse Matrix:");
+                for row in &inverse {
+                    println!("{:?}", row);
+                }
+    
+                // Test if the product of the original matrix and its inverse is close to identity
+                let product = multiply_matrices(&matrix, &inverse);
+                println!("Matrix * Inverse:");
+                for row in &product {
+                    println!("{:?}", row);
+                }
+    
+                // Check if the result is close to an identity matrix
+                let tolerance = 1e-9;
+                let is_identity = is_identity_matrix(&product, tolerance);
+    
+                if is_identity {
+                    println!("The matrix is successfully inverted.");
+                }
+                
+                // Ensure the matrix is an identity matrix
+                assert_eq!(is_identity, true);
+            }
+            None => println!("Matrix is singular and cannot be inverted."),
+        }
+    
+        let duration = start.elapsed(); // Get the elapsed time
+        println!("Time elapsed in your_method: {:?}", duration);
+    }
+    
 }

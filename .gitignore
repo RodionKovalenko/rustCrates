@@ -12,3 +12,4 @@
 /tests/*.jpg
 /cryptocurrency_rates_history.json
 /datasets/BTC-EUR_historical_data.json
+/venv/*
