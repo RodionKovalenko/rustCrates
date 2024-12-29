@@ -38,7 +38,7 @@ pub fn get_files_in_directory(path: &str) -> io::Result<Vec<PathBuf>> {
 }
 
 pub fn serialize<const M: usize, const N: usize>(feed_net: &FeedforwardNetwork<M, N>) {
-    let mut network = feed_net.clone();
+    let network = feed_net.clone();
     let mut file = get_or_create_file(&feedforward_network::FILE_NAME, true);
 
     let data_json = String::from(format!("{}", serde_json::to_string(&network).unwrap()));

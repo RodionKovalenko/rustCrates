@@ -7,7 +7,6 @@ use serde_json::to_writer;
 use time::{Date, Month, OffsetDateTime, Time};
 use yahoo_finance_api::YahooConnector;
 
-
 pub const DATASET_DIR: &str = "datasets";
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -94,13 +93,12 @@ pub async fn fetch_and_save_historical_data(stock_name: &str) {
 pub fn get_data_from_yahoo(filename: &str) -> Vec<CryptocurrencyDto> {
     let mut file = file_utils::get_or_create_file(&filename, false);
     let mut data = String::new();
-    let mut data_quotes: Vec<Quote> = vec![];
     let mut data_crypto_dtos: Vec<CryptocurrencyDto> = vec![];
 
     file.read_to_string(&mut data).expect("Unable to open");
 
     if !data.is_empty() {
-        data_quotes = serde_json::from_str(&data).expect("JSON was not well-formatted");
+        let data_quotes: Vec<Quote> = serde_json::from_str(&data).expect("JSON was not well-formatted");
 
         for quote_dto in data_quotes.iter() {
             // Convert &Quote to CryptocurrencyDto using .into()

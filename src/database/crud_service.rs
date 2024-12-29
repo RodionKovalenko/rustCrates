@@ -16,7 +16,7 @@ pub fn insert_token(token: &str) -> Result<(), sled::Error> {
         let iter = db.iter().rev(); // Reverse iteration
 
         for entry in iter {
-            let (k, val) = entry?;
+            let (_k, val) = entry?;
             v = convert_bytes_to_i64(val).unwrap();
             v += 1;
             break; // Only process the first (most recent) entry

@@ -75,7 +75,7 @@ pub fn interpolate_missing_dates(data: Vec<CryptocurrencyDto>) -> Vec<DatePriceD
     let min_date = *data_map.keys().min().unwrap();
     let max_date = *data_map.keys().max().unwrap();
 
-    let mut previous_date = min_date;
+    let previous_date = min_date;
     let mut previous_price = data_map[&previous_date];
 
     // Step 3: Loop over all dates in the range from min_date to max_date
@@ -87,7 +87,6 @@ pub fn interpolate_missing_dates(data: Vec<CryptocurrencyDto>) -> Vec<DatePriceD
                 full_date: current_date,
                 price,
             });
-            previous_date = current_date;
             previous_price = price;
         } else {
             // Interpolate the missing value (linear interpolation)

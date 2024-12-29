@@ -1,4 +1,4 @@
-use std::ops::{Mul, AddAssign, Sub, Add};
+use std::ops::{Mul, Sub, Add};
 use num::Complex;
 use num_traits::NumCast;
 use std::fmt::Debug;
@@ -281,4 +281,11 @@ pub fn add<T: Debug + Clone + Add<Output = T>>(
     // println!("created new matrix is {:?}", matrix_result);
 
     matrix_result
+}
+
+
+pub fn multiply_scalar_with_matrix(scalar: f64, matrix: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
+    matrix.iter()
+        .map(|row| row.iter().map(|&x| scalar * x).collect())
+        .collect()
 }
