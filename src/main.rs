@@ -14,7 +14,7 @@ use neural_networks::{
             transformer::attention_layer::AttentionLayer,
             wavelet_network::decompose_in_wavelet_2d_default,
         }, utils::tokenizer::{detokenize, tokenize},
-    }, stock_predictions::{monte_carlo_simulation::{simulate, MontaCarloParams}, stock_apis::fetch_and_save_historical_data},
+    }, stock_predictions::{monte_carlo_simulation::{simulate, MontaCarloParams}, stock_apis::fetch_and_save_historical_data}, utils::linalg::test_inverse_matrix_lib,
 };
 #[allow(unused_imports)]
 use rand::Rng;
@@ -75,36 +75,38 @@ fn main() {
     );
 
     //println!("{:?}", layer);
-    let _ = insert_token("A");
-    let value = get_value("A").unwrap();
-    println!("value is {}", &value);
+    // let _ = insert_token("A");
+    // let value = get_value("A").unwrap();
+    // println!("value is {}", &value);
 
-    let _ = insert_token("B");
-    let value = get_value("B").unwrap();
-    println!("value is {}", &value);
-
-
-    let _ = insert_token("C");
-    let value = get_value("C").unwrap();
-    println!("value is {}", &value);
-
-    let _ = insert_token("D");
-    let value = get_value("D").unwrap();
-    println!("value is {}", &value);
+    // let _ = insert_token("B");
+    // let value = get_value("B").unwrap();
+    // println!("value is {}", &value);
 
 
-    let (tokens, ids) = tokenize("Hallo, wie geht es dir? Как твои дела? В мене справи добре").unwrap();
+    // let _ = insert_token("C");
+    // let value = get_value("C").unwrap();
+    // println!("value is {}", &value);
 
-    println!("tokens: {:?}", &tokens.len());
-    println!("ids: {:?}", &ids.len());
-
-    let decoded_text = detokenize(&ids).unwrap();
-    println!("decoded text: {:?}", decoded_text);
+    // let _ = insert_token("D");
+    // let value = get_value("D").unwrap();
+    // println!("value is {}", &value);
 
 
-    let monto_carlo_params = MontaCarloParams{num_simulations: 100, year_to_predict: 3};
+    // let (tokens, ids) = tokenize("Hallo, wie geht es dir? Как твои дела? В мене справи добре").unwrap();
+
+    // println!("tokens: {:?}", &tokens.len());
+    // println!("ids: {:?}", &ids.len());
+
+    // let decoded_text = detokenize(&ids).unwrap();
+    // println!("decoded text: {:?}", decoded_text);
+
+
+    let monto_carlo_params = MontaCarloParams{num_simulations: 15, year_to_predict: 3};
 
     simulate(monto_carlo_params);
+
+    test_inverse_matrix_lib();
 
     //fetch_and_save_historical_data(BTC_EUR);
 

@@ -5,3 +5,4 @@ pub mod num_trait;
 pub mod data_converter;
 pub mod array_complex;
 pub mod array_operations;
+pub mod linalg;
