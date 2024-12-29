@@ -1,20 +1,31 @@
 #[cfg(test)]
 mod tests {
-    use crate::neural_networks::{optimization::expecation_maximization::{exp_max_1d, exp_max_2d}, utils::matrix::transpose};
+    use crate::neural_networks::optimization::expecation_maximization::{exp_max_1d, exp_max_2d};
 
     #[test]
     fn test_exp_max_2d() {
+        // Data: Each row is a sample with 4 features
         let data: Vec<Vec<f64>> = vec![
             vec![0.67757034, 3.2006002],
             vec![2.31985125, 3.08571429],
             vec![0.24864422, 2.01607895],
-            vec![2.13529672, 3.67785677],     
+            vec![2.13529672, 3.67785677],
         ];
-        let mu: Vec<Vec<f64>> = vec![vec![ 0.5 , 2.5], vec![2.0, 3.5]];
-        let var: Vec<Vec<Vec<f64>>> = vec![vec![vec![1.0, 0.5], vec![0.5, 1.0]], vec![vec![1.5, 0.5], vec![0.5, 1.5]]];
-        let n_iter = 100;
 
-         let (p, m_k, s_k) = exp_max_2d(&data, &mu, &var, &n_iter);
+        // Means: Each cluster has a mean vector with 4 elements (matches data dimensions)
+        let mu: Vec<Vec<f64>> = vec![
+            vec![0.5, 2.5], // First cluster mean
+            vec![2.0, 3.5], // Second cluster mean
+        ];
+
+        // Initial covariances (sigma) represented as a Vec<Vec<Vec<f64>>>
+        let var: Vec<Vec<Vec<f64>>> = vec![
+            vec![vec![1.0, 0.5], vec![0.5, 1.0]], // Covariance for the first cluster
+            vec![vec![1.5, 0.5], vec![0.5, 1.5]], // Covariance for the second cluster
+        ];
+        let n_iter = 10;
+
+        let (p, m_k, s_k) = exp_max_2d(&data, &mu, &var, &n_iter);
 
         println!("p {:?}", &p);
         println!("m_k {:?}", &m_k);

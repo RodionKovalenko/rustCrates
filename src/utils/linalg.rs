@@ -1,5 +1,6 @@
-
 use rand::Rng;
+
+use crate::neural_networks::utils::matrix::{multiple, transpose};
 
 pub fn multiply_matrices(a: &Vec<Vec<f64>>, b: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
     let size = a.len();
@@ -89,6 +90,30 @@ fn lu_decomposition(matrix: &Vec<Vec<f64>>) -> Option<(Vec<Vec<f64>>, Vec<Vec<f6
     Some((lower, upper, parity))
 }
 
+pub fn pseudoinverse(matrix: &Vec<Vec<f64>>) -> Option<Vec<Vec<f64>>> {
+    let mut matrix_c = matrix.clone();
+
+    for i in 0..matrix.len() {
+        for j in 0..matrix[0].len() {
+            matrix_c[i][j] += 0.001; // Add small value to the diagonal elements
+        }
+    }
+
+    // Step 1: Compute the transpose of the matrix
+    let transposed: Vec<Vec<f64>> = transpose(&matrix_c);
+
+    // Step 2: Compute the product of matrix^T and matrix
+    let product: Vec<Vec<f64>> = multiple(&transposed, &matrix_c);
+
+    // Step 3: Compute the inverse of the product matrix (matrix^T * matrix)
+    let product_inv: Vec<Vec<f64>> = gaussian_elimination_inverse(&product)?;
+
+    // Step 4: Compute the pseudoinverse (matrix^T * inverse(matrix^T * matrix) )
+    let pseudoinverse_matrix: Vec<Vec<f64>> = multiple(&transposed, &product_inv);
+
+    Some(pseudoinverse_matrix)
+}
+
 pub fn gaussian_elimination_inverse(matrix: &Vec<Vec<f64>>) -> Option<Vec<Vec<f64>>> {
     let size = matrix.len();
 
@@ -120,8 +145,8 @@ pub fn gaussian_elimination_inverse(matrix: &Vec<Vec<f64>>) -> Option<Vec<Vec<f6
         }
 
         // Ensure pivot is not too small (avoid division by zero or numerical instability)
-        if augmented[i][i].abs() < 1e-12 {
-            println!("matrix is singular, no inverse");
+        if augmented[i][i].abs() < 1e-16 {
+            println!("matrix is singular, no inverse of matrix: {:?}", &augmented);
             return None; // Matrix is singular, no inverse
         }
 
@@ -189,7 +214,6 @@ pub fn generate_random_matrix(size: usize) -> Vec<Vec<f64>> {
             matrix[i][j] = rng.gen_range(-10.0..10.0); // Random values between -10 and 10
         }
     }
-    
+
     matrix
 }
-
