@@ -130,7 +130,7 @@ pub fn simulate(monte_carlo_params: MontaCarloParams) {
     };
 
     let years_to_predict = monte_carlo_params.year_to_predict as usize; // Simulating for n years
-    let n: usize = (years_to_predict * 365 + historical_prices.len()) as usize; // 252 trading days per year or 365 days for cryptos
+    let n: usize = (years_to_predict * 365) as usize; // 252 trading days per year or 365 days for cryptos
     let m = monte_carlo_params.num_simulations as usize; // Number of simulations (Monte Carlo paths)
     let dt = 1.0 / 365.0 as f64; // Daily time increment
 
