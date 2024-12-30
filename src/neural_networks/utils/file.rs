@@ -1,5 +1,5 @@
-use crate::neural_networks::network_types::feedforward_network;
-use crate::neural_networks::network_types::feedforward_network_generic::FeedforwardNetwork;
+use crate::neural_networks::network_types::neural_network_generic::FILE_NAME;
+use crate::neural_networks::network_types::neural_network_generic::NeuralNetwork;
 use serde::Serialize;
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::io::{Read, Write};
@@ -37,9 +37,9 @@ pub fn get_files_in_directory(path: &str) -> io::Result<Vec<PathBuf>> {
     Ok(all)
 }
 
-pub fn serialize<const M: usize, const N: usize>(feed_net: &FeedforwardNetwork<M, N>) {
+pub fn serialize(feed_net: &NeuralNetwork) {
     let network = feed_net.clone();
-    let mut file = get_or_create_file(&feedforward_network::FILE_NAME, true);
+    let mut file = get_or_create_file(&FILE_NAME, true);
 
     let data_json = String::from(format!("{}", serde_json::to_string(&network).unwrap()));
 
@@ -61,10 +61,10 @@ pub fn serialize_generic<T: Sized + Serialize>(array: &T, filename: &str) {
     }
 }
 
-pub fn deserialize<const M: usize, const N: usize>(network: FeedforwardNetwork<M, N>) -> FeedforwardNetwork<M, N> {
-    let mut file = get_or_create_file(&feedforward_network::FILE_NAME, false);
+pub fn deserialize(network: NeuralNetwork) -> NeuralNetwork {
+    let mut file = get_or_create_file(&FILE_NAME, false);
     let mut data = String::new();
-    let mut save_network: FeedforwardNetwork<M, N> = network;
+    let mut save_network: NeuralNetwork = network;
 
     file.read_to_string(&mut data).expect("Unable to open");
 

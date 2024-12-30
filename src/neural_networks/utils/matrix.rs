@@ -42,7 +42,7 @@ where
     let mut result_matrix: Vec<Vec<f64>> = vec![vec![0.0; num_columns]; num_rows];
 
     // Create a custom thread pool with exactly 10 threads
-    let pool = ThreadPoolBuilder::new().num_threads(10).build().unwrap();
+    let pool = ThreadPoolBuilder::new().num_threads(8).build().unwrap();
 
     // Run the multiplication within this custom thread pool
     pool.install(|| {
@@ -62,7 +62,7 @@ where
     result_matrix
 }
 
-pub fn multiple_complex<T: ArrayType, V: ArrayType>(
+pub fn multiply_complex<T: ArrayType, V: ArrayType>(
     matrix_a: &T,
     matrix_b: &V,
 ) -> Vec<Vec<Complex<f64>>> {
@@ -71,9 +71,6 @@ pub fn multiple_complex<T: ArrayType, V: ArrayType>(
 
     let mut num_rows = matrix_a_clone.len();
     let num_columns = matrix_b_clone[0].len();
-
-    // println!("matrix a : {}, {}", matrix_a_clone.len(), matrix_a_clone[0].len());
-    // println!("matrix b : {}, {}", matrix_b_clone.len(), matrix_b_clone[0].len());
 
     if matrix_a_clone[0].len() != matrix_b_clone.len() && matrix_a_clone.len() != matrix_b_clone.len() {
         panic!("Matrix A does not have the same number of columns as Matrix B rows.");
@@ -90,7 +87,7 @@ pub fn multiple_complex<T: ArrayType, V: ArrayType>(
         vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
 
     // Create a custom thread pool with exactly 10 threads
-    let pool = ThreadPoolBuilder::new().num_threads(16).build().unwrap();
+    let pool = ThreadPoolBuilder::new().num_threads(8).build().unwrap();
 
     // Run the multiplication within this custom thread pool
     pool.install(|| {
@@ -118,7 +115,7 @@ pub fn transpose<T: Debug + Clone + Sync + Send>(matrix_a: &Vec<Vec<T>>) -> Vec<
     let matrix_result = Arc::new(Mutex::new(vec![Vec::with_capacity(num_rows); num_cols]));
 
     // Create a custom thread pool with a specific number of threads (e.g., 10 threads)
-    let pool = ThreadPoolBuilder::new().num_threads(10).build().unwrap();
+    let pool = ThreadPoolBuilder::new().num_threads(3).build().unwrap();
 
     // Parallelize the column processing using the custom thread pool
     pool.install(|| {

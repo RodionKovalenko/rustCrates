@@ -6,7 +6,7 @@ mod tests {
     use crate::neural_networks::{
         network_components::layer::{create_default_layer, ActivationType, Layer, LayerType},
         network_types::{
-            feedforward_network_generic::{create, FeedforwardNetwork},
+            neural_network_generic::{create, NeuralNetwork},
             network_trait::Network,
         }
     };
@@ -20,7 +20,7 @@ mod tests {
         let minibatch_size: usize = 50;
         let learning_rate: f32 = 0.5;
 
-        let feedforward_network: FeedforwardNetwork<5, 5> = create::<5, 5>(
+        let feedforward_network: NeuralNetwork<5, 5> = create::<5, 5>(
             number_inputs,
             number_outputs,
             number_of_hidden_layers,

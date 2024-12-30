@@ -1,13 +1,11 @@
-use crate::neural_networks::utils::{matrix::multiple_complex, weights_initializer::initialize_weights_complex};
+use crate::neural_networks::{network_types::transformer::attention_layer::AttentionLayer, utils::{
+    matrix::multiply_complex, weights_initializer::initialize_weights_complex,
+}};
 use core::fmt::Debug;
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
-// Base Layer trait
-pub trait BaseLayer<const M: usize, const N: usize>: Debug {
-    fn forward(&mut self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>>;
-    fn backward(&mut self, gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>>;
-}
+use super::rms_norm_layer::RMSNormLayer;
 
 impl Default for ActivationType {
     fn default() -> Self {
@@ -38,12 +36,19 @@ pub enum ActivationType {
     RANDOM,
 }
 
+// Base Layer trait
+pub trait BaseLayer: Debug + Clone {
+    fn forward(&mut self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>>;
+    fn backward(&mut self, gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>>;
+}
+
 // Layer Type Enum
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum LayerType {
     InputLayer,
     HiddenLayer,
     OutputLayer,
+    AttentionLayer,
 }
 
 // Implement Default for LayerType
@@ -55,15 +60,15 @@ impl Default for LayerType {
 
 // Layer Enum
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum LayerEnum<const M: usize, const N: usize> {
-    Dense(Box<Layer<M, N>>),
-    RMSNorm(Box<Layer<M, N>>),
-    SelfAttention(Box<Layer<M, N>>),
+pub enum LayerEnum {
+    Dense(Box<Layer>),
+    RMSNorm(Box<RMSNormLayer>),
+    SelfAttention(Box<AttentionLayer>),
 }
 
 // Layer struct
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Layer<const M: usize, const N: usize> {
+pub struct Layer {
     pub weights: Vec<Vec<Complex<f64>>>,
     pub bias: Vec<Complex<f64>>,
     pub activation_type: ActivationType,
@@ -78,37 +83,15 @@ pub struct Layer<const M: usize, const N: usize> {
     pub v1: Vec<Vec<Complex<f64>>>,
 }
 
-impl<const M: usize, const N: usize> Default for Layer<M, N> {
-    fn default() -> Self {
-        let mut weights: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); M]; N];
-        let bias: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); M];
-
-        initialize_weights_complex::<M, N>(&mut weights); // 2D matrix
-
-        Layer {
-            weights,
-            bias,
-            activation_type: ActivationType::SIGMOID,
-            layer_type: LayerType::InputLayer,
-            inactivated_output: vec![vec![Complex::new(0.0, 0.0); M]; N],
-            activated_output: vec![vec![Complex::new(0.0, 0.0); M]; N],
-            gradient: vec![vec![Complex::new(0.0, 0.0); M]; N],
-            gradient_w: vec![vec![Complex::new(0.0, 0.0); M]; N],
-            errors: vec![vec![Complex::new(0.0, 0.0); M]; N],
-            previous_gradient: vec![vec![Complex::new(0.0, 0.0); M]; N],
-            m1: vec![vec![Complex::new(0.0, 0.0); M]; N],
-            v1: vec![vec![Complex::new(0.0, 0.0); M]; N],
-        }
-    }
-}
-
 // Layer initialization function with Box<dyn BaseLayer>
-pub fn initialize_default_layers<const M: usize, const N: usize>(
+pub fn initialize_default_layers(
+    rows: usize,
+    cols: usize,
     _num_outputs: &usize,
     num_h_layers: &usize,
     activation: &ActivationType,
-) -> Vec<LayerEnum<M, N>> {
-    let mut layers: Vec<LayerEnum<M, N>> = Vec::new();
+) -> Vec<LayerEnum> {
+    let mut layers: Vec<LayerEnum> = Vec::new();
     let total_layers: usize = *num_h_layers + 2;
 
     if *num_h_layers == 0 {
@@ -117,7 +100,7 @@ pub fn initialize_default_layers<const M: usize, const N: usize>(
 
     for l in 0..total_layers {
         let layer_type = get_layer_type(l, total_layers);
-        let layer = create_default_layer::<M, N>(activation, layer_type);
+        let layer = create_default_layer(rows, cols, activation, layer_type);
 
         layers.push(LayerEnum::Dense(Box::new(layer)));
     }
@@ -126,14 +109,16 @@ pub fn initialize_default_layers<const M: usize, const N: usize>(
 }
 
 // Layer creation function
-pub fn create_default_layer<const M: usize, const N: usize>(
+pub fn create_default_layer(
+    rows: usize,
+    cols: usize,
     activation: &ActivationType,
     layer_type: LayerType,
-) -> Layer<M, N> {
+) -> Layer {
     Layer {
         activation_type: activation.clone(),
         layer_type,
-        ..Default::default() // Fill the rest with default values
+        ..Layer::default(rows, cols) // Fill the rest with default values
     }
 }
 
@@ -146,11 +131,10 @@ pub fn get_layer_type(layer_idx: usize, total_layers: usize) -> LayerType {
     }
 }
 
-
 // Implement BaseLayer for Layer struct
-impl<const M: usize, const N: usize> BaseLayer<M, N> for Layer<M, N> {
+impl BaseLayer for Layer {
     fn forward(&mut self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-        self.inactivated_output = multiple_complex(input, &self.weights);
+        self.inactivated_output = multiply_complex(input, &self.weights);
 
         self.activated_output.clone()
     }
@@ -160,24 +144,26 @@ impl<const M: usize, const N: usize> BaseLayer<M, N> for Layer<M, N> {
     }
 }
 
+impl Layer {
+    fn default( rows: usize, cols: usize) -> Self {
+        let mut weights: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
+        let bias: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
 
-// RMSNorm Layer
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RMSNormLayer<const M: usize, const N: usize> {
-    base_layer: Layer<M, N>,
-}
+        initialize_weights_complex(rows, cols,  &mut weights); // 2D matrix
 
-// Implement BaseLayer for RMSNormLayer
-impl<const M: usize, const N: usize> BaseLayer<M, N> for RMSNormLayer<M, N> {
-    fn forward(&mut self, _input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-        // Implement forward logic for RMSNorm
-
-        self.base_layer.activated_output.clone()
-    }
-
-    fn backward(&mut self, _gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-        // Implement backward logic for RMSNorm
-
-        self.base_layer.gradient.clone()
+        Layer {
+            weights,
+            bias,
+            activation_type: ActivationType::SIGMOID,
+            layer_type: LayerType::InputLayer,
+            inactivated_output: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
+            activated_output: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
+            gradient: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
+            gradient_w: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
+            errors: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
+            previous_gradient: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
+            m1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
+            v1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
+        }
     }
 }
