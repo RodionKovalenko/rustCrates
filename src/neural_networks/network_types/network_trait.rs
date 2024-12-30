@@ -1,6 +1,6 @@
-use crate::neural_networks::network_components::layer::Layer;
+use crate::neural_networks::network_components::layer::LayerEnum;
 
-pub trait Network<const M: usize, const N: usize> {
+pub trait Network {
     fn get_learning_rate(&self) -> f32;
-    fn get_layers(&self) -> Vec<Box<Layer<M, N>>>;
+    fn get_layers(&self) -> Vec<LayerEnum>;
 }

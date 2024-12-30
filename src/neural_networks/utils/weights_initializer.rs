@@ -72,13 +72,15 @@ pub fn initialize_weights(
 }
 
 // Initialize weights for fixed-size array with Complex<f64>
-pub fn initialize_weights_complex<const M: usize, const N: usize>(
+pub fn initialize_weights_complex(
+    rows: usize, 
+    cols: usize,
     weight_matrix: &mut Vec<Vec<Complex<f64>>>,
 ) {
     let mut rng = rand::thread_rng();
 
-    for i in 0..N {
-        for j in 0..M {
+    for i in 0..rows {
+        for j in 0..cols {
             let random_value = Complex::new(rng.gen_range(-0.6..0.6), rng.gen_range(-0.6..0.6));
             set_weights(weight_matrix, i, j, random_value);
         }

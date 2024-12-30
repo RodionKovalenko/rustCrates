@@ -8,7 +8,7 @@ use crate::neural_networks::{
 
 // Layer struct
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AttentionLayer<const M: usize, const N: usize> {
+pub struct AttentionLayer {
     pub weights_q: Vec<Vec<Complex<f64>>>,
     pub weights_k: Vec<Vec<Complex<f64>>>,
     pub weights_v: Vec<Vec<Complex<f64>>>,
@@ -31,19 +31,19 @@ pub struct AttentionLayer<const M: usize, const N: usize> {
     pub v1: Vec<Vec<Complex<f64>>>,
 }
 
-impl<const M: usize, const N: usize> Default for AttentionLayer<M, N> {
-    fn default() -> Self {
-        let mut weights_q: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); M]; N];
-        let mut weights_k: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); M]; N];
-        let mut weights_v: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); M]; N];
+impl AttentionLayer {
+    fn default(rows: usize, cols: usize) -> Self {
+        let mut weights_q: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
+        let mut weights_k: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
+        let mut weights_v: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
 
-        initialize_weights_complex::<M, N>(&mut weights_q);
-        initialize_weights_complex::<M, N>(&mut weights_k);
-        initialize_weights_complex::<M, N>(&mut weights_v);
+        initialize_weights_complex(rows, cols, &mut weights_q);
+        initialize_weights_complex(rows, cols, &mut weights_k);
+        initialize_weights_complex(rows, cols, &mut weights_v);
 
-        let bias_q: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); M];
-        let bias_k: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); M];
-        let bias_v: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); M];
+        let bias_q: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
+        let bias_k: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
+        let bias_v: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
 
         AttentionLayer {
             weights_q,
@@ -56,36 +56,30 @@ impl<const M: usize, const N: usize> Default for AttentionLayer<M, N> {
             activation_type: ActivationType::SIGMOID,
             layer_type: LayerType::InputLayer,
 
-            inactivated_output: vec![vec![Complex::new(0.0, 0.0); M]; N],
-            activated_output: vec![vec![Complex::new(0.0, 0.0); M]; N],
-            gradient: vec![vec![Complex::new(0.0, 0.0); M]; N],
-            gradient_w: vec![vec![Complex::new(0.0, 0.0); M]; N],
-            errors: vec![vec![Complex::new(0.0, 0.0); M]; N],
-            previous_gradient: vec![vec![Complex::new(0.0, 0.0); M]; N],
-            m1: vec![vec![Complex::new(0.0, 0.0); M]; N],
-            v1: vec![vec![Complex::new(0.0, 0.0); M]; N],
+            inactivated_output: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
+            activated_output: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
+            gradient: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
+            gradient_w: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
+            errors: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
+            previous_gradient: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
+            m1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
+            v1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
         }
     }
-}
 
-impl<const M: usize, const N: usize> AttentionLayer<M, N> {
     fn set_layer_type(&mut self, layer_type: LayerType) {
         self.layer_type = layer_type;
     }
     fn set_activation(&mut self, activation: ActivationType) {
         self.activation_type = activation;
     }
-}
-
-
-// Implement BaseLayer for Layer struct
-impl<const M: usize, const N: usize> AttentionLayer<M, N> {
-    // Layer creation function
     pub fn create_default_attention_layer(
+        rows: usize,
+        cols: usize,
         activation: ActivationType,
         layer_type: LayerType,
-    ) -> AttentionLayer<M, N> {
-        let mut attention_layer: AttentionLayer<M, N> = AttentionLayer::default();
+    ) -> AttentionLayer {
+        let mut attention_layer: AttentionLayer = AttentionLayer::default(rows, cols);
         attention_layer.set_activation(activation);
         attention_layer.set_layer_type(layer_type);
 
@@ -93,11 +87,9 @@ impl<const M: usize, const N: usize> AttentionLayer<M, N> {
     }
 }
 
-
 // Implement BaseLayer for Layer struct
-impl<const M: usize, const N: usize> BaseLayer<M, N> for AttentionLayer<M, N> {
+impl BaseLayer for AttentionLayer {
     fn forward(&mut self, _input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-
         self.activated_output.clone()
         // Implement forward pass logic for the layer
     }
