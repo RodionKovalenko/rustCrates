@@ -2,7 +2,7 @@
 mod tests {
     use num::Complex;
 
-    use crate::neural_networks::utils::matrix::{multiply, multiple_complex};
+    use crate::neural_networks::utils::matrix::{multiply, multiply_complex};
 
     #[test]
     fn test_multiply_arrays() {
@@ -68,7 +68,7 @@ mod tests {
             vec![Complex::new(9, 0), Complex::new(5, 0)],
         ];
 
-        let product: Vec<Vec<Complex<f64>>> = multiple_complex(&m1, &m2);
+        let product: Vec<Vec<Complex<f64>>> = multiply_complex(&m1, &m2);
 
         assert_eq!(
             product,
