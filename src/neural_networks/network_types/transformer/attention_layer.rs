@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
     network_components::layer::{ActivationType, BaseLayer, LayerType},
-    utils::weights_initializer::initialize_weights_complex,
+    utils::{matrix::multiply_complex, weights_initializer::initialize_weights_complex},
 };
 
 // Layer struct
@@ -89,12 +89,13 @@ impl AttentionLayer {
 
 // Implement BaseLayer for Layer struct
 impl BaseLayer for AttentionLayer {
-    fn forward(&mut self, _input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-        self.activated_output.clone()
+    fn forward(&self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+        println!("output attention weights: {}, {}", &self.weights_k.len(), &self.weights_k[0].len());
+        multiply_complex(input, &self.weights_k)
         // Implement forward pass logic for the layer
     }
 
-    fn backward(&mut self, _gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    fn backward(&self, _gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
         // Implement backward pass logic for the layer
 
         self.gradient.clone()

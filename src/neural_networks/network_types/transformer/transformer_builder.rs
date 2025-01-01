@@ -1,10 +1,13 @@
-use crate::neural_networks::{
-    network_components::layer::{
-        create_default_layer, ActivationType, Layer, LayerEnum, LayerType,
+use num::Complex;
+
+use crate::{neural_networks::{
+    network_components::{
+        embedding_layer::EmbeddingLayer,
+        layer::{create_default_layer, ActivationType, BaseLayer, Layer, LayerEnum, LayerType},
     },
-    network_types::neural_network_generic::{create, NeuralNetwork},
+    network_types::{neural_network_generic::{create, NeuralNetwork}, wavelet_network::decompose_in_wavelet_2d_default},
     utils::tokenizer::tokenize,
-};
+}, utils::data_converter::convert_to_c_f64_2d};
 
 use super::attention_layer::AttentionLayer;
 
@@ -25,8 +28,12 @@ pub fn create_transformer() {
         learning_rate,
     );
 
-    let rows: usize = 3;
-    let cols: usize = 4;
+    let embedding_dim: usize = 512;
+    let vocab_size: usize = 50254;
+    let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim);
+
+    let rows: usize = 30;
+    let cols: usize = 512;
     let dense_layer: Layer = create_default_layer(
         rows,
         cols,
@@ -34,8 +41,8 @@ pub fn create_transformer() {
         LayerType::AttentionLayer,
     );
 
-    let rows: usize = 5;
-    let cols: usize = 2;
+    let rows: usize = 50;
+    let cols: usize = 512;
     let attention_layer: AttentionLayer = AttentionLayer::create_default_attention_layer(
         rows,
         cols,
@@ -44,24 +51,65 @@ pub fn create_transformer() {
     );
 
     // Add layers to the network
-    transformer_network
-        .layers
-        .push(LayerEnum::Dense(Box::new(dense_layer)));
-    transformer_network
-        .layers
-        .push(LayerEnum::SelfAttention(Box::new(attention_layer)));
+    let mut layers = transformer_network.layers;
+
+    layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
+    layers.push(LayerEnum::SelfAttention(Box::new(attention_layer)));
+    layers.push(LayerEnum::Dense(Box::new(dense_layer)));
+
+    transformer_network.layers = layers;
 
     let (tokens, ids) = tokenize("Hallo, wie geht es dir? Как твои дела? В мене справи добре").unwrap();
-    
 
-    // Iterate through and print layer details
+    let mut output = None;  
+
     for layer in transformer_network.layers.iter() {
         match layer {
-            LayerEnum::Dense(dense) => {
-                println!("Dense layer: {:?}", Some(dense).unwrap().weights);
+            LayerEnum::Embedding(embedding_layer_box) => {
+                let embedding_l = Some(embedding_layer_box).unwrap();
+                // Forward pass for the embedding layer
+                let embeddings: Vec<Vec<f64>> = embedding_l.forward(&ids);
+        
+                println!("output embedding layer: {:?}, {:?}", &embeddings.len(), &embeddings[0].len());
+                // Store the output for the next layer
+                output = Some(convert_to_c_f64_2d(&embeddings));
             }
             LayerEnum::SelfAttention(attention) => {
-                println!("Attention layer: {:?}", Some(attention).unwrap().weights_k);
+                // Ensure there's an output from the previous layer before forwarding
+                if let Some(previous_output) = &output {
+                   // let wavelet_output: Vec<Vec<Complex<f64>>> = decompose_in_wavelet_2d_default(previous_output)[0].clone();
+                    println!("previous output attention layer: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
+
+                    let output_attention = attention.forward(&previous_output);
+        
+                    println!("output attention layer: {:?}, {:?}", &output_attention.len(), &output_attention[0].len());
+                    // Store the output for the next layer
+                    output = Some(output_attention);
+                } else {
+                    println!("No previous output for Attention layer");
+                }
+            }
+            LayerEnum::Dense(dense) => {
+                let dense_layer = Some(dense).unwrap();
+                // Ensure there's an output from the previous layer before forwarding
+                if let Some(previous_output) = &output {
+                    println!("Prevous output: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
+
+                   // let wavelet_output: Vec<Vec<Complex<f64>>> = decompose_in_wavelet_2d_default(previous_output)[0].clone();
+                   let wavelet_output = convert_to_c_f64_2d(previous_output);
+    
+                    println!("Wavelet output: {:?}, {:?}", &wavelet_output.len(), &wavelet_output[0].len());
+    
+                    // Forward pass for the dense layer (make sure dense accepts Vec<Vec<Complex<f64>>>)
+                    let output_dense = dense_layer.forward(&wavelet_output);
+
+                    println!("Dense output: {:?}, {:?}", &output_dense.len(), &output_dense[0].len());
+        
+                    // Store the output for the next layer
+                    output = Some(output_dense);
+                } else {
+                    println!("No previous output for Dense layer");
+                }
             }
             _ => {
                 println!("Other layer type");
@@ -69,5 +117,5 @@ pub fn create_transformer() {
         }
     }
 
-    println!("token ids: {:?}", &ids);
+    // println!("token ids: {:?}", &ids);
 }
