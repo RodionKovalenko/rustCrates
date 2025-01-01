@@ -1,11 +1,9 @@
-use num::Complex;
-
 use crate::{neural_networks::{
     network_components::{
         embedding_layer::EmbeddingLayer,
         layer::{create_default_layer, ActivationType, BaseLayer, Layer, LayerEnum, LayerType},
     },
-    network_types::{neural_network_generic::{create, NeuralNetwork}, wavelet_network::decompose_in_wavelet_2d_default},
+    network_types::neural_network_generic::{create, NeuralNetwork},
     utils::tokenizer::tokenize,
 }, utils::data_converter::convert_to_c_f64_2d};
 
@@ -59,7 +57,7 @@ pub fn create_transformer() {
 
     transformer_network.layers = layers;
 
-    let (tokens, ids) = tokenize("Hallo, wie geht es dir? Как твои дела? В мене справи добре").unwrap();
+    let (_tokens, ids) = tokenize("Hallo, wie geht es dir? Как твои дела? В мене справи добре").unwrap();
 
     let mut output = None;  
 
