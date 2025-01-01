@@ -5,10 +5,7 @@ mod tests {
 
     use crate::neural_networks::{
         network_components::layer::{create_default_layer, ActivationType, Layer, LayerType},
-        network_types::{
-            neural_network_generic::{create, NeuralNetwork},
-            network_trait::Network,
-        }
+        network_types::neural_network_generic::{create, NeuralNetwork}        
     };
 
     #[test]
@@ -20,50 +17,49 @@ mod tests {
         let minibatch_size: usize = 50;
         let learning_rate: f32 = 0.5;
 
-        let feedforward_network: NeuralNetwork<5, 5> = create::<5, 5>(
+        let rows: usize = 15;
+        let cols: usize = 15;
+
+        let feedforward_network: NeuralNetwork = create(
             number_inputs,
             number_outputs,
             number_of_hidden_layers,
             number_of_hidden_neurons,
             minibatch_size,
-            learning_rate,
-            ActivationType::SIGMOID,
+            learning_rate
         );
 
         // println!("{:?}", &feedforward_network);
 
-        println!(
-            "learning rate{:?}",
-            &feedforward_network.get_learning_rate()
-        );
-        println!("layers len {:?}", &feedforward_network.get_layers());
-        println!(
-            "minibatch size {:?}",
-            &feedforward_network.get_minibatch_size()
-        );
+        println!("learning rate{:?}", &feedforward_network.learning_rate);
+        println!("layers len {:?}", &feedforward_network.layers.len());
+        println!( "minibatch size {:?}", &feedforward_network.get_minibatch_size());
 
-        assert_eq![feedforward_network.get_learning_rate(), learning_rate];
+        assert_eq![feedforward_network.learning_rate, learning_rate];
         assert_eq![
-            feedforward_network.get_layers().len(),
-            number_of_hidden_layers + 2
+            feedforward_network.layers.len(),
+            0
         ];
         assert_eq![feedforward_network.get_minibatch_size(), minibatch_size];
     }
 
     #[test]
     fn test_layer_serialization() {
+        let rows: usize = 15;
+        let cols: usize = 15;
+
         // Create a default layer instance
-        let original_layer = Layer::<16, 16>::default();
+        let original_layer: Layer = Layer::default(rows, cols);
 
         // Serialize the layer to a JSON string
         let serialized = serde_json::to_string(&original_layer).expect("Failed to serialize layer");
 
         // Deserialize the JSON string back into a layer instance
-        let deserialized_layer: Layer<16, 16> =
+        let deserialized_layer: Layer =
             serde_json::from_str(&serialized).expect("Failed to deserialize layer");
 
         // Assert that the original layer and the deserialized layer are equal
-        are_complex_arrays_equal::<M, N>(
+        are_complex_arrays_equal::<15, 15>(
             &original_layer.weights,
             &deserialized_layer.weights,
             1e-10,
@@ -95,15 +91,13 @@ mod tests {
         const M: usize = 15;
         const N: usize = 15;
 
-        let original_layer: Layer<M, N> =
-            create_default_layer::<M, N>(&ActivationType::SIGMOID, LayerType::InputLayer);
+        let original_layer: Layer = create_default_layer(rows, cols, &ActivationType::SIGMOID, LayerType::InputLayer);
 
         // Serialize the layer to a JSON string
         let serialized = serde_json::to_string(&original_layer).expect("Failed to serialize layer");
 
         // Deserialize the JSON string back into a layer instance
-        let deserialized_layer: Layer<M, N> =
-            serde_json::from_str(&serialized).expect("Failed to deserialize layer");
+        let deserialized_layer: Layer = serde_json::from_str(&serialized).expect("Failed to deserialize layer");
 
         // Assert that the original layer and the deserialized layer are equal
         are_complex_arrays_equal::<M, N>(

@@ -8,7 +8,12 @@ mod tests {
 
     #[test]
     fn test_attention_layer_initialization() {
-        let layer = AttentionLayer::<4, 4>::create_default_attention_layer(
+        let rows: usize = 15;
+        let cols: usize = 15;
+
+        let layer = AttentionLayer::create_default_attention_layer(
+            rows, 
+            cols,
             ActivationType::LEAKYRELU,
             LayerType::HiddenLayer,
         );

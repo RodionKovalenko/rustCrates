@@ -5,7 +5,7 @@ use core::fmt::Debug;
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
-use super::rms_norm_layer::RMSNormLayer;
+use super::{embedding_layer::EmbeddingLayer, rms_norm_layer::RMSNormLayer};
 
 impl Default for ActivationType {
     fn default() -> Self {
@@ -38,8 +38,8 @@ pub enum ActivationType {
 
 // Base Layer trait
 pub trait BaseLayer: Debug + Clone {
-    fn forward(&mut self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>>;
-    fn backward(&mut self, gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>>;
+    fn forward(&self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>>;
+    fn backward(&self, gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>>;
 }
 
 // Layer Type Enum
@@ -61,6 +61,7 @@ impl Default for LayerType {
 // Layer Enum
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LayerEnum {
+    Embedding(Box<EmbeddingLayer>),
     Dense(Box<Layer>),
     RMSNorm(Box<RMSNormLayer>),
     SelfAttention(Box<AttentionLayer>),
@@ -133,19 +134,17 @@ pub fn get_layer_type(layer_idx: usize, total_layers: usize) -> LayerType {
 
 // Implement BaseLayer for Layer struct
 impl BaseLayer for Layer {
-    fn forward(&mut self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-        self.inactivated_output = multiply_complex(input, &self.weights);
-
-        self.activated_output.clone()
+    fn forward(&self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+        multiply_complex(input, &self.weights)
     }
 
-    fn backward(&mut self, _gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    fn backward(&self, _gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
         self.gradient.clone()
     }
 }
 
 impl Layer {
-    fn default( rows: usize, cols: usize) -> Self {
+    pub fn default( rows: usize, cols: usize) -> Self {
         let mut weights: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
         let bias: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
 

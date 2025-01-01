@@ -1,11 +1,11 @@
+use crate::utils::{data_converter::convert_to_c_f64_2d, num_trait::ArrayType};
 use num::Complex;
 use num_traits::NumCast;
+use rayon::prelude::*;
+use rayon::ThreadPoolBuilder;
 use std::fmt::Debug;
 use std::ops::{Add, Mul, Sub};
 use std::sync::{Arc, Mutex};
-use crate::utils::{data_converter::convert_to_c_f64_2d, num_trait::ArrayType};
-use rayon::prelude::*;
-use rayon::ThreadPoolBuilder;
 
 pub fn multiply<T, V>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<V>>) -> Vec<Vec<f64>>
 where
@@ -18,24 +18,27 @@ where
         .map(|row| row.iter().map(|x| x.clone().into()).collect())
         .collect();
 
-    let matrix_b_clone: Vec<Vec<f64>> = matrix_b
+    let mut matrix_b_clone: Vec<Vec<f64>> = matrix_b
         .iter()
         .map(|row| row.iter().map(|x| x.clone().into()).collect())
         .collect();
 
     let mut num_rows = matrix_a_clone.len();
-    let num_columns = matrix_b_clone[0].len();
-
-    // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
-    if matrix_a[0].len() != matrix_b.len() && matrix_a.len() != matrix_b.len() {
-        panic!("Matrix A does not have the same number of columns as Matrix B rows.");
-    }
+    let mut num_columns = matrix_b_clone[0].len();
 
     if matrix_a_clone[0].len() != matrix_b.len() {
         if matrix_a_clone.len() == matrix_b.len() {
             matrix_a_clone = transpose(&matrix_a_clone);
             num_rows = matrix_a_clone.len();
+        } else if matrix_a_clone[0].len() == matrix_b_clone[0].len() {
+            matrix_b_clone = transpose(&matrix_b_clone);
+            num_columns = matrix_b_clone[0].len();
         }
+    }
+
+    // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
+    if matrix_a[0].len() != matrix_b.len() && matrix_a.len() != matrix_b.len() {
+        panic!("Matrix A does not have the same number of columns as Matrix B rows.");
     }
 
     // Initialize result matrix with 0.0 values
@@ -67,20 +70,25 @@ pub fn multiply_complex<T: ArrayType, V: ArrayType>(
     matrix_b: &V,
 ) -> Vec<Vec<Complex<f64>>> {
     let mut matrix_a_clone: Vec<Vec<Complex<f64>>> = convert_to_c_f64_2d(matrix_a);
-    let matrix_b_clone: Vec<Vec<Complex<f64>>> = convert_to_c_f64_2d(matrix_b);
+    let mut matrix_b_clone: Vec<Vec<Complex<f64>>> = convert_to_c_f64_2d(matrix_b);
 
     let mut num_rows = matrix_a_clone.len();
-    let num_columns = matrix_b_clone[0].len();
-
-    if matrix_a_clone[0].len() != matrix_b_clone.len() && matrix_a_clone.len() != matrix_b_clone.len() {
-        panic!("Matrix A does not have the same number of columns as Matrix B rows.");
-    }
+    let mut num_columns = matrix_b_clone[0].len();
 
     if matrix_a_clone[0].len() != matrix_b_clone.len() {
         if matrix_a_clone.len() == matrix_b_clone.len() {
             matrix_a_clone = transpose(&matrix_a_clone);
             num_rows = matrix_a_clone.len();
+        } else if matrix_a_clone[0].len() == matrix_b_clone[0].len() {
+            matrix_b_clone = transpose(&matrix_b_clone);
+            num_columns = matrix_b_clone[0].len();
         }
+    }
+
+    if matrix_a_clone[0].len() != matrix_b_clone.len()
+        && matrix_a_clone.len() != matrix_b_clone.len()
+    {
+        panic!("Matrix A does not have the same number of columns as Matrix B rows.");
     }
 
     let mut result_matrix: Vec<Vec<Complex<f64>>> =
@@ -120,11 +128,11 @@ pub fn transpose<T: Debug + Clone + Sync + Send>(matrix_a: &Vec<Vec<T>>) -> Vec<
     // Parallelize the column processing using the custom thread pool
     pool.install(|| {
         (0..num_cols).into_par_iter().for_each(|j| {
-            let mut row = Vec::with_capacity(num_rows);  // Create a local row for the result matrix
+            let mut row = Vec::with_capacity(num_rows); // Create a local row for the result matrix
             for i in 0..num_rows {
-                row.push(matrix_a[i][j].clone());  // Collect the elements for the j-th column
+                row.push(matrix_a[i][j].clone()); // Collect the elements for the j-th column
             }
-            
+
             // Lock the Mutex to safely modify matrix_result
             let mut result_lock = matrix_result.lock().unwrap();
             result_lock[j] = row; // Assign the row to the transposed matrix
