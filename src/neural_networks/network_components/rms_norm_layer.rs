@@ -12,8 +12,8 @@ pub struct RMSNormLayer {
 
 // Implement BaseLayer for RMSNormLayer
 impl BaseLayer for RMSNormLayer {
-    fn forward(&mut self, _input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-        let activated_output: Vec<Vec<Complex<f64>>> = match &mut self.base_layer {
+    fn forward(&self, _input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+        let activated_output: Vec<Vec<Complex<f64>>> = match &self.base_layer {
             LayerEnum::Dense(dense) => {
                 println!("Dense layer: {:?}", dense);
                 dense.activated_output.clone() // Access the field here
@@ -31,8 +31,8 @@ impl BaseLayer for RMSNormLayer {
         activated_output
     }
 
-    fn backward(&mut self, _gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-        let activated_output: Vec<Vec<Complex<f64>>> = match &mut self.base_layer {
+    fn backward(&self, _gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+        let activated_output: Vec<Vec<Complex<f64>>> = match &self.base_layer {
             LayerEnum::Dense(dense) => {
                 println!("Dense layer: {:?}", dense);
                 dense.activated_output.clone() // Access the field here

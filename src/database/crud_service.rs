@@ -1,4 +1,4 @@
-use sled::{self, IVec};
+use sled::{self, Db, IVec};
 use std::convert::TryInto;
 
 use super::sled_config::{get_storage_path, SLED_DB_TOKENIZER};
@@ -10,7 +10,7 @@ pub fn insert_token(token: &str) -> Result<(), sled::Error> {
 
     let existing_value = get_value(token).unwrap();
     // Open a Sled database (it will create a new one if it doesn't exist)
-    let db = sled::open(get_storage_path(SLED_DB_TOKENIZER))?;
+    let db: Db = sled::open(get_storage_path(SLED_DB_TOKENIZER))?;
 
     if existing_value == 0 {
         let iter = db.iter().rev(); // Reverse iteration
