@@ -1,3 +1,5 @@
+use num::Complex;
+
 use crate::{neural_networks::{
     network_components::{
         embedding_layer::EmbeddingLayer,
@@ -28,23 +30,23 @@ pub fn create_transformer() {
 
     let embedding_dim: usize = 512;
     let vocab_size: usize = 50254;
-    let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim);
+    let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim, false);
 
-    let rows: usize = 30;
-    let cols: usize = 512;
-    let dense_layer: Layer = create_default_layer(
-        rows,
-        cols,
-        &ActivationType::LEAKYRELU,
-        LayerType::AttentionLayer,
-    );
-
-    let rows: usize = 50;
-    let cols: usize = 512;
+    let rows: usize = 16;
+    let cols: usize = 16;
     let attention_layer: AttentionLayer = AttentionLayer::create_default_attention_layer(
         rows,
         cols,
         ActivationType::LEAKYRELU,
+        LayerType::AttentionLayer,
+    );
+
+    let rows: usize = 16;
+    let cols: usize = 16;
+    let dense_layer: Layer = create_default_layer(
+        rows,
+        cols,
+        &ActivationType::LEAKYRELU,
         LayerType::AttentionLayer,
     );
 
@@ -66,11 +68,12 @@ pub fn create_transformer() {
             LayerEnum::Embedding(embedding_layer_box) => {
                 let embedding_l = Some(embedding_layer_box).unwrap();
                 // Forward pass for the embedding layer
-                let embeddings: Vec<Vec<f64>> = embedding_l.forward(&ids);
+                let embeddings: Vec<Vec<Complex<f64>>> = embedding_l.forward(&ids);
         
                 println!("output embedding layer: {:?}, {:?}", &embeddings.len(), &embeddings[0].len());
+                //println!("output embedding: {:?}", &embeddings);
                 // Store the output for the next layer
-                output = Some(convert_to_c_f64_2d(&embeddings));
+                output = Some(embeddings);
             }
             LayerEnum::SelfAttention(attention) => {
                 // Ensure there's an output from the previous layer before forwarding

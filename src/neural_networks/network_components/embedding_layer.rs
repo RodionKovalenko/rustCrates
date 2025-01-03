@@ -1,4 +1,5 @@
 use bincode;
+use num::Complex;
 use core::fmt::Debug;
 use rand::Rng;
 use rayon::prelude::*;
@@ -10,6 +11,7 @@ use std::path::{Path, PathBuf};
 use lazy_static::lazy_static;
 
 use crate::database::sled_config::{get_storage_path, SLED_DB_TOKENIZER};
+use crate::neural_networks::network_types::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingLayer {
@@ -39,13 +41,19 @@ impl EmbeddingLayer {
                 .map(|_| rng.gen_range(-0.4..0.5))
                 .collect();
 
+            let embedding_wavelet = &decompose_in_wavelet_2d_default(&embedding)[0][0];
+            //println!("embedding: {:?}", &embedding_wavelet_1d);
+
             let token_u32: u32 = token_id as u32;
-            Self::update_embedding(db, &token_u32, &embedding);
+            Self::update_embedding(db, &token_u32, embedding_wavelet);
         }
+
+        let base_2: i32 = 2;
+        let embedding_dim_compressed = (embedding_dim as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize; 
 
         Self {
             vocab_size,
-            embedding_dim,
+            embedding_dim: embedding_dim_compressed,
             weights: vec![],
         }
     }
@@ -59,13 +67,13 @@ impl EmbeddingLayer {
         }
     }
 
-    pub fn get_or_create(vocab_size: usize, embedding_dim: usize) -> Self {
+    pub fn get_or_create(vocab_size: usize, embedding_dim: usize, force_create: bool) -> Self {
         let mut embedding_path: PathBuf = get_storage_path(EMBEDDING_PATH);
         embedding_path.push(FILE_NAME);
 
         let embedding_file_path: &Path = Path::new(&embedding_path);
 
-        if !embedding_file_path.exists() {
+        if !embedding_file_path.exists() || force_create {
             println!("Embedding Layer does not exist. Creating Embedding Layer File");
             let embedding_layer = Self::new(vocab_size, embedding_dim);
 
@@ -79,7 +87,7 @@ impl EmbeddingLayer {
     }
 
     /// Look up embeddings for a batch of token IDs
-    pub fn forward(&self, token_ids: &[u32]) -> Vec<Vec<f64>> {
+    pub fn forward(&self, token_ids: &[u32]) -> Vec<Vec<Complex<f64>>> {
         let db: &Db = Self::get_db();
         token_ids
             .par_iter()
@@ -92,10 +100,10 @@ impl EmbeddingLayer {
     }
 
     /// Update embeddings using gradients
-    pub fn backward(&self, token_ids: &[u32], gradients: &[Vec<f64>], learning_rate: f64) {
+    pub fn backward(&self, token_ids: &[u32], gradients: &Vec<Vec<Complex<f64>>>, learning_rate: f64) {
         let db: &Db = Self::get_db();
         for (i, &token_id) in token_ids.iter().enumerate() {
-            let mut token_embedding: Vec<f64> =
+            let mut token_embedding: Vec<Complex<f64>> =
                 Self::get_embedding(db, token_id).unwrap_or_else(|err| {
                     panic!("Error retrieving embedding for token {}: {}", token_id, err);
                 });
@@ -107,10 +115,11 @@ impl EmbeddingLayer {
             Self::update_embedding(&db, &token_id, &token_embedding);
         }
     }
-    pub fn serialize(embedding: &EmbeddingLayer, embedding_file_path: &Path) {
+    pub fn serialize(embedding_layer: &EmbeddingLayer, embedding_file_path: &Path) {
+        println!("embedding layer saved: {:}", &embedding_layer.embedding_dim);
         let embedding_layer_meta = EmbeddingLayer {
-            embedding_dim: embedding.embedding_dim,
-            vocab_size: embedding.vocab_size,
+            embedding_dim: embedding_layer.embedding_dim,
+            vocab_size: embedding_layer.vocab_size,
             weights: vec![],
         };
         let serialized: Vec<u8> =
@@ -127,7 +136,7 @@ impl EmbeddingLayer {
         bincode::deserialize(&data).expect("Failed to deserialize")
     }
 
-    pub fn get_embedding(db: &Db, token_id: impl ToString) -> Result<Vec<f64>, String> {
+    pub fn get_embedding(db: &Db, token_id: impl ToString) -> Result<Vec<Complex<f64>>, String> {
         let key = token_id.to_string();
         match db.get(&key) {
             Ok(Some(ivec)) => bincode::deserialize(&ivec)
@@ -137,7 +146,7 @@ impl EmbeddingLayer {
         }
     }
     /// Update an embedding for a given token ID
-    pub fn update_embedding(db: &Db, token_id: &u32, embedding: &Vec<f64>) {
+    pub fn update_embedding(db: &Db, token_id: &u32, embedding: &Vec<Complex<f64>>) {
         let key = token_id.to_string();
         let serialized_embedding =
             bincode::serialize(embedding).expect("Failed to serialize embedding");
