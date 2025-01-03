@@ -9,6 +9,8 @@ use crate::wavelet_transform::dwt_types::DiscreteWaletetType;
 use crate::wavelet_transform::modes::WaveletMode;
 use num_complex::Complex;
 
+pub const DECOMPOSITION_LEVELS: u32 = 5;
+
 pub fn get_pixels_rgba(image_path: &str) -> Vec<Vec<Vec<f64>>> {
     get_pixel_separate_rgba(image_path)
 }
@@ -22,7 +24,7 @@ pub fn decompose_in_wavelet_2d_default<T: ArrayType>(input: &T) -> Vec<Vec<Vec<C
     let min_height: usize = 28;
     let min_width: usize = 28;
 
-    let decomposition_level: i32 = 3;
+    let decomposition_level: i32 = DECOMPOSITION_LEVELS as i32;
 
     let mut cwt_complex_wavelet = CWTComplex {
         scales,
@@ -87,18 +89,21 @@ pub fn decompose_in_wavelets<T: ArrayType>(
         for _i in 0..dec_levels.clone() {
             dw_transformed = transform_2_df64(&pixel_rgba, &dw_type, &dw_mode);
 
-            if dw_transformed.len() < min_height.clone()
-                || dw_transformed[0].len() < min_width.clone()
-            {
+            //println!("dw transform : {:?}, {:?}", dw_transformed.len(), dw_transformed[0].len());
+
+            if (input_data.dimension() != 1 && dw_transformed.len() < min_height.clone()) ||  dw_transformed[0].len() < min_width.clone() {
                 break;
             }
             //  save as images
             let ll_lh_hl_hh: Vec<Vec<Vec<f64>>> = get_ll_hl_lh_hh(&dw_transformed);
 
+            //println!("ll lh hl hh transform len: {}, {}, {}", ll_lh_hl_hh.len(), ll_lh_hl_hh[0].len(), ll_lh_hl_hh[0][0].len());
             pixel_rgba = ll_lh_hl_hh[0].clone();
         }
         decomposed_levels.push(pixel_rgba);
     }
+
+    //println!("condensed wavelet: {}, {:?}, {}", decomposed_levels.len(), decomposed_levels[0].len(), decomposed_levels[0][0].len());
 
     // remove_dir_contents("tests").unwrap_or_else(|why| {
     //     println!("! {:?}", why.kind());
