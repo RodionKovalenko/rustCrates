@@ -17,9 +17,6 @@ mod tests {
         let minibatch_size: usize = 50;
         let learning_rate: f32 = 0.5;
 
-        let rows: usize = 15;
-        let cols: usize = 15;
-
         let feedforward_network: NeuralNetwork = create(
             number_inputs,
             number_outputs,
