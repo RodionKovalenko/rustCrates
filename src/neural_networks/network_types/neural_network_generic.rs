@@ -8,7 +8,7 @@ pub const FILE_NAME: &str = "feedforward_network.json";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NeuralNetwork {
     pub layers: Vec<LayerEnum>,
-    pub learning_rate: f32,
+    pub learning_rate: f64,
     pub number_of_input_neurons: usize,
     pub number_of_output_neurons: usize,
     pub number_of_hidden_layers: usize,
@@ -41,7 +41,7 @@ pub fn create(
     number_of_hidden_layers: usize,
     number_of_hidden_neurons: usize,
     minibatch_size: usize,
-    learning_rate: f32,
+    learning_rate: f64,
 ) -> NeuralNetwork {
     let feed_net = NeuralNetwork {
         layers: vec![],

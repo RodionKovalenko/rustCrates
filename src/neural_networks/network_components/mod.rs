@@ -1,5 +1,8 @@
 pub mod layer;
 pub mod neuron;
 pub mod input;
-pub mod rms_norm_layer;
+pub mod add_rms_norm_layer;
 pub mod embedding_layer;
+pub mod positional_encoding_layer;
+pub mod linear_layer;
+pub mod softmax_output_layer;
