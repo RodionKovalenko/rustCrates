@@ -1,0 +1,31 @@
+
+
+Transformer Layers:
+
+1. Tokenization layer. Tokens and tokenization process is fixed.
+ https://huggingface.co/togethercomputer/GPT-NeoXT-Chat-Base-20B/tree/main
+"vocab_size": 50254 defined in https://huggingface.co/togethercomputer/GPT-NeoXT-Chat-Base-20B/blob/main/config.json
+
+2. Embedding layer.
+ Embedding is created by randomly generated real numbers of size 256.
+ Then the numbers are compressed using haar wavelet to the size of 16.
+ Then cmor wavelet is applied to transform the weights once again. 
+ The result is complex numbers of size 16 for each embedding. 
+ Vocabulary size 50254.
+ Embedding dimension: 16.
+ Embedding type: Vec<Complex<f64>>
+
+3. Positional encoding layer.
+Rotary Positional Encoding is used as positional encoding algrorithms. 
+
+ θi = position/10000 exp(2i/d)
+ Position - is the token id number in the sentence. E.g. if we have a sentence: "I have a dream" and 5 token ids: [500, 12, 34, 44, 25]. 
+ Then, the position of the token 500 is 0, for token 12 is 1, for token 34 is 3 etc. 
+ i - is the index in the token embedding itself. 
+ In other word, the position is the position of embedding in the sentence and the index i is the index in the embedding itself. 
+ d - is the dimension of embedding. In our case is 16. 
+ 
+3. Self
+
+
+​

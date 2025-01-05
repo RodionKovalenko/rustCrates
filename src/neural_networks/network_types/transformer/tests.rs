@@ -3,7 +3,7 @@
 mod tests {
     use crate::neural_networks::{
         network_components::layer::{ActivationType, LayerType},
-        network_types::transformer::attention_layer::AttentionLayer,
+        network_types::transformer::attention_head::AttentionHead,
     };
 
     #[test]
@@ -11,7 +11,7 @@ mod tests {
         let rows: usize = 15;
         let cols: usize = 15;
 
-        let layer = AttentionLayer::create_default_attention_layer(
+        let layer = AttentionHead::create_default_attention_layer(
             rows, 
             cols,
             ActivationType::LEAKYRELU,

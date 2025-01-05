@@ -219,7 +219,7 @@ pub fn activate_output_complex(data: &Vec<Vec<Complex<f64>>>, activation: Activa
         ActivationType::SOFTPLUS => data.iter().map(|row| row.iter().map(|&x| softplus_complex(x)).collect()).collect(),
         ActivationType::PROBIT => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Just return the value as is
         ActivationType::RANDOM => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Just return the value as is
-        ActivationType::SOFTMAX => unimplemented!(), // Handle separately if needed
+        ActivationType::SOFTMAX => softmax(data), // Handle separately if needed
     }
 }
 
@@ -271,4 +271,40 @@ where
     }
 
     result
+}
+
+pub fn softmax(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    // Softmax function to scale attention scores to probability values
+    let mut result = vec![vec![Complex::new(0.0, 0.0); input[0].len()]; input.len()];
+    for row in 0..input.len() {
+        let mut sum = Complex::new(0.0, 0.0);
+        for col in 0..input[row].len() {
+            sum = sum + input[row][col].exp();
+        }
+        for col in 0..input[row].len() {
+            result[row][col] = input[row][col].exp() / sum;
+        }
+    }
+    result
+}
+
+pub fn softmax_last_row(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    // Softmax function to scale attention scores to probability values
+    let mut result = input.clone(); // Clone input to preserve the original structure
+
+    // Get the last row from the input
+    let last_row = &input[input.len() - 1];
+
+    // Compute softmax for the last row
+    let mut sum = Complex::new(0.0, 0.0);
+    for col in 0..last_row.len() {
+        sum = sum + last_row[col].exp(); // Sum of exponentials of the last row
+    }
+    
+    // Store the softmax results for the last row
+    for col in 0..last_row.len() {
+        result[input.len() - 1][col] = last_row[col].exp() / sum; // Softmax applied only to the last row
+    }
+
+    result // Return the result with only the last row processed
 }
