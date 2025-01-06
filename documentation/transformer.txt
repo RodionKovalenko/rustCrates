@@ -25,7 +25,19 @@ Rotary Positional Encoding is used as positional encoding algrorithms.
  In other word, the position is the position of embedding in the sentence and the index i is the index in the embedding itself. 
  d - is the dimension of embedding. In our case is 16. 
  
-3. Self
+3. Self-Attention-Layer consists of 4 attention heads.
+ If input has a size [30][16], after passing the self-attenion layer it will still have the same size [30][16];
+
+4. Add and Norm: RMS Norm is applied here.
+
+5. FeedForward network with weight matrices for hidden layer [16][64], output [64][16]; 
+
+6. Add and Norm: RMS Norm is applied here.
+
+7. Linear layer. Just matrix multiplication and bias adding.
+
+8. Softmax layer. The output is [30][50254] for the input of 30 token ids. 
+
 
 
 ​

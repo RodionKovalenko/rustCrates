@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
     network_components::layer::{BaseLayer, LayerType},
-    utils::{activation::softmax, matrix::multiply_complex, weights_initializer::initialize_weights_complex},
+    utils::{activation::softmax_complex, matrix::multiply_complex, weights_initializer::initialize_weights_complex},
 };
 
 // Layer struct
@@ -92,7 +92,7 @@ impl BaseLayer for AttentionHead {
 
         let attention_scores = multiply_complex(&q, &k);
         let attention_scores_scales = scale_attention_scores(&attention_scores, k[0].len() as f64);
-        let attention_weights = softmax(&attention_scores_scales);
+        let attention_weights = softmax_complex(&attention_scores_scales);
       
         // Multiply attention weights with value (V)
         let output = multiply_complex(&attention_weights, &v);
