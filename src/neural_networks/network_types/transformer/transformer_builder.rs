@@ -2,10 +2,22 @@ use num::Complex;
 
 use crate::neural_networks::{
     network_components::{
-        add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, layer::{create_default_layer, ActivationType, BaseLayer, Layer, LayerEnum, LayerType}, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer
+        add_rms_norm_layer::RMSNormLayer,
+        embedding_layer::EmbeddingLayer,
+        layer::{BaseLayer, LayerEnum, LayerType},
+        linear_layer::LinearLayer,
+        positional_encoding_layer::PositionalEncodingLayer,
+        softmax_output_layer::SoftmaxLayer,
     },
-    network_types::{neural_network_generic::{create, NeuralNetwork}, wavelet_network::DECOMPOSITION_LEVELS},
-    utils::{matrix::find_highest_index, tokenizer::{detokenize, tokenize}},
+    network_types::{
+        feedforward_layer::FeedForwardLayer,
+        neural_network_generic::{create, NeuralNetwork},
+        wavelet_network::DECOMPOSITION_LEVELS,
+    },
+    utils::{
+        matrix::find_highest_index,
+        tokenizer::{detokenize, tokenize},
+    },
 };
 
 use super::self_attention_layer::SelfAttentionLayer;
@@ -27,43 +39,49 @@ pub fn create_transformer() {
         learning_rate,
     );
 
+     // Add layers to the network
+     let mut layers = transformer_network.layers;
+
     let embedding_dim_original: usize = 512;
     let base_2: i32 = 2;
     // embedding_dim_compressed  = 16
-    let embedding_dim_compressed = (embedding_dim_original as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize; 
+    let embedding_dim_compressed = (embedding_dim_original as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize;
     let vocab_size: usize = 50254;
 
     let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
-
-    let positional_encoding_layer = PositionalEncodingLayer {
-        embedding_dim: embedding_layer.embedding_dim,
-    };
-
-    let num_attention_heads: usize = 4;
-    let rows: usize = 16;
-    let cols: usize = embedding_dim_compressed;
-    let attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, LayerType::AttentionLayer);
+    let positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
 
     let rows: usize = 16;
     let cols: usize = embedding_dim_compressed;
-    let dense_layer: Layer = create_default_layer(rows, cols, &ActivationType::LEAKYRELU, LayerType::AttentionLayer);
-
-    let epsion: f64 = 0.000001;
-    let rms_norm_layer1 = RMSNormLayer::new(cols, epsion, learning_rate);
-    let rms_norm_layer2 = RMSNormLayer::new(cols, epsion, learning_rate);
-
+   
     let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
     let softmax_layer = SoftmaxLayer::new(learning_rate);
-
-    // Add layers to the network
-    let mut layers = transformer_network.layers;
-
+   
     layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
     layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
-    layers.push(LayerEnum::SelfAttention(Box::new(attention_layer)));
-    layers.push(LayerEnum::RMSNorm(Box::new(rms_norm_layer1)));
-    layers.push(LayerEnum::Dense(Box::new(dense_layer)));
-    layers.push(LayerEnum::RMSNorm(Box::new(rms_norm_layer2)));
+
+    let num_self_attention_layer: usize= 4;
+    for _i in 0..num_self_attention_layer {
+        let num_attention_heads: usize = 4;
+     
+        let attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, LayerType::AttentionLayer);
+    
+        let rows: usize = 16;
+        let cols: usize = embedding_dim_compressed;
+        let hidden_dim = 64;
+        let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, cols);
+    
+        let epsilon: f64 = 0.000001;
+        let rms_norm_layer1 = RMSNormLayer::new(cols, epsilon, learning_rate);
+        let rms_norm_layer2 = RMSNormLayer::new(cols, epsilon, learning_rate);
+
+        layers.push(LayerEnum::SelfAttention(Box::new(attention_layer)));
+        layers.push(LayerEnum::RMSNorm(Box::new(rms_norm_layer1)));
+    
+        layers.push(LayerEnum::FeedForward(Box::new(ffn_layer)));
+        layers.push(LayerEnum::RMSNorm(Box::new(rms_norm_layer2)));
+    }
+
     layers.push(LayerEnum::Linear(Box::new(linear_layer)));
     layers.push(LayerEnum::Softmax(Box::new(softmax_layer)));
 
@@ -73,7 +91,7 @@ pub fn create_transformer() {
 
     println!("detokenize: {:?}", detokenize(&ids).unwrap());
 
-    let mut output= None;
+    let mut output = None;
 
     for layer in transformer_network.layers.iter() {
         match layer {
@@ -112,7 +130,7 @@ pub fn create_transformer() {
                     println!("No previous output for Attention layer");
                 }
             }
-            LayerEnum::Dense(dense) => {
+            LayerEnum::FeedForward(dense) => {
                 let dense_layer = Some(dense).unwrap();
                 if let Some(previous_output) = &output {
                     println!("Previous output: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
@@ -179,6 +197,7 @@ pub fn create_transformer() {
                     println!("No previous output for Dense layer");
                 }
             }
+            _ => {}
         }
     }
 

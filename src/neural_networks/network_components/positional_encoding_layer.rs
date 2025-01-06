@@ -8,6 +8,12 @@ pub struct PositionalEncodingLayer {
     pub embedding_dim: usize, // Store the embedding dimension
 }
 
+impl PositionalEncodingLayer {
+    pub fn new(embedding_dim: usize) -> Self {
+        Self { embedding_dim }
+    }
+}
+
 impl BaseLayer for PositionalEncodingLayer {
     /// Apply positional encoding to a batch of embeddings
     fn forward(&self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
