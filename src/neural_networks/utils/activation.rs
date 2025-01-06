@@ -1,9 +1,9 @@
+use num::{Complex, Float, One};
+use std::f64::consts::E;
 use std::f64::consts::PI;
 use std::fmt::Debug;
-use std::f64::consts::E;
-use std::ops::{Mul, Add, Div};
-use num::{Complex, Float, One};
 use std::marker::Copy;
+use std::ops::{Add, Div, Mul};
 
 use crate::neural_networks::network_components::layer::ActivationType;
 
@@ -129,10 +129,9 @@ where
         ActivationType::SOFTPLUS => data.iter().map(|row| row.iter().map(|&x| softplus(x)).collect()).collect(),
         ActivationType::PROBIT => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Just return the value as is
         ActivationType::RANDOM => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Just return the value as is
-        ActivationType::SOFTMAX => unimplemented!(), // Handle separately if needed
+        ActivationType::SOFTMAX => unimplemented!(),                                                 // Handle separately if needed
     }
 }
-
 
 // Implement activation functions for Complex<f64>
 fn sigmoid_complex(z: Complex<f64>) -> Complex<f64> {
@@ -175,8 +174,43 @@ fn selu_complex(z: Complex<f64>, scale: f64, alpha: f64) -> Complex<f64> {
 }
 
 fn gelu_complex(z: Complex<f64>) -> Complex<f64> {
-    let cdf = Complex::new(0.5, 0.0) * erf_complex(Complex::new(1.0, 0.0) + (Complex::new(2.0 / PI, 0.0) * z));
+    let sqrt_2 = (2.0_f64).sqrt();
+    let half = Complex::new(0.5, 0.0);
+
+    // Compute erf(z / sqrt(2))
+    let scaled_z = z / Complex::new(sqrt_2, 0.0);
+    let erf_result = erf_complex(scaled_z);
+
+    // Compute CDF: 0.5 * (1 + erf(z / sqrt(2)))
+    let cdf = half * (Complex::new(1.0, 0.0) + erf_result);
+
+    // Return GELU: z * CDF
     z * cdf
+}
+
+pub fn erf_complex(z: Complex<f64>) -> Complex<f64> {
+    let sqrt_pi = PI.sqrt();
+    let two_over_sqrt_pi = 2.0 / sqrt_pi;
+
+    // Start with the first term of the series
+    let mut term = z;
+    let mut sum = term;
+    let mut n = 1.0;
+
+    // Series expansion with convergence check
+    for _ in 1..100 { // Allow up to 100 iterations if necessary
+        n += 1.0;
+        term *= -z * z / n; // (-1)^n * z^(2n+1) / n!
+        let delta = term / (2.0 * n + 1.0); // Current term
+        sum += delta;
+
+        // Convergence check: Stop if the term becomes very small
+        if delta.norm() < 1e-12 {
+            break;
+        }
+    }
+
+    two_over_sqrt_pi * sum
 }
 
 fn softsign_complex(z: Complex<f64>) -> Complex<f64> {
@@ -187,22 +221,6 @@ fn softplus_complex(z: Complex<f64>) -> Complex<f64> {
     (z.exp() + Complex::new(1.0, 0.0)).ln()
 }
 
-fn erf_complex(z: Complex<f64>) -> Complex<f64> {
-    // Constants for approximation
-    let sqrt_pi = (PI).sqrt();
-
-    // Calculate the exponential of -z^2
-    let exp_neg_z_squared = (-z * z).exp();
-
-    // Calculate the real part
-    let real_part = (2.0 / sqrt_pi) * (z.re * exp_neg_z_squared.re - z.im * exp_neg_z_squared.im);
-    
-    // Calculate the imaginary part
-    let imaginary_part = (2.0 / sqrt_pi) * (z.im * exp_neg_z_squared.re + z.re * exp_neg_z_squared.im);
-
-    // Combine both parts to return the result
-    Complex::new(real_part, imaginary_part)
-}
 
 // Main activation function for complex numbers
 pub fn activate_output_complex(data: &Vec<Vec<Complex<f64>>>, activation: ActivationType) -> Vec<Vec<Complex<f64>>> {
@@ -219,29 +237,28 @@ pub fn activate_output_complex(data: &Vec<Vec<Complex<f64>>>, activation: Activa
         ActivationType::SOFTPLUS => data.iter().map(|row| row.iter().map(|&x| softplus_complex(x)).collect()).collect(),
         ActivationType::PROBIT => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Just return the value as is
         ActivationType::RANDOM => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Just return the value as is
-        ActivationType::SOFTMAX => softmax(data), // Handle separately if needed
+        ActivationType::SOFTMAX => softmax_complex(data),                                            // Handle separately if needed
     }
 }
 
 pub fn gauss<T, V, G>(v: &T, m: &V, var: &G) -> f64
 where
-    T: Debug + Clone + Into<f64> + Mul<Output=T> + Add<Output=T> + Div<Output=T>,
-    V: Debug + Clone + Into<f64> + Mul<Output=V> + Add<Output=V> + Div<Output=V>,
-    G: Debug + Clone + Into<f64> + Mul<Output=G> + Add<Output=G> + Div<Output=G>
+    T: Debug + Clone + Into<f64> + Mul<Output = T> + Add<Output = T> + Div<Output = T>,
+    V: Debug + Clone + Into<f64> + Mul<Output = V> + Add<Output = V> + Div<Output = V>,
+    G: Debug + Clone + Into<f64> + Mul<Output = G> + Add<Output = G> + Div<Output = G>,
 {
     let value = v.clone().into();
     let mean = m.clone().into();
     let sigma = var.clone().into().sqrt();
 
-    return (1.0 / (sigma * (2.0 * PI).sqrt()))
-        * E.powf(-1.0 * (value - mean).powf(2.0) / (2.0 * var.clone().into()));
+    return (1.0 / (sigma * (2.0 * PI).sqrt())) * E.powf(-1.0 * (value - mean).powf(2.0) / (2.0 * var.clone().into()));
 }
 
 pub fn guass_d1<T, V, G>(v: &Vec<T>, m: &V, s: &G) -> Vec<f64>
 where
-    T: Debug + Clone + Into<f64> + Mul<Output=T> + Add<Output=T> + Div<Output=T>,
-    V: Debug + Clone + Into<f64> + Mul<Output=V> + Add<Output=V> + Div<Output=V>,
-    G: Debug + Clone + Into<f64> + Mul<Output=G> + Add<Output=G> + Div<Output=G>
+    T: Debug + Clone + Into<f64> + Mul<Output = T> + Add<Output = T> + Div<Output = T>,
+    V: Debug + Clone + Into<f64> + Mul<Output = V> + Add<Output = V> + Div<Output = V>,
+    G: Debug + Clone + Into<f64> + Mul<Output = G> + Add<Output = G> + Div<Output = G>,
 {
     let mean = m.clone().into();
     let sigma = s.clone().into();
@@ -257,9 +274,9 @@ where
 
 pub fn guass_d2<T, V, G>(v: &Vec<Vec<T>>, m: &V, s: &G) -> Vec<Vec<f64>>
 where
-    T: Debug + Clone + Into<f64> + Mul<Output=T> + Add<Output=T> + Div<Output=T>,
-    V: Debug + Clone + Into<f64> + Mul<Output=V> + Add<Output=V> + Div<Output=V>,
-    G: Debug + Clone + Into<f64> + Mul<Output=G> + Add<Output=G> + Div<Output=G>
+    T: Debug + Clone + Into<f64> + Mul<Output = T> + Add<Output = T> + Div<Output = T>,
+    V: Debug + Clone + Into<f64> + Mul<Output = V> + Add<Output = V> + Div<Output = V>,
+    G: Debug + Clone + Into<f64> + Mul<Output = G> + Add<Output = G> + Div<Output = G>,
 {
     let mean = m.clone().into();
     let sigma = s.clone().into();
@@ -273,7 +290,7 @@ where
     result
 }
 
-pub fn softmax(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+pub fn softmax_complex(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
     // Softmax function to scale attention scores to probability values
     let mut result = vec![vec![Complex::new(0.0, 0.0); input[0].len()]; input.len()];
     for row in 0..input.len() {
@@ -290,21 +307,17 @@ pub fn softmax(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
 
 pub fn softmax_last_row(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
     // Softmax function to scale attention scores to probability values
-    let mut result = input.clone(); // Clone input to preserve the original structure
+    let mut result = input.clone();
 
     // Get the last row from the input
     let last_row = &input[input.len() - 1];
 
-    // Compute softmax for the last row
-    let mut sum = Complex::new(0.0, 0.0);
-    for col in 0..last_row.len() {
-        sum = sum + last_row[col].exp(); // Sum of exponentials of the last row
-    }
-    
-    // Store the softmax results for the last row
-    for col in 0..last_row.len() {
-        result[input.len() - 1][col] = last_row[col].exp() / sum; // Softmax applied only to the last row
-    }
+    result[input.len() - 1] = softmax_row(&last_row);
 
-    result // Return the result with only the last row processed
+    result
+}
+
+pub fn softmax_row(input: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
+    let exp_sum: Complex<f64> = input.iter().map(|x| x.exp()).sum();
+    input.iter().map(|x| x.exp() / exp_sum).collect()
 }

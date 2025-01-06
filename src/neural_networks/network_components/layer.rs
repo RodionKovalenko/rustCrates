@@ -1,12 +1,19 @@
 use crate::neural_networks::{
-    network_types::transformer::self_attention_layer::SelfAttentionLayer,
-    utils::{activation::activate_output_complex, matrix::{add_matrix, add_vector, multiply_complex}, weights_initializer::initialize_weights_complex},
+    network_types::{feedforward_layer::FeedForwardLayer, transformer::self_attention_layer::SelfAttentionLayer},
+    utils::{
+        activation::activate_output_complex,
+        matrix::{add_vector, multiply_complex},
+        weights_initializer::initialize_weights_complex,
+    },
 };
 use core::fmt::Debug;
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
-use super::{add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer};
+use super::{
+    add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer,
+    softmax_output_layer::SoftmaxLayer,
+};
 
 impl Default for ActivationType {
     fn default() -> Self {
@@ -50,6 +57,8 @@ pub enum LayerType {
     HiddenLayer,
     OutputLayer,
     AttentionLayer,
+    DenseLayer,
+    LinearLayer,
 }
 
 // Implement Default for LayerType
@@ -65,6 +74,7 @@ pub enum LayerEnum {
     Embedding(Box<EmbeddingLayer>),
     PositionalEncoding(Box<PositionalEncodingLayer>),
     Dense(Box<Layer>),
+    FeedForward(Box<FeedForwardLayer>),
     RMSNorm(Box<RMSNormLayer>),
     SelfAttention(Box<SelfAttentionLayer>),
     Linear(Box<LinearLayer>),
@@ -130,10 +140,14 @@ impl BaseLayer for Layer {
     fn forward(&self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
         let output: Vec<Vec<Complex<f64>>> = multiply_complex(input, &self.weights);
         let raw_ouput: Vec<Vec<Complex<f64>>> = add_vector(&output, &self.bias);
-        let activated_output: Vec<Vec<Complex<f64>>> = activate_output_complex(&raw_ouput, self.activation_type.clone());
-        let residual_output = add_matrix(&activated_output, input);
 
-        residual_output
+        if &self.layer_type == &LayerType::DenseLayer {
+            let activated_output: Vec<Vec<Complex<f64>>> = activate_output_complex(&raw_ouput, self.activation_type.clone());
+
+            return activated_output;
+        }
+
+        raw_ouput
     }
 
     fn backward(&self, _gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
