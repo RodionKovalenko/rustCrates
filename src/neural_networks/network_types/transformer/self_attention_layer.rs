@@ -1,5 +1,8 @@
 use super::attention_head::AttentionHead;
-use crate::neural_networks::{network_components::layer::{BaseLayer, LayerType}, utils::matrix::add_matrix};
+use crate::neural_networks::network_components::{
+    add_rms_norm_layer::RMSNormLayer,
+    layer::{BaseLayer, LayerEnum, LayerType},
+};
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
@@ -8,22 +11,30 @@ use serde::{Deserialize, Serialize};
 pub struct SelfAttentionLayer {
     pub attention_heads: Vec<AttentionHead>,
     pub activated_output: Vec<Vec<Complex<f64>>>,
+    pub dense_layers: Vec<LayerEnum>,
 }
 
 impl SelfAttentionLayer {
     // Constructor to initialize multiple attention heads
-    pub fn new(num_heads: usize, rows: usize, cols: usize, layer_type: LayerType) -> Self {
+    pub fn new(num_heads: usize, rows: usize, cols: usize, learning_rate: f64) -> Self {
         let mut attention_heads: Vec<AttentionHead> = vec![];
+        let mut layers: Vec<LayerEnum> = vec![];
         let head_cols = cols / num_heads; // Columns per attention head
 
         for _i in 0..num_heads {
-            let attention_head = AttentionHead::create_default_attention_layer(rows, head_cols, layer_type.clone());
+            let attention_head = AttentionHead::create_default_attention_layer(rows, head_cols, LayerType::AttentionLayer);
             attention_heads.push(attention_head);
         }
+
+        let epsilon: f64 = 0.000001;
+        let rms_norm_layer = RMSNormLayer::new(cols, epsilon, learning_rate);
+
+        layers.push(LayerEnum::RMSNorm(Box::new(rms_norm_layer)));
 
         Self {
             attention_heads,
             activated_output: vec![],
+            dense_layers: layers,
         }
     }
 }
@@ -51,7 +62,24 @@ impl BaseLayer for SelfAttentionLayer {
             output.push(combined_output);
         }
 
-        output = add_matrix(&output, input);
+        for layer in self.dense_layers.iter() {
+            match layer {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    let rms_norm_layer = Some(rms_norm_layer).unwrap();
+                    let previous_output = &output;
+                    println!("Previous output: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
+
+                    // Forward pass for the dense layer (make sure dense accepts Vec<Vec<Complex<f64>>>)
+                    let output_rms = rms_norm_layer.forward(&previous_output, &input);
+
+                    println!("RMS output: {:?}, {:?}", &output_rms.len(), &output_rms[0].len());
+
+                    //println!("RMS output: {:?}", &output_rms);
+                    output = output_rms;
+                }
+                _ => {}
+            }
+        }
 
         println!("output of self attention layer: {:?} x {:?}", output.len(), output[0].len());
         output
