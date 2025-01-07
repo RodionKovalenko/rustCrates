@@ -2,6 +2,8 @@ use core::fmt::Debug;
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
+use crate::neural_networks::utils::matrix::add_matrix;
+
 // RMSNorm Layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RMSNormLayer {
@@ -40,9 +42,10 @@ impl RMSNormLayer {
 
 impl RMSNormLayer {
     // Forward pass for a batch of token embeddings (2D input)
-    pub fn forward(&self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-        // Apply RMSNorm for each token (each row in the input)
-        input.iter()
+    pub fn forward(&self, input: &Vec<Vec<Complex<f64>>>, input_before_transform: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+        let output = add_matrix(input, input_before_transform);
+
+        output.iter()
             .map(|vec| self.rms_norm(vec)) // Normalize each token embedding
             .collect()
     }
