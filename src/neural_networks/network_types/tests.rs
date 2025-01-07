@@ -15,7 +15,7 @@ mod tests {
         let number_of_hidden_layers: usize = 1;
         let number_of_hidden_neurons: usize = 10;
         let minibatch_size: usize = 50;
-        let learning_rate: f32 = 0.5;
+        let learning_rate: f64 = 0.5;
 
         let feedforward_network: NeuralNetwork = create(
             number_inputs,
