@@ -1,8 +1,6 @@
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
-use super::layer::BaseLayer;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PositionalEncodingLayer {
     pub embedding_dim: usize, // Store the embedding dimension
@@ -14,32 +12,37 @@ impl PositionalEncodingLayer {
     }
 }
 
-impl BaseLayer for PositionalEncodingLayer {
+impl PositionalEncodingLayer {
     /// Apply positional encoding to a batch of embeddings
-    fn forward(&self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-        let mut output = Vec::with_capacity(input.len());
+   pub fn forward(&self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+        let mut layer_output: Vec<Vec<Vec<Complex<f64>>>> = vec![];
 
-        for (position, token_embeddings) in input.iter().enumerate() {
-            // Ensure all embeddings have the correct dimension
-            assert_eq!(
-                token_embeddings.len(),
-                self.embedding_dim,
-                "All token embeddings must have the same dimension as specified in the layer."
-            );
+        for input in input_batch {
+            let mut output = Vec::with_capacity(input.len());
 
-            // Step 1: Add positional encodings to token embeddings (this could be a learned or fixed vector)
-            let positional_encoding = generate_positional_encoding(position, self.embedding_dim);
-            let token_with_pos_encoding = add_positional_encoding(token_embeddings, &positional_encoding);
+            for (position, token_embeddings) in input.iter().enumerate() {
+                // Ensure all embeddings have the correct dimension
+                assert_eq!(
+                    token_embeddings.len(),
+                    self.embedding_dim,
+                    "All token embeddings must have the same dimension as specified in the layer."
+                );
 
-            // Step 2: Apply rotary positional encoding
-            let rotated_embeddings = apply_rotary_positional_encoding(&token_with_pos_encoding, position, self.embedding_dim);
-            output.push(rotated_embeddings);
+                // Step 1: Add positional encodings to token embeddings (this could be a learned or fixed vector)
+                let positional_encoding = generate_positional_encoding(position, self.embedding_dim);
+                let token_with_pos_encoding = add_positional_encoding(token_embeddings, &positional_encoding);
+
+                // Step 2: Apply rotary positional encoding
+                let rotated_embeddings = apply_rotary_positional_encoding(&token_with_pos_encoding, position, self.embedding_dim);
+                output.push(rotated_embeddings);
+            }
+
+            layer_output.push(output);
         }
-
-        output
+        layer_output
     }
 
-    fn backward(&self, gradients: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    pub fn backward(&self, gradients: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
         gradients.clone()
     }
 }

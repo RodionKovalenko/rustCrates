@@ -9,7 +9,6 @@ use std::f64;
 use std::io::Result;
 use std::path::Path;
 
-use crate::uphold_api::cryptocurrency_api::BTC_EUR;
 use crate::uphold_api::cryptocurrency_dto::CryptocurrencyDto;
 use crate::uphold_api::cryptocurrency_dto::DatePriceDto;
 
@@ -17,7 +16,7 @@ use super::stock_apis::get_data_from_yahoo;
 use super::stock_apis::DATASET_DIR;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct MontaCarloParams {
+pub struct MonteCarloParams {
     pub num_simulations: i32,
     pub year_to_predict: i32,
 }
@@ -26,9 +25,12 @@ fn load_historical_data(crypto_name: &str) -> Result<(Vec<String>, Vec<f64>)> {
     let filename = format!("{}_historical_data.json", crypto_name);
     let full_path = Path::new(DATASET_DIR).join(filename);
 
-    let data_array: Vec<CryptocurrencyDto> = get_data_from_yahoo(full_path.to_str().unwrap());
+    let data_array: Vec<CryptocurrencyDto> = get_data_from_yahoo(full_path.to_str().unwrap(), crypto_name);
     let mut dates = vec![];
     let mut prices: Vec<f64> = vec![];
+
+    println!("data_array: {:?}", data_array.len());
+    println!("stock item: {:?}", data_array[0]);
 
     let mut filtered_cryptocurrencies: Vec<CryptocurrencyDto> = vec![];
 
@@ -119,8 +121,8 @@ pub fn interpolate_missing_dates(data: Vec<CryptocurrencyDto>) -> Vec<DatePriceD
     result
 }
 
-pub fn simulate(monte_carlo_params: MontaCarloParams) {
-    let (_dates, historical_prices) = match load_historical_data(BTC_EUR) {
+pub fn simulate(monte_carlo_params: MonteCarloParams, crypto_name: &str) {
+    let (_dates, historical_prices) = match load_historical_data(crypto_name) {
         Ok((dates, prices)) => (dates, prices),
         Err(e) => {
             eprintln!("Error loading historical data: {}", e);
@@ -128,8 +130,10 @@ pub fn simulate(monte_carlo_params: MontaCarloParams) {
         }
     };
 
+    println!("historical prices len: {}", historical_prices.len());
+
     let years_to_predict = monte_carlo_params.year_to_predict as usize; // Simulating for n years
-    let n: usize = (years_to_predict * 365) as usize; // 252 trading days per year or 365 days for cryptos
+    let n: usize = (years_to_predict * 252) as usize; // 252 trading days per year or 365 days for cryptos
     let m = monte_carlo_params.num_simulations as usize; // Number of simulations (Monte Carlo paths)
     let dt = 1.0 / 365.0 as f64; // Daily time increment
 
