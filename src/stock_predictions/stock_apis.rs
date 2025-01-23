@@ -16,11 +16,11 @@ struct Quote {
     high: f64,
     low: f64,
     close: f64,
-    volume: u64,
+    volume: u64
 }
 
-impl From<Quote> for CryptocurrencyDto {
-    fn from(quote: Quote) -> Self {
+impl CryptocurrencyDto {
+    fn from(quote: Quote, stock_ticker_sym: &str) -> Self {
         // Parse the timestamp string to DateTime
         let timestamp:DateTime<chrono::Utc> = DateTime::from_timestamp(quote.timestamp.parse::<i64>().unwrap(), 0).unwrap();
         let full_date: DateTime<Local> =  timestamp.with_timezone(&Local);
@@ -33,7 +33,7 @@ impl From<Quote> for CryptocurrencyDto {
             hour: full_date.hour() as u8,
             minute: full_date.minute() as u8,
             currency: "EUR".to_string(), // or set to a dynamic value if necessary
-            pair: "BTC-EUR".to_string(), // or set to a dynamic value if necessary
+            pair: stock_ticker_sym.to_string(), // or set to a dynamic value if necessary
             ask: quote.open as f32, // Assuming you want to use the 'open' price as 'ask'
             bid: quote.close as f32, // Assuming you want to use the 'close' price as 'bid'
         }
@@ -90,7 +90,7 @@ pub async fn fetch_and_save_historical_data(stock_name: &str) {
 }
 
 
-pub fn get_data_from_yahoo(filename: &str) -> Vec<CryptocurrencyDto> {
+pub fn get_data_from_yahoo(filename: &str, stock_ticker_sym: &str) -> Vec<CryptocurrencyDto> {
     let mut file = file_utils::get_or_create_file(&filename, false);
     let mut data = String::new();
     let mut data_crypto_dtos: Vec<CryptocurrencyDto> = vec![];
@@ -102,7 +102,7 @@ pub fn get_data_from_yahoo(filename: &str) -> Vec<CryptocurrencyDto> {
 
         for quote_dto in data_quotes.iter() {
             // Convert &Quote to CryptocurrencyDto using .into()
-            data_crypto_dtos.push(CryptocurrencyDto::from((*quote_dto).clone()));
+            data_crypto_dtos.push(CryptocurrencyDto::from((*quote_dto).clone(), stock_ticker_sym));
         }
     }
 

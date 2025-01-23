@@ -7,17 +7,20 @@ use crate::neural_networks::utils::activation::softmax_last_row;
 // RMSNorm Layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SoftmaxLayer {
-    learning_rate: f64
+    learning_rate: f64,
 }
 
 impl SoftmaxLayer {
     pub fn new(learning_rate: f64) -> Self {
-        Self {
-            learning_rate
-        }
+        Self { learning_rate }
     }
-    pub fn forward(&self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-        softmax_last_row(input)
+    pub fn forward(&self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+        let mut layer_output: Vec<Vec<Vec<Complex<f64>>>> = vec![];
+
+        for input in input_batch {
+            layer_output.push(softmax_last_row(input));
+        }
+        layer_output
     }
 
     // Backward pass to compute gradients for input and gamma
