@@ -53,7 +53,6 @@ where
     result_matrix
 }
 
-
 pub fn multiply_complex<T, V>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<V>>) -> Vec<Vec<Complex<f64>>>
 where
     T: Into<Complex<f64>> + Clone + Debug,
@@ -91,9 +90,7 @@ where
         // Parallelize the rows of the result matrix using Rayon
         result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
             for j in 0..num_columns {
-                row[j] = (0..matrix_b_clone.len()).map(|k| {
-                    matrix_a_clone[i][k] * matrix_b_clone[k][j]
-                }).sum();
+                row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
             }
         });
     });
@@ -103,11 +100,16 @@ where
 
 // A helper function to convert matrix elements to Complex<f64>
 fn convert_to_complex<T: Into<Complex<f64>> + Clone + Debug>(matrix: &Vec<Vec<T>>) -> Vec<Vec<Complex<f64>>> {
-    matrix.iter()
-        .map(|row| row.iter().map(|v| {
-            // Convert the element to Complex<f64>
-            v.clone().into() // This uses the Into trait to convert any type to Complex<f64>
-        }).collect())
+    matrix
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|v| {
+                    // Convert the element to Complex<f64>
+                    v.clone().into() // This uses the Into trait to convert any type to Complex<f64>
+                })
+                .collect()
+        })
         .collect()
 }
 
@@ -322,22 +324,27 @@ where
 }
 
 // Assuming this is the method you've defined for finding the highest index in the last row:
-pub fn find_highest_index(input: &Vec<Vec<Complex<f64>>>) -> Option<usize> {
-    // Get the last row from the input matrix
-    let last_row = &input[input.len() - 1];
-    
-    // Initialize variables to track the index of the highest magnitude
-    let mut max_index = 0;
-    let mut max_magnitude = 0.0;
+pub fn find_highest_index(input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Option<Vec<u32>> {
+    let mut max_index_batch: Vec<u32> = vec![];
 
-    // Iterate through the last row to find the highest magnitude
-    for (i, value) in last_row.iter().enumerate() {
-        let magnitude = value.norm();  // norm() gives the magnitude (absolute value) of the complex number
-        if magnitude > max_magnitude {
-            max_magnitude = magnitude;
-            max_index = i;
+    for input in input_batch {
+        // Get the last row from the input matrix
+        let last_row = &input[input.len() - 1];
+
+        // Initialize variables to track the index of the highest magnitude
+        let mut max_index = 0;
+        let mut max_magnitude = 0.0;
+
+        // Iterate through the last row to find the highest magnitude
+        for (i, value) in last_row.iter().enumerate() {
+            let magnitude = value.norm(); // norm() gives the magnitude (absolute value) of the complex number
+            if magnitude > max_magnitude {
+                max_magnitude = magnitude;
+                max_index = i;
+            }
         }
+        max_index_batch.push(max_index as u32);
     }
 
-    Some(max_index) // Return the index of the token with the highest probability
+    Some(max_index_batch) // Return the index of the token with the highest probability
 }

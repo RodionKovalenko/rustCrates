@@ -8,7 +8,7 @@ use crate::neural_networks::{
 
 // Layer struct
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AttentionHead {
+pub struct MaskedAttentionHead {
     pub weights_q: Vec<Vec<Complex<f64>>>,
     pub weights_k: Vec<Vec<Complex<f64>>>,
     pub weights_v: Vec<Vec<Complex<f64>>>,
@@ -30,7 +30,7 @@ pub struct AttentionHead {
     pub v1: Vec<Vec<Complex<f64>>>,
 }
 
-impl AttentionHead {
+impl MaskedAttentionHead {
     fn default(rows: usize, cols: usize) -> Self {
         let mut weights_q: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
         let mut weights_k: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
@@ -44,7 +44,7 @@ impl AttentionHead {
         let bias_k: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
         let bias_v: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
 
-        AttentionHead {
+        MaskedAttentionHead {
             weights_q,
             weights_k,
             weights_v,
@@ -69,12 +69,8 @@ impl AttentionHead {
         self.layer_type = layer_type;
     }
 
-    pub fn create_default_attention_layer(
-        rows: usize,
-        cols: usize,
-        layer_type: LayerType,
-    ) -> AttentionHead {
-        let mut attention_layer: AttentionHead = AttentionHead::default(rows, cols);
+    pub fn create_default_attention_layer(rows: usize, cols: usize, layer_type: LayerType) -> MaskedAttentionHead {
+        let mut attention_layer: MaskedAttentionHead = MaskedAttentionHead::default(rows, cols);
         attention_layer.set_layer_type(layer_type);
 
         attention_layer
@@ -82,18 +78,23 @@ impl AttentionHead {
 }
 
 // Implement BaseLayer for Layer struct
-impl AttentionHead {
+impl MaskedAttentionHead {
     pub fn forward(&self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-       // println!("output in weights_q : {:?}, {:?}", &self.weights_q.len(), &self.weights_q[0].len());
+        // println!("output in weights_q : {:?}, {:?}", &self.weights_q.len(), &self.weights_q[0].len());
 
         let q = multiply_complex(input, &self.weights_q);
         let k = multiply_complex(input, &self.weights_k);
         let v = multiply_complex(input, &self.weights_v);
 
+        let mask = create_causal_mask(input.len(), input.len());
         let attention_scores = multiply_complex(&q, &k);
-        let attention_scores_scales = scale_attention_scores(&attention_scores, k[0].len() as f64);
+        let mut attention_scores_scales = scale_attention_scores(&attention_scores, k[0].len() as f64);
+
+        // Apply the mask to the scaled attention scores
+        apply_attention_mask_inplace(&mut attention_scores_scales, &mask);
+
         let attention_weights = softmax_complex(&attention_scores_scales);
-      
+
         // Multiply attention weights with value (V)
         let output = multiply_complex(&attention_weights, &v);
 
@@ -101,6 +102,7 @@ impl AttentionHead {
         // println!("output in q : {:?}, {:?}", &q.len(), &q[0].len());
         // println!("output in attenthion head attention weigths: {:?}, {:?}", &attention_weights.len(), &attention_weights[0].len());
         // println!("output in attenthion head: {:?}", &output);
+
         output
     }
 
@@ -123,4 +125,28 @@ fn scale_attention_scores(attention_scores: &Vec<Vec<Complex<f64>>>, d_k: f64) -
     }
 
     scaled_scores
+}
+
+fn create_causal_mask(rows: usize, cols: usize) -> Vec<Vec<u8>> {
+    let mut mask = vec![vec![0; cols]; rows]; // Initialize with zeros
+
+    for i in 0..rows {
+        for j in 0..=i.min(cols - 1) {
+            mask[i][j] = 1; // Allow attention to current and previous tokens
+        }
+    }
+
+    mask
+}
+
+fn apply_attention_mask_inplace(attention_scores: &mut Vec<Vec<Complex<f64>>>, mask: &Vec<Vec<u8>>) {
+    let large_negative = Complex::new(-1e9, 0.0);
+
+    for row in 0..attention_scores.len() {
+        for col in 0..attention_scores[row].len() {
+            if mask[row][col] == 0 {
+                attention_scores[row][col] = large_negative; // Apply the mask
+            }
+        }
+    }
 }

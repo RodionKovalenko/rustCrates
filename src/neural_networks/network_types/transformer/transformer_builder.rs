@@ -1,9 +1,7 @@
-use num::Complex;
-
 use crate::neural_networks::{
     network_components::{
         embedding_layer::EmbeddingLayer,
-        layer::{BaseLayer, LayerEnum},
+        layer::LayerEnum,
         linear_layer::LinearLayer,
         positional_encoding_layer::PositionalEncodingLayer,
         softmax_output_layer::SoftmaxLayer,
@@ -12,14 +10,10 @@ use crate::neural_networks::{
         feedforward_layer::FeedForwardLayer,
         neural_network_generic::{create, NeuralNetwork},
         wavelet_network::DECOMPOSITION_LEVELS,
-    },
-    utils::{
-        matrix::find_highest_index,
-        tokenizer::{detokenize, tokenize},
-    },
+    }
 };
 
-use super::self_attention_layer::SelfAttentionLayer;
+use super::{self_attention_layer::SelfAttentionLayer, transformer_network::predict};
 
 pub fn create_transformer() {
     let number_inputs: usize = 32;
@@ -38,7 +32,7 @@ pub fn create_transformer() {
         learning_rate,
     );
 
-    // Add layers to the network
+    //Add layers to the network
     let mut layers = transformer_network.layers;
 
     let embedding_dim_original: usize = 512;
@@ -79,103 +73,9 @@ pub fn create_transformer() {
 
     transformer_network.layers = layers;
 
-    let (_tokens, ids) = tokenize("Hallo, wie geht es dir? Как твои дела? В мене справи добре").unwrap();
+    let input_str1 = "Hallo, wie geht es dir?";
+    let input_str2: &str = "Was ist die Hauptstadt von Deutschland?";
 
-    println!("detokenize: {:?}", detokenize(&ids).unwrap());
-
-    let mut output = None;
-
-    for layer in transformer_network.layers.iter() {
-        match layer {
-            LayerEnum::Embedding(embedding_layer_box) => {
-                let embedding_l = Some(embedding_layer_box).unwrap();
-                let embeddings: Vec<Vec<Complex<f64>>> = embedding_l.forward(&ids);
-
-                //println!("output embedding layer: {:?}, {:?}", &embeddings.len(), &embeddings[0].len());
-                //println!("output embedding: {:?}", &embeddings);
-                output = Some(embeddings);
-            }
-            LayerEnum::PositionalEncoding(positional_encoding_layer) => {
-                if let Some(previous_output) = &output {
-                    println!("previous output embedding layer: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
-
-                    let positional_encodings = positional_encoding_layer.forward(&previous_output);
-
-                    println!("positional_encodings layer: {:?}, {:?}", &positional_encodings.len(), &positional_encodings[0].len());
-
-                    output = Some(positional_encodings);
-                } else {
-                    println!("No previous output for Attention layer");
-                }
-            }
-            LayerEnum::SelfAttention(attention) => {
-                // Ensure there's an output from the previous layer before forwarding
-                if let Some(previous_output) = &output {
-                    println!("Previous output attention layer: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
-
-                    let output_attention = attention.forward(&previous_output);
-
-                    println!("output attention layer: {:?}, {:?}", &output_attention.len(), &output_attention[0].len());
-                    // Store the output for the next layer
-                    output = Some(output_attention);
-                } else {
-                    println!("No previous output for Attention layer");
-                }
-            }
-            LayerEnum::FeedForward(dense) => {
-                let dense_layer = Some(dense).unwrap();
-                if let Some(previous_output) = &output {
-                    println!("Previous output: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
-
-                    // Forward pass for the dense layer (make sure dense accepts Vec<Vec<Complex<f64>>>)
-                    let output_dense = dense_layer.forward(&previous_output);
-
-                    println!("Dense output: {:?}, {:?}", &output_dense.len(), &output_dense[0].len());
-
-                    //println!("dense output: {:?}", &output_dense);
-                    output = Some(output_dense);
-                } else {
-                    println!("No previous output for Dense layer");
-                }
-            }
-            LayerEnum::Linear(linear_layer) => {
-                let linear_layer = Some(linear_layer).unwrap();
-                if let Some(previous_output) = &output {
-                    println!("Previous output in linear layer: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
-
-                    // Forward pass for the dense layer (make sure dense accepts Vec<Vec<Complex<f64>>>)
-                    let output_linear = linear_layer.forward(&previous_output);
-
-                    println!("Linear output: {:?}, {:?}", &output_linear.len(), &output_linear[0].len());
-
-                    //println!("output_linear output: {:?}", &output_linear);
-                    output = Some(output_linear);
-                } else {
-                    println!("No previous output for Dense layer");
-                }
-            }
-            LayerEnum::Softmax(softmax_layer) => {
-                let softmax_layer = Some(softmax_layer).unwrap();
-                if let Some(previous_output) = &output {
-                    println!("Previous output in softmax layer: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
-
-                    let output_softmax: Vec<Vec<Complex<f64>>> = softmax_layer.forward(&previous_output);
-                    let high_token_index: u32 = find_highest_index(&output_softmax).unwrap() as u32;
-
-                    let predicted_token: String = detokenize(&vec![high_token_index]).unwrap();
-
-                    println!("Softmax output: {:?}, {:?}", &output_softmax.len(), &output_softmax[0].len());
-                    println!("softmax: {:?}", high_token_index);
-                    println!("predicted token: {:?}", predicted_token);
-
-                    output = Some(output_softmax);
-                } else {
-                    println!("No previous output for Dense layer");
-                }
-            }
-            _ => {}
-        }
-    }
-
-    // println!("token ids: {:?}", &ids);
+    let input_batch = vec![input_str1, input_str2];
+    predict(&transformer_network, input_batch);
 }

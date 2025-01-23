@@ -29,11 +29,17 @@ impl LinearLayer {
             gradients: vec![],
         }
     }
-    pub fn forward(&self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-        let mut output = multiply_complex(input, &self.weights);
+    pub fn forward(&self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+        let mut layer_output: Vec<Vec<Vec<Complex<f64>>>> = vec![];
 
-        output = add_vector(&output, &self.bias);
+        for input in input_batch {
+            let mut output = multiply_complex(input, &self.weights);
 
-        output
+            output = add_vector(&output, &self.bias);
+
+            layer_output.push(output);
+        }
+
+        layer_output
     }
 }

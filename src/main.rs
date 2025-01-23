@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, time::Instant};
 
 use neural_networks::neural_networks::network_types::transformer::transformer_builder::create_transformer;
 
@@ -27,6 +27,9 @@ fn main() {
     //         _ => println!(" no argument recognized"),
     //     }
     // }
-
+    let now = Instant::now();
    create_transformer();
+
+   let seconds_elapsed = now.elapsed();
+   println!("time elapsed in seconds: {:?}", &seconds_elapsed);
 }

@@ -46,8 +46,8 @@ pub enum ActivationType {
 
 // Base Layer trait
 pub trait BaseLayer: Debug + Clone {
-    fn forward(&self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>>;
-    fn backward(&self, gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>>;
+    fn forward(&self, input: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>>;
+    fn backward(&self, gradient: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>>;
 }
 
 // Layer Type Enum
@@ -136,8 +136,8 @@ pub fn get_layer_type(layer_idx: usize, total_layers: usize) -> LayerType {
 }
 
 // Implement BaseLayer for Layer struct
-impl BaseLayer for Layer {
-    fn forward(&self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+impl Layer {
+    pub fn forward(&self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
         let output: Vec<Vec<Complex<f64>>> = multiply_complex(input, &self.weights);
         let raw_ouput: Vec<Vec<Complex<f64>>> = add_vector(&output, &self.bias);
 
@@ -150,7 +150,7 @@ impl BaseLayer for Layer {
         raw_ouput
     }
 
-    fn backward(&self, _gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    pub fn backward(&self, _gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
         self.gradient.clone()
     }
 }
