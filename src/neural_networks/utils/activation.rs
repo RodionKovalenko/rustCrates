@@ -1,4 +1,5 @@
 use num::{Complex, Float, One};
+use rayon::prelude::*;
 use std::f64::consts::E;
 use std::f64::consts::PI;
 use std::fmt::Debug;
@@ -198,7 +199,8 @@ pub fn erf_complex(z: Complex<f64>) -> Complex<f64> {
     let mut n = 1.0;
 
     // Series expansion with convergence check
-    for _ in 1..100 { // Allow up to 100 iterations if necessary
+    for _ in 1..100 {
+        // Allow up to 100 iterations if necessary
         n += 1.0;
         term *= -z * z / n; // (-1)^n * z^(2n+1) / n!
         let delta = term / (2.0 * n + 1.0); // Current term
@@ -220,7 +222,6 @@ fn softsign_complex(z: Complex<f64>) -> Complex<f64> {
 fn softplus_complex(z: Complex<f64>) -> Complex<f64> {
     (z.exp() + Complex::new(1.0, 0.0)).ln()
 }
-
 
 // Main activation function for complex numbers
 pub fn activate_output_complex(data: &Vec<Vec<Complex<f64>>>, activation: ActivationType) -> Vec<Vec<Complex<f64>>> {
@@ -291,18 +292,20 @@ where
 }
 
 pub fn softmax_complex(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-    // Softmax function to scale attention scores to probability values
-    let mut result = vec![vec![Complex::new(0.0, 0.0); input[0].len()]; input.len()];
-    for row in 0..input.len() {
-        let mut sum = Complex::new(0.0, 0.0);
-        for col in 0..input[row].len() {
-            sum = sum + input[row][col].exp();
-        }
-        for col in 0..input[row].len() {
-            result[row][col] = input[row][col].exp() / sum;
-        }
-    }
-    result
+    input
+        .par_iter() // Parallel iterator over rows of the input
+        .map(|row| {
+            let mut sum = Complex::new(0.0, 0.0);
+
+            // Calculate the sum of exponentials for the row
+            for &val in row {
+                sum = sum + val.exp();
+            }
+
+            // Calculate the softmax values for the row
+            row.iter().map(|&val| val.exp() / sum).collect::<Vec<Complex<f64>>>()
+        })
+        .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
 }
 
 pub fn softmax_last_row(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {

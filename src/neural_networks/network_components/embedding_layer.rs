@@ -107,7 +107,7 @@ impl EmbeddingLayer {
             token_input_ids_padded.push(padded_sequence);
         }
 
-        println!("token input after padding: {:?}", &token_input_ids_padded);
+        //println!("token input after padding: {:?}", &token_input_ids_padded);
 
         token_input_ids_padded
     }
