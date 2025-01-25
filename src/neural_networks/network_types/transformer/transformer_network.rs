@@ -128,10 +128,10 @@ pub fn predict(transformer_network: &NeuralNetwork, input_batch: &Vec<String>) -
     output.unwrap()
 }
 
-pub fn backward(transformer_network: &NeuralNetwork, average_loss: Complex<f64>) -> Vec<Vec<Vec<Complex<f64>>>> {
+pub fn backward(transformer_network: &NeuralNetwork, _average_loss: Complex<f64>) {
     // Backward pass
 
-    let mut gradients = None;
+    //let mut gradients = None;
 
     for layer in transformer_network.layers.iter() {
         match layer {
@@ -203,17 +203,15 @@ pub fn backward(transformer_network: &NeuralNetwork, average_loss: Complex<f64>)
             //         println!("No previous output for Dense layer");
             //     }
             // }
-            LayerEnum::Softmax(softmax_layer) => {
-                let softmax_layer = Some(softmax_layer).unwrap();
-               let gradients_softmax: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.backward(&previous_output);
+            // LayerEnum::Softmax(softmax_layer) => {
+            // //     let softmax_layer = Some(softmax_layer).unwrap();
+            // //    let gradients_softmax: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.backward(&previous_output);
 
-               gradients = Some(gradients_softmax);
-            }
+            // //    gradients = Some(gradients_softmax);
+            // }
             _ => {}
         }
     }
-
-    output.unwrap()
 }
 
 pub fn cross_entropy_loss_batch(
