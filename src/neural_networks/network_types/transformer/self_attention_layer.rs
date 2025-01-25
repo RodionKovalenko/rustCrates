@@ -70,12 +70,12 @@ impl SelfAttentionLayer {
                     LayerEnum::RMSNorm(rms_norm_layer) => {
                         let rms_norm_layer = Some(rms_norm_layer).unwrap();
                         let previous_output = &output;
-                        println!("Previous output: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
+                        //println!("Previous output: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
 
                         // Forward pass for the dense layer (make sure dense accepts Vec<Vec<Complex<f64>>>)
                         let output_rms = rms_norm_layer.forward(&previous_output, &input);
 
-                        println!("RMS output: {:?}, {:?}", &output_rms.len(), &output_rms[0].len());
+                        //println!("RMS output: {:?}, {:?}", &output_rms.len(), &output_rms[0].len());
 
                         //println!("RMS output: {:?}", &output_rms);
                         output = output_rms;
@@ -84,7 +84,7 @@ impl SelfAttentionLayer {
                 }
             }
 
-            println!("output of self attention layer: {:?} x {:?}", output.len(), output[0].len());
+            //println!("output of self attention layer: {:?} x {:?}", output.len(), output[0].len());
             layer_output.push(output);
         }
         layer_output
