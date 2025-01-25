@@ -5,6 +5,12 @@ use crate::neural_networks::network_components::layer::LayerEnum;
 
 pub const FILE_NAME: &str = "feedforward_network.json";
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum OperationMode {
+    TRAINING,
+    PRODUCTION
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NeuralNetwork {
     pub layers: Vec<LayerEnum>,

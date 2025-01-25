@@ -324,7 +324,7 @@ where
 }
 
 // Assuming this is the method you've defined for finding the highest index in the last row:
-pub fn find_highest_index(input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Option<Vec<u32>> {
+pub fn find_highest_index_last_row(input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Option<Vec<u32>> {
     let mut max_index_batch: Vec<u32> = vec![];
 
     for input in input_batch {
@@ -344,6 +344,34 @@ pub fn find_highest_index(input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Option<V
             }
         }
         max_index_batch.push(max_index as u32);
+    }
+
+    Some(max_index_batch) // Return the index of the token with the highest probability
+}
+
+pub fn find_highest_index_batch(input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Option<Vec<Vec<u32>>> {
+    let mut max_index_batch: Vec<Vec<u32>> = Vec::new();
+
+    for (batch_ind, input) in input_batch.iter().enumerate() {
+        for row in input {
+            // Initialize variables to track the index of the highest magnitude
+            let mut max_index = 0;
+            let mut max_magnitude = 0.0;
+
+            // Iterate through the last row to find the highest magnitude
+            for (i, value) in row.iter().enumerate() {
+                let magnitude = value.norm(); // norm() gives the magnitude (absolute value) of the complex number
+                if magnitude > max_magnitude {
+                    max_magnitude = magnitude;
+                    max_index = i;
+                }
+            }
+            if max_index_batch.len() <= batch_ind {
+                max_index_batch.push(Vec::new());
+            } 
+
+            max_index_batch[batch_ind].push(max_index as u32);
+        }
     }
 
     Some(max_index_batch) // Return the index of the token with the highest probability
