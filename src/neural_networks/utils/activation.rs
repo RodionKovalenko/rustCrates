@@ -319,5 +319,5 @@ pub fn softmax_last_row(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>
 
 pub fn softmax_row(input: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
     let exp_sum: Complex<f64> = input.iter().map(|x| x.exp()).sum();
-    input.iter().map(|x| x.exp() / exp_sum).collect()
+    input.iter().map(|x| x.exp().norm() / exp_sum).collect()
 }

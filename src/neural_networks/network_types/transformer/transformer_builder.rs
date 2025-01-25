@@ -8,14 +8,14 @@ use crate::neural_networks::{
     },
     network_types::{
         feedforward_layer::FeedForwardLayer,
-        neural_network_generic::{create, NeuralNetwork},
+        neural_network_generic::{create, NeuralNetwork, OperationMode},
         wavelet_network::DECOMPOSITION_LEVELS,
     }
 };
 
-use super::{self_attention_layer::SelfAttentionLayer, transformer_network::predict};
+use super::self_attention_layer::SelfAttentionLayer;
 
-pub fn create_transformer() {
+pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let number_inputs: usize = 32;
     let number_outputs = 32;
     let number_of_hidden_layers: usize = 1;
@@ -46,7 +46,7 @@ pub fn create_transformer() {
 
     let rows: usize = 16;
     let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
-    let softmax_layer = SoftmaxLayer::new(learning_rate);
+    let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode);
 
     layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
     layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
@@ -73,9 +73,5 @@ pub fn create_transformer() {
 
     transformer_network.layers = layers;
 
-    let input_str1 = "Hallo, wie geht es dir?";
-    let input_str2: &str = "Was ist die Hauptstadt von Deutschland?";
-
-    let input_batch = vec![input_str1, input_str2];
-    predict(&transformer_network, input_batch);
+    transformer_network
 }
