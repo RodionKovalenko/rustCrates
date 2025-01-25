@@ -50,7 +50,7 @@ impl<T: Debug + Clone, O: Debug + Clone> Dataset<T, O> {
 
             let batch = Dataset::new(batch_input, batch_target);
 
-            println!("batch dataset: {:?}", &batch);
+            //println!("batch dataset: {:?}", &batch);
             batches.push(batch);
         }
 

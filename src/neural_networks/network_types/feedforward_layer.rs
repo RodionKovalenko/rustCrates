@@ -3,6 +3,7 @@ use crate::neural_networks::network_components::{
     layer::{create_default_layer, ActivationType, Layer, LayerEnum, LayerType},
 };
 use num::Complex;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 // Layer struct
@@ -37,38 +38,38 @@ impl FeedForwardLayer {
 // Implement BaseLayer for SelfAttentionLayer
 impl FeedForwardLayer {
     pub fn forward(&self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
-        let mut layer_output: Vec<Vec<Vec<Complex<f64>>>> = vec![];
+        input_batch
+            .par_iter() // Process each input in the batch in parallel
+            .map(|input| {
+                let mut output: Vec<Vec<Complex<f64>>> = input.clone();
 
-        for input in input_batch {
-            let mut output: Vec<Vec<Complex<f64>>> = input.clone();
-
-            for layer in &self.layers {
-                output = layer.forward(&output);
-                // println!("layer in ffn: {:?}, {}, {}", &layer.layer_type, layer.weights.len(), layer.weights[0].len());
-                // println!("output in ffn layer: {:?}, {}, {}", &layer.layer_type, output.len(), output[0].len());
-            }
-
-            let rms_norm_layer = &self.rms_norm_layer.as_ref().unwrap();
-            match rms_norm_layer {
-                LayerEnum::RMSNorm(rms_norm_layer) => {
-                    let rms_norm_layer = Some(rms_norm_layer).unwrap();
-                    let previous_output = &output;
-                    println!("Previous output: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
-
-                    let output_rms = rms_norm_layer.forward(&previous_output, &input);
-
-                    println!("RMS output in ffn: {:?}, {:?}", &output_rms.len(), &output_rms[0].len());
-
-                    //println!("RMS output: {:?}", &output_rms);
-                    output = output_rms;
+                // Apply all layers sequentially
+                for layer in &self.layers {
+                    output = layer.forward(&output);
+                    // Debugging information (optional):
+                    // println!("layer in ffn: {:?}, {}, {}", &layer.layer_type, layer.weights.len(), layer.weights[0].len());
+                    // println!("output in ffn layer: {:?}, {}, {}", &layer.layer_type, output.len(), output[0].len());
                 }
-                _ => {}
-            }
 
-            layer_output.push(output);
-        }
+                // Apply the RMS normalization layer
+                let rms_norm_layer = &self.rms_norm_layer.as_ref().unwrap();
+                match rms_norm_layer {
+                    LayerEnum::RMSNorm(rms_norm_layer) => {
+                        let rms_norm_layer = Some(rms_norm_layer).unwrap();
+                        let previous_output = &output;
 
-        layer_output
+                        let output_rms = rms_norm_layer.forward(&previous_output, &input);
+
+                        // Debugging information (optional):
+                        // println!("RMS output in ffn: {:?}, {:?}", &output_rms.len(), &output_rms[0].len());
+                        output = output_rms;
+                    }
+                    _ => {}
+                }
+
+                output // Return the processed output for the current input
+            })
+            .collect() // Collect all the processed outputs into a single Vec
     }
 
     pub fn backward(&self, gradients: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
