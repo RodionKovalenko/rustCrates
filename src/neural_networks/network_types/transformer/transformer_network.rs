@@ -35,7 +35,7 @@ pub fn predict(transformer_network: &NeuralNetwork, input_batch: &Vec<String>) -
         batch_ids.push(input_ids);
     }
 
-    println!("tokens: {:?}", &batch_ids);
+    //println!("tokens: {:?}", &batch_ids);
 
     let mut output = None;
 

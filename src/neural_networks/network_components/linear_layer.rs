@@ -1,5 +1,6 @@
 use core::fmt::Debug;
 use num::Complex;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
@@ -30,16 +31,17 @@ impl LinearLayer {
         }
     }
     pub fn forward(&self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
-        let mut layer_output: Vec<Vec<Vec<Complex<f64>>>> = vec![];
+        input_batch
+            .par_iter() // Use a parallel iterator to process inputs in parallel
+            .map(|input| {
+                // Perform matrix multiplication
+                let mut output = multiply_complex(input, &self.weights);
 
-        for input in input_batch {
-            let mut output = multiply_complex(input, &self.weights);
+                // Add the bias vector
+                output = add_vector(&output, &self.bias);
 
-            output = add_vector(&output, &self.bias);
-
-            layer_output.push(output);
-        }
-
-        layer_output
+                output // Return the processed output for this input
+            })
+            .collect() // Collect all results into a single Vec
     }
 }

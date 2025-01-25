@@ -1,8 +1,12 @@
 use core::fmt::Debug;
 use num::Complex;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::{network_types::neural_network_generic::OperationMode, utils::activation::{softmax_complex, softmax_last_row}};
+use crate::neural_networks::{
+    network_types::neural_network_generic::OperationMode,
+    utils::activation::{softmax_complex, softmax_last_row},
+};
 
 // RMSNorm Layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,18 +20,18 @@ impl SoftmaxLayer {
         Self { learning_rate, operation_mode }
     }
     pub fn forward(&self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
-        let mut layer_output: Vec<Vec<Vec<Complex<f64>>>> = vec![];
-
-        match self.operation_mode {
+        let layer_output: Vec<Vec<Vec<Complex<f64>>>> = match self.operation_mode {
             OperationMode::PRODUCTION => {
-                for input in input_batch {
-                    layer_output.push(softmax_last_row(input));
-                }
-            },
+                input_batch
+                    .par_iter() // Parallel iterator for the input batch
+                    .map(|input| softmax_last_row(input)) // Apply `softmax_last_row` to each input
+                    .collect() // Collect results into a Vec
+            }
             OperationMode::TRAINING => {
-                for input in input_batch {
-                    layer_output.push(softmax_complex(input));
-                }
+                input_batch
+                    .par_iter() // Parallel iterator for the input batch
+                    .map(|input| softmax_complex(input)) // Apply `softmax_complex` to each input
+                    .collect() // Collect results into a Vec
             }
         };
 
