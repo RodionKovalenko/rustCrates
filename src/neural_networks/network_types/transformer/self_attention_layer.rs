@@ -42,8 +42,8 @@ impl SelfAttentionLayer {
 
 // Implement BaseLayer for SelfAttentionLayer
 impl SelfAttentionLayer {
-    pub fn forward(&self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
-        input_batch
+    pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+       let mut output_batch = input_batch
             .par_iter() // Parallel iterator for the input_batch
             .map(|input| {
                 let mut output: Vec<Vec<Complex<f64>>> = vec![];
@@ -65,24 +65,27 @@ impl SelfAttentionLayer {
                     output.push(combined_output);
                 }
     
-                // Process the dense layers
-                for layer in self.dense_layers.iter() {
-                    match layer {
-                        LayerEnum::RMSNorm(rms_norm_layer) => {
-                            let rms_norm_layer = Some(rms_norm_layer).unwrap();
-                            let previous_output = &output;
-    
-                            // Forward pass for the dense layer
-                            let output_rms = rms_norm_layer.forward(&previous_output, &input);
-                            output = output_rms;
-                        }
-                        _ => {}
-                    }
-                }
+                
     
                 output // Return the output for the current input
             })
-            .collect() // Collect the results from all parallel computations into a single Vec
+            .collect();
+
+
+        // Process the dense layers
+        for layer in self.dense_layers.iter_mut() {
+            match layer {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    let rms_norm_layer = Some(rms_norm_layer).unwrap();
+
+                    // Forward pass for the dense layer
+                    output_batch = rms_norm_layer.forward(&output_batch, input_batch);
+                }
+                _ => {}
+            }
+        }
+
+        output_batch
     }
 
     pub fn backward(&self, gradients: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
