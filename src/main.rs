@@ -34,7 +34,7 @@ fn main() {
     //     }
     // }
     let now = Instant::now();
-    let transformer: NeuralNetwork = create_transformer(OperationMode::TRAINING);
+    let mut transformer: NeuralNetwork = create_transformer(OperationMode::TRAINING);
 
     let seconds_elapsed = now.elapsed();
     println!("time elapsed in seconds: {:?}", &seconds_elapsed);
@@ -83,7 +83,7 @@ fn main() {
     let dataset = Dataset::new(input, target);
     let num_epochs: usize = 1;
 
-    train(transformer, dataset, num_epochs);
+    train(&mut transformer, dataset, num_epochs);
     let seconds_elapsed_end = now.elapsed();
 
     println!("time elapsed in seconds: {:?}", seconds_elapsed_end - seconds_elapsed);

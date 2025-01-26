@@ -47,8 +47,8 @@ impl FeedForwardLayer {
                 for layer in &self.layers {
                     output = layer.forward(&output);
                     // Debugging information (optional):
-                    // println!("layer in ffn: {:?}, {}, {}", &layer.layer_type, layer.weights.len(), layer.weights[0].len());
-                    // println!("output in ffn layer: {:?}, {}, {}", &layer.layer_type, output.len(), output[0].len());
+                    println!("layer weights in ffn: {:?}, {}, {}", &layer.layer_type, layer.weights.len(), layer.weights[0].len());
+                    println!("output in ffn layer: {:?}, {}, {}", &layer.layer_type, output.len(), output[0].len());
                 }
 
                 // Apply the RMS normalization layer

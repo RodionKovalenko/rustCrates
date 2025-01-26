@@ -89,5 +89,50 @@ mod tests {
                 ]
             ]
         );
+
+         // 3x2 * 2x6 =>  3x6
+         let m1: Vec<Vec<Complex<f64>>> = vec![
+            vec![Complex::new(1.0, 0.0), Complex::new(2.0, 0.0)],
+            vec![Complex::new(3.0, 0.0), Complex::new(4.0, 0.0)],
+            vec![Complex::new(5.0, 0.0), Complex::new(6.0, 0.0)],
+        ];
+        let m2: Vec<Vec<Complex<f64>>> = vec![
+            vec![Complex::new(1.0, 0.0), Complex::new(2.0, 0.0), Complex::new(3.0, 0.0), Complex::new(4.0, 0.0), Complex::new(5.0, 0.0), Complex::new(6.0, 0.0)],
+            vec![Complex::new(7.0, 0.0), Complex::new(8.0, 0.0), Complex::new(9.0, 0.0), Complex::new(10.0, 0.0), Complex::new(11.0, 0.0), Complex::new(12.0, 0.0)],
+        ];
+
+        let product: Vec<Vec<Complex<f64>>> = multiply_complex(&m1, &m2);
+
+        println!("product : {:?}", product);
+
+        assert_eq!(
+            product,
+            [
+                [
+                    Complex { re: 15.0, im: 0.0 },
+                    Complex { re: 18.0, im: 0.0 },
+                    Complex { re: 21.0, im: 0.0 },
+                    Complex { re: 24.0, im: 0.0 },
+                    Complex { re: 27.0, im: 0.0 },
+                    Complex { re: 30.0, im: 0.0 },
+                ],
+                [
+                    Complex { re: 31.0, im: 0.0 },
+                    Complex { re: 38.0, im: 0.0 },
+                    Complex { re: 45.0, im: 0.0 },
+                    Complex { re: 52.0, im: 0.0 },
+                    Complex { re: 59.0, im: 0.0 },
+                    Complex { re: 66.0, im: 0.0 },
+                ],
+                [
+                    Complex { re: 47.0, im: 0.0 },
+                    Complex { re: 58.0, im: 0.0 },
+                    Complex { re: 69.0, im: 0.0 },
+                    Complex { re: 80.0, im: 0.0 },
+                    Complex { re: 91.0, im: 0.0 },
+                    Complex { re: 102.0, im: 0.0 },
+                ]
+            ]
+        );
     }
 }
