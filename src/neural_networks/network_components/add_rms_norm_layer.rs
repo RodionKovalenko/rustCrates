@@ -74,8 +74,14 @@ impl RMSNormLayer {
 
         // Iterate through the input batch (3D: [batch_size, sequence_length, feature_dim])
         for (seq_ind, input_sequence) in input_batch.iter().enumerate() {
+            let mut is_seq_null = true;
             // Iterate over each token embedding (2D: [sequence_length, feature_dim])
             for (input_vec, grad_vec) in input_sequence.iter().zip(gradient.iter()) {
+                if seq_ind == 0 && is_seq_null {
+                    println!("input vec dim: {}", input_vec.len());
+                    println!("grad vec dim in rms norm: {}", grad_vec.len());
+                    is_seq_null = false;
+                }
                 let input_len = input_vec.len() as f64;
 
                 // Compute mean square and RMS for the current token embedding
