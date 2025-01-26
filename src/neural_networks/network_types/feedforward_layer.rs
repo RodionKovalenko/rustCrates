@@ -46,7 +46,6 @@ impl FeedForwardLayer {
             println!("layer weights in ffn: {:?}, {}, {}", &layer.layer_type, layer.weights.len(), layer.weights[0].len());
             println!("output in ffn layer: {:?}, {}, {}", &layer.layer_type, output.len(), output[0].len());
         }
-
        
         // Apply the RMS normalization layer
         let rms_norm_layer_enum = self.rms_norm_layer.as_mut().unwrap();
@@ -71,6 +70,8 @@ impl FeedForwardLayer {
             match rms_norm_layer {
                 LayerEnum::RMSNorm(rms_norm_layer) => {
                      output_gradients = rms_norm_layer.backward(&output_gradients);
+
+                     println!("FFN, gradient from RMS Norm backward: {}, {}", output_gradients.len(), output_gradients[0].len());
                 }
                 _ => {}
             }
@@ -78,13 +79,13 @@ impl FeedForwardLayer {
 
         // Backpropagate through the linear layer (second layer)
         let mut linear_layer_gradients = output_gradients.clone();
-        if let Some(linear_layer) = self.layers.get(1) {
+        if let Some(linear_layer) = self.layers.get_mut(1) {
             linear_layer_gradients = linear_layer.backward(&output_gradients);
         }
 
         // Backpropagate through the dense layer (first layer with GELU activation)
         let mut dense_layer_gradients = linear_layer_gradients.clone();
-        if let Some(dense_layer) = self.layers.get(0) {
+        if let Some(dense_layer) = self.layers.get_mut(0) {
             dense_layer_gradients = dense_layer.backward(&dense_layer_gradients);
             // The GELU activation's gradient will also need to be computed here.
             dense_layer_gradients = self.apply_activation_gradient(&dense_layer_gradients);

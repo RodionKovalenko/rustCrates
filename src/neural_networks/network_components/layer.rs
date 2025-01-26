@@ -141,17 +141,17 @@ pub fn get_layer_type(layer_idx: usize, total_layers: usize) -> LayerType {
 impl Layer {
     pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
         self.input_batch = Some(input_batch.clone());
-    
+
         // Initialize batch_output to hold the results
         let batch_output: Vec<Vec<Vec<Complex<f64>>>> = input_batch
-            .par_iter()  // Process the input batch in parallel
+            .par_iter() // Process the input batch in parallel
             .map(|input| {
                 // Multiply input with weights
                 let output: Vec<Vec<Complex<f64>>> = multiply_complex(input, &self.weights);
-                
+
                 // Add bias to the result
                 let raw_output: Vec<Vec<Complex<f64>>> = add_vector(&output, &self.bias);
-    
+
                 // Apply activation if the layer type is DenseLayer
                 if &self.layer_type == &LayerType::DenseLayer {
                     let activated_output: Vec<Vec<Complex<f64>>> = activate_output_complex(&raw_output, self.activation_type.clone());
@@ -160,13 +160,23 @@ impl Layer {
                     raw_output
                 }
             })
-            .collect();  // Collect the results back into a Vec
-    
+            .collect(); // Collect the results back into a Vec
+
         batch_output
     }
 
-    pub fn backward(&self, _gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-        self.gradient.clone()
+    pub fn backward(&mut self, gradients: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+        let input_batch: &Vec<Vec<Vec<Complex<f64>>>> = self.input_batch.as_ref().unwrap();
+
+        if self.layer_type == LayerType::DenseLayer {
+          println!("FFN dense layer, input batch: {}, {}, {}", input_batch.len(), input_batch[0].len(), input_batch[0][0].len());
+          println!("FFN dense layer, gradients: {}, {}, ", gradients.len(), gradients[0].len());
+        } else {
+            println!("FFN linear layer, input batch: {}, {}, {}", input_batch.len(), input_batch[0].len(), input_batch[0][0].len());
+            println!("FFN linear layer, gradients: {}, {}, ", gradients.len(), gradients[0].len());
+        }
+
+        gradients.clone()
     }
 }
 
