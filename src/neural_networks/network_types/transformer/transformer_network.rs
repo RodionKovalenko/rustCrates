@@ -9,7 +9,7 @@ use crate::neural_networks::{
     utils::tokenizer::{tokenize, tokenize_batch},
 };
 
-pub fn train(transformer_network: NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize) {
+pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize) {
     for epoch in 0..num_epochs {
         for batch_dataset in dataset.split_into_batches(2) {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
@@ -17,17 +17,19 @@ pub fn train(transformer_network: NeuralNetwork, dataset: Dataset<String, String
             let input_batch_extended = batch_dataset.extend_input_with_target(input_batch, target_batch);
 
             //println!("input batch extended: {:?}", &input_batch_extended);
-            let predicted_softmax_batch: Vec<Vec<Vec<Complex<f64>>>> = predict(&transformer_network, &input_batch_extended);
+            let predicted_softmax_batch = predict(transformer_network, &input_batch_extended);
             let (_tokens, target_ids) = tokenize_batch(target_batch).unwrap();
-
             let loss = cross_entropy_loss_batch(&predicted_softmax_batch, &target_ids);
 
             println!("Epoch: {:?}, Loss: {:?}", epoch, loss);
+
+            backward(transformer_network, &target_ids);
         }
     }
 }
 
-pub fn predict(transformer_network: &NeuralNetwork, input_batch: &Vec<String>) -> Vec<Vec<Vec<Complex<f64>>>> {
+
+pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String>) -> Vec<Vec<Vec<Complex<f64>>>> {
     // Forward pass
     let mut batch_ids: Vec<Vec<u32>> = vec![];
     for input in input_batch {
@@ -39,7 +41,7 @@ pub fn predict(transformer_network: &NeuralNetwork, input_batch: &Vec<String>) -
 
     let mut output = None;
 
-    for layer in transformer_network.layers.iter() {
+    for layer in transformer_network.layers.iter_mut() {
         match layer {
             LayerEnum::Embedding(embedding_layer_box) => {
                 let embedding_l = Some(embedding_layer_box).unwrap();
@@ -110,12 +112,12 @@ pub fn predict(transformer_network: &NeuralNetwork, input_batch: &Vec<String>) -
                 }
             }
             LayerEnum::Softmax(softmax_layer) => {
-                let softmax_layer = Some(softmax_layer).unwrap();
+                let softmax_layer_clone = Some(softmax_layer).unwrap();
                 if let Some(previous_output) = &output {
                     // println!("Previous output in softmax layer: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
 
-                    let output_softmax: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.forward(&previous_output);
-
+                    let output_softmax: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer_clone.forward(&previous_output);
+                    
                     output = Some(output_softmax);
                 } else {
                     println!("No previous output for Dense layer");
@@ -128,12 +130,12 @@ pub fn predict(transformer_network: &NeuralNetwork, input_batch: &Vec<String>) -
     output.unwrap()
 }
 
-pub fn backward(transformer_network: &NeuralNetwork, _average_loss: Complex<f64>) {
+pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<Vec<u32>>) {
     // Backward pass
 
-    //let mut gradients = None;
+    let mut gradients = None;
 
-    for layer in transformer_network.layers.iter() {
+    for layer in transformer_network.layers.iter_mut().rev() {
         match layer {
             // LayerEnum::Embedding(embedding_layer_box) => {
             //     let embedding_l = Some(embedding_layer_box).unwrap();
@@ -171,44 +173,37 @@ pub fn backward(transformer_network: &NeuralNetwork, _average_loss: Complex<f64>
             //         println!("No previous output for Attention layer");
             //     }
             // }
-            // LayerEnum::FeedForward(dense) => {
-            //     let dense_layer = Some(dense).unwrap();
-            //     if let Some(previous_output) = &output {
-            //         // println!("Previous output: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
+            LayerEnum::FeedForward(dense) => {
+                let dense_layer = Some(dense).unwrap();
+                if let Some(previous_output) = &gradients {
+                    let gradients_ffn = dense_layer.backward(&previous_output);
 
-            //         // Forward pass for the dense layer (make sure dense accepts Vec<Vec<Complex<f64>>>)
-            //         let output_dense = dense_layer.forward(&previous_output);
+                    println!("gradients of ffn layer: {}, {}", &gradients_ffn.len(), &gradients_ffn[0].len());
 
-            //         // println!("Dense output: {:?}, {:?}", &output_dense.len(), &output_dense[0].len());
+                    gradients = Some(gradients_ffn);
+                } else {
+                    println!("No previous output for Dense layer");
+                }
+            }
+            LayerEnum::Linear(linear_layer) => {
+                let linear_layer = Some(linear_layer).unwrap();
+                if let Some(previous_gradient) = &gradients {
+                    let gradients_linear:  Vec<Vec<Complex<f64>>> = linear_layer.backward(previous_gradient);
 
-            //         //println!("dense output: {:?}", &output_dense);
-            //         output = Some(output_dense);
-            //     } else {
-            //         println!("No previous output for Dense layer");
-            //     }
-            // }
-            // LayerEnum::Linear(linear_layer) => {
-            //     let linear_layer = Some(linear_layer).unwrap();
-            //     if let Some(previous_output) = &output {
-            //         // println!("Previous output in linear layer: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
+                    println!("gradients of linear layer: {}, {}", &gradients_linear.len(), &gradients_linear[0].len());
+                    gradients = Some(gradients_linear);
+                } else {
+                    println!("No previous output for Dense layer");
+                }
+            }
+            LayerEnum::Softmax(softmax_layer) => {
+                let softmax_layer = Some(softmax_layer).unwrap();
+                let gradients_softmax: Vec<Vec<Complex<f64>>> = softmax_layer.backward(target_batch_ids);
 
-            //         // Forward pass for the dense layer (make sure dense accepts Vec<Vec<Complex<f64>>>)
-            //         let output_linear = linear_layer.forward(&previous_output);
+                println!("gradients of softmax layer: {}, {}", &gradients_softmax.len(), &gradients_softmax[0].len());
 
-            //         //  println!("Linear output: {:?}, {:?}", &output_linear.len(), &output_linear[0].len());
-
-            //         //println!("output_linear output: {:?}", &output_linear);
-            //         output = Some(output_linear);
-            //     } else {
-            //         println!("No previous output for Dense layer");
-            //     }
-            // }
-            // LayerEnum::Softmax(softmax_layer) => {
-            // //     let softmax_layer = Some(softmax_layer).unwrap();
-            // //    let gradients_softmax: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.backward(&previous_output);
-
-            // //    gradients = Some(gradients_softmax);
-            // }
+                gradients = Some(gradients_softmax);
+            }
             _ => {}
         }
     }
