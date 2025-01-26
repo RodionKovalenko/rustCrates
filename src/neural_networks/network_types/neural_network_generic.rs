@@ -39,6 +39,13 @@ impl NeuralNetwork {
     pub fn get_minibatch_size(&self) -> usize {
         self.minibatch_size
     }
+    pub fn update_layer(&mut self, index: usize, new_layer: LayerEnum) {
+        if index < self.layers.len() {
+            self.layers[index] = new_layer;
+        } else {
+            println!("Layer index {} is out of bounds", index);
+        }
+    }
 }
 
 pub fn create(

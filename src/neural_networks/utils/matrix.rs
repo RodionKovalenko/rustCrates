@@ -263,35 +263,6 @@ pub fn subtract<T: Debug + Clone + Sub<Output = T>>(matrix_a: &Vec<Vec<T>>, matr
     matrix_result
 }
 
-pub fn get_error<T: Debug + Clone + Sub<Output = T> + Add<Output = T> + Mul<Output = T> + From<f64> + Into<f64>>(target_m: &Vec<Vec<T>>, output_m: &Vec<Vec<T>>) -> Vec<T> {
-    // convert output into one dimensional array
-    let mut output_one_dim: Vec<T> = Vec::new();
-    let mut target_one_dim: Vec<T> = Vec::new();
-    let mut matrix_result: Vec<T> = Vec::new();
-
-    // println!("target matrix size: {}, {}", target_m.len(), target_m[0].len());
-    // println!("output matrix size: {}, {}", output_m.len(), output_m[0].len());
-    // println!("created new matrix error is {}", matrix_result.len());
-
-    for j in 0..output_m[0].len() {
-        for i in 0..output_m.len() {
-            output_one_dim[j] = output_one_dim[j].clone() + output_m[i][j].clone();
-        }
-    }
-
-    for j in 0..target_m[0].len() {
-        for i in 0..target_m.len() {
-            target_one_dim[j] = target_one_dim[j].clone() + target_m[i][j].clone();
-        }
-    }
-
-    for j in 0..target_m[0].len() {
-        matrix_result[j] = output_one_dim[j].clone() - target_one_dim[j].clone();
-    }
-
-    matrix_result
-}
-
 pub fn add_matrix<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<T>>) -> Vec<Vec<T>> {
     let mut matrix_result: Vec<Vec<T>> = matrix_a.clone();
 

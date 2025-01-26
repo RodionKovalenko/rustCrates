@@ -13,13 +13,18 @@ use crate::neural_networks::{
 pub struct SoftmaxLayer {
     learning_rate: f64,
     operation_mode: OperationMode,
+    softmax_output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
 }
 
 impl SoftmaxLayer {
     pub fn new(learning_rate: f64, operation_mode: OperationMode) -> Self {
-        Self { learning_rate, operation_mode }
+        Self {
+            learning_rate,
+            operation_mode,
+            softmax_output_batch: None,
+        }
     }
-    pub fn forward(&self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
         let layer_output: Vec<Vec<Vec<Complex<f64>>>> = match self.operation_mode {
             OperationMode::PRODUCTION => {
                 input_batch
@@ -35,11 +40,51 @@ impl SoftmaxLayer {
             }
         };
 
+        self.softmax_output_batch = Some(layer_output.clone());
+
         layer_output
     }
 
-    // Backward pass to compute gradients for input and gamma
-    pub fn backward(&mut self, gradient: &Vec<Vec<Complex<f64>>>, _input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-        gradient.clone()
+    pub fn backward(&self, target_token_ids: &Vec<Vec<u32>>) -> Vec<Vec<Complex<f64>>> {
+        // Ensure softmax_output_batch exists (precomputed during the forward pass)
+        let softmax_output_batch: &Vec<Vec<Vec<Complex<f64>>>> = self.softmax_output_batch.as_ref().expect("Input batch is missing in softmax layer");
+        let seq_len = softmax_output_batch[0].len();
+        let vocab_dim = softmax_output_batch[0][0].len();
+    
+        // Initialize gradient_batch with zeros
+        let mut gradient_batch: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); vocab_dim]; seq_len];
+    
+        // Iterate over the batch of softmax outputs and target token IDs in serial
+        for (softmax_output, target_tokens) in softmax_output_batch.iter().zip(target_token_ids.iter()) {
+            let seq_len = softmax_output.len();
+            let target_len: usize = target_tokens.len();
+            // println!("softmax output dim: {}, {}", softmax_output.len(), softmax_output[0].len());
+            // println!("target_tokens dim: {}", target_tokens.len());
+
+            let seq_ind_start = seq_len - target_len;
+
+            for (sample_index, softmax_sample) in softmax_output[seq_ind_start..seq_len].iter().enumerate() {
+                for (column_index, softmax_prob) in softmax_sample.iter().enumerate() {
+                    let target = if target_tokens[sample_index] == column_index as u32 {
+                        Complex::new(1.0, 0.0)
+                    } else {
+                        Complex::new(0.0, 0.0)
+                    };
+    
+                    // Compute the gradient for this position
+                    let gradient = *softmax_prob - target;
+
+                    // if target.norm() == 1.0 {
+                    //     println!("target is 1: {}", sample_index);
+                    // }
+ 
+                    // Accumulate the gradients directly into the gradient_batch
+                    gradient_batch[sample_index][column_index] += gradient;
+                }
+            }
+        }
+    
+        // Return the final gradient_batch
+        gradient_batch
     }
 }
