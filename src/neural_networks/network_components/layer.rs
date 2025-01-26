@@ -8,6 +8,7 @@ use crate::neural_networks::{
 };
 use core::fmt::Debug;
 use num::Complex;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -96,6 +97,7 @@ pub struct Layer {
     pub previous_gradient: Vec<Vec<Complex<f64>>>,
     pub m1: Vec<Vec<Complex<f64>>>,
     pub v1: Vec<Vec<Complex<f64>>>,
+    pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
 }
 
 // Layer initialization function with Box<dyn BaseLayer>
@@ -137,17 +139,30 @@ pub fn get_layer_type(layer_idx: usize, total_layers: usize) -> LayerType {
 
 // Implement BaseLayer for Layer struct
 impl Layer {
-    pub fn forward(&self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-        let output: Vec<Vec<Complex<f64>>> = multiply_complex(input, &self.weights);
-        let raw_ouput: Vec<Vec<Complex<f64>>> = add_vector(&output, &self.bias);
-
-        if &self.layer_type == &LayerType::DenseLayer {
-            let activated_output: Vec<Vec<Complex<f64>>> = activate_output_complex(&raw_ouput, self.activation_type.clone());
-
-            return activated_output;
-        }
-
-        raw_ouput
+    pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+        self.input_batch = Some(input_batch.clone());
+    
+        // Initialize batch_output to hold the results
+        let batch_output: Vec<Vec<Vec<Complex<f64>>>> = input_batch
+            .par_iter()  // Process the input batch in parallel
+            .map(|input| {
+                // Multiply input with weights
+                let output: Vec<Vec<Complex<f64>>> = multiply_complex(input, &self.weights);
+                
+                // Add bias to the result
+                let raw_output: Vec<Vec<Complex<f64>>> = add_vector(&output, &self.bias);
+    
+                // Apply activation if the layer type is DenseLayer
+                if &self.layer_type == &LayerType::DenseLayer {
+                    let activated_output: Vec<Vec<Complex<f64>>> = activate_output_complex(&raw_output, self.activation_type.clone());
+                    activated_output
+                } else {
+                    raw_output
+                }
+            })
+            .collect();  // Collect the results back into a Vec
+    
+        batch_output
     }
 
     pub fn backward(&self, _gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
@@ -175,6 +190,7 @@ impl Layer {
             previous_gradient: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
             m1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
             v1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
+            input_batch: None,
         }
     }
 }

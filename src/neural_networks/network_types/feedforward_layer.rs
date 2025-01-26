@@ -3,7 +3,6 @@ use crate::neural_networks::network_components::{
     layer::{create_default_layer, ActivationType, Layer, LayerEnum, LayerType},
 };
 use num::Complex;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 // Layer struct
@@ -37,42 +36,66 @@ impl FeedForwardLayer {
 
 // Implement BaseLayer for SelfAttentionLayer
 impl FeedForwardLayer {
-    pub fn forward(&self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
-        input_batch
-            .par_iter() // Process each input in the batch in parallel
-            .map(|input| {
-                let mut output: Vec<Vec<Complex<f64>>> = input.clone();
+    pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+        let mut output: Vec<Vec<Vec<Complex<f64>>>> = input_batch.clone();
 
-                // Apply all layers sequentially
-                for layer in &self.layers {
-                    output = layer.forward(&output);
-                    // Debugging information (optional):
-                    println!("layer weights in ffn: {:?}, {}, {}", &layer.layer_type, layer.weights.len(), layer.weights[0].len());
-                    println!("output in ffn layer: {:?}, {}, {}", &layer.layer_type, output.len(), output[0].len());
-                }
+        // Apply all layers sequentially
+        for layer in self.layers.iter_mut() {
+            output = layer.forward(&output);
+            // Debugging information (optional):
+            println!("layer weights in ffn: {:?}, {}, {}", &layer.layer_type, layer.weights.len(), layer.weights[0].len());
+            println!("output in ffn layer: {:?}, {}, {}", &layer.layer_type, output.len(), output[0].len());
+        }
 
-                // Apply the RMS normalization layer
-                let rms_norm_layer = &self.rms_norm_layer.as_ref().unwrap();
-                match rms_norm_layer {
-                    LayerEnum::RMSNorm(rms_norm_layer) => {
-                        let rms_norm_layer = Some(rms_norm_layer).unwrap();
-                        let previous_output = &output;
+       
+        // Apply the RMS normalization layer
+        let rms_norm_layer_enum = self.rms_norm_layer.as_mut().unwrap();
+        match rms_norm_layer_enum {
+            LayerEnum::RMSNorm(rms_norm_layer) => {
+                let rms_norm_layer = Some(rms_norm_layer).unwrap();
+               
+                output = rms_norm_layer.forward(&output, input_batch);
+                //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
+            }
+            _ => {}
+        }
 
-                        let output_rms = rms_norm_layer.forward(&previous_output, &input);
-
-                        // Debugging information (optional):
-                        // println!("RMS output in ffn: {:?}, {:?}", &output_rms.len(), &output_rms[0].len());
-                        output = output_rms;
-                    }
-                    _ => {}
-                }
-
-                output // Return the processed output for the current input
-            })
-            .collect() // Collect all the processed outputs into a single Vec
+        output
     }
 
-    pub fn backward(&self, gradients: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-        gradients.clone()
+    pub fn backward(&mut self, gradients: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+        let mut output_gradients = gradients.clone();
+
+        // Apply RMSNorm backpropagation if it's present
+        if let Some(rms_norm_layer) = &mut self.rms_norm_layer {
+            match rms_norm_layer {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                     output_gradients = rms_norm_layer.backward(&output_gradients);
+                }
+                _ => {}
+            }
+        }
+
+        // Backpropagate through the linear layer (second layer)
+        let mut linear_layer_gradients = output_gradients.clone();
+        if let Some(linear_layer) = self.layers.get(1) {
+            linear_layer_gradients = linear_layer.backward(&output_gradients);
+        }
+
+        // Backpropagate through the dense layer (first layer with GELU activation)
+        let mut dense_layer_gradients = linear_layer_gradients.clone();
+        if let Some(dense_layer) = self.layers.get(0) {
+            dense_layer_gradients = dense_layer.backward(&dense_layer_gradients);
+            // The GELU activation's gradient will also need to be computed here.
+            dense_layer_gradients = self.apply_activation_gradient(&dense_layer_gradients);
+        }
+
+        dense_layer_gradients
+    }
+
+    fn apply_activation_gradient(&self, gradients: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+        // This applies the gradient of the GELU activation function.
+        // You will need to implement the GELU gradient or use an existing method in your framework.
+        gradients.clone() // Placeholder for actual GELU gradient computation
     }
 }
