@@ -1,6 +1,7 @@
+use crate::neural_networks::network_components::{layer::ActivationType, linear_layer::LinearLayer};
+use num::abs;
 use num_complex::Complex;
 use std::f64::consts::PI;
-use crate::neural_networks::network_components::layer::ActivationType;
 
 use super::activation::{erf_complex, softmax_row};
 
@@ -48,8 +49,7 @@ fn gelu_derivative_complex(z: Complex<f64>) -> Complex<f64> {
     let cdf = Complex::new(0.5, 0.0) * (Complex::new(1.0, 0.0) + erf_result);
 
     // Compute PDF: (1 / sqrt(2 * pi)) * exp(-z^2 / 2)
-    let pdf = (Complex::new(1.0, 0.0) / Complex::new(sqrt_2pi, 0.0))
-        * (-z * z / Complex::new(2.0, 0.0)).exp();
+    let pdf = (Complex::new(1.0, 0.0) / Complex::new(sqrt_2pi, 0.0)) * (-z * z / Complex::new(2.0, 0.0)).exp();
 
     // Derivative: CDF + z * PDF
     cdf + z * pdf
@@ -66,7 +66,7 @@ fn softplus_derivative_complex(z: Complex<f64>) -> Complex<f64> {
 
 // Function to compute the derivative (Jacobian) of softmax for a matrix of complex numbers
 fn softmax_derivative_complex(data: &Vec<Complex<f64>>) -> Vec<Vec<Complex<f64>>> {
-    let s = softmax_row(data);  // Get the softmax values for the vector
+    let s = softmax_row(data); // Get the softmax values for the vector
 
     let mut jacobian: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); s.len()]; s.len()];
 
@@ -86,6 +86,95 @@ fn softmax_derivative_complex(data: &Vec<Complex<f64>>) -> Vec<Vec<Complex<f64>>
     jacobian
 }
 
+pub fn get_ada_grad_optimizer(gradients: &Vec<Vec<f64>>) -> f64 {
+    // https://mlfromscratch.com/optimizers-explained/#/
+    // sum must not be null, because of sqrt
+    let mut sum = 0.0000000005;
+
+    for i in 0..gradients.len() {
+        for j in 0..gradients[0].len() {
+            sum += gradients[i][j] * gradients[i][j];
+        }
+    }
+
+    sum.sqrt()
+}
+
+pub fn get_r_rms_prop(gradients: &Vec<Vec<f64>>, b1: f64, r: f64) -> f64 {
+    // https://mlfromscratch.com/optimizers-explained/#/
+    // sum must not be null, because of sqrt
+    let mut sum = 0.0000005;
+
+    for i in 0..gradients.len() {
+        for j in 0..gradients[0].len() {
+            sum += b1 * r + (1.0 - b1) * gradients[i][j] * gradients[i][j];
+        }
+    }
+
+    sum
+}
+
+pub fn get_r_rms_value(gradient: &f64, b2: f64, v1: f64) -> f64 {
+    // https://mlfromscratch.com/optimizers-explained/#/
+    // sum must not be null, because of sqrt
+    let mut sum = 0.0000005;
+
+    sum += b2 * v1 + (1.0 - b2) * gradient * gradient;
+    abs(sum)
+}
+
+pub fn get_adam(gradients: &Vec<Vec<f64>>, b1: f64, r: f64) -> f64 {
+    // https://mlfromscratch.com/optimizers-explained/#/
+    // sum must not be null, because of sqrt
+    let mut sum = 0.0000005;
+
+    for i in 0..gradients.len() {
+        for j in 0..gradients[0].len() {
+            sum += b1 * r + (1.0 - b1) * gradients[i][j];
+        }
+    }
+
+    sum
+}
+
+pub fn get_adam_value(gradient: &f64, b1: f64, m1: f64) -> f64 {
+    // https://mlfromscratch.com/optimizers-explained/#/
+    // sum must not be null, because of sqrt
+    let mut sum = 0.0000005;
+
+    sum += b1 * m1 + (1.0 - b1) * gradient;
+
+    sum
+}
+
+pub fn numerical_gradient<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64, linear_layer: &mut LinearLayer) -> Vec<Vec<Vec<Complex<f64>>>>
+where
+    F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>, &mut LinearLayer) -> Complex<f64>,
+{
+    let mut grad_batch =  input.clone();
+
+    for batch in 0..input.len() {
+        for seq in 0..input[batch].len() {
+            for dim in 0..input[batch][seq].len() {
+                // Perturb input by epsilon
+                let mut input_plus = input.clone();
+                input_plus[batch][seq][dim] += epsilon;
+
+                let mut input_minus = input.clone();
+                input_minus[batch][seq][dim] -= epsilon;
+
+                // Compute numerical gradient
+                let loss_plus = f(&input_plus, linear_layer);
+                let loss_minus = f(&input_minus, linear_layer);
+
+                grad_batch[batch][seq][dim] = (loss_plus - loss_minus) / (2.0 * epsilon);
+            }
+        }
+    }
+
+    grad_batch
+}
+
 pub fn get_gradient_complex(data: &Vec<Vec<Complex<f64>>>, activation: ActivationType) -> Vec<Vec<Complex<f64>>> {
     match activation {
         ActivationType::SIGMOID => data.iter().map(|row| row.iter().map(|&x| sigmoid_derivative_complex(x)).collect()).collect(),
@@ -99,7 +188,7 @@ pub fn get_gradient_complex(data: &Vec<Vec<Complex<f64>>>, activation: Activatio
         ActivationType::SOFTSIGN => data.iter().map(|row| row.iter().map(|&x| softsign_derivative_complex(x)).collect()).collect(),
         ActivationType::SOFTPLUS => data.iter().map(|row| row.iter().map(|&x| softplus_derivative_complex(x)).collect()).collect(),
         ActivationType::PROBIT => data.iter().map(|row| row.iter().map(|_| Complex::new(1.0, 0.0)).collect()).collect(), // Just return the value as is
-        ActivationType::RANDOM => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Just return the value as is
+        ActivationType::RANDOM => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(),                     // Just return the value as is
         ActivationType::SOFTMAX => softmax_derivative_complex(&data[0]),
     }
 }
