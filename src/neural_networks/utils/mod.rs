@@ -2,7 +2,6 @@ pub mod weights_initializer;
 pub mod matrix;
 pub mod activation;
 pub mod derivative;
-pub mod derivatives;
 pub mod file;
 pub mod normalization;
 pub mod image;

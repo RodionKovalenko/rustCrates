@@ -224,11 +224,13 @@ pub fn cross_entropy_loss_batch(
 
     let batch_len = predicted_softmax_batch.len() as f64;
     let mut total_loss: Complex<f64> = Complex::new(0.0, 0.0);
+
+    println!("softmax batch inside function cross entropy batch: {:?}", &predicted_softmax_batch);
     for (batch_ind, prediction) in predicted_softmax_batch.iter().enumerate() {
         total_loss += cross_entropy_loss(prediction, &targets[batch_ind]);
     }
 
-    total_loss / batch_len
+    -total_loss / batch_len
 }
 
 fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, targets: &Vec<u32>) -> Complex<f64> {
@@ -236,21 +238,22 @@ fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, targets: &Vec<u32>) 
     let seq_len = predictions.len();
     let target_len: usize = targets.len();
 
-    // println!("target len: {}", &target_len);
-    // println!("prediction len: {:?}", &predictions.len());
+    println!("target len: {:}", target_len);
+    println!("prediction len: {:?}", &predictions[0].len());
 
     for i in 0..targets.len() {
         let target_index = targets[i] as usize;
         let target_moved_index = seq_len - target_len + i;
 
         //print!("target moved index: {}, ", &target_moved_index);
-        let predicted_prob: Complex<f64> = predictions[target_moved_index][target_index]; // Magnitude of the complex number
+        let predicted_prob: Complex<f64> = predictions[target_moved_index][target_index];
+        println!("predicted prob: {:?}", &predicted_prob);
         if predicted_prob.norm() > 0.0 {
-            loss += -predicted_prob.ln(); // Negative log of the magnitude
+            loss += predicted_prob.ln(); // Negative log of the magnitude
         } else {
             panic!("Predicted probability is zero or negative, which is invalid!");
         }
     }
 
-    loss / seq_len as f64
+   loss / seq_len as f64
 }

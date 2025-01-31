@@ -21,7 +21,7 @@ pub struct LinearLayer {
 impl LinearLayer {
     pub fn new(learning_rate: f64, rows: usize, cols: usize) -> Self {
         let mut weights: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
-        let bias: Vec<Complex<f64>> = vec![Complex::new(1.0, 1.0); cols];
+        let bias: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
 
         initialize_weights_complex(rows, cols, &mut weights);
 
