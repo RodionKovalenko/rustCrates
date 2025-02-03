@@ -1,4 +1,5 @@
-use crate::neural_networks::network_components::{layer::ActivationType, linear_layer::LinearLayer};
+use crate::neural_networks::network_components::layer::ActivationType;
+use nalgebra::ComplexField;
 use num::abs;
 use num_complex::Complex;
 use std::f64::consts::PI;
@@ -147,11 +148,11 @@ pub fn get_adam_value(gradient: &f64, b1: f64, m1: f64) -> f64 {
     sum
 }
 
-pub fn numerical_gradient<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64, linear_layer: &mut LinearLayer) -> Vec<Vec<Vec<Complex<f64>>>>
+pub fn numerical_gradient<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) -> Vec<Vec<Complex<f64>>>
 where
-    F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>, &mut LinearLayer) -> Complex<f64>,
+    F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>) -> Complex<f64>,
 {
-    let mut grad_batch =  input.clone();
+    let mut grad_batch =  vec![vec![Complex::new(0.0, 0.0); input[0][0].len()]; input[0].len()];
 
     for batch in 0..input.len() {
         for seq in 0..input[batch].len() {
@@ -164,8 +165,36 @@ where
                 input_minus[batch][seq][dim] -= epsilon;
 
                 // Compute numerical gradient
-                let loss_plus = f(&input_plus, linear_layer);
-                let loss_minus = f(&input_minus, linear_layer);
+                let loss_plus = f(&input_plus);
+                let loss_minus = f(&input_minus);
+
+                grad_batch[seq][dim] += (loss_plus - loss_minus) / (2.0 * epsilon);
+            }
+        }
+    }
+
+    grad_batch
+}
+
+pub fn numerical_gradient_batch<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
+where
+    F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>) -> Complex<f64>,
+{
+    let mut grad_batch =  vec![vec![vec![Complex::new(0.0, 0.0); input[0][0].len()]; input[0].len()]; input.len()];
+
+    for batch in 0..input.len() {
+        for seq in 0..input[batch].len() {
+            for dim in 0..input[batch][seq].len() {
+                // Perturb input by epsilon
+                let mut input_plus = input.clone();
+                input_plus[batch][seq][dim] += epsilon;
+
+                let mut input_minus = input.clone();
+                input_minus[batch][seq][dim] -= epsilon;
+
+                // Compute numerical gradient
+                let loss_plus = f(&input_plus);
+                let loss_minus = f(&input_minus);
 
                 grad_batch[batch][seq][dim] = (loss_plus - loss_minus) / (2.0 * epsilon);
             }
@@ -174,6 +203,51 @@ where
 
     grad_batch
 }
+
+pub fn test_gradient_error(numerical_grad: &Vec<Vec<Complex<f64>>>, analytical_grad: &Vec<Vec<Complex<f64>>>, epsilon: f64)
+{
+    for (row_numerical, row_analytical) in numerical_grad.iter().zip(analytical_grad) {
+        for (val_numerical, val_analytical) in row_numerical.iter().zip(row_analytical) {
+            let abs_diff = (val_numerical - val_analytical).abs();
+            // take the largest value out of (val_numerical, val_analytical, epsilon)
+            let max_val = val_numerical.abs().max(val_analytical.abs()).max(epsilon);
+            let rel_diff = abs_diff / max_val;
+
+            if rel_diff > epsilon {
+                println!(
+                    "Gradient mismatch: numerical = {:.6}, analytical = {:.6}, abs_diff = {:.6}, rel_diff = {:.6}",
+                    val_numerical, val_analytical, abs_diff, rel_diff
+                );
+            }
+
+            assert!(rel_diff < epsilon);
+        }
+    }
+}
+
+pub fn test_gradient_batch_error(numerical_grad_batch: &Vec<Vec<Vec<Complex<f64>>>>, analytical_grad_batch: &Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64)
+{
+    for (gradient_numerical, gradient_analytical) in numerical_grad_batch.iter().zip(analytical_grad_batch) {
+        for (row_numerical, row_analytical) in gradient_numerical.iter().zip(gradient_analytical) {
+            for (val_numerical, val_analytical) in row_numerical.iter().zip(row_analytical) {
+                let abs_diff = (val_numerical - val_analytical).abs();
+                // take the largest value out of (val_numerical, val_analytical, epsilon)
+                let max_val = val_numerical.abs().max(val_analytical.abs()).max(epsilon);
+                let rel_diff = abs_diff / max_val;
+    
+                if rel_diff > epsilon {
+                    println!(
+                        "Gradient mismatch: numerical = {:.6}, analytical = {:.6}, abs_diff = {:.6}, rel_diff = {:.6}",
+                        val_numerical, val_analytical, abs_diff, rel_diff
+                    );
+                }
+
+                assert!(rel_diff < epsilon);
+            }
+        }
+    }
+}
+
 
 pub fn get_gradient_complex(data: &Vec<Vec<Complex<f64>>>, activation: ActivationType) -> Vec<Vec<Complex<f64>>> {
     match activation {

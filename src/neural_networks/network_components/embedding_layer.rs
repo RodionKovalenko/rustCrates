@@ -83,41 +83,49 @@ impl EmbeddingLayer {
             Self::deserialize(embedding_file_path)
         }
     }
-    
-    pub fn apply_padding_to_batch(&self, token_input_ids_batch: &Vec<Vec<u32>>) -> Vec<Vec<u32>> {
+
+    pub fn apply_padding_to_batch(&self, token_input_ids_batch: &Vec<Vec<u32>>) -> (Vec<Vec<u32>>, Vec<Vec<u32>>) {
         let max_token_len = token_input_ids_batch.iter().map(|seq| seq.len()).max().unwrap_or(0);
 
         //println!("token input before padding: {:?}", &token_input_ids_batch);
         // Initialize a new vector to hold padded sequences
         let mut token_input_ids_padded: Vec<Vec<u32>> = Vec::new();
+        let mut padding_mask_batch: Vec<Vec<u32>> = Vec::new();
 
         // Iterate through each sequence in the batch
-        for token_input_ids in token_input_ids_batch {
+        for token_input_ids in token_input_ids_batch.iter() {
             // Clone the sequence to modify it (since we're not allowed to mutate the original)
             let mut padded_sequence = token_input_ids.clone();
+            let mut padding_mask = vec![1; token_input_ids.len()];
 
             // Pad the sequence with token 1 (PAD token) until it reaches the max length
             while padded_sequence.len() < max_token_len {
                 padded_sequence.push(1); // Add PAD token (with id = 1)
             }
 
-           //println!("token id len after padding: {:?}", &padded_sequence.len());
+            while padding_mask.len() < max_token_len {
+                padding_mask.push(0); // Add Padding Mask token (0 -> ignore, 1 consider in the calculations)
+            }
+
+            //println!("token id len after padding: {:?}", &padded_sequence.len());
 
             // Push the padded sequence to the output batch
             token_input_ids_padded.push(padded_sequence);
+            padding_mask_batch.push(padding_mask);
         }
 
-        //println!("token input after padding: {:?}", &token_input_ids_padded);
+        // println!("token input after padding: {:?}", &token_input_ids_padded);
+        println!("padding mask after padding: {:?}", &padding_mask_batch);
 
-        token_input_ids_padded
+        (token_input_ids_padded, padding_mask_batch)
     }
 
     /// Look up embeddings for a batch of token IDs
-    pub fn forward(&self, token_input_ids: &Vec<Vec<u32>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn forward(&self, token_input_ids: &Vec<Vec<u32>>) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<u32>>) {
         let db: &Db = Self::get_db();
 
         let mut token_ids_output: Vec<Vec<Vec<Complex<f64>>>> = vec![];
-        let token_input_batch_padded = self.apply_padding_to_batch(token_input_ids);
+        let (token_input_batch_padded, padding_mask) = self.apply_padding_to_batch(token_input_ids);
 
         let embedding_dim = self.embedding_dim.clone();
 
@@ -140,7 +148,7 @@ impl EmbeddingLayer {
             token_ids_output.push(token_output_id);
         }
 
-        token_ids_output
+        (token_ids_output, padding_mask)
     }
 
     /// Update embeddings using gradients
