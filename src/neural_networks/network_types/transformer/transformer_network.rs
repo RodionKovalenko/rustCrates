@@ -28,7 +28,6 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
     }
 }
 
-
 pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String>) -> Vec<Vec<Vec<Complex<f64>>>> {
     // Forward pass
     let mut batch_ids: Vec<Vec<u32>> = vec![];
@@ -40,16 +39,18 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
     //println!("tokens: {:?}", &batch_ids);
 
     let mut output = None;
+    let mut padding_mask = None;
 
     for layer in transformer_network.layers.iter_mut() {
         match layer {
             LayerEnum::Embedding(embedding_layer_box) => {
                 let embedding_l = Some(embedding_layer_box).unwrap();
-                let embeddings: Vec<Vec<Vec<Complex<f64>>>> = embedding_l.forward(&batch_ids);
+                let (embeddings, padding_m) = embedding_l.forward(&batch_ids);
 
                 //println!("output embedding layer: {:?}, {:?}", &embeddings.len(), &embeddings[0].len());
                 // println!("output embedding: {:?}", &embeddings[0]);
                 output = Some(embeddings);
+                padding_mask = Some(padding_m);
             }
             LayerEnum::PositionalEncoding(positional_encoding_layer) => {
                 if let Some(previous_output) = &output {
@@ -67,10 +68,10 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
             }
             LayerEnum::SelfAttention(attention) => {
                 // Ensure there's an output from the previous layer before forwarding
-                if let Some(previous_output) = &output {
-                    // println!("Previous output attention layer: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
+                if let (Some(previous_output), Some(padding_m)) = (&output, &padding_mask) {
+                    println!("Previous output attention layer: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
 
-                    let output_attention = attention.forward(&previous_output);
+                    let output_attention = attention.forward(&previous_output, padding_m);
 
                     // println!("output attention layer: {:?}, {:?}", &output_attention.len(), &output_attention[0].len());
                     // Store the output for the next layer
@@ -117,7 +118,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                     // println!("Previous output in softmax layer: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
 
                     let output_softmax: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer_clone.forward(&previous_output);
-                    
+
                     output = Some(output_softmax);
                 } else {
                     println!("No previous output for Dense layer");
@@ -188,7 +189,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             LayerEnum::Linear(linear_layer) => {
                 let linear_layer = Some(linear_layer).unwrap();
                 if let Some(previous_gradient) = &gradients {
-                    let gradients_linear:  Vec<Vec<Complex<f64>>> = linear_layer.backward(previous_gradient);
+                    let gradients_linear: Vec<Vec<Complex<f64>>> = linear_layer.backward(previous_gradient);
 
                     println!("gradients of linear layer: {}, {}", &gradients_linear.len(), &gradients_linear[0].len());
                     gradients = Some(gradients_linear);
@@ -225,7 +226,7 @@ pub fn cross_entropy_loss_batch(
     let batch_len = predicted_softmax_batch.len() as f64;
     let mut total_loss: Complex<f64> = Complex::new(0.0, 0.0);
 
-    println!("softmax batch inside function cross entropy batch: {:?}", &predicted_softmax_batch);
+    // println!("softmax batch inside function cross entropy batch: {:?}", &predicted_softmax_batch);
     for (batch_ind, prediction) in predicted_softmax_batch.iter().enumerate() {
         total_loss += cross_entropy_loss(prediction, &targets[batch_ind]);
     }
@@ -238,16 +239,13 @@ fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, targets: &Vec<u32>) 
     let seq_len = predictions.len();
     let target_len: usize = targets.len();
 
-    println!("target len: {:}", target_len);
-    println!("prediction len: {:?}", &predictions[0].len());
-
     for i in 0..targets.len() {
         let target_index = targets[i] as usize;
         let target_moved_index = seq_len - target_len + i;
 
         //print!("target moved index: {}, ", &target_moved_index);
         let predicted_prob: Complex<f64> = predictions[target_moved_index][target_index];
-        println!("predicted prob: {:?}", &predicted_prob);
+        //println!("predicted prob: {:?}", &predicted_prob);
         if predicted_prob.norm() > 0.0 {
             loss += predicted_prob.ln(); // Negative log of the magnitude
         } else {
@@ -255,5 +253,5 @@ fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, targets: &Vec<u32>) 
         }
     }
 
-   loss / seq_len as f64
+    loss / target_len as f64
 }

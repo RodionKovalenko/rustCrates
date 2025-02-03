@@ -308,6 +308,34 @@ pub fn softmax_complex(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>>
         .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
 }
 
+pub fn softmax_complex_padding(input: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<Complex<f64>>> {
+    // println!("softmax input len {}, {}", input.len(), input[0].len());
+    // println!("padding_mask len {}", padding_mask.len());
+    // println!("padding mask: {:?}", &padding_mask);
+
+    input
+        .par_iter()
+        .enumerate() // Parallel iterator over rows of the input
+        .map(|(row_ind, row)| {
+            if padding_mask.len() < row_ind {
+                panic!("row mask is smaller the index: {}, {}", padding_mask.len(), row_ind);
+            }
+            if padding_mask[row_ind] == 0 {
+                return vec![Complex::new(0.0, 0.0); row.len()];
+            }
+            let mut sum = Complex::new(0.0, 0.0);
+
+            // Calculate the sum of exponentials for the row
+            for &val in row {
+                sum = sum + val.exp();
+            }
+
+            // Calculate the softmax values for the row
+            row.iter().map(|&val| val.exp() / sum).collect::<Vec<Complex<f64>>>()
+        })
+        .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
+}
+
 pub fn softmax_last_row(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
     // Softmax function to scale attention scores to probability values
     let mut result = input.clone();
