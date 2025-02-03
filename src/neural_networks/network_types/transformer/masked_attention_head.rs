@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
     network_components::layer::LayerType,
-    utils::{activation::softmax_complex, matrix::multiply_complex, weights_initializer::initialize_weights_complex},
+    utils::{activation::softmax_complex_padding, matrix::multiply_complex, weights_initializer::initialize_weights_complex},
 };
 
 // Layer struct
@@ -79,8 +79,9 @@ impl MaskedAttentionHead {
 
 // Implement BaseLayer for Layer struct
 impl MaskedAttentionHead {
-    pub fn forward(&self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-        // println!("output in weights_q : {:?}, {:?}", &self.weights_q.len(), &self.weights_q[0].len());
+    pub fn forward(&self, input: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<Complex<f64>>> {
+        // println!("input len in masked_attention : {:?}, {:?}", &input.len(), &input[0].len());
+        // println!("weights_q : {:?}, {:?}", &self.weights_q.len(), &self.weights_q[0].len());
 
         let q = multiply_complex(input, &self.weights_q);
         let k = multiply_complex(input, &self.weights_k);
@@ -93,14 +94,15 @@ impl MaskedAttentionHead {
         // Apply the mask to the scaled attention scores
         apply_attention_mask_inplace(&mut attention_scores_scales, &mask);
 
-        let attention_weights = softmax_complex(&attention_scores_scales);
+        let attention_weights = softmax_complex_padding(&attention_scores_scales, padding_mask);
+        //  println!("padding mask: {:?}", &padding_mask);
+        //  println!("output in attenthion head attention weigths: {:?}", &attention_weights);
 
         // Multiply attention weights with value (V)
         let output = multiply_complex(&attention_weights, &v);
 
         // println!("output in attenthion score: {:?}, {:?}", &attention_scores.len(), &attention_scores[0].len());
         // println!("output in q : {:?}, {:?}", &q.len(), &q[0].len());
-        // println!("output in attenthion head attention weigths: {:?}, {:?}", &attention_weights.len(), &attention_weights[0].len());
         // println!("output in attenthion head: {:?}", &output);
 
         output

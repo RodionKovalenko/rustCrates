@@ -54,6 +54,7 @@ impl SoftmaxLayer {
 
         // Initialize gradient_batch with zeros
         let mut gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); vocab_dim]; seq_len]; batch_size];
+        let normalizer = softmax_output_batch.len() * target_token_ids[0].len();
 
         // Iterate over the batch of softmax outputs and target token IDs
         for (batch_index, (softmax_output, target_tokens)) in softmax_output_batch.iter().zip(target_token_ids.iter()).enumerate() {
@@ -74,15 +75,11 @@ impl SoftmaxLayer {
                         Complex::new(0.0, 0.0)
                     };
 
-                    if target.norm() == 1.0 {
-                        println!("target is 1: {}", column_index);
-                    }
-
                     // Compute gradient
                     let gradient = softmax_prob - target;
 
                     // Store in batch-indexed gradient storage
-                    gradient_batch[batch_index][sample_index][column_index] = gradient;
+                    gradient_batch[batch_index][sample_index][column_index] = gradient / (normalizer as f64);
                 }
             }
         }
@@ -99,6 +96,7 @@ impl SoftmaxLayer {
 
         // Initialize gradient_batch with zeros
         let mut gradient_batch: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); vocab_dim]; seq_len];
+        let normalizer = softmax_output_batch.len() * target_token_ids[0].len();
 
         // Iterate over the batch of softmax outputs and target token IDs in serial
         for (softmax_output, target_tokens) in softmax_output_batch.iter().zip(target_token_ids.iter()) {
@@ -120,12 +118,12 @@ impl SoftmaxLayer {
                     // Compute the gradient for this position
                     let gradient = softmax_prob - target;
 
-                    if target.norm() == 1.0 {
-                        println!("target is 1: {}", sample_index);
-                    }
+                    // if target.norm() == 1.0 {
+                    //     println!("target is 1: {}", sample_index);
+                    // }
 
                     // Accumulate the gradients directly into the gradient_batch
-                    gradient_batch[sample_index][column_index] += gradient;
+                    gradient_batch[sample_index][column_index] += gradient / (normalizer as f64);
                 }
             }
         }

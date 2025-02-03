@@ -1,10 +1,10 @@
 use super::masked_attention_head::MaskedAttentionHead;
-use rayon::prelude::*;
 use crate::neural_networks::network_components::{
     add_rms_norm_layer::RMSNormLayer,
     layer::{LayerEnum, LayerType},
 };
 use num::Complex;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 // Layer struct
@@ -42,20 +42,22 @@ impl SelfAttentionLayer {
 
 // Implement BaseLayer for SelfAttentionLayer
 impl SelfAttentionLayer {
-    pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
-       let mut output_batch = input_batch
-            .par_iter() // Parallel iterator for the input_batch
-            .map(|input| {
+    pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>, padding_mask_batch: &Vec<Vec<u32>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+        let mut output_batch: Vec<Vec<Vec<Complex<f64>>>> = input_batch
+            .par_iter()
+            .zip(padding_mask_batch)
+            .map(|(input, padding_mask)| {
                 let mut output: Vec<Vec<Complex<f64>>> = vec![];
-    
+
                 // Apply the attention mechanism for each head
                 let mut attention_head_outputs: Vec<Vec<Vec<Complex<f64>>>> = vec![];
-    
+
+                //println!("padding mask batch: {:?}", &padding_mask_batch);
                 for attention_head in &self.attention_heads {
-                    let attention_output = attention_head.forward(input); // Get output for each attention head
+                    let attention_output = attention_head.forward(input, &padding_mask); // Get output for each attention head
                     attention_head_outputs.push(attention_output);
                 }
-    
+
                 // Combine the outputs of the attention heads (e.g., concatenating horizontally)
                 for i in 0..input.len() {
                     let mut combined_output: Vec<Complex<f64>> = Vec::new();
@@ -64,13 +66,13 @@ impl SelfAttentionLayer {
                     }
                     output.push(combined_output);
                 }
-    
-                
-    
+
                 output // Return the output for the current input
             })
             .collect();
 
+        // println!("output batch size: {} {} {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
+        // println!("input batch size: {} {} {}", input_batch.len(), input_batch[0].len(), input_batch[0][0].len());
 
         // Process the dense layers
         for layer in self.dense_layers.iter_mut() {
