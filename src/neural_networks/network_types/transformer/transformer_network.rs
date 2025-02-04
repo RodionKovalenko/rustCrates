@@ -47,7 +47,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                 let embedding_l = Some(embedding_layer_box).unwrap();
                 let (embeddings, padding_m) = embedding_l.forward(&batch_ids);
 
-                //println!("output embedding layer: {:?}, {:?}", &embeddings.len(), &embeddings[0].len());
+                println!("Output embedding layer: {:?}, {:?}, {:?}", &embeddings.len(), &embeddings[0].len(), &embeddings[0][0].len());
                 // println!("output embedding: {:?}", &embeddings[0]);
                 output = Some(embeddings);
                 padding_mask = Some(padding_m);
@@ -59,7 +59,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
 
                     let positional_encodings = positional_encoding_l.forward(&previous_output);
 
-                    // println!("positional_encodings layer: {:?}, {:?}", &positional_encodings.len(), &positional_encodings[0].len());
+                    println!("Output Positional_encodings layer: {:?}, {:?}, {:?}", &positional_encodings.len(), &positional_encodings[0].len(), &positional_encodings[0][0].len());
 
                     output = Some(positional_encodings);
                 } else {
@@ -69,11 +69,11 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
             LayerEnum::SelfAttention(attention) => {
                 // Ensure there's an output from the previous layer before forwarding
                 if let (Some(previous_output), Some(padding_m)) = (&output, &padding_mask) {
-                    println!("Previous output attention layer: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
+                    //println!("Previous output attention layer: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
 
                     let output_attention = attention.forward(&previous_output, padding_m);
 
-                    // println!("output attention layer: {:?}, {:?}", &output_attention.len(), &output_attention[0].len());
+                     println!("Output attention layer: {:?}, {:?}, {:?}", &output_attention.len(), &output_attention[0].len(), &output_attention[0][0].len());
                     // Store the output for the next layer
                     output = Some(output_attention);
                 } else {
@@ -88,7 +88,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                     // Forward pass for the dense layer (make sure dense accepts Vec<Vec<Complex<f64>>>)
                     let output_dense = dense_layer.forward(&previous_output);
 
-                    // println!("Dense output: {:?}, {:?}", &output_dense.len(), &output_dense[0].len());
+                    println!("Output Dense FFN: {:?}, {:?},  {:?}", &output_dense.len(), &output_dense[0].len(), &output_dense[0][0].len());
 
                     //println!("dense output: {:?}", &output_dense);
                     output = Some(output_dense);
@@ -104,7 +104,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                     // Forward pass for the dense layer (make sure dense accepts Vec<Vec<Complex<f64>>>)
                     let output_linear = linear_layer.forward(&previous_output);
 
-                    //  println!("Linear output: {:?}, {:?}", &output_linear.len(), &output_linear[0].len());
+                    println!("Output Linear layer: {:?}, {:?}, {:?}", &output_linear.len(), &output_linear[0].len(), &output_linear[0][0].len());
 
                     //println!("output_linear output: {:?}", &output_linear);
                     output = Some(output_linear);
@@ -119,6 +119,8 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
 
                     let output_softmax: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer_clone.forward(&previous_output);
 
+                    println!("Output Softmax: {:?}, {:?}, {}", &output_softmax.len(), &output_softmax[0].len(), &output_softmax[0][0].len());
+
                     output = Some(output_softmax);
                 } else {
                     println!("No previous output for Dense layer");
@@ -127,6 +129,8 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
             _ => {}
         }
     }
+
+    println!("forward pass end ----------------------------------------------------------------------");
 
     output.unwrap()
 }
@@ -177,11 +181,11 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             LayerEnum::FeedForward(dense) => {
                 let dense_layer = Some(dense).unwrap();
                 if let Some(previous_output) = &gradients {
-                    let gradients_ffn = dense_layer.backward(&previous_output);
+                    // let gradients_ffn = dense_layer.backward(&previous_output);
 
-                    println!("gradients of ffn layer: {}, {}", &gradients_ffn.len(), &gradients_ffn[0].len());
+                    // println!("gradients of ffn layer: {}, {}", &gradients_ffn.len(), &gradients_ffn[0].len());
 
-                    gradients = Some(gradients_ffn);
+                    // gradients = Some(gradients_ffn);
                 } else {
                     println!("No previous output for Dense layer");
                 }
@@ -189,17 +193,17 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             LayerEnum::Linear(linear_layer) => {
                 let linear_layer = Some(linear_layer).unwrap();
                 if let Some(previous_gradient) = &gradients {
-                    let gradients_linear: Vec<Vec<Complex<f64>>> = linear_layer.backward(previous_gradient);
+                    let (gradients_linear_weights, gradient_linear_bias) = linear_layer.backward_batch(previous_gradient);
 
-                    println!("gradients of linear layer: {}, {}", &gradients_linear.len(), &gradients_linear[0].len());
-                    gradients = Some(gradients_linear);
+                    println!("gradients of linear layer: {}, {}, {}", &gradients_linear_weights.len(), &gradients_linear_weights[0].len(), &gradients_linear_weights[0][0].len());
+                    gradients = Some(gradients_linear_weights);
                 } else {
                     println!("No previous output for Dense layer");
                 }
             }
             LayerEnum::Softmax(softmax_layer) => {
                 let softmax_layer = Some(softmax_layer).unwrap();
-                let gradients_softmax: Vec<Vec<Complex<f64>>> = softmax_layer.backward(target_batch_ids);
+                let gradients_softmax: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.backward_batch(target_batch_ids);
 
                 println!("gradients of softmax layer: {}, {}", &gradients_softmax.len(), &gradients_softmax[0].len());
 
