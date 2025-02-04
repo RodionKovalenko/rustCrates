@@ -209,18 +209,18 @@ where
     let mut grad_batch = vec![Complex::new(0.0, 0.0); bias.len()];
 
     for row in 0..bias.len() {
-            // Perturb input by epsilon
-            let mut bias_plus = bias.clone();
-            bias_plus[row] += epsilon;
+        // Perturb input by epsilon
+        let mut bias_plus = bias.clone();
+        bias_plus[row] += epsilon;
 
-            let mut bias_minus = bias.clone();
-            bias_minus[row] -= epsilon;
+        let mut bias_minus = bias.clone();
+        bias_minus[row] -= epsilon;
 
-            // Compute numerical gradient
-            let loss_plus = f(&input, &bias_plus);
-            let loss_minus = f(&input, &bias_minus);
+        // Compute numerical gradient
+        let loss_plus = f(&input, &bias_plus);
+        let loss_minus = f(&input, &bias_minus);
 
-            grad_batch[row] = (loss_plus - loss_minus) / (2.0 * epsilon);
+        grad_batch[row] = (loss_plus - loss_minus) / (2.0 * epsilon);
     }
 
     grad_batch
@@ -254,45 +254,33 @@ where
     grad_batch
 }
 
-pub fn test_gradient_error(numerical_grad: &Vec<Vec<Complex<f64>>>, analytical_grad: &Vec<Vec<Complex<f64>>>, epsilon: f64) {
-    for (row_numerical, row_analytical) in numerical_grad.iter().zip(analytical_grad) {
-        for (val_numerical, val_analytical) in row_numerical.iter().zip(row_analytical) {
-            let abs_diff = (val_numerical - val_analytical).abs();
-            // take the largest value out of (val_numerical, val_analytical, epsilon)
-            let max_val = val_numerical.abs().max(val_analytical.abs()).max(epsilon);
-            let rel_diff = abs_diff / max_val;
-
-            if rel_diff > epsilon {
-                println!(
-                    "Gradient mismatch: numerical = {:.6}, analytical = {:.6}, abs_diff = {:.6}, rel_diff = {:.6}",
-                    val_numerical, val_analytical, abs_diff, rel_diff
-                );
-            }
-
-            assert!(rel_diff < epsilon);
-        }
+pub fn test_gradient_batch_error(numerical_grad_batch: &Vec<Vec<Vec<Complex<f64>>>>, analytical_grad_batch: &Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) {
+    for (gradient_numerical, gradient_analytical) in numerical_grad_batch.iter().zip(analytical_grad_batch) {
+       test_gradient_error_2d(gradient_numerical, gradient_analytical, epsilon);
     }
 }
 
-pub fn test_gradient_batch_error(numerical_grad_batch: &Vec<Vec<Vec<Complex<f64>>>>, analytical_grad_batch: &Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) {
-    for (gradient_numerical, gradient_analytical) in numerical_grad_batch.iter().zip(analytical_grad_batch) {
-        for (row_numerical, row_analytical) in gradient_numerical.iter().zip(gradient_analytical) {
-            for (val_numerical, val_analytical) in row_numerical.iter().zip(row_analytical) {
-                let abs_diff = (val_numerical - val_analytical).abs();
-                // take the largest value out of (val_numerical, val_analytical, epsilon)
-                let max_val = val_numerical.abs().max(val_analytical.abs()).max(epsilon);
-                let rel_diff = abs_diff / max_val;
+pub fn test_gradient_error_2d(numerical_grad: &Vec<Vec<Complex<f64>>>, analytical_grad: &Vec<Vec<Complex<f64>>>, epsilon: f64) {
+    for (row_numerical, row_analytical) in numerical_grad.iter().zip(analytical_grad) {
+        test_gradient_error_1d(row_numerical, row_analytical, epsilon);
+    }
+}
 
-                if rel_diff > epsilon {
-                    println!(
-                        "Gradient mismatch: numerical = {:.6}, analytical = {:.6}, abs_diff = {:.6}, rel_diff = {:.6}",
-                        val_numerical, val_analytical, abs_diff, rel_diff
-                    );
-                }
+pub fn test_gradient_error_1d(numerical_grad: &Vec<Complex<f64>>, analytical_grad: &Vec<Complex<f64>>, epsilon: f64) {
+    for (val_numerical, val_analytical) in numerical_grad.iter().zip(analytical_grad) {
+        let abs_diff = (val_numerical - val_analytical).abs();
+        // take the largest value out of (val_numerical, val_analytical, epsilon)
+        let max_val = val_numerical.abs().max(val_analytical.abs()).max(epsilon);
+        let rel_diff = abs_diff / max_val;
 
-                assert!(rel_diff < epsilon);
-            }
+        if rel_diff > epsilon {
+            println!(
+                "Gradient mismatch: numerical = {:.12}, analytical = {:.12}, abs_diff = {:.12}, rel_diff = {:.12}",
+                val_numerical, val_analytical, abs_diff, rel_diff
+            );
         }
+
+        assert!(rel_diff < epsilon);
     }
 }
 
