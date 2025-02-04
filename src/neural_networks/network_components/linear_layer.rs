@@ -55,9 +55,31 @@ impl LinearLayer {
             .collect() // Collect all results into a single Vec
     }
 
-    pub fn update_weights(&mut self, weight_gradients: &Vec<Vec<Complex<f64>>>, bias_gradients: &Vec<Complex<f64>>)
-    {
-         // Update weights and biases using gradient descent
+    pub fn backward_batch(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<Complex<f64>>) {
+        let input_batch = self.input_batch.as_ref().expect("Input batch is missing");
+
+        // Initialize gradients for weights and biases
+        let mut weight_gradients: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()]; input_batch.len()];
+        let mut bias_gradients: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); self.bias.len()];
+
+        // For each input sample in the batch
+        for (batch_ind, (input_sample, gradient_sample)) in input_batch.iter().zip(previous_gradient_batch).enumerate() {
+            // Multiply the transposed input sample with previous gradients (for weight gradients)
+            weight_gradients[batch_ind] = multiply_complex(input_sample, gradient_sample);
+
+            //Accumulate gradients for biases
+            for grad_row in gradient_sample.iter() {
+                for (k, grad_val) in grad_row.iter().enumerate() {
+                    bias_gradients[k] += grad_val.clone(); // Sum the gradients for biases
+                }
+            }
+        }
+
+        (weight_gradients.clone(), bias_gradients)
+    }
+
+    pub fn update_weights(&mut self, weight_gradients: &Vec<Vec<Complex<f64>>>, bias_gradients: &Vec<Complex<f64>>) {
+        // Update weights and biases using gradient descent
         for (i, row) in self.weights.iter_mut().enumerate() {
             for (j, weight_value) in row.iter_mut().enumerate() {
                 *weight_value -= self.learning_rate * weight_gradients[i][j];
@@ -80,29 +102,6 @@ impl LinearLayer {
             }
         }
 
-        weight_gradients        
-    }
-
-    pub fn backward_batch(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<Complex<f64>>) {
-        let input_batch = self.input_batch.as_ref().expect("Input batch is missing");
-
-        // Initialize gradients for weights and biases
-        let mut weight_gradients: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()]; input_batch.len()];
-        let mut bias_gradients: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); self.bias.len()];
-
-        // For each input sample in the batch
-        for (batch_ind, (input_sample, gradient_sample)) in input_batch.iter().zip(previous_gradient_batch).enumerate() {
-            // Multiply the transposed input sample with previous gradients (for weight gradients)
-            weight_gradients[batch_ind] = multiply_complex(input_sample, gradient_sample);
-
-            //Accumulate gradients for biases
-            for grad_value in gradient_sample.iter() {
-                for (k, grad_val) in grad_value.iter().enumerate() {
-                    bias_gradients[k] += grad_val.clone(); // Sum the gradients for biases
-                }
-            }
-        }
-
-        (weight_gradients.clone(), bias_gradients)
+        weight_gradients
     }
 }
