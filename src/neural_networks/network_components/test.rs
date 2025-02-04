@@ -3,10 +3,9 @@ mod tests {
     use crate::neural_networks::{
         network_components::{linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
-        utils::derivative::{numerical_gradient, numerical_gradient_batch, test_gradient_batch_error, test_gradient_error},
+        utils::derivative::{numerical_gradient_bias, numerical_gradient_input, numerical_gradient_input_batch, numerical_gradient_weights, test_gradient_batch_error, test_gradient_error},
     };
 
-    use nalgebra::ComplexField;
     use num::Complex;
 
     #[test]
@@ -50,8 +49,8 @@ mod tests {
         };
 
         let epsilon = 1e-7;
-        let numerical_grad: Vec<Vec<Complex<f64>>> = numerical_gradient(&mut loss_fn, linear_batch_output.clone(), epsilon);
-        let numerical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_batch(&mut loss_fn, linear_batch_output.clone(), epsilon);
+        let numerical_grad: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, linear_batch_output.clone(), epsilon);
+        let numerical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch(&mut loss_fn, linear_batch_output.clone(), epsilon);
 
         // Check if gradient batch dimensions match expected shapes
         println!("analytical grad: {:?}", analytical_grad);
@@ -85,18 +84,23 @@ mod tests {
         ];
 
         let target_token_id_batch = vec![vec![0], vec![1]];
+        //let target_token_id_batch = vec![vec![0]];
 
         // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
         let linear_batch_output = linear_layer.forward(&input_batch);
-
-        println!("linear batch output: {:?}", &linear_batch_output);
         let _softmax_batch_output = softmax_layer.forward(&linear_batch_output);
-        let analytical_grad = softmax_layer.backward(&target_token_id_batch);
-        let analytical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.backward_batch(&target_token_id_batch);
+
+        let analytical_grad_batch_softmax: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.backward_batch(&target_token_id_batch);
+        let (analytical_grad_linear, analytical_gradient_bias) = linear_layer.backward_batch(&analytical_grad_batch_softmax);
+        let grouped_linear_gradient = linear_layer.group_gradient_batch(&analytical_grad_linear);
+
+        let linear_weights = linear_layer.weights.clone();
 
         // Define the loss function
-        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
-            let softmax_batch_output = softmax_layer.forward(&input);
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
+            linear_layer.weights = weights.clone();
+            let linear_batch_output = linear_layer.forward(input);
+            let softmax_batch_output = softmax_layer.forward(&linear_batch_output);
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
@@ -105,52 +109,37 @@ mod tests {
         };
 
         let epsilon = 1e-7;
-        let numerical_grad: Vec<Vec<Complex<f64>>> = numerical_gradient(&mut loss_fn, linear_batch_output.clone(), epsilon);
-        let numerical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_batch(&mut loss_fn, linear_batch_output.clone(), epsilon);
+        let numerical_grad_linear: Vec<Vec<Complex<f64>>> = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &linear_weights, epsilon);
 
         // Check if gradient batch dimensions match expected shapes
-        println!("analytical grad: {:?}", analytical_grad);
-        println!("numerical grad: {:?}", numerical_grad);
+        println!("\nanalytical grad: {:?}", grouped_linear_gradient);
+        println!("\nnumerical grad: {:?}", numerical_grad_linear);
 
-        for (row_numerical, row_analytical) in numerical_grad.iter().zip(analytical_grad) {
-            for (val_numerical, val_analytical) in row_numerical.iter().zip(row_analytical) {
-                let abs_diff = (val_numerical - val_analytical).abs();
-                // take the largest value out of (val_numerical, val_analytical, epsilon)
-                let max_val = val_numerical.abs().max(val_analytical.abs()).max(epsilon);
-                let rel_diff = abs_diff / max_val;
+        test_gradient_error(&grouped_linear_gradient, &numerical_grad_linear, epsilon);
 
-                if rel_diff > epsilon {
-                    println!(
-                        "Gradient mismatch: numerical = {:.6}, analytical = {:.6}, abs_diff = {:.6}, rel_diff = {:.6}",
-                        val_numerical, val_analytical, abs_diff, rel_diff
-                    );
-                }
 
-                assert!(rel_diff < epsilon);
-            }
-        }
+        // TEST BIAS
+        let linear_bias = linear_layer.bias.clone();
 
-        println!("analytical grad batch: {:?}", analytical_grad_batch);
-        println!("numerical grad batch: {:?}", numerical_grad_batch);
+        // Define the loss function
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Complex<f64>>| -> Complex<f64> {
+            linear_layer.bias = bias.clone();
+            let linear_batch_output = linear_layer.forward(input);
+            let softmax_batch_output = softmax_layer.forward(&linear_batch_output);
 
-        for (gradient_numerical, gradient_analytical) in numerical_grad_batch.iter().zip(analytical_grad_batch) {
-            for (row_numerical, row_analytical) in gradient_numerical.iter().zip(gradient_analytical) {
-                for (val_numerical, val_analytical) in row_numerical.iter().zip(row_analytical) {
-                    let abs_diff = (val_numerical - val_analytical).abs();
-                    // take the largest value out of (val_numerical, val_analytical, epsilon)
-                    let max_val = val_numerical.abs().max(val_analytical.abs()).max(epsilon);
-                    let rel_diff = abs_diff / max_val;
+            //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
 
-                    if rel_diff > epsilon {
-                        println!(
-                            "Gradient mismatch: numerical = {:.6}, analytical = {:.6}, abs_diff = {:.6}, rel_diff = {:.6}",
-                            val_numerical, val_analytical, abs_diff, rel_diff
-                        );
-                    }
+            loss
+        };
 
-                    assert!(rel_diff < epsilon);
-                }
-            }
-        }
+        let epsilon = 1e-7;
+        let numerical_grad_linear_bias: Vec<Complex<f64>> = numerical_gradient_bias(&mut loss_fn, input_batch.clone(), &linear_bias, epsilon);
+
+        // Check if gradient batch dimensions match expected shapes
+        println!("\nanalytical grad bias: {:?}", analytical_gradient_bias);
+        println!("\nnumerical grad bias: {:?}", numerical_grad_linear_bias);
+
+       // test_gradient_error(&grouped_linear_gradient, &numerical_grad_linear, epsilon);
     }
 }

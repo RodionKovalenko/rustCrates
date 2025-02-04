@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
-    matrix::{add_vector, multiply_complex, multiply_scalar_with_matrix},
+    matrix::{add_matrix, add_vector, multiply_complex, multiply_scalar_with_matrix, transpose},
     weights_initializer::initialize_weights_complex,
 };
 
@@ -21,7 +21,7 @@ pub struct LinearLayer {
 impl LinearLayer {
     pub fn new(learning_rate: f64, rows: usize, cols: usize) -> Self {
         let mut weights: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
-        let bias: Vec<Complex<f64>> = vec![Complex::new(1.0, 1.0); cols];
+        let bias: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
 
         initialize_weights_complex(rows, cols, &mut weights);
 
@@ -55,56 +55,9 @@ impl LinearLayer {
             .collect() // Collect all results into a single Vec
     }
 
-    pub fn backward(&mut self, previous_gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-        // Retrieve input batch
-        let input_batch = self.input_batch.as_ref().expect("Input batch is missing");
-
-        let batch_size = input_batch.len();
-        let seq_len = input_batch[0].len();
-        let dim = input_batch[0][0].len();
-
-        // Initialize gradients for weights and biases
-        let mut weight_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()];
-        let mut bias_gradients: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); self.bias.len()];
-
-        // For each input sample in the batch
-        for input_sample in input_batch.iter() {
-            // Compute the gradient of the loss with respect to the weights and biases for this sample
-            let mut sample_input = vec![vec![Complex::new(0.0, 0.0); dim]; seq_len];
-
-            for (j, seq_sample) in input_sample.iter().enumerate() {
-                for (k, input_value) in seq_sample.iter().enumerate() {
-                    sample_input[j][k] = input_value.clone(); // Use input directly, no need to group
-                }
-            }
-
-            // Multiply the transposed input sample with previous gradients (for weight gradients)
-            let current_sample_weight_gradients = multiply_complex(&sample_input, previous_gradient);
-
-            // Sum gradients for the weights and biases across all samples
-            for (i, row) in current_sample_weight_gradients.iter().enumerate() {
-                for (j, weight_value) in row.iter().enumerate() {
-                    weight_gradients[i][j] += weight_value.clone(); // Accumulate gradients for weights
-                }
-            }
-        }
-
-        // Accumulate gradients for biases
-        for grad_value in previous_gradient.iter() {
-            for (k, grad_val) in grad_value.iter().enumerate() {
-                bias_gradients[k] += grad_val.clone(); // Sum the gradients for biases
-            }
-        }
-
-        // Normalize the gradients by the batch size (average)
-        let batch_scalar = Complex::new(1.0 / batch_size as f64, 0.0);
-        weight_gradients = multiply_scalar_with_matrix::<Complex<f64>>(batch_scalar, &weight_gradients);
-
-        for bias in bias_gradients.iter_mut() {
-            *bias /= batch_size as f64; // Normalize bias gradients
-        }
-
-        // Update weights and biases using gradient descent
+    pub fn update_weights(&mut self, weight_gradients: &Vec<Vec<Complex<f64>>>, bias_gradients: &Vec<Complex<f64>>)
+    {
+         // Update weights and biases using gradient descent
         for (i, row) in self.weights.iter_mut().enumerate() {
             for (j, weight_value) in row.iter_mut().enumerate() {
                 *weight_value -= self.learning_rate * weight_gradients[i][j];
@@ -114,7 +67,42 @@ impl LinearLayer {
         for (i, value) in self.bias.iter_mut().enumerate() {
             *value -= self.learning_rate * bias_gradients[i];
         }
+    }
 
-        previous_gradient.clone()
+    pub fn group_gradient_batch(&self, weight_gradients_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Complex<f64>>> {
+        let mut weight_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); weight_gradients_batch[0][0].len()]; weight_gradients_batch[0].len()];
+
+        for weight_gradient_batch in weight_gradients_batch {
+            for (row, w_gradient) in weight_gradient_batch.iter().enumerate() {
+                for (col, gradient_value) in w_gradient.iter().enumerate() {
+                    weight_gradients[row][col] += gradient_value;
+                }
+            }
+        }
+
+        weight_gradients        
+    }
+
+    pub fn backward_batch(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<Complex<f64>>) {
+        let input_batch = self.input_batch.as_ref().expect("Input batch is missing");
+
+        // Initialize gradients for weights and biases
+        let mut weight_gradients: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()]; input_batch.len()];
+        let mut bias_gradients: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); self.bias.len()];
+
+        // For each input sample in the batch
+        for (batch_ind, (input_sample, gradient_sample)) in input_batch.iter().zip(previous_gradient_batch).enumerate() {
+            // Multiply the transposed input sample with previous gradients (for weight gradients)
+            weight_gradients[batch_ind] = multiply_complex(input_sample, gradient_sample);
+
+            //Accumulate gradients for biases
+            for grad_value in gradient_sample.iter() {
+                for (k, grad_val) in grad_value.iter().enumerate() {
+                    bias_gradients[k] += grad_val.clone(); // Sum the gradients for biases
+                }
+            }
+        }
+
+        (weight_gradients.clone(), bias_gradients)
     }
 }

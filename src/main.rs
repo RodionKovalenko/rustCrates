@@ -63,22 +63,22 @@ fn main() {
     let mut input: Vec<String> = Vec::new();
     input.push(input_str1.to_string());
     input.push(input_str2.to_string());
-    input.push(input_str3.to_string());
-    input.push(input_str4.to_string());
-    input.push(input_str5.to_string());
-    input.push(input_str6.to_string());
-    input.push(input_str7.to_string());
-    input.push(input_str8.to_string());
+    // input.push(input_str3.to_string());
+    // input.push(input_str4.to_string());
+    // input.push(input_str5.to_string());
+    // input.push(input_str6.to_string());
+    // input.push(input_str7.to_string());
+    // input.push(input_str8.to_string());
 
     let mut target: Vec<String> = Vec::new();
     target.push(target1.to_string());
     target.push(target2.to_string());
-    target.push(target3.to_string());
-    target.push(target4.to_string());
-    target.push(target5.to_string());
-    target.push(target6.to_string());
-    target.push(target7.to_string());
-    target.push(target8.to_string());
+    // target.push(target3.to_string());
+    // target.push(target4.to_string());
+    // target.push(target5.to_string());
+    // target.push(target6.to_string());
+    // target.push(target7.to_string());
+    // target.push(target8.to_string());
 
     let dataset = Dataset::new(input, target);
     let num_epochs: usize = 1;
