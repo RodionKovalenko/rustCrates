@@ -6,4 +6,4 @@ pub mod embedding_layer;
 pub mod positional_encoding_layer;
 pub mod linear_layer;
 pub mod softmax_output_layer;
-pub mod test;
+pub mod tests;

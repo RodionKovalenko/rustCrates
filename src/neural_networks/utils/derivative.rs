@@ -2,6 +2,7 @@ use crate::neural_networks::network_components::layer::ActivationType;
 use nalgebra::ComplexField;
 use num::abs;
 use num_complex::Complex;
+use rand::seq;
 use std::f64::consts::PI;
 
 use super::activation::{erf_complex, softmax_row};
@@ -254,9 +255,103 @@ where
     grad_batch
 }
 
+pub fn numerical_gradient_weights_without_loss<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
+where
+    F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>, &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Vec<Complex<f64>>>>,
+{
+    let mut grad_batch = vec![vec![vec![Complex::new(0.0, 0.0); weights[0].len()]; weights.len()]; input.len()];
+
+    for row in 0..weights.len() {
+        for col in 0..weights[row].len() {
+            // Perturb input by epsilon
+            let mut weights_plus = weights.clone();
+            weights_plus[row][col] += epsilon;
+
+            let mut weights_minus = weights.clone();
+            weights_minus[row][col] -= epsilon;
+
+            // Compute numerical gradient
+            let loss_plus = f(&input, &weights_plus);
+            let loss_minus = f(&input, &weights_minus);
+
+            for batch_ind in 0..loss_plus.len() {
+                for (seq_ind, input_vec) in loss_plus[batch_ind].iter().enumerate() {
+                    let gradient: Complex<f64> = (loss_plus[batch_ind][seq_ind][col] - loss_minus[batch_ind][seq_ind][col]) / (2.0 * epsilon);
+                    grad_batch[batch_ind][row][col] += gradient;
+                }
+            }
+        }
+    }
+
+    grad_batch
+}
+
+pub fn numerical_gradient_bias_without_loss<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Complex<f64>>, epsilon: f64) -> Vec<Complex<f64>>
+where
+    F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>, &Vec<Complex<f64>>) -> Vec<Vec<Vec<Complex<f64>>>>,
+{
+    let mut grad_batch = vec![Complex::new(0.0, 0.0); bias.len()];
+
+    for row in 0..bias.len() {
+        // Perturb input by epsilon
+        let mut bias_plus = bias.clone();
+        bias_plus[row] += epsilon;
+
+        let mut bias_minus = bias.clone();
+        bias_minus[row] -= epsilon;
+
+        // Compute numerical gradient
+        let loss_plus = f(&input, &bias_plus);
+        let loss_minus = f(&input, &bias_minus);
+
+        for batch_ind in 0..loss_plus.len() {
+            for (seq_ind, input_vec) in loss_plus[batch_ind].iter().enumerate() {
+                let gradient: Complex<f64> = (loss_plus[batch_ind][seq_ind][row] - loss_minus[batch_ind][seq_ind][row]) / (2.0 * epsilon);
+                grad_batch[row] += gradient;
+            }
+        }
+    }
+
+    grad_batch
+}
+
+
+pub fn numerical_gradient_input_batch_without_loss<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
+where
+    F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>>,
+{
+    let mut grad_batch = vec![vec![vec![Complex::new(0.0, 0.0); input[0][0].len()]; input[0].len()]; input.len()];
+
+    for batch in 0..input.len() {
+        for seq in 0..input[batch].len() {
+            for dim in 0..input[batch][seq].len() {
+                // Perturb input by epsilon
+                let mut input_plus = input.clone();
+                input_plus[batch][seq][dim] += epsilon;
+
+                let mut input_minus = input.clone();
+                input_minus[batch][seq][dim] -= epsilon;
+
+                // Compute numerical gradient
+                let loss_plus = f(&input_plus);
+                let loss_minus = f(&input_minus);
+
+                for batch_ind in 0..loss_plus.len() {
+                    for (seq_ind, input_vec) in loss_plus[batch_ind].iter().enumerate() {
+                        let gradient: Complex<f64> = (loss_plus[batch_ind][seq_ind][dim] - loss_minus[batch_ind][seq_ind][dim]) / (2.0 * epsilon);
+                        grad_batch[batch_ind][seq][dim] += gradient;
+                    }
+                }
+            }
+        }
+    }
+
+    grad_batch
+}
+
 pub fn test_gradient_batch_error(numerical_grad_batch: &Vec<Vec<Vec<Complex<f64>>>>, analytical_grad_batch: &Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) {
     for (gradient_numerical, gradient_analytical) in numerical_grad_batch.iter().zip(analytical_grad_batch) {
-       test_gradient_error_2d(gradient_numerical, gradient_analytical, epsilon);
+        test_gradient_error_2d(gradient_numerical, gradient_analytical, epsilon);
     }
 }
 
