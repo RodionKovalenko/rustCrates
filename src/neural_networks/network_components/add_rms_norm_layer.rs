@@ -62,22 +62,22 @@ impl RMSNormLayer {
         output_batch
     }
 
-    pub fn backward(&mut self, gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    pub fn backward(&mut self, gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
         // Retrieve the input batch from the forward pass
         let input_batch = self.input_batch.as_ref().expect("Input batch not found in RMSNorm layer");
 
         println!("RMS Norm backward: input batch shape: {}, {}, {}", input_batch.len(), input_batch[0].len(), input_batch[0][0].len());
-        println!("RMS Norm backward: gradient shape: {}, {}", gradient.len(), gradient[0].len());
+        println!("RMS Norm backward: gradient shape: {}, {}, {}", gradient_batch.len(), gradient_batch[0].len(),  gradient_batch[0][0].len());
 
         // Initialize a container for the input gradients with the same shape as the input batch
-        let mut input_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()];
+        let mut input_batch_gradients: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
 
         // Iterate through the input batch (3D: [batch_size, sequence_length, feature_dim])
-        for (seq_ind, input_sequence) in input_batch.iter().enumerate() {
+        for (batch_ind, (input_sequence, gradient_seq)) in input_batch.iter().zip(gradient_batch.iter()).enumerate() {
             let mut is_seq_null = true;
             // Iterate over each token embedding (2D: [sequence_length, feature_dim])
-            for (input_vec, grad_vec) in input_sequence.iter().zip(gradient.iter()) {
-                if seq_ind == 0 && is_seq_null {
+            for (seq_ind, (input_vec, grad_vec)) in input_sequence.iter().zip(gradient_seq).enumerate() {
+                if batch_ind == 0 && is_seq_null {
                     println!("input vec dim: {}", input_vec.len());
                     println!("grad vec dim in rms norm: {}", grad_vec.len());
                     is_seq_null = false;
@@ -110,11 +110,11 @@ impl RMSNormLayer {
                     let grad_adjustment = grad_vec[i] * norm_factor - Complex::new(sum_grad, 0.0) * x / Complex::new(rms, 0.0);
 
                     // Update the input gradients for this sequence and dimension
-                    input_gradients[seq_ind][i] += grad_adjustment;
+                    input_batch_gradients[batch_ind][seq_ind][i] += grad_adjustment;
                 }
             }
         }
 
-        input_gradients
+        input_batch_gradients
     }
 }

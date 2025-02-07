@@ -38,6 +38,8 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
 
     //println!("tokens: {:?}", &batch_ids);
 
+    println!("forward pass start ----------------------------------------------------------------------");
+
     let mut output = None;
     let mut padding_mask = None;
 
@@ -193,7 +195,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             LayerEnum::Linear(linear_layer) => {
                 let linear_layer = Some(linear_layer).unwrap();
                 if let Some(previous_gradient) = &gradients {
-                    let (gradients_linear_weights, gradient_linear_bias) = linear_layer.backward_batch(previous_gradient);
+                    let (gradients_linear_weights, _gradient_linear_bias) = linear_layer.backward_batch(previous_gradient);
 
                     println!("gradients of linear layer: {}, {}, {}", &gradients_linear_weights.len(), &gradients_linear_weights[0].len(), &gradients_linear_weights[0][0].len());
                     gradients = Some(gradients_linear_weights);
