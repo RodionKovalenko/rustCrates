@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
-    matrix::{add_matrix, add_vector, multiply_complex, multiply_scalar_with_matrix, transpose},
+    matrix::{add_vector, multiply_complex},
     weights_initializer::initialize_weights_complex,
 };
 
@@ -56,7 +56,7 @@ impl LinearLayer {
     }
 
     pub fn backward_batch(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<Complex<f64>>) {
-        let input_batch = self.input_batch.as_ref().expect("Input batch is missing");
+        let input_batch = self.input_batch.as_ref().expect("Input batch is missing in linear layer");
 
         // Initialize gradients for weights and biases
         let mut weight_gradients: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()]; input_batch.len()];
