@@ -315,7 +315,6 @@ where
     grad_batch
 }
 
-
 pub fn numerical_gradient_input_batch_without_loss<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
 where
     F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>>,
@@ -324,23 +323,21 @@ where
 
     for batch in 0..input.len() {
         for seq in 0..input[batch].len() {
-            for dim in 0..input[batch][seq].len() {
-                // Perturb input by epsilon
-                let mut input_plus = input.clone();
-                input_plus[batch][seq][dim] += epsilon;
+            for dim_i in 0..input[batch][seq].len() {
+                for dim_j in 0..input[batch][seq].len() {
+                    // Perturb input by epsilon
+                    let mut input_plus = input.clone();
+                    input_plus[batch][seq][dim_j] += epsilon;
 
-                let mut input_minus = input.clone();
-                input_minus[batch][seq][dim] -= epsilon;
+                    let mut input_minus = input.clone();
+                    input_minus[batch][seq][dim_j] -= epsilon;
 
-                // Compute numerical gradient
-                let loss_plus = f(&input_plus);
-                let loss_minus = f(&input_minus);
+                    // Compute numerical gradient
+                    let loss_plus = f(&input_plus);
+                    let loss_minus = f(&input_minus);
 
-                for batch_ind in 0..loss_plus.len() {
-                    for (seq_ind, input_vec) in loss_plus[batch_ind].iter().enumerate() {
-                        let gradient: Complex<f64> = (loss_plus[batch_ind][seq_ind][dim] - loss_minus[batch_ind][seq_ind][dim]) / (2.0 * epsilon);
-                        grad_batch[batch_ind][seq][dim] += gradient;
-                    }
+                    let gradient: Complex<f64> = (loss_plus[batch][seq][dim_i] - loss_minus[batch][seq][dim_i]) / (2.0 * epsilon);
+                    grad_batch[batch][seq][dim_i] += gradient;
                 }
             }
         }

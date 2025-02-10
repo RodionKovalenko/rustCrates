@@ -30,17 +30,17 @@ impl RMSNormLayer {
             panic!("Input to RMSNorm cannot be empty");
         }
 
-        // Compute the RMS of the input vector
-        // norm_sqr() => re^2 + im^2
-        let mean_square = input.iter().map(|x| x.norm_sqr()).sum::<f64>() / input.len() as f64;
-        let rms = (mean_square + self.epsilon).sqrt();
+        let rms = self.rms(input);
 
         // Normalize the input and apply the learned gamma scaling
-        input
-            .iter()
-            .zip(self.gamma.iter())
-            .map(|(x, &g)| (*x / Complex::new(rms, 0.0)) * Complex::new(g, 0.0))
-            .collect()
+        input.iter().zip(self.gamma.iter()).map(|(x, &g)| (*x / rms * g)).collect()
+    }
+
+    pub fn rms(&self, input: &Vec<Complex<f64>>) -> Complex<f64> {
+        let mean_square = input.iter().map(|x| x * x).sum::<Complex<f64>>() / input.len() as f64;
+        let rms = (mean_square + self.epsilon).sqrt();
+
+        rms
     }
 
     // Forward pass for a batch of token embeddings (2D input)
@@ -50,6 +50,7 @@ impl RMSNormLayer {
 
         for (batch_ind, input) in input_batch.iter().enumerate() {
             let output = add_matrix(input, &input_before_transform_batch[batch_ind]);
+            // let output = input.clone();
 
             output_batch.push(
                 output
@@ -62,55 +63,32 @@ impl RMSNormLayer {
         output_batch
     }
 
-    pub fn backward(&mut self, gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
-        // Retrieve the input batch from the forward pass
+    pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
         let input_batch = self.input_batch.as_ref().expect("Input batch not found in RMSNorm layer");
 
-        println!("RMS Norm backward: input batch shape: {}, {}, {}", input_batch.len(), input_batch[0].len(), input_batch[0][0].len());
-        println!("RMS Norm backward: gradient shape: {}, {}, {}", gradient_batch.len(), gradient_batch[0].len(),  gradient_batch[0][0].len());
+        let batch_size = input_batch.len();
+        let seq_len = input_batch[0].len();
+        let dim_len = input_batch[0][0].len();
 
-        // Initialize a container for the input gradients with the same shape as the input batch
-        let mut input_batch_gradients: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
+        let mut input_batch_gradients = vec![vec![vec![Complex::new(0.0, 0.0); dim_len]; seq_len]; batch_size];
 
-        // Iterate through the input batch (3D: [batch_size, sequence_length, feature_dim])
-        for (batch_ind, (input_sequence, gradient_seq)) in input_batch.iter().zip(gradient_batch.iter()).enumerate() {
-            let mut is_seq_null = true;
-            // Iterate over each token embedding (2D: [sequence_length, feature_dim])
-            for (seq_ind, (input_vec, grad_vec)) in input_sequence.iter().zip(gradient_seq).enumerate() {
-                if batch_ind == 0 && is_seq_null {
-                    println!("input vec dim: {}", input_vec.len());
-                    println!("grad vec dim in rms norm: {}", grad_vec.len());
-                    is_seq_null = false;
-                }
-                let input_len = input_vec.len() as f64;
+        for b in 0..batch_size {
+            for s in 0..seq_len {
+                let rms =  self.rms(&input_batch[b][s]);
+                // Compute gradients
+                for d_i in 0..dim_len {
+                    // Applying RMSNorm backward formula with gamma scaling
+                    for d_j in 0..dim_len {
+                        if d_i == d_j {
+                            let grad = (1.0 / rms) - ((input_batch[b][s][d_i] * input_batch[b][s][d_j]) / (dim_len as f64 * rms.powf(3.0)));
+                            input_batch_gradients[b][s][d_j] += grad;
+                        } else {
+                            let grad = Complex::new(0.0, 0.0) - ((input_batch[b][s][d_i] * input_batch[b][s][d_j]) / (dim_len as f64 * rms.powf(3.0)));
+                            input_batch_gradients[b][s][d_j] += grad;
+                        }
+                    }
 
-                // Compute mean square and RMS for the current token embedding
-                let mean_square = input_vec.iter().map(|x| x.norm_sqr()).sum::<f64>() / input_len;
-                let rms = (mean_square + self.epsilon).sqrt();
-
-                // Compute gradient for gamma (averaged across batch and sequence dimensions)
-                let gamma_grad: Vec<f64> = input_vec
-                    .iter()
-                    .zip(grad_vec.iter())
-                    .map(|(input, grad)| (grad * input.conj()).re / rms)
-                    .map(|g| g / input_batch.len() as f64) // Normalize by batch size
-                    .collect();
-
-                // Update gamma using gradient descent
-                for (g, g_grad) in self.gamma.iter_mut().zip(gamma_grad.iter()) {
-                    *g -= self.learning_rate * g_grad;
-                }
-
-                // Compute gradient for the input vector (and apply normalization)
-                for (i, x) in input_vec.iter().enumerate() {
-                    let norm_factor = *x / Complex::new(rms, 0.0);
-                    let sum_grad = grad_vec.iter().zip(input_vec.iter()).map(|(grad, x_j)| grad * x_j.conj()).sum::<Complex<f64>>().re / (input_len * rms);
-
-                    // Adjust the gradient with normalization
-                    let grad_adjustment = grad_vec[i] * norm_factor - Complex::new(sum_grad, 0.0) * x / Complex::new(rms, 0.0);
-
-                    // Update the input gradients for this sequence and dimension
-                    input_batch_gradients[batch_ind][seq_ind][i] += grad_adjustment;
+                    input_batch_gradients[b][s][d_i] *= previous_gradient_batch[b][s][d_i];
                 }
             }
         }
