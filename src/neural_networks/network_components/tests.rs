@@ -4,11 +4,12 @@ mod tests {
         network_components::{add_rms_norm_layer::RMSNormLayer, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
         utils::derivative::{
-            numerical_gradient_bias, numerical_gradient_bias_without_loss, numerical_gradient_input, numerical_gradient_input_batch, numerical_gradient_input_batch_without_loss, numerical_gradient_weights, numerical_gradient_weights_without_loss, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d
+            numerical_gradient_bias, numerical_gradient_bias_without_loss, numerical_gradient_input, numerical_gradient_input_batch, numerical_gradient_input_batch_without_loss,
+            numerical_gradient_weights, numerical_gradient_weights_without_loss, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d,
         },
     };
 
-    use num::Complex;
+    use num::{Complex, Float};
 
     #[test]
     fn test_softmax_layer_backward() {
@@ -224,10 +225,12 @@ mod tests {
         // Create a simple LinearLayer with the given input and output dimensions
 
         // Define a small input batch, [2][2][3]
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![
-            vec![vec![Complex::new(0.5, 1.0), Complex::new(0.8, 5.0), Complex::new(0.1, 3.0)]],
-            vec![vec![Complex::new(1.0, 2.0), Complex::new(2.0, 3.0), Complex::new(3.0, 4.0)]],
-        ];
+        // let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![
+        //     vec![vec![Complex::new(0.5, 1.0), Complex::new(0.8, 5.0), Complex::new(0.1, 3.0)]],
+        //     vec![vec![Complex::new(1.0, 2.0), Complex::new(2.0, 3.0), Complex::new(3.0, 4.0)]],
+        // ];
+
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(1.0, 1.0), Complex::new(2.0, 2.0), Complex::new(3.0, 3.0)]]];
 
         let target_token_id_batch = vec![vec![0], vec![1]];
 
@@ -238,7 +241,7 @@ mod tests {
         println!("input batch :{:?}", &input_batch);
         println!("\nrms output_batch: {:?}", &rms_output_batch);
 
-        let previous_gradient = vec![vec![vec![Complex::new(1.0, 1.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
+        let previous_gradient = vec![vec![vec![Complex::new(1.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
 
         let backward = rms_norm_layer.backward(&previous_gradient);
 
@@ -252,9 +255,9 @@ mod tests {
         let epsilon = 1e-7;
         let numerical_grad_rms: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
 
-        println!("\nnumerical gradient linear: {:?}", &numerical_grad_rms);
-        println!("\nanalytical gradient linear: {:?}", &backward);
+        println!("\nnumerical gradient rms: {:?}", &numerical_grad_rms);
+        println!("\nanalytical gradient rms: {:?}", &backward);
 
-        // test_gradient_batch_error(&numerical_grad_linear, &weight_gradients, epsilon);
+        test_gradient_batch_error(&numerical_grad_rms, &backward, epsilon)       
     }
 }
