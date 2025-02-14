@@ -263,12 +263,12 @@ mod tests {
         let output_dim = 4; // Match output_dim to your layer's output
         let learning_rate = 0.01;
         let _operation_mode = OperationMode::TRAINING;
-        let epsilon: f64 = 1e-3;
+        let epsilon: f64 = 1e-7;
 
-        let mut dense_layer: Layer = Layer::new(input_dim, output_dim, &learning_rate, &ActivationType::GELU, LayerType::DenseLayer);
+        let mut dense_layer: Layer = Layer::new(input_dim, output_dim, &learning_rate, &ActivationType::SIGMOID, LayerType::DenseLayer);
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(1.0, 2.0), Complex::new(2.0, 3.0), Complex::new(3.0, 4.0)]]];
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.1, 0.2), Complex::new(0.3, 0.5), Complex::new(0.6, 0.4)]]];
 
         let dense_output_batch = dense_layer.forward(&input_batch);
 
@@ -293,6 +293,8 @@ mod tests {
 
         println!("\nnumerical gradient dense layer {:?}", dense_numerical_grad_batch);
         println!("\nanalytical gradient dense layer {:?}", dense_analytical_gradient_batch);
+
+        // For Gelu it can a little more deviation
         test_gradient_batch_error(&dense_numerical_grad_batch, &dense_analytical_gradient_batch, epsilon);
     }
 
@@ -305,7 +307,7 @@ mod tests {
             Complex::new(3.003158122183436, 4.0090442543494476),
         ];
 
-        let h = 1e-6; // Step size for numerical gradient
+        let h = 1e-7; // Step size for numerical gradient
 
         // Iterate over the array and test each element
         for (i, z) in test_array.iter().enumerate() {
@@ -318,6 +320,10 @@ mod tests {
             println!("  Numerical derivative: {}", numerical_derivative);
             println!("  Difference: {}", analytical_derivative - numerical_derivative);
             println!();
+
+            let numerical_vec = vec![numerical_derivative];
+            let analytic_vec = vec![analytical_derivative];
+            test_gradient_error_1d(&analytic_vec, &numerical_vec, 1e-5);
         }
     }
     // Numerical gradient for verification
