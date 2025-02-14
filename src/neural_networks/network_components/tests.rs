@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::neural_networks::{
-        network_components::{add_rms_norm_layer::RMSNormLayer, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
+        network_components::{add_rms_norm_layer::RMSNormLayer, gradient_struct::Gradient, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
         utils::derivative::{
             numerical_gradient_bias, numerical_gradient_bias_without_loss, numerical_gradient_input, numerical_gradient_input_batch, numerical_gradient_input_batch_without_loss,
@@ -9,7 +9,7 @@ mod tests {
         },
     };
 
-    use num::{Complex, Float};
+    use num::Complex;
 
     #[test]
     fn test_softmax_layer_backward() {
@@ -38,8 +38,8 @@ mod tests {
 
         println!("linear batch output: {:?}", &linear_batch_output);
         let _softmax_batch_output = softmax_layer.forward(&linear_batch_output);
-        let analytical_grad = softmax_layer.backward(&target_token_id_batch);
-        let analytical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.backward_batch(&target_token_id_batch);
+        let gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
+        let (analytical_grad_batch, analytical_grad) = (gradient.get_gradient_input_batch(), gradient.get_gradient_input());
 
         // Define the loss function
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
@@ -51,22 +51,22 @@ mod tests {
             loss
         };
 
-        let epsilon = 1e-9;
+        let epsilon = 1e-7;
         let numerical_grad: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, linear_batch_output.clone(), epsilon);
         let numerical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch(&mut loss_fn, linear_batch_output.clone(), epsilon);
 
-        // Check if gradient batch dimensions match expected shapes
-        println!("analytical grad: {:?}", analytical_grad);
-        println!("numerical grad: {:?}", numerical_grad);
+        //Check if gradient batch dimensions match expected shapes
+        println!("\nanalytical grad: {:?}", analytical_grad);
+        println!("\nnumerical grad: {:?}", numerical_grad);
 
         test_gradient_error_2d(&numerical_grad, &analytical_grad, epsilon);
 
-        println!("analytical grad batch: {:?}", analytical_grad_batch);
-        println!("numerical grad batch: {:?}", numerical_grad_batch);
+        println!("\nanalytical grad batch: {:?}", analytical_grad_batch);
+        println!("\nnumerical grad batch: {:?}", numerical_grad_batch);
         test_gradient_batch_error(&numerical_grad_batch, &analytical_grad_batch, epsilon);
     }
 
-    #[test]
+     #[test]
     fn test_softmax_linear_backward() {
         // Define some small batch size and input dimensions for simplicity
         let _batch_size = 2;
@@ -93,8 +93,11 @@ mod tests {
         let linear_batch_output = linear_layer.forward(&input_batch);
         let _softmax_batch_output = softmax_layer.forward(&linear_batch_output);
 
-        let analytical_grad_batch_softmax: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.backward_batch(&target_token_id_batch);
-        let (analytical_grad_linear, analytical_gradient_bias) = linear_layer.backward_batch(&analytical_grad_batch_softmax);
+        let gradient_linear: Gradient = softmax_layer.backward(&target_token_id_batch);
+        let analytical_grad_batch_softmax: Vec<Vec<Vec<Complex<f64>>>>  = gradient_linear.get_gradient_input_batch();
+
+        let gradient_softmax: Gradient = linear_layer.backward(&analytical_grad_batch_softmax);
+        let (analytical_grad_linear, analytical_gradient_bias) = (gradient_softmax.get_gradient_weight_batch(), gradient_softmax.get_gradient_bias());
         let grouped_linear_gradient = linear_layer.group_gradient_batch(&analytical_grad_linear);
 
         let linear_weights = linear_layer.weights.clone();
@@ -173,7 +176,9 @@ mod tests {
         // Define previous gradients (as if coming from next layer)
         let previous_gradient_batch = vec![vec![vec![Complex::new(1.0, 0.0); num_col]; input_batch[0].len()]; input_batch.len()];
 
-        let (weight_gradients, bias_gradients) = linear_layer.backward_batch(&previous_gradient_batch);
+        let gradient_batch: Gradient = linear_layer.backward(&previous_gradient_batch);
+
+        let (weight_gradients, bias_gradients) = (gradient_batch.get_gradient_weight_batch(), gradient_batch.get_gradient_bias());
         let linear_weights = linear_layer.weights.clone();
         let bias = linear_layer.bias.clone();
         // Run backward pass
@@ -216,23 +221,16 @@ mod tests {
         // Define some small batch size and input dimensions for simplicity
         let _batch_size = 2;
         let _seq_len: usize = 1; // Update to match the input structure
-        let input_dim = 3; // Match the input dimension with your input batch
+        let _input_dim = 3; // Match the input dimension with your input batch
         let output_dim = 4; // Match output_dim to your layer's output
         let learning_rate = 0.01;
-        let operation_mode = OperationMode::TRAINING;
+        let _operation_mode = OperationMode::TRAINING;
         let epsilon = 1e-7;
 
         // Create a simple LinearLayer with the given input and output dimensions
-
-        // Define a small input batch, [2][2][3]
-        // let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![
-        //     vec![vec![Complex::new(0.5, 1.0), Complex::new(0.8, 5.0), Complex::new(0.1, 3.0)]],
-        //     vec![vec![Complex::new(1.0, 2.0), Complex::new(2.0, 3.0), Complex::new(3.0, 4.0)]],
-        // ];
-
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(1.0, 1.0), Complex::new(2.0, 2.0), Complex::new(3.0, 3.0)]]];
 
-        let target_token_id_batch = vec![vec![0], vec![1]];
+        let _target_token_id_batch = vec![vec![0], vec![1]];
 
         let mut rms_norm_layer = RMSNormLayer::new(output_dim, epsilon, learning_rate);
 

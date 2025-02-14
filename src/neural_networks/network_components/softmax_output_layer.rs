@@ -8,6 +8,8 @@ use crate::neural_networks::{
     utils::activation::{softmax_complex, softmax_last_row},
 };
 
+use super::gradient_struct::Gradient;
+
 // RMSNorm Layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SoftmaxLayer {
@@ -45,7 +47,7 @@ impl SoftmaxLayer {
         layer_output
     }
 
-    pub fn backward_batch(&self, target_token_ids: &Vec<Vec<u32>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn backward(&self, target_token_ids: &Vec<Vec<u32>>) -> Gradient {
         // Ensure softmax_output_batch exists (precomputed during the forward pass)
         let softmax_output_batch: &Vec<Vec<Vec<Complex<f64>>>> = self.softmax_output_batch.as_ref().expect("Input batch is missing in softmax layer");
         let batch_size = softmax_output_batch.len();
@@ -84,51 +86,10 @@ impl SoftmaxLayer {
             }
         }
 
-        // Return the final gradient_batch
-        gradient_batch
-    }
-
-    pub fn backward(&self, target_token_ids: &Vec<Vec<u32>>) -> Vec<Vec<Complex<f64>>> {
-        // Ensure softmax_output_batch exists (precomputed during the forward pass)
-        let softmax_output_batch: &Vec<Vec<Vec<Complex<f64>>>> = self.softmax_output_batch.as_ref().expect("Input batch is missing in softmax layer");
-        let seq_len = softmax_output_batch[0].len();
-        let vocab_dim = softmax_output_batch[0][0].len();
-
-        // Initialize gradient_batch with zeros
-        let mut gradient_batch: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); vocab_dim]; seq_len];
-        let normalizer = softmax_output_batch.len() * target_token_ids[0].len();
-
-        // Iterate over the batch of softmax outputs and target token IDs in serial
-        for (softmax_output, target_tokens) in softmax_output_batch.iter().zip(target_token_ids.iter()) {
-            let seq_len = softmax_output.len();
-            let target_len: usize = target_tokens.len();
-            // println!("softmax output dim: {}, {}", softmax_output.len(), softmax_output[0].len());
-            // println!("target_tokens dim: {}", target_tokens.len());
-
-            let seq_ind_start = seq_len - target_len;
-
-            for (sample_index, softmax_sample) in softmax_output[seq_ind_start..seq_len].iter().enumerate() {
-                for (column_index, softmax_prob) in softmax_sample.iter().enumerate() {
-                    let target = if target_tokens[sample_index] == column_index as u32 {
-                        Complex::new(1.0, 0.0)
-                    } else {
-                        Complex::new(0.0, 0.0)
-                    };
-
-                    // Compute the gradient for this position
-                    let gradient = softmax_prob - target;
-
-                    // if target.norm() == 1.0 {
-                    //     println!("target is 1: {}", sample_index);
-                    // }
-
-                    // Accumulate the gradients directly into the gradient_batch
-                    gradient_batch[sample_index][column_index] += gradient / (normalizer as f64);
-                }
-            }
-        }
+        let mut gradient = Gradient::new_default();
+        gradient.set_gradient_input_batch(gradient_batch);
 
         // Return the final gradient_batch
-        gradient_batch
+        gradient
     }
 }
