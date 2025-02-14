@@ -2,8 +2,7 @@ use num::Complex;
 
 use crate::neural_networks::{
     network_components::{
-        input::{DataTrait, Dataset},
-        layer::LayerEnum,
+        gradient_struct::Gradient, input::{DataTrait, Dataset}, layer::LayerEnum
     },
     network_types::neural_network_generic::NeuralNetwork,
     utils::tokenizer::{tokenize, tokenize_batch},
@@ -140,7 +139,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
 pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<Vec<u32>>) {
     // Backward pass
 
-    let mut gradients = None;
+    let mut gradient: Option<Gradient> = None;
 
     for layer in transformer_network.layers.iter_mut().rev() {
         match layer {
@@ -180,36 +179,43 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             //         println!("No previous output for Attention layer");
             //     }
             // }
-            LayerEnum::FeedForward(dense) => {
-                let dense_layer = Some(dense).unwrap();
-                if let Some(previous_output) = &gradients {
-                    // let gradients_ffn = dense_layer.backward(&previous_output);
+            // LayerEnum::FeedForward(dense) => {
+            //     let dense_layer = Some(dense).unwrap();
+            //     if let Some(previous_output) = &gradients {
+            //         // let gradients_ffn = dense_layer.backward(&previous_output);
 
-                    // println!("gradients of ffn layer: {}, {}", &gradients_ffn.len(), &gradients_ffn[0].len());
+            //         // println!("gradients of ffn layer: {}, {}", &gradients_ffn.len(), &gradients_ffn[0].len());
 
-                    // gradients = Some(gradients_ffn);
-                } else {
-                    println!("No previous output for Dense layer");
-                }
-            }
+            //         // gradients = Some(gradients_ffn);
+            //     } else {
+            //         println!("No previous output for Dense layer");
+            //     }
+            // }
             LayerEnum::Linear(linear_layer) => {
                 let linear_layer = Some(linear_layer).unwrap();
-                if let Some(previous_gradient) = &gradients {
-                    let (gradients_linear_weights, _gradient_linear_bias) = linear_layer.backward_batch(previous_gradient);
+                if let Some(previous_gradient) = gradient {
+                    let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>>  = previous_gradient.get_gradient_input_batch();
+                    
+                    let gradient_batch: Gradient = linear_layer.backward(&previous_gradient_batch);
 
-                    println!("gradients of linear layer: {}, {}, {}", &gradients_linear_weights.len(), &gradients_linear_weights[0].len(), &gradients_linear_weights[0][0].len());
-                    gradients = Some(gradients_linear_weights);
+                    let weight_gradient_batch = gradient_batch.get_gradient_weight_batch();
+                    let _bias_gradient_batch = gradient_batch.get_gradient_bias_batch();
+
+                    println!("weight gradients batch of linear layer: {}, {}, {}", &weight_gradient_batch.len(), &weight_gradient_batch[0].len(), &weight_gradient_batch[0][0].len());
+                    gradient = Some(gradient_batch);
                 } else {
                     println!("No previous output for Dense layer");
                 }
             }
             LayerEnum::Softmax(softmax_layer) => {
                 let softmax_layer = Some(softmax_layer).unwrap();
-                let gradients_softmax: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.backward_batch(target_batch_ids);
+                let gradient_batch: Gradient = softmax_layer.backward(target_batch_ids);
 
-                println!("gradients of softmax layer: {}, {}", &gradients_softmax.len(), &gradients_softmax[0].len());
+                let input_gradient_batch = gradient_batch.get_gradient_input_batch();
 
-                gradients = Some(gradients_softmax);
+                println!("gradients of softmax layer: {}, {}", &input_gradient_batch.len(), &input_gradient_batch[0].len());
+
+                gradient = Some(gradient_batch);
             }
             _ => {}
         }

@@ -8,6 +8,8 @@ use crate::neural_networks::utils::{
     weights_initializer::initialize_weights_complex,
 };
 
+use super::{gradient_struct::Gradient, input};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinearLayer {
     pub weights: Vec<Vec<Complex<f64>>>,
@@ -55,12 +57,12 @@ impl LinearLayer {
             .collect() // Collect all results into a single Vec
     }
 
-    pub fn backward_batch(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<Complex<f64>>) {
+    pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
         let input_batch = self.input_batch.as_ref().expect("Input batch is missing in linear layer");
 
         // Initialize gradients for weights and biases
         let mut weight_gradients: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()]; input_batch.len()];
-        let mut bias_gradients: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); self.bias.len()];
+        let mut bias_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.bias.len()]; input_batch.len()];
 
         // For each input sample in the batch
         for (batch_ind, (input_sample, gradient_sample)) in input_batch.iter().zip(previous_gradient_batch).enumerate() {
@@ -70,12 +72,16 @@ impl LinearLayer {
             //Accumulate gradients for biases
             for grad_row in gradient_sample.iter() {
                 for (k, grad_val) in grad_row.iter().enumerate() {
-                    bias_gradients[k] += grad_val.clone(); // Sum the gradients for biases
+                    bias_gradients[batch_ind][k] += grad_val.clone(); // Sum the gradients for biases
                 }
             }
         }
 
-        (weight_gradients.clone(), bias_gradients)
+        let mut gradient = Gradient::new_default();
+        gradient.set_gradient_weight_batch(weight_gradients);
+        gradient.set_gradient_bias_batch(bias_gradients);
+
+        gradient
     }
 
     pub fn update_weights(&mut self, weight_gradients: &Vec<Vec<Complex<f64>>>, bias_gradients: &Vec<Complex<f64>>) {

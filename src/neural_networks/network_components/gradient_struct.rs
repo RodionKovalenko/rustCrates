@@ -10,7 +10,7 @@ pub struct Gradient {
     gradient_bias_batch: Option<Vec<Vec<Complex<f64>>>>,
     gradient_gamma_batch: Option<Vec<Vec<Complex<f64>>>>,
 
-    gradient_weights: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    gradient_weights: Option<Vec<Vec<Complex<f64>>>>,
     gradient_input: Option<Vec<Vec<Complex<f64>>>>,
     gradient_bias: Option<Vec<Complex<f64>>>,
     gradient_gamma: Option<Vec<Complex<f64>>>,
@@ -29,5 +29,83 @@ impl Gradient {
             gradient_bias: None,
             gradient_gamma: None,
         }
+    }
+    pub fn set_gradient_input_batch(&mut self, gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>>) {
+        self.gradient_input_batch = Some(gradient_input_batch);
+    }
+    pub fn set_gradient_weight_batch(&mut self, gradient_weight_batch: Vec<Vec<Vec<Complex<f64>>>>) {
+        self.gradient_weights_batch = Some(gradient_weight_batch);
+    }
+    pub fn set_gradient_bias_batch(&mut self, gradient_bias_batch: Vec<Vec<Complex<f64>>>) {
+        self.gradient_bias_batch = Some(gradient_bias_batch);
+    }
+
+    pub fn set_gradient_input(&mut self, gradient_input: Vec<Vec<Complex<f64>>>) {
+        self.gradient_input = Some(gradient_input);
+    }
+    pub fn set_gradient_weights(&mut self, gradient_weights: Vec<Vec<Complex<f64>>>) {
+        self.gradient_weights = Some(gradient_weights);
+    }
+    pub fn set_gradient_bias(&mut self, gradient_bias: Vec<Complex<f64>>) {
+        self.gradient_bias = Some(gradient_bias);
+    }
+
+    pub fn get_gradient_input_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
+        self.gradient_input_batch.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_gradient_weight_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
+        self.gradient_weights_batch.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_gradient_bias_batch(&self) -> Vec<Vec<Complex<f64>>> {
+        self.gradient_bias_batch.clone().unwrap_or_else(|| vec![])
+    }
+
+    pub fn get_gradient_weights(&self) -> Vec<Vec<Complex<f64>>> {
+        if let Some(gradient_weight_batch) = self.gradient_weights_batch.clone() {
+            self.group_gradient_batch(&gradient_weight_batch)
+        } else {
+            self.gradient_weights.clone().unwrap_or_else(|| vec![])
+        }
+    }
+
+    pub fn get_gradient_input(&self) -> Vec<Vec<Complex<f64>>> {
+        if let Some(gradient_input_batch) = self.gradient_input_batch.clone() {
+            self.group_gradient_batch(&gradient_input_batch)
+        } else {
+            self.gradient_input.clone().unwrap_or_else(|| vec![])
+        }
+    }
+
+    pub fn get_gradient_bias(&self) -> Vec<Complex<f64>> {
+        if let Some(gradient_input_batch) = self.gradient_bias_batch.clone() {
+            self.group_gradient_batch_bias(&gradient_input_batch)
+        } else {
+            self.gradient_bias.clone().unwrap_or_else(|| vec![])
+        }
+    }
+
+    pub fn group_gradient_batch(&self, weight_gradients_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Complex<f64>>> {
+        let mut weight_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); weight_gradients_batch[0][0].len()]; weight_gradients_batch[0].len()];
+
+        for weight_gradient_batch in weight_gradients_batch {
+            for (row, w_gradient) in weight_gradient_batch.iter().enumerate() {
+                for (col, gradient_value) in w_gradient.iter().enumerate() {
+                    weight_gradients[row][col] += gradient_value;
+                }
+            }
+        }
+
+        weight_gradients
+    }
+    pub fn group_gradient_batch_bias(&self, bias_gradient_batch: &Vec<Vec<Complex<f64>>>) -> Vec<Complex<f64>> {
+        let mut bias_gradients: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); bias_gradient_batch[0].len()];
+
+        for bias_gradient_batch in bias_gradient_batch {
+            for (row, w_gradient) in bias_gradient_batch.iter().enumerate() {
+                bias_gradients[row] += w_gradient;
+            }
+        }
+
+        bias_gradients
     }
 }
