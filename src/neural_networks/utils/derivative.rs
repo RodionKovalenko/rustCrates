@@ -49,7 +49,7 @@ fn selu_derivative_complex(z: Complex<f64>) -> Complex<f64> {
     }
 }
 
-fn gelu_derivative_complex(z: Complex<f64>) -> Complex<f64> {
+pub fn gelu_derivative_complex(z: Complex<f64>) -> Complex<f64> {
     let sqrt_2_over_pi = SQRT_2 / Complex::new(PI.sqrt(), 0.0);
     let f_z = sqrt_2_over_pi * (z + Complex::new(0.044715, 0.0) * z.powf(3.0));
     let tanh_f_z = f_z.tanh();
@@ -370,7 +370,7 @@ where
                 let loss_minus = f(&input_minus);
 
                 let gradient: Complex<f64> = (loss_plus[batch][seq][dim_i] - loss_minus[batch][seq][dim_i]) / (2.0 * epsilon);
-                grad_batch[batch][seq][dim_i] += gradient;
+                grad_batch[batch][seq][dim_i] = gradient;
             }
         }
     }

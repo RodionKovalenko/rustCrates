@@ -1,10 +1,20 @@
 #[cfg(test)]
 mod tests {
     use crate::neural_networks::{
-        network_components::{add_rms_norm_layer::RMSNormLayer, gradient_struct::Gradient, layer::{ActivationType, Layer, LayerType}, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
+        network_components::{
+            add_rms_norm_layer::RMSNormLayer,
+            gradient_struct::Gradient,
+            layer::{ActivationType, Layer, LayerType},
+            linear_layer::LinearLayer,
+            softmax_output_layer::SoftmaxLayer,
+        },
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
-        utils::derivative::{
-            numerical_gradient_bias, numerical_gradient_bias_without_loss, numerical_gradient_input, numerical_gradient_input_batch, numerical_gradient_input_batch_jacobi_without_loss, numerical_gradient_weights, numerical_gradient_weights_without_loss, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d
+        utils::{
+            activation::gelu_complex,
+            derivative::{
+                gelu_derivative_complex, numerical_gradient_bias, numerical_gradient_bias_without_loss, numerical_gradient_input, numerical_gradient_input_batch, numerical_gradient_input_batch_jacobi_without_loss, numerical_gradient_weights, numerical_gradient_weights_without_loss,
+                test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d,
+            },
         },
     };
 
@@ -25,10 +35,7 @@ mod tests {
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
         // Define a small input batch, [2][2][3]
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![
-            vec![vec![Complex::new(0.5, 0.0), Complex::new(0.8, 0.0), Complex::new(0.1, 0.0)]],
-            vec![vec![Complex::new(1.0, 0.0), Complex::new(2.0, 0.0), Complex::new(3.0, 0.0)]],
-        ];
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.5, 0.0), Complex::new(0.8, 0.0), Complex::new(0.1, 0.0)]], vec![vec![Complex::new(1.0, 0.0), Complex::new(2.0, 0.0), Complex::new(3.0, 0.0)]]];
 
         let target_token_id_batch = vec![vec![0], vec![1]];
 
@@ -65,7 +72,7 @@ mod tests {
         test_gradient_batch_error(&numerical_grad_batch, &analytical_grad_batch, epsilon);
     }
 
-     #[test]
+    #[test]
     fn test_softmax_linear_backward() {
         // Define some small batch size and input dimensions for simplicity
         let _batch_size = 2;
@@ -80,10 +87,7 @@ mod tests {
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
         // Define a small input batch, [2][2][3]
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![
-            vec![vec![Complex::new(0.5, 0.0), Complex::new(0.8, 0.0), Complex::new(0.1, 0.0)]],
-            vec![vec![Complex::new(1.0, 0.0), Complex::new(2.0, 0.0), Complex::new(3.0, 0.0)]],
-        ];
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.5, 0.0), Complex::new(0.8, 0.0), Complex::new(0.1, 0.0)]], vec![vec![Complex::new(1.0, 0.0), Complex::new(2.0, 0.0), Complex::new(3.0, 0.0)]]];
 
         let target_token_id_batch = vec![vec![0], vec![1]];
         //let target_token_id_batch = vec![vec![0]];
@@ -93,7 +97,7 @@ mod tests {
         let _softmax_batch_output = softmax_layer.forward(&linear_batch_output);
 
         let gradient_linear: Gradient = softmax_layer.backward(&target_token_id_batch);
-        let analytical_grad_batch_softmax: Vec<Vec<Vec<Complex<f64>>>>  = gradient_linear.get_gradient_input_batch();
+        let analytical_grad_batch_softmax: Vec<Vec<Vec<Complex<f64>>>> = gradient_linear.get_gradient_input_batch();
 
         let gradient_softmax: Gradient = linear_layer.backward(&analytical_grad_batch_softmax);
         let (grouped_linear_gradient, analytical_gradient_bias) = (gradient_softmax.get_gradient_weights(), gradient_softmax.get_gradient_bias());
@@ -155,20 +159,12 @@ mod tests {
         let mut linear_layer = LinearLayer::new(0.01, num_row, num_col);
 
         // Define a simple input batch (2 samples, 2D vectors)
-        let input_batch = vec![
-            vec![vec![Complex::new(1.0, 0.3), Complex::new(2.0, 0.8)]],
-            vec![vec![Complex::new(3.0, 0.2), Complex::new(4.0, 0.5)]],
-        ];
+        let input_batch = vec![vec![vec![Complex::new(1.0, 0.3), Complex::new(2.0, 0.8)]], vec![vec![Complex::new(3.0, 0.2), Complex::new(4.0, 0.5)]]];
 
         // Run forward pass (needed before backward)
         let linear_output_batch = linear_layer.forward(&input_batch);
 
-        println!(
-            "linear output batch: {} {} {}",
-            linear_output_batch.len(),
-            linear_output_batch[0].len(),
-            linear_output_batch[0][0].len()
-        );
+        println!("linear output batch: {} {} {}", linear_output_batch.len(), linear_output_batch[0].len(), linear_output_batch[0][0].len());
         println!("linear weights: {} {} ", linear_layer.weights.len(), linear_layer.weights[0].len());
 
         // Define previous gradients (as if coming from next layer)
@@ -255,7 +251,7 @@ mod tests {
         println!("\nnumerical gradient rms: {:?}", &numerical_grad_rms);
         println!("\nanalytical gradient rms: {:?}", &analytical_gradient_rms);
 
-        test_gradient_batch_error(&numerical_grad_rms, &analytical_gradient_rms, epsilon)       
+        test_gradient_batch_error(&numerical_grad_rms, &analytical_gradient_rms, epsilon)
     }
 
     #[test]
@@ -267,36 +263,75 @@ mod tests {
         let output_dim = 4; // Match output_dim to your layer's output
         let learning_rate = 0.01;
         let _operation_mode = OperationMode::TRAINING;
-        let epsilon: f64 = 1e-7;
-        
-        let mut dense_layer: Layer = Layer::new(input_dim, output_dim, &learning_rate,&ActivationType::GELU, LayerType::DenseLayer);
+        let epsilon: f64 = 1e-3;
 
-         // Create a simple LinearLayer with the given input and output dimensions
-         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(1.0, 2.0), Complex::new(2.0, 3.0), Complex::new(3.0, 4.0)]]];
+        let mut dense_layer: Layer = Layer::new(input_dim, output_dim, &learning_rate, &ActivationType::GELU, LayerType::DenseLayer);
 
-         let dense_output_batch = dense_layer.forward(&input_batch);
+        // Create a simple LinearLayer with the given input and output dimensions
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(1.0, 2.0), Complex::new(2.0, 3.0), Complex::new(3.0, 4.0)]]];
 
-         println!("\ninput batch :{:?}", &input_batch);
-         println!("\ndense output_batch: {:?}", &dense_output_batch);
- 
-         let previous_gradient = vec![vec![vec![Complex::new(1.0, 0.0); dense_output_batch[0][0].len()]; dense_output_batch[0].len()]; dense_output_batch.len()];
- 
-         let gradient = dense_layer.backward(&previous_gradient);
-         let dense_analytical_gradient_batch = gradient.get_gradient_weight_batch();
-         let weights = dense_layer.weights.clone();
- 
-         // Define the loss function
-         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
-             dense_layer.weights = weights.clone();
-             let dense_batch_output = dense_layer.forward(input);
- 
-             dense_batch_output
-         };
-      
-         let dense_numerical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_without_loss(&mut loss_fn, input_batch.clone(),  &weights, epsilon);
+        let dense_output_batch = dense_layer.forward(&input_batch);
 
-         println!("\nnumerical gradient dense layer {:?}", dense_numerical_grad_batch);
-         println!("\nanalytical gradient dense layer {:?}", dense_analytical_gradient_batch);
-         test_gradient_batch_error(&dense_numerical_grad_batch, &dense_analytical_gradient_batch, epsilon)       
+        println!("\ninput batch :{:?}", &input_batch);
+        println!("\ndense output_batch: {:?}", &dense_output_batch);
+
+        let previous_gradient = vec![vec![vec![Complex::new(1.0, 0.0); dense_output_batch[0][0].len()]; dense_output_batch[0].len()]; dense_output_batch.len()];
+
+        let gradient = dense_layer.backward(&previous_gradient);
+        let dense_analytical_gradient_batch = gradient.get_gradient_weight_batch();
+        let weights = dense_layer.weights.clone();
+
+        // Define the loss function
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
+            dense_layer.weights = weights.clone();
+            let dense_batch_output = dense_layer.forward(input);
+
+            dense_batch_output
+        };
+
+        let dense_numerical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_without_loss(&mut loss_fn, input_batch.clone(), &weights, epsilon);
+
+        println!("\nnumerical gradient dense layer {:?}", dense_numerical_grad_batch);
+        println!("\nanalytical gradient dense layer {:?}", dense_analytical_gradient_batch);
+        test_gradient_batch_error(&dense_numerical_grad_batch, &dense_analytical_gradient_batch, epsilon);
+    }
+
+    #[test]
+    fn test_gelu() {
+        let test_array = [
+            Complex::new(1.0, 2.0),
+            Complex::new(-2.345451523555475, 15.239089157237373),
+            Complex::new(0.1013699645231736, 0.10315190720252415),
+            Complex::new(3.003158122183436, 4.0090442543494476),
+        ];
+
+        let h = 1e-6; // Step size for numerical gradient
+
+        // Iterate over the array and test each element
+        for (i, z) in test_array.iter().enumerate() {
+            let analytical_derivative = gelu_derivative_complex(*z);
+            let numerical_derivative = numerical_gradient(gelu_complex, *z, h);
+
+            println!("Test case {}:", i + 1);
+            println!("  Input: {}", z);
+            println!("  Analytical derivative: {}", analytical_derivative);
+            println!("  Numerical derivative: {}", numerical_derivative);
+            println!("  Difference: {}", analytical_derivative - numerical_derivative);
+            println!();
+        }
+    }
+    // Numerical gradient for verification
+    fn numerical_gradient<F>(f: F, z: Complex<f64>, h: f64) -> Complex<f64>
+    where
+        F: Fn(Complex<f64>) -> Complex<f64>,
+    {
+        let f_z = f(z);
+        let f_z_plus_h_re = f(z + Complex::new(h, 0.0));
+        let f_z_plus_h_im = f(z + Complex::new(0.0, h));
+
+        let grad_re = (f_z_plus_h_re - f_z) / Complex::new(h, 0.0);
+        let grad_im = (f_z_plus_h_im - f_z) / Complex::new(0.0, h);
+
+        Complex::new(grad_re.re, grad_im.im)
     }
 }

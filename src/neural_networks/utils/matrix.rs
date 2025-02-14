@@ -142,6 +142,25 @@ pub fn transpose<T: Debug + Clone + Sync + Send>(matrix_a: &Vec<Vec<T>>) -> Vec<
     (*result_lock).clone()
 }
 
+pub fn hadamard_product_2d_c(input_1: &Vec<Vec<Complex<f64>>>, input_2: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    // Check if the input matrices have the same dimensions
+    if input_1.len() != input_2.len() || input_1[0].len() != input_2[0].len() {
+        panic!("The arrays must be of the same size in Hadamard product");
+    }
+
+    // Initialize the result matrix with zeros
+    let mut result = vec![vec![Complex::new(0.0, 0.0); input_1[0].len()]; input_1.len()];
+
+    // Use parallel iterators to compute the Hadamard product
+    result.par_iter_mut().enumerate().for_each(|(i, row)| {
+        for (j, value) in row.iter_mut().enumerate() {
+            *value = input_1[i][j] * input_2[i][j];
+        }
+    });
+
+    result
+}
+
 pub fn convert_3d_to_2d<T: Clone>(array_3d: &Vec<Vec<Vec<T>>>) -> Vec<Vec<T>> {
     let mut array_2d = Vec::new();
 
@@ -339,7 +358,7 @@ pub fn find_highest_index_batch(input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Op
             }
             if max_index_batch.len() <= batch_ind {
                 max_index_batch.push(Vec::new());
-            } 
+            }
 
             max_index_batch[batch_ind].push(max_index as u32);
         }
