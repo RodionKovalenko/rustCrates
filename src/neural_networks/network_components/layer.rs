@@ -3,7 +3,7 @@ use crate::neural_networks::{
     utils::{
         activation::activate_output_complex,
         derivative::get_gradient_complex,
-        matrix::{add_vector, multiply_complex},
+        matrix::{add_vector, hadamard_product_2d_c, multiply_complex},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -161,7 +161,8 @@ impl Layer {
             // Multiply the transposed input sample with previous gradients (for weight gradients)
 
             input_gradient_batch[batch_ind] = get_gradient_complex(&output_batch[batch_ind], self.activation_type.clone());
-            weight_gradients[batch_ind] = multiply_complex(  input_sample, &input_gradient_batch[batch_ind]);
+            input_gradient_batch[batch_ind] = hadamard_product_2d_c(  gradient_sample, &input_gradient_batch[batch_ind]);
+            weight_gradients[batch_ind] = multiply_complex(   input_sample, &input_gradient_batch[batch_ind]);
 
             //Accumulate gradients for biases
             for grad_row in gradient_sample.iter() {
