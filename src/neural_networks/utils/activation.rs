@@ -1,12 +1,16 @@
-use num::{Complex, Float, One};
+use num::{Complex, Float};
 use rayon::prelude::*;
 use std::f64::consts::E;
-use std::f64::consts::PI;
 use std::fmt::Debug;
 use std::marker::Copy;
 use std::ops::{Add, Div, Mul};
+use std::f64::consts::{PI, SQRT_2};
 
 use crate::neural_networks::network_components::layer::ActivationType;
+
+/// SELU hyperparameters
+pub const LAMBDA: f64 = 1.050700987355480493419334985294598;
+pub const ALPHA: f64 = 1.673263242354377284817042991671750;
 
 // Define a trait for activation functions
 pub trait RealActivation: Float + Copy {
@@ -136,11 +140,10 @@ where
 
 // Implement activation functions for Complex<f64>
 fn sigmoid_complex(z: Complex<f64>) -> Complex<f64> {
-    let exp_neg_z = (-z).exp();
-    exp_neg_z / (exp_neg_z + Complex::one())
+    Complex::new(1.0, 0.0) / (Complex::new(1.0, 0.0) + (-z).exp())
 }
 
-fn tanh_complex(z: Complex<f64>) -> Complex<f64> {
+pub fn tanh_complex(z: Complex<f64>) -> Complex<f64> {
     let exp_z = z.exp();
     let exp_neg_z = (-z).exp();
     (exp_z - exp_neg_z) / (exp_z + exp_neg_z)
@@ -165,28 +168,19 @@ fn elu_complex(z: Complex<f64>, alpha: f64) -> Complex<f64> {
         Complex::new(alpha * (z.exp().re - 1.0), z.im)
     }
 }
-
-fn selu_complex(z: Complex<f64>, scale: f64, alpha: f64) -> Complex<f64> {
-    if z.re > 0.0 {
-        Complex::new(scale * z.re, z.im)
+fn selu_complex(z: Complex<f64>) -> Complex<f64> {
+    if z.re >= 0.0 {
+        Complex::new(LAMBDA, 0.0) * z
     } else {
-        Complex::new(scale * (alpha * (-z).exp().re - alpha), z.im)
+        Complex::new(LAMBDA * ALPHA, 0.0) * (z.exp() - Complex::new(1.0, 0.0))
     }
 }
 
-fn gelu_complex(z: Complex<f64>) -> Complex<f64> {
-    let sqrt_2 = (2.0_f64).sqrt();
-    let half = Complex::new(0.5, 0.0);
 
-    // Compute erf(z / sqrt(2))
-    let scaled_z = z / Complex::new(sqrt_2, 0.0);
-    let erf_result = erf_complex(scaled_z);
-
-    // Compute CDF: 0.5 * (1 + erf(z / sqrt(2)))
-    let cdf = half * (Complex::new(1.0, 0.0) + erf_result);
-
-    // Return GELU: z * CDF
-    z * cdf
+pub fn gelu_complex(z: Complex<f64>) -> Complex<f64> {
+    let f_z = SQRT_2 / Complex::new(PI.sqrt(), 0.0) * (z + Complex::new(0.044715, 0.0) * z.powf(3.0));
+    let tanh_f_z = f_z.tanh();
+    0.5 * z * (Complex::new(1.0, 0.0) + tanh_f_z)
 }
 
 pub fn erf_complex(z: Complex<f64>) -> Complex<f64> {
@@ -232,7 +226,7 @@ pub fn activate_output_complex(data: &Vec<Vec<Complex<f64>>>, activation: Activa
         ActivationType::RELU => data.iter().map(|row| row.iter().map(|&x| relu_complex(x)).collect()).collect(),
         ActivationType::LEAKYRELU => data.iter().map(|row| row.iter().map(|&x| leaky_relu_complex(x, 0.01)).collect()).collect(),
         ActivationType::ELU => data.iter().map(|row| row.iter().map(|&x| elu_complex(x, 1.0)).collect()).collect(), // Assuming alpha = 1.0
-        ActivationType::SELU => data.iter().map(|row| row.iter().map(|&x| selu_complex(x, 1.0, 1.0)).collect()).collect(), // Assuming scale = 1.0, alpha = 1.0
+        ActivationType::SELU => data.iter().map(|row| row.iter().map(|&x| selu_complex(x)).collect()).collect(), // Assuming scale = 1.0, alpha = 1.0
         ActivationType::GELU => data.iter().map(|row| row.iter().map(|&x| gelu_complex(x)).collect()).collect(),
         ActivationType::SOFTSIGN => data.iter().map(|row| row.iter().map(|&x| softsign_complex(x)).collect()).collect(),
         ActivationType::SOFTPLUS => data.iter().map(|row| row.iter().map(|&x| softplus_complex(x)).collect()).collect(),

@@ -200,12 +200,12 @@ pub fn verify_lu(lower: &Vec<Vec<f64>>, upper: &Vec<Vec<f64>>, original: &Vec<Ve
 }
 
 pub fn generate_random_matrix(size: usize) -> Vec<Vec<f64>> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut matrix = vec![vec![0.0; size]; size];
 
     for i in 0..size {
         for j in 0..size {
-            matrix[i][j] = rng.gen_range(-10.0..10.0); // Random values between -10 and 10
+            matrix[i][j] = rng.random_range(-10.0..10.0); // Random values between -10 and 10
         }
     }
 

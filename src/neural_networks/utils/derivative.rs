@@ -1,20 +1,19 @@
+use std::f64::consts::{PI, SQRT_2};
+
 use crate::neural_networks::network_components::layer::ActivationType;
 use nalgebra::ComplexField;
 use num::abs;
 use num_complex::Complex;
-use rand::seq;
-use std::f64::consts::PI;
 
-use super::activation::{erf_complex, softmax_row};
+use super::activation::{softmax_row, ALPHA, LAMBDA};
 
 fn sigmoid_derivative_complex(z: Complex<f64>) -> Complex<f64> {
-    let sigmoid_value = 1.0 / (1.0 + (-z.re).exp());
-    Complex::new(sigmoid_value * (1.0 - sigmoid_value), 0.0)
+    let sigmoid_value =  z * (Complex::new(1.0, 0.0) - z);
+   sigmoid_value
 }
 
 fn tanh_derivative_complex(z: Complex<f64>) -> Complex<f64> {
-    let tanh_value = z.re.tanh();
-    Complex::new(1.0 - tanh_value * tanh_value, 0.0)
+    Complex::new(1.0, 0.0) - (z * z) // 1 - tanh^2(z)
 }
 
 fn relu_derivative_complex(z: Complex<f64>) -> Complex<f64> {
@@ -41,20 +40,24 @@ fn elu_derivative_complex(z: Complex<f64>, alpha: f64) -> Complex<f64> {
     }
 }
 
+// Derivative of SELU for complex numbers
+fn selu_derivative_complex(z: Complex<f64>) -> Complex<f64> {
+    if z.re >= 0.0 {
+        Complex::new(LAMBDA, 0.0)
+    } else {
+        Complex::new(LAMBDA * ALPHA, 0.0) * z.exp()
+    }
+}
+
 fn gelu_derivative_complex(z: Complex<f64>) -> Complex<f64> {
-    let sqrt_2 = (2.0_f64).sqrt();
-    let sqrt_2pi = (2.0 * PI).sqrt();
+    let sqrt_2_over_pi = SQRT_2 / Complex::new(PI.sqrt(), 0.0);
+    let f_z = sqrt_2_over_pi * (z + Complex::new(0.044715, 0.0) * z.powf(3.0));
+    let tanh_f_z = f_z.tanh();
+    let sech_f_z = 1.0 / f_z.cosh(); // sech(x) = 1 / cosh(x)
+    let f_prime_z = sqrt_2_over_pi * (Complex::new(1.0, 0.0) + Complex::new(0.134145, 0.0) * z.powf(2.0));
 
-    // Compute CDF: 0.5 * (1 + erf(z / sqrt(2)))
-    let scaled_z = z / Complex::new(sqrt_2, 0.0);
-    let erf_result = erf_complex(scaled_z);
-    let cdf = Complex::new(0.5, 0.0) * (Complex::new(1.0, 0.0) + erf_result);
-
-    // Compute PDF: (1 / sqrt(2 * pi)) * exp(-z^2 / 2)
-    let pdf = (Complex::new(1.0, 0.0) / Complex::new(sqrt_2pi, 0.0)) * (-z * z / Complex::new(2.0, 0.0)).exp();
-
-    // Derivative: CDF + z * PDF
-    cdf + z * pdf
+    // GELU'(z) = 0.5 * (1 + tanh(f(z))) + 0.5 * z * sech^2(f(z)) * f'(z)
+    0.5 * (Complex::new(1.0, 0.0) + tanh_f_z) + 0.5 * z * sech_f_z.powf(2.0) * f_prime_z
 }
 
 fn softsign_derivative_complex(z: Complex<f64>) -> Complex<f64> {
@@ -275,9 +278,9 @@ where
             let loss_minus = f(&input, &weights_minus);
 
             for batch_ind in 0..loss_plus.len() {
-                for (seq_ind, input_vec) in loss_plus[batch_ind].iter().enumerate() {
+                for (seq_ind, _input_vec) in loss_plus[batch_ind].iter().enumerate() {
                     let gradient: Complex<f64> = (loss_plus[batch_ind][seq_ind][col] - loss_minus[batch_ind][seq_ind][col]) / (2.0 * epsilon);
-                    grad_batch[batch_ind][row][col] += gradient;
+                    grad_batch[batch_ind][row][col] = gradient;
                 }
             }
         }
@@ -305,7 +308,7 @@ where
         let loss_minus = f(&input, &bias_minus);
 
         for batch_ind in 0..loss_plus.len() {
-            for (seq_ind, input_vec) in loss_plus[batch_ind].iter().enumerate() {
+            for (seq_ind, _input_vec) in loss_plus[batch_ind].iter().enumerate() {
                 let gradient: Complex<f64> = (loss_plus[batch_ind][seq_ind][row] - loss_minus[batch_ind][seq_ind][row]) / (2.0 * epsilon);
                 grad_batch[row] += gradient;
             }
@@ -315,7 +318,7 @@ where
     grad_batch
 }
 
-pub fn numerical_gradient_input_batch_without_loss<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
+pub fn numerical_gradient_input_batch_jacobi_without_loss<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
 where
     F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>>,
 {
@@ -346,6 +349,35 @@ where
     grad_batch
 }
 
+pub fn numerical_gradient_input_batch_without_loss<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
+where
+    F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>>,
+{
+    let mut grad_batch = vec![vec![vec![Complex::new(0.0, 0.0); input[0][0].len()]; input[0].len()]; input.len()];
+
+    for batch in 0..input.len() {
+        for seq in 0..input[batch].len() {
+            for dim_i in 0..input[batch][seq].len() {
+                // Perturb input by epsilon
+                let mut input_plus = input.clone();
+                input_plus[batch][seq][dim_i] += epsilon;
+
+                let mut input_minus = input.clone();
+                input_minus[batch][seq][dim_i] -= epsilon;
+
+                // Compute numerical gradient
+                let loss_plus = f(&input_plus);
+                let loss_minus = f(&input_minus);
+
+                let gradient: Complex<f64> = (loss_plus[batch][seq][dim_i] - loss_minus[batch][seq][dim_i]) / (2.0 * epsilon);
+                grad_batch[batch][seq][dim_i] += gradient;
+            }
+        }
+    }
+
+    grad_batch
+}
+
 pub fn test_gradient_batch_error(numerical_grad_batch: &Vec<Vec<Vec<Complex<f64>>>>, analytical_grad_batch: &Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) {
     for (gradient_numerical, gradient_analytical) in numerical_grad_batch.iter().zip(analytical_grad_batch) {
         test_gradient_error_2d(gradient_numerical, gradient_analytical, epsilon);
@@ -366,10 +398,7 @@ pub fn test_gradient_error_1d(numerical_grad: &Vec<Complex<f64>>, analytical_gra
         let rel_diff = abs_diff / max_val;
 
         if rel_diff > epsilon {
-            println!(
-                "Gradient mismatch: numerical = {:.12}, analytical = {:.12}, abs_diff = {:.12}, rel_diff = {:.12}",
-                val_numerical, val_analytical, abs_diff, rel_diff
-            );
+            println!("Gradient mismatch: numerical = {:.12}, analytical = {:.12}, abs_diff = {:.12}, rel_diff = {:.12}", val_numerical, val_analytical, abs_diff, rel_diff);
         }
 
         assert!(rel_diff < epsilon);
@@ -383,8 +412,8 @@ pub fn get_gradient_complex(data: &Vec<Vec<Complex<f64>>>, activation: Activatio
         ActivationType::LINEAR => data.iter().map(|row| row.iter().map(|_| Complex::new(1.0, 0.0)).collect()).collect(), // Linear is identity
         ActivationType::RELU => data.iter().map(|row| row.iter().map(|&x| relu_derivative_complex(x)).collect()).collect(),
         ActivationType::LEAKYRELU => data.iter().map(|row| row.iter().map(|&x| leaky_relu_derivative_complex(x, 0.01)).collect()).collect(),
-        ActivationType::ELU => data.iter().map(|row| row.iter().map(|&x| elu_derivative_complex(x, 1.0)).collect()).collect(), // Assuming alpha = 1.0
-        ActivationType::SELU => data.iter().map(|row| row.iter().map(|&x| elu_derivative_complex(x, 1.0)).collect()).collect(), // Assuming scale = 1.0, alpha = 1.0
+        ActivationType::ELU => data.iter().map(|row| row.iter().map(|&x| elu_derivative_complex(x, 1.0)).collect()).collect(),  // Assuming alpha = 1.0
+        ActivationType::SELU => data.iter().map(|row| row.iter().map(|&x| selu_derivative_complex(x)).collect()).collect(), // Assuming scale = 1.0, alpha = 1.0
         ActivationType::GELU => data.iter().map(|row| row.iter().map(|&x| gelu_derivative_complex(x)).collect()).collect(),
         ActivationType::SOFTSIGN => data.iter().map(|row| row.iter().map(|&x| softsign_derivative_complex(x)).collect()).collect(),
         ActivationType::SOFTPLUS => data.iter().map(|row| row.iter().map(|&x| softplus_derivative_complex(x)).collect()).collect(),

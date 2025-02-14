@@ -39,6 +39,9 @@ impl Gradient {
     pub fn set_gradient_bias_batch(&mut self, gradient_bias_batch: Vec<Vec<Complex<f64>>>) {
         self.gradient_bias_batch = Some(gradient_bias_batch);
     }
+    pub fn set_gradient_gamma_batch(&mut self, gradient_gamma_batch: Vec<Vec<Complex<f64>>>) {
+        self.gradient_gamma_batch = Some(gradient_gamma_batch);
+    }
 
     pub fn set_gradient_input(&mut self, gradient_input: Vec<Vec<Complex<f64>>>) {
         self.gradient_input = Some(gradient_input);
@@ -49,6 +52,9 @@ impl Gradient {
     pub fn set_gradient_bias(&mut self, gradient_bias: Vec<Complex<f64>>) {
         self.gradient_bias = Some(gradient_bias);
     }
+    pub fn set_gradient_gamma(&mut self, gradient_gamma: Vec<Complex<f64>>) {
+        self.gradient_gamma = Some(gradient_gamma);
+    }
 
     pub fn get_gradient_input_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
         self.gradient_input_batch.clone().unwrap_or_else(|| vec![])
@@ -58,6 +64,9 @@ impl Gradient {
     }
     pub fn get_gradient_bias_batch(&self) -> Vec<Vec<Complex<f64>>> {
         self.gradient_bias_batch.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_gradient_gamma_batch(&self) -> Vec<Vec<Complex<f64>>> {
+        self.gradient_gamma_batch.clone().unwrap_or_else(|| vec![])
     }
 
     pub fn get_gradient_weights(&self) -> Vec<Vec<Complex<f64>>> {
@@ -77,10 +86,18 @@ impl Gradient {
     }
 
     pub fn get_gradient_bias(&self) -> Vec<Complex<f64>> {
-        if let Some(gradient_input_batch) = self.gradient_bias_batch.clone() {
-            self.group_gradient_batch_bias(&gradient_input_batch)
+        if let Some(gradient_bias_batch) = self.gradient_bias_batch.clone() {
+            self.group_gradient_batch_bias(&gradient_bias_batch)
         } else {
             self.gradient_bias.clone().unwrap_or_else(|| vec![])
+        }
+    }
+
+    pub fn get_gradient_gamma(&self) -> Vec<Complex<f64>> {
+        if let Some(gradient_gamma_batch) = self.gradient_gamma_batch.clone() {
+            self.group_gradient_batch_bias(&gradient_gamma_batch)
+        } else {
+            self.gradient_gamma.clone().unwrap_or_else(|| vec![])
         }
     }
 

@@ -1,7 +1,9 @@
 use chrono::NaiveDate;
 use ndarray::{Array1, Array2};
+use ndarray_rand::rand::rngs::StdRng;
+use ndarray_rand::rand::seq::SliceRandom;
+use ndarray_rand::rand::SeedableRng;
 use plotters::prelude::*;
-use rand::seq::SliceRandom;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -158,7 +160,8 @@ pub fn simulate(monte_carlo_params: MonteCarloParams, crypto_name: &str) {
     let mut simulated_paths = Array2::<f64>::zeros((m, n));
     simulated_paths.column_mut(0).fill(s0);
 
-    let mut rng = rand::thread_rng();
+    let seed = [0; 32]; // You can use any seed here
+    let mut rng = StdRng::from_seed(seed);
     let historical_data_nd = Array1::from(historical_returns.clone());
     let mu = historical_data_nd.mean().unwrap();
     let sigma = historical_data_nd.std(1.0);

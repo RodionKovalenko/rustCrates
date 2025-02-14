@@ -41,24 +41,24 @@ fn main() {
 
     let input_str1: &str = "Hallo, wie geht es dir?";
     let input_str2: &str = "Was ist die Hauptstadt von Deutschland? Ich möchte es wissen";
-    let input_str3: &str = "Was kommt nach Donnerstag?";
-    let input_str4: &str = "Was macht 2+3 aus?";
+    // let input_str3: &str = "Was kommt nach Donnerstag?";
+    // let input_str4: &str = "Was macht 2+3 aus?";
 
 
-    let input_str5: &str = "Was macht 2+4?";
-    let input_str6: &str = "Was macht 2+5?";
-    let input_str7: &str = "Was macht 2+6?";
-    let input_str8: &str = "Was macht 2+7?";
+    // let input_str5: &str = "Was macht 2+4?";
+    // let input_str6: &str = "Was macht 2+5?";
+    // let input_str7: &str = "Was macht 2+6?";
+    // let input_str8: &str = "Was macht 2+7?";
 
     let target1: &str = "Mir geht es gut";
     let target2: &str = "Berlin ist die Hauptstadt von Deutschland";
-    let target3: &str = "Nach Donnerstag kommt Freitag.";
-    let target4: &str = "2 +3 macht 5";
+    // let target3: &str = "Nach Donnerstag kommt Freitag.";
+    // let target4: &str = "2 +3 macht 5";
 
-    let target5: &str = "2 + 4 macht 6";
-    let target6: &str = "2 + 5 macht 7";
-    let target7: &str = "2 + 6 macht 8";
-    let target8: &str = "2 + 7 macht 9";
+    // let target5: &str = "2 + 4 macht 6";
+    // let target6: &str = "2 + 5 macht 7";
+    // let target7: &str = "2 + 6 macht 8";
+    // let target8: &str = "2 + 7 macht 9";
 
     let mut input: Vec<String> = Vec::new();
     input.push(input_str1.to_string());
