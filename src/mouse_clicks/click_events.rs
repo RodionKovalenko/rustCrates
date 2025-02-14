@@ -32,9 +32,9 @@ pub fn simulate_click_events() {
             thread::sleep(Duration::from_secs(2));
             let _ =enigo.key(Key::Return, Click);
 
-            rng = rand::thread_rng();
+            rng = rand::rng();
             let range = 0..search_items.len();
-            let random_index = rng.gen_range(range);
+            let random_index = rng.random_range(range);
 
             let _= enigo.text(search_items[random_index]);
 

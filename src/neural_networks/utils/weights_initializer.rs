@@ -57,7 +57,7 @@ pub fn initialize_weights(
     number_hidden_neurons: usize,
     weight_matrix: &mut Vec<Vec<f64>>,
 ) {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     for _i in 0..num_layer_inputs_dim2 {
         weight_matrix.push(Vec::new());
@@ -65,7 +65,7 @@ pub fn initialize_weights(
 
     for i in 0..num_layer_inputs_dim2 {
         for j in 0..number_hidden_neurons {
-            let random_value = rng.gen_range(-0.6..0.6);
+            let random_value = rng.random_range(-0.6..0.6);
             set_weights(weight_matrix, i, j, random_value);
         }
     }
@@ -77,11 +77,11 @@ pub fn initialize_weights_complex(
     cols: usize,
     weight_matrix: &mut Vec<Vec<Complex<f64>>>,
 ) {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     for i in 0..rows {
         for j in 0..cols {
-            let random_value = Complex::new(rng.gen_range(-0.6..0.6), rng.gen_range(-0.6..0.6));
+            let random_value = Complex::new(rng.random_range(-0.6..0.6), rng.random_range(-0.6..0.6));
             set_weights(weight_matrix, i, j, random_value);
         }
     }
