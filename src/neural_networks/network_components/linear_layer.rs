@@ -8,7 +8,7 @@ use crate::neural_networks::utils::{
     weights_initializer::initialize_weights_complex,
 };
 
-use super::{gradient_struct::Gradient, input};
+use super::gradient_struct::Gradient;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinearLayer {
@@ -18,6 +18,7 @@ pub struct LinearLayer {
     pub gradients_bias: Vec<Vec<Complex<f64>>>,
     pub learning_rate: f64,
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub gradient: Option<Gradient>,
 }
 
 impl LinearLayer {
@@ -34,6 +35,7 @@ impl LinearLayer {
             gradients: vec![],
             gradients_bias: vec![],
             input_batch: None,
+            gradient: None
         }
     }
     pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
@@ -59,7 +61,8 @@ impl LinearLayer {
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
         let input_batch = self.input_batch.as_ref().expect("Input batch is missing in linear layer");
-
+        let mut gradient = Gradient::new_default();
+        
         // Initialize gradients for weights and biases
         let mut weight_gradients: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()]; input_batch.len()];
         let mut bias_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.bias.len()]; input_batch.len()];
@@ -77,14 +80,19 @@ impl LinearLayer {
             }
         }
 
-        let mut gradient = Gradient::new_default();
+       
+        gradient.set_gradient_input_batch(previous_gradient_batch.clone());
         gradient.set_gradient_weight_batch(weight_gradients);
         gradient.set_gradient_bias_batch(bias_gradients);
+        self.gradient = Some(gradient.clone());
 
         gradient
     }
 
-    pub fn update_weights(&mut self, weight_gradients: &Vec<Vec<Complex<f64>>>, bias_gradients: &Vec<Complex<f64>>) {
+    pub fn update_params(&mut self) {
+        let gradient = self.gradient.as_ref().expect("No Gradient found in linear layer");
+        let (weight_gradients, bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
+
         // Update weights and biases using gradient descent
         for (i, row) in self.weights.iter_mut().enumerate() {
             for (j, weight_value) in row.iter_mut().enumerate() {

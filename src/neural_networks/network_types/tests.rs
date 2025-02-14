@@ -4,7 +4,7 @@ mod tests {
     use num::Complex;
 
     use crate::neural_networks::{
-        network_components::layer::{create_default_layer, ActivationType, Layer, LayerType},
+        network_components::layer::{ActivationType, Layer, LayerType},
         network_types::neural_network_generic::{create, NeuralNetwork}        
     };
 
@@ -44,9 +44,10 @@ mod tests {
     fn test_layer_serialization() {
         let rows: usize = 15;
         let cols: usize = 15;
+        let learning_rate: f64 = 0.001;
 
         // Create a default layer instance
-        let original_layer: Layer = Layer::default(rows, cols);
+        let original_layer: Layer = Layer::default(rows, cols, &learning_rate);
 
         // Serialize the layer to a JSON string
         let serialized = serde_json::to_string(&original_layer).expect("Failed to serialize layer");
@@ -75,7 +76,6 @@ mod tests {
             original_layer.activated_output,
             deserialized_layer.activated_output
         );
-        assert_eq!(original_layer.gradient, deserialized_layer.gradient);
         assert_eq!(original_layer.gradient_w, deserialized_layer.gradient_w);
         assert_eq!(original_layer.errors, deserialized_layer.errors);
         assert_eq!(
@@ -88,7 +88,7 @@ mod tests {
         const M: usize = 15;
         const N: usize = 15;
 
-        let original_layer: Layer = create_default_layer(rows, cols, &ActivationType::SIGMOID, LayerType::InputLayer);
+        let original_layer: Layer = Layer::new(rows, cols, &learning_rate,&ActivationType::SIGMOID, LayerType::InputLayer);
 
         // Serialize the layer to a JSON string
         let serialized = serde_json::to_string(&original_layer).expect("Failed to serialize layer");
@@ -116,7 +116,6 @@ mod tests {
             original_layer.activated_output,
             deserialized_layer.activated_output
         );
-        assert_eq!(original_layer.gradient, deserialized_layer.gradient);
         assert_eq!(original_layer.gradient_w, deserialized_layer.gradient_w);
         assert_eq!(original_layer.errors, deserialized_layer.errors);
         assert_eq!(

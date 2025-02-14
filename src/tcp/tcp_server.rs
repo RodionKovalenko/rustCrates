@@ -11,7 +11,7 @@ fn handle_client(stream: TcpStream) -> Result<(), Error> {
     loop {
         read_tcp_stream(&mut server_stream, String::from("Message from client"));
 
-        let rand_number = rand::thread_rng().gen::<u32>();
+        let rand_number: u32 = rand::rng().random::<u32>();
         let message = format!("{}{}", "hi client ", rand_number);
 
         send_msg(&mut server_stream, message).unwrap_or_else(|err| println!("{:?}", err));

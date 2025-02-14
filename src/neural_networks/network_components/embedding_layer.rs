@@ -32,12 +32,12 @@ impl EmbeddingLayer {
     }
 
     pub fn new(vocab_size: usize, embedding_dim: usize) -> Self {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let db: &Db = Self::get_db();
 
         // Generate random embeddings and store them in the Sled database
         for token_id in 0..vocab_size {
-            let embedding: Vec<f64> = (0..embedding_dim).map(|_| rng.gen_range(-0.4..0.5)).collect();
+            let embedding: Vec<f64> = (0..embedding_dim).map(|_| rng.random_range(-0.4..0.5)).collect();
 
             let embedding_wavelet = &decompose_in_wavelet_2d_default(&embedding)[0][0];
             //println!("embedding: {:?}", &embedding_wavelet_1d);

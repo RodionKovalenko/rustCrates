@@ -4,23 +4,27 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::matrix::add_matrix;
 
+use super::gradient_struct::Gradient;
+
 // RMSNorm Layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RMSNormLayer {
-    gamma: Vec<f64>,    // Learnable scaling parameter (for each feature)
+    gamma: Vec<Complex<f64>>,    // Learnable scaling parameter (for each feature)
     epsilon: f64,       // Small constant for numerical stability
     learning_rate: f64, // Learning rate for gamma updates
     input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    gradient: Option<Gradient>,
 }
 
 impl RMSNormLayer {
     // Initialize the RMSNorm layer with a given feature dimension (e.g., 16 for each token embedding)
     pub fn new(feature_dim: usize, epsilon: f64, learning_rate: f64) -> Self {
         Self {
-            gamma: vec![1.0; feature_dim], // Initialize gamma to 1.0 for all features
+            gamma: vec![Complex::new(1.0, 0.0); feature_dim], // Initialize gamma to 1.0 for all features
             epsilon,
             learning_rate,
             input_batch: None,
+            gradient: None,
         }
     }
 
@@ -50,7 +54,6 @@ impl RMSNormLayer {
 
         for (batch_ind, input) in input_batch.iter().enumerate() {
             let output = add_matrix(input, &input_before_transform_batch[batch_ind]);
-            // let output = input.clone();
 
             output_batch.push(
                 output
@@ -63,18 +66,20 @@ impl RMSNormLayer {
         output_batch
     }
 
-    pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
         let input_batch = self.input_batch.as_ref().expect("Input batch not found in RMSNorm layer");
+        let mut gradient = Gradient::new_default();
 
         let batch_size = input_batch.len();
         let seq_len = input_batch[0].len();
         let dim_len = input_batch[0][0].len();
 
         let mut input_batch_gradients = vec![vec![vec![Complex::new(0.0, 0.0); dim_len]; seq_len]; batch_size];
+        let mut gradient_gamma_batch = vec![vec![Complex::new(0.0, 0.0); dim_len]; batch_size];
 
         for b in 0..batch_size {
             for s in 0..seq_len {
-                let rms =  self.rms(&input_batch[b][s]);
+                let rms = self.rms(&input_batch[b][s]);
                 // Compute gradients
                 for d_i in 0..dim_len {
                     // Applying RMSNorm backward formula with gamma scaling
@@ -88,11 +93,24 @@ impl RMSNormLayer {
                         }
                     }
 
-                    input_batch_gradients[b][s][d_i] *= previous_gradient_batch[b][s][d_i];
+                    input_batch_gradients[b][s][d_i] *= self.gamma[d_i] * previous_gradient_batch[b][s][d_i];
+                    gradient_gamma_batch[b][d_i] = input_batch[b][s][d_i] / rms;
                 }
             }
         }
 
-        input_batch_gradients
+        gradient.set_gradient_input_batch(input_batch_gradients);
+        gradient.set_gradient_gamma_batch(gradient_gamma_batch);
+        self.gradient = Some(gradient.clone());
+
+        gradient
+    }
+    pub fn update_params(&mut self) {
+        let gradient = self.gradient.as_ref().expect("No gradient found in rms norm layer");
+        let gradient_gamma = gradient.get_gradient_gamma();
+
+        for (i, value) in self.gamma.iter_mut().enumerate() {
+            *value -= self.learning_rate * gradient_gamma[i];
+        }
     }
 }

@@ -197,6 +197,8 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>>  = previous_gradient.get_gradient_input_batch();
                     
                     let gradient_batch: Gradient = linear_layer.backward(&previous_gradient_batch);
+                    // Update weights and biases
+                    linear_layer.update_params();
 
                     let weight_gradient_batch = gradient_batch.get_gradient_weight_batch();
                     let _bias_gradient_batch = gradient_batch.get_gradient_bias_batch();

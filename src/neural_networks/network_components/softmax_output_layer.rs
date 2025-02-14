@@ -16,6 +16,7 @@ pub struct SoftmaxLayer {
     learning_rate: f64,
     operation_mode: OperationMode,
     softmax_output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    gradient: Option<Gradient>,
 }
 
 impl SoftmaxLayer {
@@ -24,6 +25,7 @@ impl SoftmaxLayer {
             learning_rate,
             operation_mode,
             softmax_output_batch: None,
+            gradient: None,
         }
     }
     pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
@@ -47,7 +49,7 @@ impl SoftmaxLayer {
         layer_output
     }
 
-    pub fn backward(&self, target_token_ids: &Vec<Vec<u32>>) -> Gradient {
+    pub fn backward(&mut self, target_token_ids: &Vec<Vec<u32>>) -> Gradient {
         // Ensure softmax_output_batch exists (precomputed during the forward pass)
         let softmax_output_batch: &Vec<Vec<Vec<Complex<f64>>>> = self.softmax_output_batch.as_ref().expect("Input batch is missing in softmax layer");
         let batch_size = softmax_output_batch.len();
@@ -88,6 +90,7 @@ impl SoftmaxLayer {
 
         let mut gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(gradient_batch);
+        self.gradient = Some(gradient.clone());
 
         // Return the final gradient_batch
         gradient
