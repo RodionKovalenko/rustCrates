@@ -139,8 +139,9 @@ where
 }
 
 // Implement activation functions for Complex<f64>
-fn sigmoid_complex(z: Complex<f64>) -> Complex<f64> {
-    Complex::new(1.0, 0.0) / (Complex::new(1.0, 0.0) + (-z).exp())
+pub fn sigmoid_complex(z: Complex<f64>) -> Complex<f64> {
+    let exp_neg_z = (-z).exp();
+    Complex::new(1.0, 0.0) / (Complex::new(1.0, 0.0) + exp_neg_z)
 }
 
 pub fn tanh_complex(z: Complex<f64>) -> Complex<f64> {
@@ -178,9 +179,17 @@ fn selu_complex(z: Complex<f64>) -> Complex<f64> {
 
 
 pub fn gelu_complex(z: Complex<f64>) -> Complex<f64> {
-    let f_z = SQRT_2 / Complex::new(PI.sqrt(), 0.0) * (z + Complex::new(0.044715, 0.0) * z.powf(3.0));
-    let tanh_f_z = f_z.tanh();
-    0.5 * z * (Complex::new(1.0, 0.0) + tanh_f_z)
+   // Precompute sqrt(2 / pi)
+   let sqrt_2_over_pi = SQRT_2 / PI.sqrt();
+
+   // Compute the argument inside tanh: z + 0.044715 * z^3
+   let f_z = sqrt_2_over_pi * (z + Complex::new(0.044715, 0.0) * z.powf(3.0));
+
+   // Compute tanh(f(z))
+   let tanh_f_z = f_z.tanh();
+
+   // Return the GELU activation: 0.5 * z * (1 + tanh(f(z)))
+   0.5 * z * (Complex::new(1.0, 0.0) + tanh_f_z)
 }
 
 pub fn erf_complex(z: Complex<f64>) -> Complex<f64> {
