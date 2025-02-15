@@ -218,8 +218,8 @@ pub fn erf_complex(z: Complex<f64>) -> Complex<f64> {
     two_over_sqrt_pi * sum
 }
 
-fn softsign_complex(z: Complex<f64>) -> Complex<f64> {
-    z / (Complex::new(1.0, 0.0) + z.norm())
+pub fn softsign_complex(z: Complex<f64>) -> Complex<f64> {
+    z / (1.0 + z.norm())  // Softsign(z) = z / (1 + |z|)
 }
 
 fn softplus_complex(z: Complex<f64>) -> Complex<f64> {

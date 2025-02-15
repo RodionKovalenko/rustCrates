@@ -263,7 +263,7 @@ fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, targets: &Vec<u32>) 
         if predicted_prob.norm() > 0.0 {
             loss += predicted_prob.ln(); // Negative log of the magnitude
         } else {
-            panic!("Predicted probability is zero or negative, which is invalid!");
+            panic!("Predicted probability is zero or negative, which is invalid! {:?}", &predicted_prob);
         }
     }
 
