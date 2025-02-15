@@ -48,29 +48,28 @@ fn selu_derivative_complex(z: Complex<f64>) -> Complex<f64> {
     }
 }
 
-
 pub fn gelu_derivative_complex(inactivated_input: Complex<f64>) -> Complex<f64> {
-       // Compute sqrt(2 / pi)
-       let sqrt_2_over_pi = SQRT_2 / PI.sqrt();
+    // Compute sqrt(2 / pi)
+    let sqrt_2_over_pi = SQRT_2 / PI.sqrt();
 
-       // f(x) = sqrt(2 / pi) * (x + 0.044715 * x^3)
-       let f_x = sqrt_2_over_pi * (inactivated_input + Complex::new(0.044715, 0.0) * inactivated_input.powf(3.0));
-   
-       // tanh(f(x)) and sech(f(x))
-       let tanh_f_x = f_x.tanh();
-       let sech_f_x = 1.0 / f_x.cosh();
-       let sech_f_x_squared = sech_f_x.powi(2);
-   
-       // f'(x) = sqrt(2 / pi) * (1 + 0.134145 * x^2)
-       let f_prime_x = sqrt_2_over_pi * (Complex::new(1.0, 0.0) + Complex::new(0.134145, 0.0) * inactivated_input.powf(2.0));
-   
-       // GELU'(x) = 0.5 * (1 + tanh(f(x))) + 0.5 * x * sech^2(f(x)) * f'(x)
-       0.5 * (Complex::new(1.0, 0.0) + tanh_f_x) + 0.5 * inactivated_input * sech_f_x_squared * f_prime_x
+    // f(x) = sqrt(2 / pi) * (x + 0.044715 * x^3)
+    let f_x = sqrt_2_over_pi * (inactivated_input + Complex::new(0.044715, 0.0) * inactivated_input.powf(3.0));
+
+    // tanh(f(x)) and sech(f(x))
+    let tanh_f_x = f_x.tanh();
+    let sech_f_x = 1.0 / f_x.cosh();
+    let sech_f_x_squared = sech_f_x.powi(2);
+
+    // f'(x) = sqrt(2 / pi) * (1 + 0.134145 * x^2)
+    let f_prime_x = sqrt_2_over_pi * (Complex::new(1.0, 0.0) + Complex::new(0.134145, 0.0) * inactivated_input.powf(2.0));
+
+    // GELU'(x) = 0.5 * (1 + tanh(f(x))) + 0.5 * x * sech^2(f(x)) * f'(x)
+    0.5 * (Complex::new(1.0, 0.0) + tanh_f_x) + 0.5 * inactivated_input * sech_f_x_squared * f_prime_x
 }
 
-fn softsign_derivative_complex(z: Complex<f64>) -> Complex<f64> {
-    let denom = (1.0 + z.re.abs()).powi(2);
-    Complex::new(1.0 / denom, 0.0)
+pub fn softsign_derivative_complex(z: Complex<f64>) -> Complex<f64> {
+    let denominator: Complex<f64> = (Complex::new(1.0, 0.0) + z.norm()).powf(2.0); // (1 + |z|)^2
+    1.0 / denominator  // Softsign'(z) = 1 / (1 + |z|)^2
 }
 
 fn softplus_derivative_complex(z: Complex<f64>) -> Complex<f64> {
@@ -272,20 +271,20 @@ where
 {
     let mut grad_batch = vec![vec![vec![Complex::new(0.0, 0.0); weights[0].len()]; weights.len()]; input.len()];
 
-    for batch_ind in 0..input.len() {
-        for row in 0..weights.len() {
-            for col in 0..weights[row].len() {
-                // Perturb input by epsilon
-                let mut weights_plus = weights.clone();
-                weights_plus[row][col] += epsilon;
+    for row in 0..weights.len() {
+        for col in 0..weights[row].len() {
+            // Perturb input by epsilon
+            let mut weights_plus = weights.clone();
+            weights_plus[row][col] += epsilon;
 
-                let mut weights_minus = weights.clone();
-                weights_minus[row][col] -= epsilon;
+            let mut weights_minus = weights.clone();
+            weights_minus[row][col] -= epsilon;
 
-                // Compute numerical gradient
-                let loss_plus = f(&input, &weights_plus);
-                let loss_minus = f(&input, &weights_minus);
+            // Compute numerical gradient
+            let loss_plus = f(&input, &weights_plus);
+            let loss_minus = f(&input, &weights_minus);
 
+            for batch_ind in 0..input.len() {
                 for (seq_ind, _input_vec) in input[batch_ind].iter().enumerate() {
                     let gradient: Complex<f64> = (loss_plus[batch_ind][seq_ind][col] - loss_minus[batch_ind][seq_ind][col]) / (2.0 * epsilon);
                     grad_batch[batch_ind][row][col] += gradient;
@@ -423,7 +422,7 @@ pub fn get_gradient_complex(activated_data: &Vec<Vec<Complex<f64>>>, input_data:
         ActivationType::ELU => activated_data.iter().map(|row| row.iter().map(|&x| elu_derivative_complex(x, 1.0)).collect()).collect(), // Assuming alpha = 1.0
         ActivationType::SELU => activated_data.iter().map(|row| row.iter().map(|&x| selu_derivative_complex(x)).collect()).collect(),    // Assuming scale = 1.0, alpha = 1.0
         ActivationType::GELU => input_data.iter().map(|row| row.iter().map(|&x| gelu_derivative_complex(x)).collect()).collect(),
-        ActivationType::SOFTSIGN => activated_data.iter().map(|row| row.iter().map(|&x| softsign_derivative_complex(x)).collect()).collect(),
+        ActivationType::SOFTSIGN => input_data.iter().map(|row| row.iter().map(|&x| softsign_derivative_complex(x)).collect()).collect(),
         ActivationType::SOFTPLUS => activated_data.iter().map(|row| row.iter().map(|&x| softplus_derivative_complex(x)).collect()).collect(),
         ActivationType::PROBIT => activated_data.iter().map(|row| row.iter().map(|_| Complex::new(1.0, 0.0)).collect()).collect(), // Just return the value as is
         ActivationType::RANDOM => activated_data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(),                     // Just return the value as is
