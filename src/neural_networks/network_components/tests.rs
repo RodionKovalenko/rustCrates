@@ -10,9 +10,9 @@ mod tests {
         },
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
         utils::{
-            activation::{gelu_complex, sigmoid_complex},
+            activation::{gelu_complex, sigmoid_complex, softsign_complex},
             derivative::{
-                gelu_derivative_complex, numerical_gradient_bias, numerical_gradient_bias_without_loss, numerical_gradient_input, numerical_gradient_input_batch, numerical_gradient_input_batch_jacobi_without_loss, numerical_gradient_weights, numerical_gradient_weights_without_loss, sigmoid_derivative_complex, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d
+                gelu_derivative_complex, numerical_gradient_bias, numerical_gradient_bias_without_loss, numerical_gradient_input, numerical_gradient_input_batch, numerical_gradient_input_batch_jacobi_without_loss, numerical_gradient_weights, numerical_gradient_weights_without_loss, sigmoid_derivative_complex, softsign_derivative_complex, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d
             },
         },
     };
@@ -361,41 +361,39 @@ mod tests {
     where
         F: Fn(Complex<f64>) -> Complex<f64>,
     {
-        let f_z = f(z);
-        let f_z_plus_h_re = f(z + Complex::new(h, 0.0));
-        let f_z_plus_h_im = f(z + Complex::new(0.0, h));
+        let f_z_plus_h = f(z + h);
+        let f_z_minus_h = f(z - h);
 
-        let grad_re = (f_z_plus_h_re - f_z) / Complex::new(h, 0.0);
-        let grad_im = (f_z_plus_h_im - f_z) / Complex::new(0.0, h);
+        let grad = (f_z_plus_h - f_z_minus_h) / (2.0 * h);
 
-        Complex::new(grad_re.re, grad_im.im)
+        grad
     }
 
-    // #[test]
-    // fn test_softsign() {
-    //     let test_values = vec![
-    //         Complex::new(1.0, 2.0),
-    //         Complex::new(-2.345451523555475, 15.239089157237373),
-    //         Complex::new(0.5, -0.5),
-    //     ];
+    #[test]
+    fn test_softsign() {
+        let test_values = vec![
+            Complex::new(1.0, 2.0),
+            Complex::new(-2.345451523555475, 15.239089157237373),
+            Complex::new(0.5, -0.5),
+        ];
 
-    //     let h = 1e-7; // Step size for numerical gradient
+        let h = 1e-7; // Step size for numerical gradient
     
-    //      // Iterate over the array and test each element
-    //      for (i, z) in test_values.iter().enumerate() {
-    //         let analytical_derivative = softsign_derivative_complex(*z);
-    //         let numerical_derivative = numerical_gradient(softsign_complex, *z, h);
+         // Iterate over the array and test each element
+         for (i, z) in test_values.iter().enumerate() {
+            let analytical_derivative = softsign_derivative_complex(*z);
+            let numerical_derivative = numerical_gradient(softsign_complex, *z, h);
 
-    //         println!("Test case {}:", i + 1);
-    //         println!("  Input: {}", z);
-    //         println!("  Analytical derivative: {}", analytical_derivative);
-    //         println!("  Numerical derivative: {}", numerical_derivative);
-    //         println!("  Difference: {}", analytical_derivative - numerical_derivative);
-    //         println!();
+            println!("Test case {}:", i + 1);
+            println!("  Input: {}", z);
+            println!("  Analytical derivative: {}", analytical_derivative);
+            println!("  Numerical derivative: {}", numerical_derivative);
+            println!("  Difference: {}", analytical_derivative - numerical_derivative);
+            println!();
 
-    //         let numerical_vec = vec![numerical_derivative];
-    //         let analytic_vec = vec![analytical_derivative];
-    //         test_gradient_error_1d(&analytic_vec, &numerical_vec, 1e-5);
-    //     }
-    // }
+            let numerical_vec = vec![numerical_derivative];
+            let analytic_vec = vec![analytical_derivative];
+            //test_gradient_error_1d(&analytic_vec, &numerical_vec, 1e-5);
+        }
+    }
 }

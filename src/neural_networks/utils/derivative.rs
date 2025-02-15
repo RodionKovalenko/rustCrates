@@ -68,8 +68,29 @@ pub fn gelu_derivative_complex(inactivated_input: Complex<f64>) -> Complex<f64> 
 }
 
 pub fn softsign_derivative_complex(z: Complex<f64>) -> Complex<f64> {
-    let denominator: Complex<f64> = (Complex::new(1.0, 0.0) + z.norm()).powf(2.0); // (1 + |z|)^2
-    1.0 / denominator  // Softsign'(z) = 1 / (1 + |z|)^2
+    let magnitude = z.norm();
+
+    if magnitude == 0.0 {
+        return Complex::new(1.0, 0.0); // Avoid division by zero
+    }
+
+    let denominator = (1.0 + magnitude).powi(2);
+
+    // let factor = 1.0 / (1.0 + magnitude).powi(2);
+    // let real_part = (1.0 - (z.re * z.re + z.im * z.im) / (magnitude * (1.0 + magnitude))) / denominator;
+    // let imag_part = -factor * ((z.re * z.im) / magnitude);
+
+    // Debug output for intermediate values
+    println!("z = {:?}, magnitude = {}", z, magnitude);
+
+    // Real part computation: using the correct formula
+    let real_numerator = 1.0 - (z.re * z.re + z.im * z.im) / (magnitude * (1.0 + magnitude));
+    let real_part = real_numerator / denominator;
+
+    // Imaginary part computation: using the correct formula
+    let imag_part = -(z.re * z.im) / (magnitude * denominator);
+
+    Complex::new(real_part, imag_part)
 }
 
 fn softplus_derivative_complex(z: Complex<f64>) -> Complex<f64> {
