@@ -7,9 +7,8 @@ use num_complex::Complex;
 
 use super::activation::{softmax_row, ALPHA, LAMBDA};
 
-fn sigmoid_derivative_complex(z: Complex<f64>) -> Complex<f64> {
-    let sigmoid_value =  z * (Complex::new(1.0, 0.0) - z);
-   sigmoid_value
+pub fn sigmoid_derivative_complex(z: Complex<f64>) -> Complex<f64> {
+    z * (Complex::new(1.0, 0.0) - z)
 }
 
 fn tanh_derivative_complex(z: Complex<f64>) -> Complex<f64> {
@@ -49,15 +48,24 @@ fn selu_derivative_complex(z: Complex<f64>) -> Complex<f64> {
     }
 }
 
-pub fn gelu_derivative_complex(z: Complex<f64>) -> Complex<f64> {
-    let sqrt_2_over_pi = SQRT_2 / Complex::new(PI.sqrt(), 0.0);
-    let f_z = sqrt_2_over_pi * (z + Complex::new(0.044715, 0.0) * z.powf(3.0));
-    let tanh_f_z = f_z.tanh();
-    let sech_f_z = 1.0 / f_z.cosh(); // sech(x) = 1 / cosh(x)
-    let f_prime_z = sqrt_2_over_pi * (Complex::new(1.0, 0.0) + Complex::new(0.134145, 0.0) * z.powf(2.0));
 
-    // GELU'(z) = 0.5 * (1 + tanh(f(z))) + 0.5 * z * sech^2(f(z)) * f'(z)
-    0.5 * (Complex::new(1.0, 0.0) + tanh_f_z) + 0.5 * z * sech_f_z.powf(2.0) * f_prime_z
+pub fn gelu_derivative_complex(inactivated_input: Complex<f64>) -> Complex<f64> {
+       // Compute sqrt(2 / pi)
+       let sqrt_2_over_pi = SQRT_2 / PI.sqrt();
+
+       // f(x) = sqrt(2 / pi) * (x + 0.044715 * x^3)
+       let f_x = sqrt_2_over_pi * (inactivated_input + Complex::new(0.044715, 0.0) * inactivated_input.powf(3.0));
+   
+       // tanh(f(x)) and sech(f(x))
+       let tanh_f_x = f_x.tanh();
+       let sech_f_x = 1.0 / f_x.cosh();
+       let sech_f_x_squared = sech_f_x.powi(2);
+   
+       // f'(x) = sqrt(2 / pi) * (1 + 0.134145 * x^2)
+       let f_prime_x = sqrt_2_over_pi * (Complex::new(1.0, 0.0) + Complex::new(0.134145, 0.0) * inactivated_input.powf(2.0));
+   
+       // GELU'(x) = 0.5 * (1 + tanh(f(x))) + 0.5 * x * sech^2(f(x)) * f'(x)
+       0.5 * (Complex::new(1.0, 0.0) + tanh_f_x) + 0.5 * inactivated_input * sech_f_x_squared * f_prime_x
 }
 
 fn softsign_derivative_complex(z: Complex<f64>) -> Complex<f64> {
@@ -264,23 +272,23 @@ where
 {
     let mut grad_batch = vec![vec![vec![Complex::new(0.0, 0.0); weights[0].len()]; weights.len()]; input.len()];
 
-    for row in 0..weights.len() {
-        for col in 0..weights[row].len() {
-            // Perturb input by epsilon
-            let mut weights_plus = weights.clone();
-            weights_plus[row][col] += epsilon;
+    for batch_ind in 0..input.len() {
+        for row in 0..weights.len() {
+            for col in 0..weights[row].len() {
+                // Perturb input by epsilon
+                let mut weights_plus = weights.clone();
+                weights_plus[row][col] += epsilon;
 
-            let mut weights_minus = weights.clone();
-            weights_minus[row][col] -= epsilon;
+                let mut weights_minus = weights.clone();
+                weights_minus[row][col] -= epsilon;
 
-            // Compute numerical gradient
-            let loss_plus = f(&input, &weights_plus);
-            let loss_minus = f(&input, &weights_minus);
+                // Compute numerical gradient
+                let loss_plus = f(&input, &weights_plus);
+                let loss_minus = f(&input, &weights_minus);
 
-            for batch_ind in 0..loss_plus.len() {
-                for (seq_ind, _input_vec) in loss_plus[batch_ind].iter().enumerate() {
+                for (seq_ind, _input_vec) in input[batch_ind].iter().enumerate() {
                     let gradient: Complex<f64> = (loss_plus[batch_ind][seq_ind][col] - loss_minus[batch_ind][seq_ind][col]) / (2.0 * epsilon);
-                    grad_batch[batch_ind][row][col] = gradient;
+                    grad_batch[batch_ind][row][col] += gradient;
                 }
             }
         }
@@ -405,20 +413,20 @@ pub fn test_gradient_error_1d(numerical_grad: &Vec<Complex<f64>>, analytical_gra
     }
 }
 
-pub fn get_gradient_complex(data: &Vec<Vec<Complex<f64>>>, activation: ActivationType) -> Vec<Vec<Complex<f64>>> {
+pub fn get_gradient_complex(activated_data: &Vec<Vec<Complex<f64>>>, input_data: &Vec<Vec<Complex<f64>>>, activation: ActivationType) -> Vec<Vec<Complex<f64>>> {
     match activation {
-        ActivationType::SIGMOID => data.iter().map(|row| row.iter().map(|&x| sigmoid_derivative_complex(x)).collect()).collect(),
-        ActivationType::TANH => data.iter().map(|row| row.iter().map(|&x| tanh_derivative_complex(x)).collect()).collect(),
-        ActivationType::LINEAR => data.iter().map(|row| row.iter().map(|_| Complex::new(1.0, 0.0)).collect()).collect(), // Linear is identity
-        ActivationType::RELU => data.iter().map(|row| row.iter().map(|&x| relu_derivative_complex(x)).collect()).collect(),
-        ActivationType::LEAKYRELU => data.iter().map(|row| row.iter().map(|&x| leaky_relu_derivative_complex(x, 0.01)).collect()).collect(),
-        ActivationType::ELU => data.iter().map(|row| row.iter().map(|&x| elu_derivative_complex(x, 1.0)).collect()).collect(),  // Assuming alpha = 1.0
-        ActivationType::SELU => data.iter().map(|row| row.iter().map(|&x| selu_derivative_complex(x)).collect()).collect(), // Assuming scale = 1.0, alpha = 1.0
-        ActivationType::GELU => data.iter().map(|row| row.iter().map(|&x| gelu_derivative_complex(x)).collect()).collect(),
-        ActivationType::SOFTSIGN => data.iter().map(|row| row.iter().map(|&x| softsign_derivative_complex(x)).collect()).collect(),
-        ActivationType::SOFTPLUS => data.iter().map(|row| row.iter().map(|&x| softplus_derivative_complex(x)).collect()).collect(),
-        ActivationType::PROBIT => data.iter().map(|row| row.iter().map(|_| Complex::new(1.0, 0.0)).collect()).collect(), // Just return the value as is
-        ActivationType::RANDOM => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(),                     // Just return the value as is
-        ActivationType::SOFTMAX => softmax_derivative_complex(&data[0]),
+        ActivationType::SIGMOID => activated_data.iter().map(|row| row.iter().map(|&x| sigmoid_derivative_complex(x)).collect()).collect(),
+        ActivationType::TANH => activated_data.iter().map(|row| row.iter().map(|&x| tanh_derivative_complex(x)).collect()).collect(),
+        ActivationType::LINEAR => activated_data.iter().map(|row| row.iter().map(|_| Complex::new(1.0, 0.0)).collect()).collect(), // Linear is identity
+        ActivationType::RELU => activated_data.iter().map(|row| row.iter().map(|&x| relu_derivative_complex(x)).collect()).collect(),
+        ActivationType::LEAKYRELU => activated_data.iter().map(|row| row.iter().map(|&x| leaky_relu_derivative_complex(x, 0.01)).collect()).collect(),
+        ActivationType::ELU => activated_data.iter().map(|row| row.iter().map(|&x| elu_derivative_complex(x, 1.0)).collect()).collect(), // Assuming alpha = 1.0
+        ActivationType::SELU => activated_data.iter().map(|row| row.iter().map(|&x| selu_derivative_complex(x)).collect()).collect(),    // Assuming scale = 1.0, alpha = 1.0
+        ActivationType::GELU => input_data.iter().map(|row| row.iter().map(|&x| gelu_derivative_complex(x)).collect()).collect(),
+        ActivationType::SOFTSIGN => activated_data.iter().map(|row| row.iter().map(|&x| softsign_derivative_complex(x)).collect()).collect(),
+        ActivationType::SOFTPLUS => activated_data.iter().map(|row| row.iter().map(|&x| softplus_derivative_complex(x)).collect()).collect(),
+        ActivationType::PROBIT => activated_data.iter().map(|row| row.iter().map(|_| Complex::new(1.0, 0.0)).collect()).collect(), // Just return the value as is
+        ActivationType::RANDOM => activated_data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(),                     // Just return the value as is
+        ActivationType::SOFTMAX => softmax_derivative_complex(&activated_data[0]),
     }
 }

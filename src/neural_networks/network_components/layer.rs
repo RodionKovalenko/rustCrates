@@ -95,6 +95,7 @@ pub struct Layer {
     pub m1: Vec<Vec<Complex<f64>>>,
     pub v1: Vec<Vec<Complex<f64>>>,
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub inactivated_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     pub gradient: Option<Gradient>,
     pub learning_rate: f64,
@@ -121,8 +122,7 @@ impl Layer {
     pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
         self.input_batch = Some(input_batch.clone());
 
-        // Initialize batch_output to hold the results
-        let batch_output: Vec<Vec<Vec<Complex<f64>>>> = input_batch
+        let inactivated_batch_output: Vec<Vec<Vec<Complex<f64>>>> = input_batch
             .par_iter() // Process the input batch in parallel
             .map(|input| {
                 // Multiply input with weights
@@ -131,23 +131,27 @@ impl Layer {
                 // Add bias to the result
                 let raw_output: Vec<Vec<Complex<f64>>> = add_vector(&output, &self.bias);
 
+                raw_output
+            })
+            .collect();
+
+        let batch_output: Vec<Vec<Vec<Complex<f64>>>> = inactivated_batch_output
+            .par_iter() // Process the input batch in parallel
+            .map(|input| {
                 // Apply activation if the layer type is DenseLayer
-                if &self.layer_type == &LayerType::DenseLayer {
-                    let activated_output: Vec<Vec<Complex<f64>>> = activate_output_complex(&raw_output, self.activation_type.clone());
-                    activated_output
-                } else {
-                    raw_output
-                }
+                activate_output_complex(&input, self.activation_type.clone())
             })
             .collect(); // Collect the results back into a Vec
 
         self.output_batch = Some(batch_output.clone());
+        self.inactivated_input_batch = Some(inactivated_batch_output);
 
         batch_output
     }
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
         let input_batch = self.input_batch.as_ref().expect("Input batch is missing in dense layer");
+        let raw_output_batch = self.inactivated_input_batch.as_ref().expect("Raw output batch is missing in dense layer");
         let output_batch = self.output_batch.as_ref().expect("Output batch is missing in dense layer");
         let mut gradient = Gradient::new_default();
 
@@ -160,12 +164,12 @@ impl Layer {
         for (batch_ind, (input_sample, gradient_sample)) in input_batch.iter().zip(previous_gradient_batch).enumerate() {
             // Multiply the transposed input sample with previous gradients (for weight gradients)
 
-            input_gradient_batch[batch_ind] = get_gradient_complex(&output_batch[batch_ind], self.activation_type.clone());
-            input_gradient_batch[batch_ind] = hadamard_product_2d_c(  gradient_sample, &input_gradient_batch[batch_ind]);
-            weight_gradients[batch_ind] = multiply_complex(   input_sample, &input_gradient_batch[batch_ind]);
+            input_gradient_batch[batch_ind] = get_gradient_complex(&output_batch[batch_ind], &raw_output_batch[batch_ind], self.activation_type.clone());
+            input_gradient_batch[batch_ind] = hadamard_product_2d_c(gradient_sample, &input_gradient_batch[batch_ind]);
+            weight_gradients[batch_ind] = multiply_complex(input_sample, &input_gradient_batch[batch_ind]);
 
             //Accumulate gradients for biases
-            for grad_row in gradient_sample.iter() {
+            for grad_row in input_gradient_batch[batch_ind].iter() {
                 for (k, grad_val) in grad_row.iter().enumerate() {
                     bias_gradients[batch_ind][k] += grad_val.clone(); // Sum the gradients for biases
                 }
@@ -219,7 +223,8 @@ impl Layer {
             input_batch: None,
             output_batch: None,
             gradient: None,
-            learning_rate: *learning_rate
+            inactivated_input_batch: None,
+            learning_rate: *learning_rate,
         }
     }
 }

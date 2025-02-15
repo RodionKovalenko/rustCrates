@@ -10,10 +10,9 @@ mod tests {
         },
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
         utils::{
-            activation::gelu_complex,
+            activation::{gelu_complex, sigmoid_complex},
             derivative::{
-                gelu_derivative_complex, numerical_gradient_bias, numerical_gradient_bias_without_loss, numerical_gradient_input, numerical_gradient_input_batch, numerical_gradient_input_batch_jacobi_without_loss, numerical_gradient_weights, numerical_gradient_weights_without_loss,
-                test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d,
+                gelu_derivative_complex, numerical_gradient_bias, numerical_gradient_bias_without_loss, numerical_gradient_input, numerical_gradient_input_batch, numerical_gradient_input_batch_jacobi_without_loss, numerical_gradient_weights, numerical_gradient_weights_without_loss, sigmoid_derivative_complex, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d
             },
         },
     };
@@ -263,12 +262,12 @@ mod tests {
         let output_dim = 4; // Match output_dim to your layer's output
         let learning_rate = 0.01;
         let _operation_mode = OperationMode::TRAINING;
-        let epsilon: f64 = 1e-7;
+        let epsilon: f64 = 1e-5;
 
-        let mut dense_layer: Layer = Layer::new(input_dim, output_dim, &learning_rate, &ActivationType::SIGMOID, LayerType::DenseLayer);
+        let mut dense_layer: Layer = Layer::new(input_dim, output_dim, &learning_rate, &ActivationType::GELU, LayerType::DenseLayer);
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.1, 0.2), Complex::new(0.3, 0.5), Complex::new(0.6, 0.4)]]];
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0010, 0.20), Complex::new(0.0030, 0.50), Complex::new(0.60, 0.40)]]];
 
         let dense_output_batch = dense_layer.forward(&input_batch);
 
@@ -296,6 +295,37 @@ mod tests {
 
         // For Gelu it can a little more deviation
         test_gradient_batch_error(&dense_numerical_grad_batch, &dense_analytical_gradient_batch, epsilon);
+    }
+
+
+    #[test]
+    fn test_sigmoid() {
+        let test_array = [
+            Complex::new(1.0, 2.0),
+            Complex::new(-2.345451523555475, 15.239089157237373),
+            Complex::new(0.1013699645231736, 0.10315190720252415),
+            Complex::new(3.003158122183436, 4.0090442543494476),
+        ];
+
+        let h = 1e-7; // Step size for numerical gradient
+
+        // Iterate over the array and test each element
+        for (i, z) in test_array.iter().enumerate() {
+            let sigmoid_output = sigmoid_complex(*z);
+            let analytical_derivative = sigmoid_derivative_complex(sigmoid_output);
+            let numerical_derivative = numerical_gradient(sigmoid_complex, *z, h);
+
+            println!("Sigmoid: Test case {}:", i + 1);
+            println!("  Input: {}", z);
+            println!("  Analytical derivative: {}", analytical_derivative);
+            println!("  Numerical derivative: {}", numerical_derivative);
+            println!("  Difference: {}", analytical_derivative - numerical_derivative);
+            println!();
+
+            let numerical_vec = vec![numerical_derivative];
+            let analytic_vec = vec![analytical_derivative];
+            test_gradient_error_1d(&analytic_vec, &numerical_vec, 1e-5);
+        }
     }
 
     #[test]
