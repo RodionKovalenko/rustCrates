@@ -219,7 +219,7 @@ pub fn erf_complex(z: Complex<f64>) -> Complex<f64> {
 }
 
 pub fn softsign_complex(z: Complex<f64>) -> Complex<f64> {
-    z / (1.0 + z.norm())
+    Complex::new(z.re / (1.0 + z.re.abs()), z.im / (1.0 + z.im.abs()))
 }
 
 fn softplus_complex(z: Complex<f64>) -> Complex<f64> {

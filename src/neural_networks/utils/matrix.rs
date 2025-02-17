@@ -287,7 +287,7 @@ pub fn add_matrix<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<Vec<T>>, ma
 
     for i in 0..matrix_a.len() {
         for j in 0..matrix_a[i].len() {
-            matrix_result[i][j] = matrix_result[i][j].clone() + matrix_b[i][j].clone();
+            matrix_result[i][j] = matrix_result[i][j].clone() + matrix_b[i % matrix_b.len()][j % matrix_b[0].len()].clone();
         }
     }
 
