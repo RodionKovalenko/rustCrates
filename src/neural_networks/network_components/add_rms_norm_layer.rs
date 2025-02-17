@@ -49,11 +49,14 @@ impl RMSNormLayer {
 
     // Forward pass for a batch of token embeddings (2D input)
     pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>, input_before_transform_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
-        self.input_batch = Some(input_batch.clone());
         let mut output_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
+        let mut input_batch_added = input_batch.clone();
 
         for (batch_ind, input) in input_batch.iter().enumerate() {
+            // println!("shape input in rms: {:?}, {:?}", input.len(), input[0].len());
+            // println!("shape input before in rms: {:?}, {:?}", input_before_transform_batch[batch_ind].len(), input_before_transform_batch[batch_ind][0].len());
             let output = add_matrix(input, &input_before_transform_batch[batch_ind]);
+            input_batch_added[batch_ind] = output.clone();
 
             output_batch.push(
                 output
@@ -62,6 +65,8 @@ impl RMSNormLayer {
                     .collect(),
             );
         }
+
+        self.input_batch = Some(input_batch_added.clone());
 
         output_batch
     }

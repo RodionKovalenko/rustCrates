@@ -153,6 +153,7 @@ impl Layer {
         let input_batch = self.input_batch.as_ref().expect("Input batch is missing in dense layer");
         let raw_output_batch = self.inactivated_input_batch.as_ref().expect("Raw output batch is missing in dense layer");
         let output_batch = self.output_batch.as_ref().expect("Output batch is missing in dense layer");
+
         let mut gradient = Gradient::new_default();
 
         // Initialize gradients for weights and biases
@@ -167,6 +168,8 @@ impl Layer {
             input_gradient_batch[batch_ind] = get_gradient_complex(&output_batch[batch_ind], &raw_output_batch[batch_ind], self.activation_type.clone());
             input_gradient_batch[batch_ind] = hadamard_product_2d_c(gradient_sample, &input_gradient_batch[batch_ind]);
             weight_gradients[batch_ind] = multiply_complex(input_sample, &input_gradient_batch[batch_ind]);
+
+            input_gradient_batch[batch_ind] = multiply_complex( &input_gradient_batch[batch_ind], &self.weights);
 
             //Accumulate gradients for biases
             for grad_row in input_gradient_batch[batch_ind].iter() {
