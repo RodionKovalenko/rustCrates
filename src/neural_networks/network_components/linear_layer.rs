@@ -69,16 +69,16 @@ impl LinearLayer {
         let mut bias_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.bias.len()]; input_batch.len()];
 
         // For each input sample in the batch
-        for (batch_ind, (input_sample, gradient_sample)) in input_batch.iter().zip(previous_gradient_batch).enumerate() {
+        for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_batch).enumerate() {
             // Multiply the transposed input sample with previous gradients (for weight gradients)
-            weight_gradients[batch_ind] = multiply_complex(input_sample, gradient_sample);
+            weight_gradients[batch_ind] = multiply_complex(input_sample, previous_gradient);
 
-            // println!("linear layer matrix dimension: {:?}, {:?}",  &self.weights.len(), &self.weights[0].len());
-            // println!("gradient sample dimension: {}, {}",  &gradient_sample.len(), &gradient_sample[0].len());
-            gradient_input_batch[batch_ind] = multiply_complex( &gradient_sample, &self.weights);
+            println!("\nprevious gradient: {:?}", &previous_gradient);
+            println!("\n weights linear: {:?}", &self.weights);
+            gradient_input_batch[batch_ind] = multiply_complex( &previous_gradient, &self.weights);
 
             //Accumulate gradients for biases
-            for grad_row in gradient_sample.iter() {
+            for grad_row in previous_gradient.iter() {
                 for (k, grad_val) in grad_row.iter().enumerate() {
                     bias_gradients[batch_ind][k] += grad_val.clone(); // Sum the gradients for biases
                 }
