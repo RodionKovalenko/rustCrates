@@ -160,7 +160,7 @@ impl EmbeddingLayer {
             });
             for j in 0..self.embedding_dim {
                 // Gradient descent update for each weight
-                token_embedding[j] -= learning_rate * gradients[i][j];
+                token_embedding[j] -= learning_rate * gradients[i][j];      
             }
 
             Self::update_embedding(&db, &token_id, &token_embedding);

@@ -187,7 +187,7 @@ impl Layer {
         gradient
     }
 
-    pub fn update_params(&mut self) {
+    pub fn update_parameters(&mut self) {
         let gradient = self.gradient.as_ref().expect("No Gradient found in linear layer");
         let (weight_gradients, bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
 

@@ -73,16 +73,17 @@ impl LinearLayer {
             // Multiply the transposed input sample with previous gradients (for weight gradients)
             weight_gradients[batch_ind] = multiply_complex(input_sample, previous_gradient);
 
-            println!("\nprevious gradient: {:?}", &previous_gradient);
-            println!("\n weights linear: {:?}", &self.weights);
-            gradient_input_batch[batch_ind] = multiply_complex( &previous_gradient, &self.weights);
+            // println!("\nprevious gradient: {:?}", &previous_gradient);
+            // println!("\n weights linear: {:?}", &self.weights);
 
             //Accumulate gradients for biases
             for grad_row in previous_gradient.iter() {
                 for (k, grad_val) in grad_row.iter().enumerate() {
-                    bias_gradients[batch_ind][k] += grad_val.clone(); // Sum the gradients for biases
+                   bias_gradients[batch_ind][k] += grad_val.clone(); // Sum the gradients for biases
                 }
             }
+
+            gradient_input_batch[batch_ind] = multiply_complex( &previous_gradient, &self.weights);
         }
 
         gradient.set_gradient_input_batch(gradient_input_batch.clone());
@@ -93,7 +94,7 @@ impl LinearLayer {
         gradient
     }
 
-    pub fn update_params(&mut self) {
+    pub fn update_parameters(&mut self) {
         let gradient = self.gradient.as_ref().expect("No Gradient found in linear layer");
         let (weight_gradients, bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
 
