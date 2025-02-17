@@ -12,7 +12,8 @@ mod tests {
         utils::{
             activation::{gelu_complex, sigmoid_complex, softsign_complex},
             derivative::{
-                gelu_derivative_complex, numerical_gradient_bias, numerical_gradient_bias_without_loss, numerical_gradient_input, numerical_gradient_input_batch, numerical_gradient_input_batch_jacobi_without_loss, numerical_gradient_weights, numerical_gradient_weights_multiple_layers_without_loss, numerical_gradient_weights_without_loss, sigmoid_derivative_complex, softsign_derivative_complex, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d
+                gelu_derivative_complex, numerical_gradient_bias, numerical_gradient_bias_without_loss, numerical_gradient_input, numerical_gradient_input_batch, numerical_gradient_input_batch_jacobi_without_loss, numerical_gradient_input_batch_without_loss, numerical_gradient_weights,
+                numerical_gradient_weights_multiple_layers_without_loss, numerical_gradient_weights_without_loss, sigmoid_derivative_complex, softsign_derivative_complex, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d,
             },
         },
     };
@@ -152,13 +153,13 @@ mod tests {
     #[test]
     fn test_linear_backward_batch() {
         let num_row: usize = 2;
-        let num_col: usize = 5;
+        let num_col: usize = 3;
 
         // Initialize a LinearLayer
         let mut linear_layer = LinearLayer::new(0.01, num_row, num_col);
 
         // Define a simple input batch (2 samples, 2D vectors)
-        let input_batch = vec![vec![vec![Complex::new(1.0, 0.3), Complex::new(2.0, 0.8)]], vec![vec![Complex::new(3.0, 0.2), Complex::new(4.0, 0.5)]]];
+        let input_batch = vec![vec![vec![Complex::new(1.0, 0.3), Complex::new(2.0, 0.8)]]];
 
         // Run forward pass (needed before backward)
         let linear_output_batch = linear_layer.forward(&input_batch);
@@ -171,6 +172,7 @@ mod tests {
 
         let gradient_batch: Gradient = linear_layer.backward(&previous_gradient_batch);
 
+        let gradient_input_batch = gradient_batch.get_gradient_input_batch();
         let (weight_gradients, bias_gradients) = (gradient_batch.get_gradient_weight_batch(), gradient_batch.get_gradient_bias());
         let linear_weights = linear_layer.weights.clone();
         let bias = linear_layer.bias.clone();
@@ -194,6 +196,7 @@ mod tests {
 
         linear_layer.weights = linear_weights;
 
+        // Bias gradient check
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Complex<f64>>| -> Vec<Vec<Vec<Complex<f64>>>> {
             linear_layer.bias = bias.clone();
             let linear_batch_output = linear_layer.forward(input);
@@ -207,6 +210,22 @@ mod tests {
         println!("\nanalytical grad bias: {:?}", &bias_gradients);
 
         test_gradient_error_1d(&nummerical_grad_bias_linear, &bias_gradients, epsilon);
+
+        linear_layer.bias = bias.clone();
+
+        // Test input gradient check
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
+            let linear_batch_output = linear_layer.forward(input);
+
+            linear_batch_output
+        };
+
+        let numerical_grad_input_linear: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
+
+        println!("\nnumerical gradient input batch dense: {:?}", &numerical_grad_input_linear);
+        println!("\nanalytical gradient input batch dense: {:?}", &gradient_input_batch);
+
+        test_gradient_batch_error(&numerical_grad_input_linear, &gradient_input_batch, epsilon);
     }
 
     #[test]
@@ -276,8 +295,12 @@ mod tests {
         let previous_gradient = vec![vec![vec![Complex::new(1.0, 0.0); dense_output_batch[0][0].len()]; dense_output_batch[0].len()]; dense_output_batch.len()];
 
         let gradient = dense_layer.backward(&previous_gradient);
-        let dense_analytical_gradient_batch = gradient.get_gradient_weight_batch();
+        let dense_analytical_gradient_weights_batch = gradient.get_gradient_weight_batch();
+        let dense_analytical_input_gradient_batch = gradient.get_gradient_input_batch();
+        let dense_analytical_gradient_bias_batch = gradient.get_gradient_bias();
+
         let weights = dense_layer.weights.clone();
+        let bias = dense_layer.bias.clone();
 
         // Define the loss function
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
@@ -289,11 +312,44 @@ mod tests {
 
         let dense_numerical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_without_loss(&mut loss_fn, input_batch.clone(), &weights, epsilon);
 
-        println!("\nnumerical gradient dense layer {:?}", dense_numerical_grad_batch);
-        println!("\nanalytical gradient dense layer {:?}", dense_analytical_gradient_batch);
+        println!("\nnumerical weight gradient dense layer {:?}", dense_numerical_grad_batch);
+        println!("\nanalytical weight gradient dense layer {:?}", dense_analytical_gradient_weights_batch);
 
         // For Gelu it can a little more deviation
-        test_gradient_batch_error(&dense_numerical_grad_batch, &dense_analytical_gradient_batch, epsilon);
+        test_gradient_batch_error(&dense_numerical_grad_batch, &dense_analytical_gradient_weights_batch, epsilon);
+
+        // Bias gradient check
+        dense_layer.weights = weights.clone();
+
+        // Define the loss function
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Complex<f64>>| -> Vec<Vec<Vec<Complex<f64>>>> {
+            dense_layer.bias = bias.clone();
+            let dense_batch_output = dense_layer.forward(input);
+
+            dense_batch_output
+        };
+
+        let dense_numerical_grad_bias_batch: Vec<Complex<f64>> = numerical_gradient_bias_without_loss(&mut loss_fn, input_batch.clone(), &bias.clone(), epsilon);
+
+        println!("\nnumerical gradient dense layer {:?}", dense_numerical_grad_bias_batch);
+        println!("\nanalytical gradient dense layer {:?}", dense_analytical_gradient_bias_batch);
+
+        // For Gelu it can a little more deviation
+        test_gradient_error_1d(&dense_numerical_grad_bias_batch, &dense_analytical_gradient_bias_batch, epsilon);
+
+         // input gradient batch check
+         dense_layer.bias = bias.clone();
+
+         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
+            dense_layer.forward(input)
+        };
+
+        let numerical_grad_input_linear: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
+
+        println!("\nnumerical gradient input batch linear: {:?}", &numerical_grad_input_linear);
+        println!("\nanalytical gradient input batch linear: {:?}", &dense_analytical_input_gradient_batch);
+
+        test_gradient_batch_error(&numerical_grad_input_linear, &dense_analytical_input_gradient_batch, epsilon);
     }
 
     #[test]
@@ -402,7 +458,7 @@ mod tests {
         let _operation_mode = OperationMode::TRAINING;
         let epsilon: f64 = 1e-6;
 
-        let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(input_dim,  output_dim, learning_rate);
+        let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(input_dim, output_dim, learning_rate);
 
         // Create a simple LinearLayer with the given input and output dimensions
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.10, 0.20), Complex::new(0.30, 0.50), Complex::new(0.60, 0.40)]]];

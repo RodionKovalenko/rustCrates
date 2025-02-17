@@ -349,12 +349,14 @@ where
         let loss_plus = f(&input, &bias_plus);
         let loss_minus = f(&input, &bias_minus);
 
-        for batch_ind in 0..loss_plus.len() {
-            for (seq_ind, _input_vec) in loss_plus[batch_ind].iter().enumerate() {
-                let gradient: Complex<f64> = (loss_plus[batch_ind][seq_ind][row] - loss_minus[batch_ind][seq_ind][row]) / (2.0 * epsilon);
-                grad_batch[row] += gradient;
-            }
-        }
+        // Sum all elements of the loss to obtain a proper gradient estimation
+        let sum_loss_plus: Complex<f64> = loss_plus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
+
+        let sum_loss_minus: Complex<f64> = loss_minus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
+
+        // Compute numerical gradient
+        let gradient = (sum_loss_plus - sum_loss_minus) / (Complex::new(2.0 * epsilon, 0.0));
+        grad_batch[row] = gradient;
     }
 
     grad_batch
@@ -411,7 +413,12 @@ where
                 let loss_plus = f(&input_plus);
                 let loss_minus = f(&input_minus);
 
-                let gradient: Complex<f64> = (loss_plus[batch][seq][dim_i] - loss_minus[batch][seq][dim_i]) / (2.0 * epsilon);
+                let sum_loss_plus: Complex<f64> = loss_plus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
+
+                let sum_loss_minus: Complex<f64> = loss_minus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
+
+                // Compute numerical gradient
+                let gradient = (sum_loss_plus - sum_loss_minus) / (Complex::new(2.0 * epsilon, 0.0));
                 grad_batch[batch][seq][dim_i] = gradient;
             }
         }
