@@ -169,14 +169,14 @@ impl Layer {
             input_gradient_batch[batch_ind] = hadamard_product_2d_c(gradient_sample, &input_gradient_batch[batch_ind]);
             weight_gradients[batch_ind] = multiply_complex(input_sample, &input_gradient_batch[batch_ind]);
 
-            input_gradient_batch[batch_ind] = multiply_complex( &input_gradient_batch[batch_ind], &self.weights);
-
             //Accumulate gradients for biases
             for grad_row in input_gradient_batch[batch_ind].iter() {
                 for (k, grad_val) in grad_row.iter().enumerate() {
                     bias_gradients[batch_ind][k] += grad_val.clone(); // Sum the gradients for biases
                 }
             }
+
+            input_gradient_batch[batch_ind] = multiply_complex(&input_gradient_batch[batch_ind], &self.weights);
         }
 
         gradient.set_gradient_input_batch(input_gradient_batch);
