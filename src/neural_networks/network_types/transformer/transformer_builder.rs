@@ -52,10 +52,9 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
 
     let rows: usize = 16;
-    let cols: usize = embedding_dim_compressed;
     let hidden_dim = 64;
 
-    let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, cols, learning_rate);
+    let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
 
     let num_self_attention_layer: usize = 4;
     for _i in 0..num_self_attention_layer {

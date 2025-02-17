@@ -68,29 +68,10 @@ pub fn gelu_derivative_complex(inactivated_input: Complex<f64>) -> Complex<f64> 
 }
 
 pub fn softsign_derivative_complex(z: Complex<f64>) -> Complex<f64> {
-    let magnitude = z.norm();
+    let real_part = z.re / (1.0 + z.re.abs()).powf(2.0);
+    let imag_part = z.im / (1.0 + z.im.abs()).powf(2.0);
 
-    if magnitude == 0.0 {
-        return Complex::new(1.0, 0.0); // Avoid division by zero
-    }
-
-    let denominator = (1.0 + magnitude).powi(2);
-
-    // let factor = 1.0 / (1.0 + magnitude).powi(2);
-    // let real_part = (1.0 - (z.re * z.re + z.im * z.im) / (magnitude * (1.0 + magnitude))) / denominator;
-    // let imag_part = -factor * ((z.re * z.im) / magnitude);
-
-    // Debug output for intermediate values
-    println!("z = {:?}, magnitude = {}", z, magnitude);
-
-    // Real part computation: using the correct formula
-    let real_numerator = 1.0 - (z.re * z.re + z.im * z.im) / (magnitude * (1.0 + magnitude));
-    let real_part = real_numerator / denominator;
-
-    // Imaginary part computation: using the correct formula
-    let imag_part = -(z.re * z.im) / (magnitude * denominator);
-
-    Complex::new(real_part, imag_part)
+    Complex::new(real_part.abs() + imag_part.abs(), 0.0)
 }
 
 fn softplus_derivative_complex(z: Complex<f64>) -> Complex<f64> {
@@ -309,6 +290,39 @@ where
                 for (seq_ind, _input_vec) in input[batch_ind].iter().enumerate() {
                     let gradient: Complex<f64> = (loss_plus[batch_ind][seq_ind][col] - loss_minus[batch_ind][seq_ind][col]) / (2.0 * epsilon);
                     grad_batch[batch_ind][row][col] += gradient;
+                }
+            }
+        }
+    }
+
+    grad_batch
+}
+
+pub fn numerical_gradient_weights_multiple_layers_without_loss<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>, output: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
+where
+    F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>, &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Vec<Complex<f64>>>>,
+{
+    let mut grad_batch = vec![vec![vec![Complex::new(0.0, 0.0); weights[0].len()]; weights.len()]; input.len()];
+
+    for row in 0..weights.len() {
+        for col in 0..weights[row].len() {
+            // Perturb input by epsilon
+            let mut weights_plus = weights.clone();
+            weights_plus[row][col] += epsilon;
+
+            let mut weights_minus = weights.clone();
+            weights_minus[row][col] -= epsilon;
+
+            // Compute numerical gradient
+            let loss_plus = f(&input, &weights_plus);
+            let loss_minus = f(&input, &weights_minus);
+
+            for batch_ind in 0..output.len() {
+                for (seq_ind, _input_vec) in output[batch_ind].iter().enumerate() {
+                    for (dim_ind, _value) in _input_vec.iter().enumerate() {
+                        let gradient: Complex<f64> = (loss_plus[batch_ind][seq_ind][dim_ind] - loss_minus[batch_ind][seq_ind][dim_ind]) / (2.0 * epsilon);
+                        grad_batch[batch_ind][row][col] += gradient;
+                    }
                 }
             }
         }

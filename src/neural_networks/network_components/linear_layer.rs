@@ -61,6 +61,7 @@ impl LinearLayer {
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
         let input_batch = self.input_batch.as_ref().expect("Input batch is missing in linear layer");
+        let mut gradient_input_batch = previous_gradient_batch.clone();
         let mut gradient = Gradient::new_default();
         
         // Initialize gradients for weights and biases
@@ -72,6 +73,10 @@ impl LinearLayer {
             // Multiply the transposed input sample with previous gradients (for weight gradients)
             weight_gradients[batch_ind] = multiply_complex(input_sample, gradient_sample);
 
+            // println!("linear layer matrix dimension: {:?}, {:?}",  &self.weights.len(), &self.weights[0].len());
+            // println!("gradient sample dimension: {}, {}",  &gradient_sample.len(), &gradient_sample[0].len());
+            gradient_input_batch[batch_ind] = multiply_complex( &gradient_sample, &self.weights);
+
             //Accumulate gradients for biases
             for grad_row in gradient_sample.iter() {
                 for (k, grad_val) in grad_row.iter().enumerate() {
@@ -80,8 +85,7 @@ impl LinearLayer {
             }
         }
 
-       
-        gradient.set_gradient_input_batch(previous_gradient_batch.clone());
+        gradient.set_gradient_input_batch(gradient_input_batch.clone());
         gradient.set_gradient_weight_batch(weight_gradients);
         gradient.set_gradient_bias_batch(bias_gradients);
         self.gradient = Some(gradient.clone());

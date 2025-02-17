@@ -18,12 +18,12 @@ pub struct FeedForwardLayer {
 
 impl FeedForwardLayer {
     // Constructor to initialize multiple attention heads
-    pub fn new(rows: usize, cols: usize, output_cols: usize, learning_rate: f64) -> Self {
+    pub fn new(rows: usize, cols: usize, learning_rate: f64) -> Self {
         let epsilon: f64 = 0.000001;
 
         let mut layers: Vec<LayerEnum> = vec![];
         let dense_layer: Layer = Layer::new(rows, cols, &learning_rate, &ActivationType::GELU, LayerType::DenseLayer);
-        let linear_layer = LinearLayer::new(learning_rate, cols, output_cols);
+        let linear_layer = LinearLayer::new(learning_rate, cols, rows);
         let rms_norm_layer = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(cols, epsilon, learning_rate))));
 
         layers.push(LayerEnum::Dense(Box::new(dense_layer)));
@@ -50,14 +50,14 @@ impl FeedForwardLayer {
                 LayerEnum::Dense(dense_layer) => {
                     let output_dense = dense_layer.forward(&output);
 
-                    println!("Output FFN Dense layer: {:?}, {:?},  {:?}", &output_dense.len(), &output_dense[0].len(), &output_dense[0][0].len());
+                    //println!("Output FFN Dense layer: {:?}, {:?},  {:?}", &output_dense.len(), &output_dense[0].len(), &output_dense[0][0].len());
                     //println!("dense output: {:?}", &output_dense);
                     output = output_dense;
                 }
                 LayerEnum::Linear(linear_layer) => {
                     let output_linear = linear_layer.forward(&output);
 
-                    println!("Output FFN Dense layer: {:?}, {:?},  {:?}", &output_linear.len(), &output_linear[0].len(), &output_linear[0][0].len());
+                    //println!("Output FFN Linear layer: {:?}, {:?},  {:?}", &output_linear.len(), &output_linear[0].len(), &output_linear[0][0].len());
                     output = output_linear;
                 }
                 _ => {}
@@ -68,9 +68,7 @@ impl FeedForwardLayer {
         let rms_norm_layer_enum = self.rms_norm_layer.as_mut().unwrap();
         match rms_norm_layer_enum {
             LayerEnum::RMSNorm(rms_norm_layer) => {
-                let rms_norm_layer = Some(rms_norm_layer).unwrap();
-
-                output = rms_norm_layer.forward(&output, input_batch);
+                output = rms_norm_layer.forward(&output, &input_batch);
                 //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
             }
             _ => {}
@@ -84,13 +82,14 @@ impl FeedForwardLayer {
 
         let mut gradient = Gradient::new_default();
 
-        // Apply RMSNorm backpropagation if it's present
+        //Apply RMSNorm backpropagation if it's present
         if let Some(rms_norm_layer) = &mut self.rms_norm_layer {
             match rms_norm_layer {
                 LayerEnum::RMSNorm(rms_norm_layer) => {
                     gradient = rms_norm_layer.backward(&output_gradients);
                     output_gradients = gradient.get_gradient_input_batch();
 
+                    println!("\ngradient rms: {:?}\n\n", &output_gradients);
                     println!("FFN, gradient from RMS Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
                 }
                 _ => {}
@@ -105,6 +104,9 @@ impl FeedForwardLayer {
                     let dense_layer = Some(dense).unwrap();
                     gradient = dense_layer.backward(&output_gradients);
                     let gradient_input_batch = gradient.get_gradient_input_batch();
+                    let gradient_weight_batch = gradient.get_gradient_weight_batch();
+
+                    println!("\n\ngradient_weight_batch dense layer: {:?}\n\n", &gradient_weight_batch);
 
                     println!("Gradient input batch FFN Dense Layer: {:?}, {:?},  {:?}", &gradient_input_batch.len(), &gradient_input_batch[0].len(), &gradient_input_batch[0][0].len());
                     output_gradients = gradient_input_batch;
@@ -113,6 +115,9 @@ impl FeedForwardLayer {
                     let linear_layer = Some(linear).unwrap();
                     gradient = linear_layer.backward(&output_gradients);
                     let gradient_input_batch = gradient.get_gradient_input_batch();
+                    let gradient_weight_batch = gradient.get_gradient_weight_batch();
+
+                    println!("\n\ngradient_weight_batch linear layer: {:?}\n\n", &gradient_weight_batch);
 
                     println!("Gradient input batch FFN Linear Layer: {:?}, {:?},  {:?}", &gradient_input_batch.len(), &gradient_input_batch[0].len(), &gradient_input_batch[0][0].len());
                     output_gradients = gradient_input_batch;
