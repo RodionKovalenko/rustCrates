@@ -89,7 +89,6 @@ impl FeedForwardLayer {
                     gradient = rms_norm_layer.backward(&output_gradients);
                     output_gradients = gradient.get_gradient_input_batch();
 
-                    println!("\ngradient rms: {:?}\n\n", &output_gradients);
                     println!("FFN, gradient from RMS Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
                 }
                 _ => {}
@@ -104,9 +103,6 @@ impl FeedForwardLayer {
                     let dense_layer = Some(dense).unwrap();
                     gradient = dense_layer.backward(&output_gradients);
                     let gradient_input_batch = gradient.get_gradient_input_batch();
-                    let gradient_weight_batch = gradient.get_gradient_weight_batch();
-
-                    println!("\n\ngradient_weight_batch dense layer: {:?}\n\n", &gradient_weight_batch);
 
                     println!("Gradient input batch FFN Dense Layer: {:?}, {:?},  {:?}", &gradient_input_batch.len(), &gradient_input_batch[0].len(), &gradient_input_batch[0][0].len());
                     output_gradients = gradient_input_batch;
@@ -115,9 +111,6 @@ impl FeedForwardLayer {
                     let linear_layer = Some(linear).unwrap();
                     gradient = linear_layer.backward(&output_gradients);
                     let gradient_input_batch = gradient.get_gradient_input_batch();
-                    let gradient_weight_batch = gradient.get_gradient_weight_batch();
-
-                    println!("\n\ngradient_weight_batch linear layer: {:?}\n\n", &gradient_weight_batch);
 
                     println!("Gradient input batch FFN Linear Layer: {:?}, {:?},  {:?}", &gradient_input_batch.len(), &gradient_input_batch[0].len(), &gradient_input_batch[0][0].len());
                     output_gradients = gradient_input_batch;
@@ -134,7 +127,7 @@ impl FeedForwardLayer {
         if let Some(rms_norm_layer) = &mut self.rms_norm_layer {
             match rms_norm_layer {
                 LayerEnum::RMSNorm(rms_norm_layer) => {
-                    rms_norm_layer.update_params();
+                    rms_norm_layer.update_parameters();
                 }
                 _ => {}
             }
@@ -145,10 +138,10 @@ impl FeedForwardLayer {
         for layer in self.layers.iter_mut().rev() {
             match layer {
                 LayerEnum::Dense(dense) => {
-                    dense.update_params();
+                    dense.update_parameters();
                 }
                 LayerEnum::Linear(linear) => {
-                    linear.update_params();
+                    linear.update_parameters();
                 }
                 _ => {}
             }

@@ -243,7 +243,7 @@ mod tests {
         let input_batch_before: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.2, 0.3), Complex::new(0.5, 0.7), Complex::new(0.9, 0.13)]]];
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(1.0, 1.0), Complex::new(2.0, 2.0), Complex::new(3.0, 3.0)]]];
 
-        let mut rms_norm_layer = RMSNormLayer::new(output_dim, epsilon, learning_rate);
+        let mut rms_norm_layer = RMSNormLayer::new(_input_dim, epsilon, learning_rate);
 
         let rms_output_batch = rms_norm_layer.forward(&input_batch, &input_batch_before);
 

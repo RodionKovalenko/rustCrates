@@ -179,26 +179,30 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             //         println!("No previous output for Attention layer");
             //     }
             // }
-            // LayerEnum::FeedForward(dense) => {
-            //     let dense_layer = Some(dense).unwrap();
-            //     if let Some(previous_output) = &gradients {
-            //         // let gradients_ffn = dense_layer.backward(&previous_output);
+            LayerEnum::FeedForward(dense_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>>  = previous_gradient.get_gradient_input_batch();
+                    
+                    let gradient_batch: Gradient = dense_layer.backward(&previous_gradient_batch);
+                    // Update weights and biases
+                    dense_layer.update_parameters();
 
-            //         // println!("gradients of ffn layer: {}, {}", &gradients_ffn.len(), &gradients_ffn[0].len());
+                    let weight_gradient_batch = gradient_batch.get_gradient_weight_batch();
+                    let _bias_gradient_batch = gradient_batch.get_gradient_bias_batch();
 
-            //         // gradients = Some(gradients_ffn);
-            //     } else {
-            //         println!("No previous output for Dense layer");
-            //     }
-            // }
+                    println!("weight gradients batch of ffn layer: {}, {}, {}", &weight_gradient_batch.len(), &weight_gradient_batch[0].len(), &weight_gradient_batch[0][0].len());
+                    gradient = Some(gradient_batch);
+                } else {
+                    println!("No previous gradient from Dense layer");
+                }
+            }
             LayerEnum::Linear(linear_layer) => {
-                let linear_layer = Some(linear_layer).unwrap();
                 if let Some(previous_gradient) = gradient {
                     let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>>  = previous_gradient.get_gradient_input_batch();
                     
                     let gradient_batch: Gradient = linear_layer.backward(&previous_gradient_batch);
                     // Update weights and biases
-                    linear_layer.update_params();
+                    linear_layer.update_parameters();
 
                     let weight_gradient_batch = gradient_batch.get_gradient_weight_batch();
                     let _bias_gradient_batch = gradient_batch.get_gradient_bias_batch();
@@ -206,11 +210,10 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     println!("weight gradients batch of linear layer: {}, {}, {}", &weight_gradient_batch.len(), &weight_gradient_batch[0].len(), &weight_gradient_batch[0][0].len());
                     gradient = Some(gradient_batch);
                 } else {
-                    println!("No previous output for Dense layer");
+                    println!("No previous gradient from Dense layer");
                 }
             }
             LayerEnum::Softmax(softmax_layer) => {
-                let softmax_layer = Some(softmax_layer).unwrap();
                 let gradient_batch: Gradient = softmax_layer.backward(target_batch_ids);
 
                 let input_gradient_batch = gradient_batch.get_gradient_input_batch();

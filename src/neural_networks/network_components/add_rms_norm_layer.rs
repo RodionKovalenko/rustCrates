@@ -9,9 +9,9 @@ use super::gradient_struct::Gradient;
 // RMSNorm Layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RMSNormLayer {
-    gamma: Vec<Complex<f64>>,    // Learnable scaling parameter (for each feature)
-    epsilon: f64,       // Small constant for numerical stability
-    learning_rate: f64, // Learning rate for gamma updates
+    gamma: Vec<Complex<f64>>, // Learnable scaling parameter (for each feature)
+    epsilon: f64,             // Small constant for numerical stability
+    learning_rate: f64,       // Learning rate for gamma updates
     input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     gradient: Option<Gradient>,
 }
@@ -110,12 +110,14 @@ impl RMSNormLayer {
 
         gradient
     }
-    pub fn update_params(&mut self) {
+    pub fn update_parameters(&mut self) {
         let gradient = self.gradient.as_ref().expect("No gradient found in rms norm layer");
-        let gradient_gamma = gradient.get_gradient_gamma();
+        let gradient_gamma = gradient.get_gradient_gamma_batch();
 
-        for (i, value) in self.gamma.iter_mut().enumerate() {
-            *value -= self.learning_rate * gradient_gamma[i];
+        for batch_ind in 0..gradient_gamma.len() {
+            for (i, value) in self.gamma.iter_mut().enumerate() {
+                *value -= self.learning_rate * gradient_gamma[batch_ind][i];
+            }
         }
     }
 }
