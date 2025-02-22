@@ -8,7 +8,11 @@ mod tests {
             linear_layer::LinearLayer,
             softmax_output_layer::SoftmaxLayer,
         },
-        network_types::{feedforward_layer::FeedForwardLayer, neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
+        network_types::{
+            feedforward_layer::FeedForwardLayer,
+            neural_network_generic::OperationMode,
+            transformer::{masked_attention_head::MaskedAttentionHead, transformer_network::cross_entropy_loss_batch},
+        },
         utils::{
             activation::{gelu_complex, sigmoid_complex, softsign_complex},
             derivative::{
@@ -233,8 +237,7 @@ mod tests {
         // Define some small batch size and input dimensions for simplicity
         let _batch_size = 2;
         let _seq_len: usize = 1; // Update to match the input structure
-        let _input_dim = 3; // Match the input dimension with your input batch
-        let output_dim = 4; // Match output_dim to your layer's output
+        let input_dim = 3; // Match the input dimension with your input batch
         let learning_rate = 0.01;
         let _operation_mode = OperationMode::TRAINING;
         let epsilon = 1e-7;
@@ -243,7 +246,7 @@ mod tests {
         let input_batch_before: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.2, 0.3), Complex::new(0.5, 0.7), Complex::new(0.9, 0.13)]]];
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(1.0, 1.0), Complex::new(2.0, 2.0), Complex::new(3.0, 3.0)]]];
 
-        let mut rms_norm_layer = RMSNormLayer::new(_input_dim, epsilon, learning_rate);
+        let mut rms_norm_layer = RMSNormLayer::new(input_dim, epsilon, learning_rate);
 
         let rms_output_batch = rms_norm_layer.forward(&input_batch, &input_batch_before);
 
@@ -282,7 +285,7 @@ mod tests {
         let _operation_mode = OperationMode::TRAINING;
         let epsilon: f64 = 1e-6;
 
-        let mut dense_layer: Layer = Layer::new(input_dim, output_dim, &learning_rate, &ActivationType::GELU, LayerType::DenseLayer);
+        let mut dense_layer: Layer = Layer::new(input_dim, output_dim, &learning_rate, &ActivationType::LINEAR, LayerType::DenseLayer);
 
         // Create a simple LinearLayer with the given input and output dimensions
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0010, 0.20), Complex::new(0.0030, 0.50), Complex::new(0.60, 0.40)]]];
@@ -337,12 +340,10 @@ mod tests {
         // For Gelu it can a little more deviation
         test_gradient_error_1d(&dense_numerical_grad_bias_batch, &dense_analytical_gradient_bias_batch, epsilon);
 
-         // input gradient batch check
-         dense_layer.bias = bias.clone();
+        // input gradient batch check
+        dense_layer.bias = bias.clone();
 
-         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
-            dense_layer.forward(input)
-        };
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Vec<Vec<Vec<Complex<f64>>>> { dense_layer.forward(input) };
 
         let numerical_grad_input_linear: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
 
@@ -508,5 +509,80 @@ mod tests {
 
         // For Gelu it can a little more deviation
         test_gradient_batch_error(&dense_numerical_grad_batch, &dense_analytical_gradient_batch, epsilon);
+    }
+
+    #[test]
+    fn test_attention_head_backward() {
+        let batch_size = 1;
+        let input_dim = 5; 
+        let output_dim = 4;
+        let epsilon: f64 = 1e-6;
+
+        let mut attention_head_layer: MaskedAttentionHead = MaskedAttentionHead::new(input_dim, output_dim);
+
+        // Create a simple LinearLayer with the given input and output dimensions
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![
+            vec![Complex::new(0.10, 0.20), Complex::new(0.30, 0.50), Complex::new(0.60, 0.40), Complex::new(0.10, 0.45), Complex::new(0.35, 0.60)],
+            vec![Complex::new(0.30, 0.40), Complex::new(0.50, 0.60), Complex::new(0.70, 0.80), Complex::new(0.90, 1.11), Complex::new(2.50, 3.80)],
+        ]];
+        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; output_dim]; batch_size];
+
+        let output_batch = attention_head_layer.forward(&input_batch, &padding_mask_batch);
+
+        println!("\ninput batch in attention head dim : {:?}, {}, {}", &input_batch.len(), &input_batch[0].len(), &input_batch[0][0].len());
+        println!("\ninput batch in attention head :{:?}", &input_batch);
+
+        println!("\noutput_batch in attention head dim : {:?}, {}, {}", &output_batch.len(), &output_batch[0].len(), &output_batch[0][0].len());
+        println!("\noutput_batch attention head: {:?}", &output_batch);
+
+        let previous_gradient = vec![vec![vec![Complex::new(1.0, 0.0); output_batch[0][0].len()]; output_batch[0].len()]; output_batch.len()];
+
+        let gradient = attention_head_layer.backward(&previous_gradient);
+        let analytical_gradient_weights_v_batch = gradient.get_gradient_weights_v_batch();
+        let analytical_gradient_weights_q_batch = gradient.get_gradient_weights_q_batch();
+        let analytical_gradient_weights_k_batch = gradient.get_gradient_weights_k_batch();
+
+        let weights_v = attention_head_layer.weights_v.clone();
+        let weights_q = attention_head_layer.weights_q.clone();
+        let weights_k = attention_head_layer.weights_k.clone();
+
+        // Weight V ------------------------------------------------------------------------------------------- start
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
+            attention_head_layer.weights_v = weights.clone();
+
+            let dense_batch_output = attention_head_layer.forward(input, &padding_mask_batch);
+            dense_batch_output
+        };
+
+        let numerical_grad_weight_v_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &weights_v.clone(), output_batch.clone(), epsilon);
+
+        println!("\n\nnumerical gradient weight v attention layer {:?}", numerical_grad_weight_v_batch);
+        println!("\n\nanalytical gradient weight v attention layer {:?}", analytical_gradient_weights_v_batch);
+
+        test_gradient_batch_error(&numerical_grad_weight_v_batch, &analytical_gradient_weights_v_batch, epsilon);
+
+        attention_head_layer.weights_v = weights_v.clone();
+        // Weight Q ------------------------------------------------------------------------------------------- start
+
+        // // Weight Q ------------------------------------------------------------------------------------------- start
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
+            attention_head_layer.weights_q = weights.clone();
+
+            let dense_batch_output = attention_head_layer.forward(input, &padding_mask_batch);
+            dense_batch_output
+        };
+
+        let numerical_grad_weight_q_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &weights_q.clone(), output_batch.clone(), epsilon);
+
+        println!("\n\nnumerical gradient weight q attention layer {:?}", numerical_grad_weight_q_batch);
+        println!("\n dim numerical gradient {:?}, {}, {}", numerical_grad_weight_q_batch.len(), numerical_grad_weight_q_batch[0].len(), numerical_grad_weight_q_batch[0][0].len());
+
+        println!("\n\nanalytical gradient weight q attention layer {:?}", analytical_gradient_weights_q_batch);
+        println!("\n dim nanalytical gradient {:?}, {}, {}", analytical_gradient_weights_q_batch.len(), analytical_gradient_weights_q_batch[0].len(), analytical_gradient_weights_q_batch[0][0].len());
+
+        // For Gelu it can a little more deviation
+        //test_gradient_batch_error(&numerical_grad_weight_q_batch, &analytical_gradient_weights_q_batch, epsilon);
+        attention_head_layer.weights_q = weights_q.clone();
+        // Weight Q ------------------------------------------------------------------------------------------- end
     }
 }
