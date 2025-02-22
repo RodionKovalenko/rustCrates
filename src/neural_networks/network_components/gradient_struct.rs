@@ -14,6 +14,14 @@ pub struct Gradient {
     gradient_input: Option<Vec<Vec<Complex<f64>>>>,
     gradient_bias: Option<Vec<Complex<f64>>>,
     gradient_gamma: Option<Vec<Complex<f64>>>,
+
+    gradient_weights_q_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    gradient_weights_v_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    gradient_weights_k_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+
+    gradient_weights_q: Option<Vec<Vec<Complex<f64>>>>,
+    gradient_weights_v: Option<Vec<Vec<Complex<f64>>>>,
+    gradient_weights_k: Option<Vec<Vec<Complex<f64>>>>,
 }
 
 impl Gradient {
@@ -28,6 +36,14 @@ impl Gradient {
             gradient_input: None,
             gradient_bias: None,
             gradient_gamma: None,
+
+            gradient_weights_q_batch: None,
+            gradient_weights_v_batch: None,
+            gradient_weights_k_batch: None,
+
+            gradient_weights_q: None,
+            gradient_weights_v: None,
+            gradient_weights_k: None,
         }
     }
     pub fn set_gradient_input_batch(&mut self, gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>>) {
@@ -56,6 +72,26 @@ impl Gradient {
         self.gradient_gamma = Some(gradient_gamma);
     }
 
+    pub fn set_gradient_weights_q_batch(&mut self, gradient_weights_q_batch: Vec<Vec<Vec<Complex<f64>>>>) {
+        self.gradient_weights_q_batch = Some(gradient_weights_q_batch);
+    }
+    pub fn set_gradient_weights_v_batch(&mut self, gradient_weights_v_batch: Vec<Vec<Vec<Complex<f64>>>>) {
+        self.gradient_weights_v_batch = Some(gradient_weights_v_batch);
+    }
+    pub fn set_gradient_weights_k_batch(&mut self, gradient_weights_k_batch: Vec<Vec<Vec<Complex<f64>>>>) {
+        self.gradient_weights_k_batch = Some(gradient_weights_k_batch);
+    }
+
+    pub fn set_gradient_q(&mut self, gradient_weights_q: Vec<Vec<Complex<f64>>>) {
+        self.gradient_weights_q = Some(gradient_weights_q);
+    }
+    pub fn set_gradient_v(&mut self, gradient_weights_v: Vec<Vec<Complex<f64>>>) {
+        self.gradient_weights_v = Some(gradient_weights_v);
+    }
+    pub fn set_gradient_k(&mut self, gradient_weights_k: Vec<Vec<Complex<f64>>>) {
+        self.gradient_weights_k = Some(gradient_weights_k);
+    }
+
     pub fn get_gradient_input_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
         self.gradient_input_batch.clone().unwrap_or_else(|| vec![])
     }
@@ -67,6 +103,40 @@ impl Gradient {
     }
     pub fn get_gradient_gamma_batch(&self) -> Vec<Vec<Complex<f64>>> {
         self.gradient_gamma_batch.clone().unwrap_or_else(|| vec![])
+    }
+
+    pub fn get_gradient_weights_q_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
+        self.gradient_weights_q_batch.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_gradient_weights_v_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
+        self.gradient_weights_v_batch.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_gradient_weights_k_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
+        self.gradient_weights_k_batch.clone().unwrap_or_else(|| vec![])
+    }
+
+    pub fn get_gradient_weights_q(&self) -> Vec<Vec<Complex<f64>>> {
+        if let Some(gradient_weight_q_batch) = self.gradient_weights_q_batch.clone() {
+            self.group_gradient_batch(&gradient_weight_q_batch)
+        } else {
+            self.gradient_weights_q.clone().unwrap_or_else(|| vec![])
+        }
+    }
+
+    pub fn get_gradient_weights_v(&self) -> Vec<Vec<Complex<f64>>> {
+        if let Some(gradient_weight_v_batch) = self.gradient_weights_v_batch.clone() {
+            self.group_gradient_batch(&gradient_weight_v_batch)
+        } else {
+            self.gradient_weights_v.clone().unwrap_or_else(|| vec![])
+        }
+    }
+
+    pub fn get_gradient_weights_k(&self) -> Vec<Vec<Complex<f64>>> {
+        if let Some(gradient_weight_k_batch) = self.gradient_weights_k_batch.clone() {
+            self.group_gradient_batch(&gradient_weight_k_batch)
+        } else {
+            self.gradient_weights_k.clone().unwrap_or_else(|| vec![])
+        }
     }
 
     pub fn get_gradient_weights(&self) -> Vec<Vec<Complex<f64>>> {
