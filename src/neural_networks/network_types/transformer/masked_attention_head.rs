@@ -3,8 +3,16 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIter
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
-    network_components::{gradient_struct::Gradient, layer::LayerType},
-    utils::{activation::softmax_complex_padding, matrix::multiply_complex, weights_initializer::initialize_weights_complex},
+    network_components::{
+        gradient_struct::Gradient,
+        layer::{ActivationType, LayerType},
+    },
+    utils::{
+        activation::{activate_output_complex, sigmoid_complex, softmax_complex_padding},
+        derivative::{get_gradient_complex, softmax_derivative_complex_matrix},
+        matrix::{hadamard_product_2d_c, multiply_complex, transpose},
+        weights_initializer::initialize_weights_complex,
+    },
 };
 
 // Layer struct
@@ -22,6 +30,7 @@ pub struct MaskedAttentionHead {
 
     pub gradient: Option<Gradient>,
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub attention_weights_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     pub inactivated_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     pub padding_mask_batch: Option<Vec<Vec<u32>>>,
@@ -31,7 +40,7 @@ pub struct MaskedAttentionHead {
 }
 
 impl MaskedAttentionHead {
-    fn default(rows: usize, cols: usize) -> Self {
+    pub fn new(rows: usize, cols: usize) -> Self {
         let mut weights_q: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
         let mut weights_k: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
         let mut weights_v: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
@@ -59,6 +68,7 @@ impl MaskedAttentionHead {
             inactivated_input_batch: None,
             output_batch: None,
             padding_mask_batch: None,
+            attention_weights_batch: None,
             m1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
             v1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
         }
@@ -69,7 +79,7 @@ impl MaskedAttentionHead {
     }
 
     pub fn create_default_attention_layer(rows: usize, cols: usize, layer_type: LayerType) -> MaskedAttentionHead {
-        let mut attention_layer: MaskedAttentionHead = MaskedAttentionHead::default(rows, cols);
+        let mut attention_layer: MaskedAttentionHead = MaskedAttentionHead::new(rows, cols);
         attention_layer.set_layer_type(layer_type);
 
         attention_layer
@@ -78,81 +88,120 @@ impl MaskedAttentionHead {
 
 // Implement BaseLayer for Layer struct
 impl MaskedAttentionHead {
+    // Input shape e.g. [2][5] and out shape of weights [5][4] => we get final output [2][4]
     pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>, padding_mask_batch: &Vec<Vec<u32>>) -> Vec<Vec<Vec<Complex<f64>>>> {
         // println!("input len in masked_attention : {:?}, {:?}", &input.len(), &input[0].len());
         // println!("weights_q : {:?}, {:?}", &self.weights_q.len(), &self.weights_q[0].len());
 
         self.input_batch = Some(input_batch.clone());
+        self.padding_mask_batch = Some(padding_mask_batch.clone());
 
-        let batch_output: Vec<Vec<Vec<Complex<f64>>>> = input_batch
+        let attention_weights_batch_tuple: (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<Vec<Complex<f64>>>>) = input_batch
             .par_iter()
-            .zip(padding_mask_batch) 
+            .zip(padding_mask_batch)
             .map(|(input, padding_mask)| {
                 let q = multiply_complex(input, &self.weights_q);
                 let k = multiply_complex(input, &self.weights_k);
                 let v = multiply_complex(input, &self.weights_v);
 
                 let mask = create_causal_mask(input.len(), input.len());
-                let attention_scores = multiply_complex(&q, &k);
+                let attention_scores = multiply_complex(&q, &transpose(&k));
                 let mut attention_scores_scales = scale_attention_scores(&attention_scores, k[0].len() as f64);
+                //let attention_scores_scales = attention_scores;
 
+                // println!("V dim: {:?}, {:?}", &v.len(), &v[0].len());
+                // println!("attenthion score scales dim: {:?}, {:?}", &attention_scores.len(), &attention_scores[0].len());
                 // Apply the mask to the scaled attention scores
-                apply_attention_mask_inplace(&mut attention_scores_scales, &mask);
+                //apply_attention_mask_inplace(&mut attention_scores_scales, &mask);
 
-                let attention_weights = softmax_complex_padding(&attention_scores_scales, padding_mask);
-                //  println!("padding mask: {:?}", &padding_mask);
-                //  println!("output in attenthion head attention weigths: {:?}", &attention_weights);
+                //let attention_weights = softmax_complex_padding(&attention_scores_scales, padding_mask);
+                //let attention_weights = activate_output_complex(&attention_scores_scales, ActivationType::LINEAR);
+                let attention_weights = attention_scores_scales;
 
-                // Multiply attention weights with value (V)
+                (attention_weights, v)
+            })
+            .collect();
+
+        let batch_output: Vec<Vec<Vec<Complex<f64>>>> = attention_weights_batch_tuple
+            .par_iter()
+            .map(|(attention_weights, v)| {
                 let output = multiply_complex(&attention_weights, &v);
-
-                // println!("output in attenthion score: {:?}, {:?}", &attention_scores.len(), &attention_scores[0].len());
-                // println!("output in q : {:?}, {:?}", &q.len(), &q[0].len());
-                // println!("output in attenthion head: {:?}", &output);
                 output
             })
             .collect();
 
+        let (attention_weights_batch, _) = attention_weights_batch_tuple;
+        self.attention_weights_batch = Some(attention_weights_batch);
         self.output_batch = Some(batch_output.clone());
 
         batch_output
     }
 
-    pub fn backward(&mut self, previous_gradient: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
+    pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
+        // Input shape e.g. [2][5] and out shape of weights [5][4] => we get final output [2][4]
         let output_batch = self.output_batch.as_ref().expect("Output batch is missing in attention head layer");
         let input_batch = self.input_batch.as_ref().expect("Input batch is missing in lattention head inear layer");
         let padding_mask_batch = self.padding_mask_batch.as_ref().expect("Padding mask batch is missing in attention head ");
-    
+
+        // dimensions [seq_len][seq_len] -> A
+        let attention_weights_batch = self.attention_weights_batch.as_ref().expect("Attention weights batch is missing in attention head");
+
+        let batch_size = output_batch.len();
+
         // Initialize gradients for each parameter (weights and biases)
-        let mut gradient_q = vec![vec![Complex::new(0.0, 0.0); self.weights_q[0].len()]; self.weights_q.len()];
-        let mut gradient_k = vec![vec![Complex::new(0.0, 0.0); self.weights_k[0].len()]; self.weights_k.len()];
-        let mut gradient_v = vec![vec![Complex::new(0.0, 0.0); self.weights_v[0].len()]; self.weights_v.len()];
-    
-        let mut gradient_attention_weights = vec![vec![Complex::new(0.0, 0.0); self.weights_q.len()]; self.weights_q.len()];
-    
-        // Initialize the gradient of the attention output
-        let mut gradient_attention_output = vec![vec![Complex::new(0.0, 0.0); output_batch[0].len()]; output_batch.len()];
-    
-        // Gradient of the softmax output
-        let mut gradient_attention_weights_softmax = vec![vec![Complex::new(0.0, 0.0); output_batch[0].len()]; output_batch.len()];
-    
-       
+        let mut gradient_q_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_q[0].len()]; self.weights_q.len()]; batch_size];
+        let mut gradient_k_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_k[0].len()]; self.weights_k.len()]; batch_size];
+        let mut gradient_v_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_v[0].len()]; self.weights_v.len()]; batch_size];
+        let mut v: Vec<Vec<Complex<f64>>> = Vec::new();
 
+        for (batch_ind, previous_gradient) in previous_gradient_batch.iter().enumerate() {
+            // [2][4]
+            let v = multiply_complex(&input_batch[batch_ind], &self.weights_v);
+            let k = multiply_complex(&input_batch[batch_ind], &self.weights_k);
 
+            // Gradient v
+            gradient_v_batch[batch_ind] = multiply_complex(&attention_weights_batch[batch_ind], &input_batch[batch_ind]);
+            gradient_v_batch[batch_ind] = multiply_complex(&gradient_v_batch[batch_ind], previous_gradient);
+
+            // Gradient q
+            //e.g dim [2][2], always quadratic
+            // let softmax_gradient: Vec<Vec<Complex<f64>>> = softmax_derivative_complex_matrix(&attention_weights_batch[batch_ind]);
+            let softmax_gradient: Vec<Vec<Complex<f64>>> = get_gradient_complex(&attention_weights_batch[batch_ind], &input_batch[batch_ind], ActivationType::LINEAR);
+
+            //  println!("gradient softmax dim : {}, {}", softmax_gradient.len(), softmax_gradient[0].len());
+
+            let k_scaled = scale_attention_scores(&transpose(&k), k[0].len() as f64);
+
+            // Variant 1 without activation
+            // let k_scaled_v= multiply_complex(&k_scaled, &v);
+            // let input_prev_grad = multiply_complex(&input_batch[batch_ind], previous_gradient);
+            // gradient_q_batch[batch_ind] = multiply_complex(&k_scaled_v, &input_prev_grad);
+            // gradient_q_batch[batch_ind] = transpose(&gradient_q_batch[batch_ind]);
+
+            // Variant 2 without activation
+            // 4, 4
+            let k_scaled_v= multiply_complex(&k_scaled, &v);
+            // 4,4 * 2,4 = 4, 2
+            let k_scaled_v_prev_grad = multiply_complex(&k_scaled_v, previous_gradient);
+            // 4,2 * 2, 5 = 4,5
+            let gradient_wq = multiply_complex(&k_scaled_v_prev_grad, &input_batch[batch_ind]);
+            gradient_q_batch[batch_ind] = transpose(&gradient_wq)
+        }
 
         // Compute the gradients for the parameters and store them
         let mut gradient = Gradient::new_default();
-    
-        // Optionally, store the gradients for weights (q, k, v) here if needed
-    
+        gradient.set_gradient_weights_v_batch(gradient_v_batch);
+        gradient.set_gradient_weights_q_batch(gradient_q_batch);
+
         self.gradient = Some(gradient.clone());
-    
+
         gradient
     }
+    pub fn update_parameters(&mut self) {}
 }
 
 fn scale_attention_scores(attention_scores: &Vec<Vec<Complex<f64>>>, d_k: f64) -> Vec<Vec<Complex<f64>>> {
-    let scaling_factor = Complex::new(1.0 / d_k.sqrt(), 0.0); // Scaling by 1 / sqrt(d_k)
+    let scaling_factor = 1.0 / d_k.sqrt();
     let mut scaled_scores = attention_scores.clone();
 
     // Scale each attention score

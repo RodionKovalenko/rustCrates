@@ -100,27 +100,45 @@ fn softmax_derivative_complex(data: &Vec<Complex<f64>>) -> Vec<Vec<Complex<f64>>
     jacobian
 }
 
-pub fn softmax_derivative_complex_matrix(data: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
-    let mut jacobian_matrix: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
+pub fn softmax_derivative_complex_matrix(softmax_values: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    let batch_size = softmax_values.len();
+    let num_classes = softmax_values[0].len();
 
-    for s in data {
-        let n = s.len();
+    let mut jacobians = vec![vec![vec![Complex::new(0.0, 0.0); num_classes]; num_classes]; batch_size];
 
-        let mut jacobian: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); n]; n];
-
-        for i in 0..n {
-            for j in 0..n {
+    for batch in 0..batch_size {
+        for i in 0..num_classes {
+            for j in 0..num_classes {
                 if i == j {
-                    jacobian[i][j] = s[i] * (Complex::new(1.0, 0.0) - s[i]);
+                    jacobians[batch][i][j] += softmax_values[batch][i] * (Complex::new(1.0, 0.0) - softmax_values[batch][i]);
                 } else {
-                    jacobian[i][j] = -s[i] * s[j];
+                    jacobians[batch][i][j] += -softmax_values[batch][i] * softmax_values[batch][j];
                 }
             }
         }
-        jacobian_matrix.push(jacobian);
     }
 
-    jacobian_matrix
+    flatten_jacobian(&jacobians)
+}
+
+pub fn flatten_jacobian(jacobians: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Complex<f64>>> {
+    let batch_size = jacobians.len();
+    let num_classes = jacobians[0].len();
+    let total_size = batch_size * num_classes;
+
+    let mut flat_matrix = vec![vec![Complex::new(0.0, 0.0); total_size]; total_size];
+
+    for batch in 0..batch_size {
+        for i in 0..num_classes {
+            for j in 0..num_classes {
+                let row_idx = batch * num_classes + i;
+                let col_idx = batch * num_classes + j;
+                flat_matrix[row_idx][col_idx] += jacobians[batch][i][j];
+            }
+        }
+    }
+
+    flat_matrix
 }
 
 pub fn get_ada_grad_optimizer(gradients: &Vec<Vec<f64>>) -> f64 {
