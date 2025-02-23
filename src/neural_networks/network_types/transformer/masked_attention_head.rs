@@ -3,14 +3,11 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIter
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
-    network_components::{
-        gradient_struct::Gradient,
-        layer::{ActivationType, LayerType},
-    },
+    network_components::{gradient_struct::Gradient, layer::LayerType},
     utils::{
-        activation::{activate_output_complex, softmax_complex_padding},
+        activation::softmax_complex_padding,
         derivative::{backpropagate_softmax_masked, softmax_derivative_complex_jacobian},
-        matrix::{multiply_complex, transpose},
+        matrix::{add_matrix, multiply_complex, transpose},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -145,19 +142,24 @@ impl MaskedAttentionHead {
         let batch_size = output_batch.len();
 
         // Initialize gradients for each parameter (weights and biases)
-        let mut input_gradient_batch = vec![vec![vec![Complex::new(0.0, 0.0); previous_gradient_batch[0][0].len()]; previous_gradient_batch[0].len()]; input_batch.len()];
+        let mut gradient_input_batch = vec![vec![vec![Complex::new(0.0, 0.0); previous_gradient_batch[0][0].len()]; previous_gradient_batch[0].len()]; input_batch.len()];
         let mut gradient_q_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_q[0].len()]; self.weights_q.len()]; batch_size];
         let mut gradient_k_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_k[0].len()]; self.weights_k.len()]; batch_size];
         let mut gradient_v_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_v[0].len()]; self.weights_v.len()]; batch_size];
 
         for (batch_ind, previous_gradient) in previous_gradient_batch.iter().enumerate() {
-            // Compute gradient of Wv
-            let grad_wv = multiply_complex(&attention_weights_batch[batch_ind], &input_batch[batch_ind]);
-            gradient_v_batch[batch_ind] = multiply_complex(&grad_wv, &previous_gradient);
-
             let q: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &self.weights_q);
             let k: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &self.weights_k);
             let v: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &self.weights_v);
+
+            // 2, 4 * 2, 4 = 2,2
+            let dl_ds: Vec<Vec<Complex<f64>>> = multiply_complex(previous_gradient, &v);
+
+            // Compute gradient of Wv
+            // 2,4 * 2, 2 = 4, 2
+            let grad_wv = multiply_complex(&previous_gradient, &attention_weights_batch[batch_ind]);
+            // 5,2 * 4, 2 = 5, 2 * 2, 4 = 5, 4
+            gradient_v_batch[batch_ind] = multiply_complex(&transpose(&input_batch[batch_ind]), &grad_wv);
 
             let d_k = k[0].len() as f64;
             // Compute gradient of k_scaled w.r.t. k
@@ -168,19 +170,17 @@ impl MaskedAttentionHead {
             let softmax_derivative: Vec<Vec<Vec<Complex<f64>>>> = softmax_derivative_complex_jacobian(&attention_weights_batch[batch_ind]);
 
             /*
-                A = Q*KT/sqtr(dk)
-                S = sigma(A) * V
-                O = S * V
+               A = Q*KT/sqtr(dk)
+               S = sigma(A) * V
+               O = S * V
 
-                dl/ds = Gt * VT 
-                dl/dq = dl/ds * ds/dq
+               dl/ds = Gt * VT
+               dl/dq = dl/ds * ds/dq
 
-                dl/dwq = XT * dl/dq
-             */
+               dl/dwq = XT * dl/dq
+            */
 
             // Gradient Wq
-            // 2, 4 * 2, 4 = 2,2
-            let dl_ds: Vec<Vec<Complex<f64>>> = multiply_complex(previous_gradient, &v);
             // 2,2 * 2,2  = 2,2
             let dl_da: Vec<Vec<Complex<f64>>> = backpropagate_softmax_masked(&softmax_derivative, &dl_ds, &padding_mask_batch[batch_ind]);
             // 2,2 * 4, 2 = 2,4
@@ -191,10 +191,20 @@ impl MaskedAttentionHead {
 
             // Gradient Wk
             // 2, 4 * 2,2 = 4,2
-            let dl_dk: Vec<Vec<Complex<f64>>> = multiply_complex(&q_scaled, &dl_da) ;
+            let dl_dk: Vec<Vec<Complex<f64>>> = multiply_complex(&q_scaled, &dl_da);
             // 2,5 * 4,2 = 5, 4
             let dl_dwk: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &transpose(&dl_dk));
             gradient_k_batch[batch_ind] = dl_dwk;
+
+            // 2,4 * 5, 4 = 2, 5
+            let dl_dqx = multiply_complex(&dl_dq, &self.weights_q);
+            // 4,2 * 5,4 = 2,4 * 4, 5 = 2, 5
+            let dl_dkx = multiply_complex(&transpose(&dl_dk), &self.weights_k);
+            // 4,2 * 5, 4 = 2, 5
+            let dl_dvx = multiply_complex(&transpose(&grad_wv), &self.weights_v);
+
+            gradient_input_batch[batch_ind] = add_matrix(&dl_dqx, &dl_dkx);
+            gradient_input_batch[batch_ind] = add_matrix(&gradient_input_batch[batch_ind], &dl_dvx);
         }
 
         // Compute the gradients for the parameters and store them
@@ -202,6 +212,7 @@ impl MaskedAttentionHead {
         gradient.set_gradient_weights_v_batch(gradient_v_batch);
         gradient.set_gradient_weights_q_batch(gradient_q_batch);
         gradient.set_gradient_weights_k_batch(gradient_k_batch);
+        gradient.set_gradient_input_batch(gradient_input_batch);
 
         self.gradient = Some(gradient.clone());
 
