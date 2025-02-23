@@ -5,7 +5,7 @@ use nalgebra::ComplexField;
 use num::abs;
 use num_complex::Complex;
 
-use super::activation::{softmax_row, ALPHA, LAMBDA};
+use super::activation::{ALPHA, LAMBDA};
 
 pub fn sigmoid_derivative_complex(z: Complex<f64>) -> Complex<f64> {
     z * (Complex::new(1.0, 0.0) - z)
@@ -80,19 +80,17 @@ fn softplus_derivative_complex(z: Complex<f64>) -> Complex<f64> {
 
 // Function to compute the derivative (Jacobian) of softmax for a matrix of complex numbers
 fn softmax_derivative_complex(data: &Vec<Complex<f64>>) -> Vec<Vec<Complex<f64>>> {
-    let s = softmax_row(data); // Get the softmax values for the vector
-
-    let mut jacobian: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); s.len()]; s.len()];
+    let mut jacobian: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); data.len()]; data.len()];
 
     // Loop through each pair of indices (i, j)
-    for i in 0..s.len() {
-        for j in 0..s.len() {
+    for i in 0..data.len() {
+        for j in 0..data.len() {
             if i == j {
                 // Diagonal elements: s_i * (1 - s_i)
-                jacobian[i][j] = s[i] * (Complex::new(1.0, 0.0) - s[i]);
+                jacobian[i][j] = data[i] * (1.0 - data[i]);
             } else {
                 // Off-diagonal elements: -s_i * s_j
-                jacobian[i][j] = -s[i] * s[j];
+                jacobian[i][j] = -data[i] * data[j];
             }
         }
     }
@@ -101,44 +99,104 @@ fn softmax_derivative_complex(data: &Vec<Complex<f64>>) -> Vec<Vec<Complex<f64>>
 }
 
 pub fn softmax_derivative_complex_matrix(softmax_values: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-    let batch_size = softmax_values.len();
-    let num_classes = softmax_values[0].len();
+    let num_rows = softmax_values.len();
+    let num_cols = softmax_values[0].len();
 
-    let mut jacobians = vec![vec![vec![Complex::new(0.0, 0.0); num_classes]; num_classes]; batch_size];
+    // 3D tensor to hold Jacobian matrices for each row
+    let mut derivative: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); num_cols]; num_cols]; num_rows];
 
-    for batch in 0..batch_size {
-        for i in 0..num_classes {
-            for j in 0..num_classes {
-                if i == j {
-                    jacobians[batch][i][j] += softmax_values[batch][i] * (Complex::new(1.0, 0.0) - softmax_values[batch][i]);
-                } else {
-                    jacobians[batch][i][j] += -softmax_values[batch][i] * softmax_values[batch][j];
+    for i in 0..num_rows {
+        derivative[i] = softmax_derivative_complex(&softmax_values[i]);
+    }
+
+    println!("original softmax derivative 3d: {:?} ", &derivative);
+    let mut grouped_derivated = vec![vec![Complex::new(0.0, 0.0); num_cols]; num_rows];
+
+    for i in 0..num_rows {
+        for j in 0..num_cols {
+            for k in 0..num_cols {
+                if j == k {
+                    grouped_derivated[i][j] += derivative[i][j][k];
                 }
             }
         }
     }
 
-    flatten_jacobian(&jacobians)
+    grouped_derivated
 }
 
-pub fn flatten_jacobian(jacobians: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Complex<f64>>> {
-    let batch_size = jacobians.len();
-    let num_classes = jacobians[0].len();
-    let total_size = batch_size * num_classes;
+pub fn softmax_derivative_complex_jacobian(softmax_values: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+    let num_rows = softmax_values.len();
+    let num_cols = softmax_values[0].len();
 
-    let mut flat_matrix = vec![vec![Complex::new(0.0, 0.0); total_size]; total_size];
+    // 3D tensor to hold Jacobian matrices for each row
+    let mut derivative: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); num_cols]; num_cols]; num_rows];
 
-    for batch in 0..batch_size {
-        for i in 0..num_classes {
-            for j in 0..num_classes {
-                let row_idx = batch * num_classes + i;
-                let col_idx = batch * num_classes + j;
-                flat_matrix[row_idx][col_idx] += jacobians[batch][i][j];
+    for i in 0..num_rows {
+        derivative[i] = softmax_derivative_complex(&softmax_values[i]);
+    }
+
+    //println!("original softmax derivative 3d: {:?} ", &derivative);
+
+    derivative
+}
+
+pub fn reduce_softmax_jacobian(softmax_jacobian: &Vec<Vec<Vec<Complex<f64>>>>, // [num_rows, num_cols, num_cols]
+) -> Vec<Vec<Complex<f64>>> {
+    // Returns [num_rows, num_cols] (2D matrix)
+    let num_rows = softmax_jacobian.len();
+    let num_cols = softmax_jacobian[0].len();
+
+    let mut reduced_jacobian = vec![vec![Complex::new(0.0, 0.0); num_cols]; num_rows];
+
+    for i in 0..num_rows {
+        for j in 0..num_cols {
+            for k in 0..num_cols {
+                reduced_jacobian[i][j] += softmax_jacobian[i][j][k]; // Summing over `k`
             }
         }
     }
 
-    flat_matrix
+    reduced_jacobian
+}
+
+pub fn backpropagate_softmax(softmax_jacobian: &Vec<Vec<Vec<Complex<f64>>>>, dl_ds: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    // Returns dL/dZ (gradient w.r.t. input Z)
+    let num_rows = dl_ds.len();
+    let num_cols = dl_ds[0].len();
+
+    let mut dl_dz = vec![vec![Complex::new(0.0, 0.0); num_cols]; num_rows];
+
+    for i in 0..num_rows {
+        for j in 0..num_cols {
+            for k in 0..num_cols {
+                dl_dz[i][j] += softmax_jacobian[i][j][k] * dl_ds[i][k]; // Matrix-vector multiplication
+            }
+        }
+    }
+
+    dl_dz
+}
+
+pub fn backpropagate_softmax_masked(softmax_jacobian: &Vec<Vec<Vec<Complex<f64>>>>, dl_ds: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<Complex<f64>>> {
+    let num_rows = dl_ds.len();
+    let num_cols = dl_ds[0].len();
+
+    let mut dl_dz = vec![vec![Complex::new(0.0, 0.0); num_cols]; num_rows];
+
+    for i in 0..num_rows {
+        if padding_mask[i] == 0 {
+            // Skip updating gradients for masked positions (zero out dl_dz[i])
+            continue;
+        }
+        for j in 0..num_cols {
+            for k in 0..num_cols {
+                dl_dz[i][j] += softmax_jacobian[i][j][k] * dl_ds[i][k];
+            }
+        }
+    }
+
+    dl_dz
 }
 
 pub fn get_ada_grad_optimizer(gradients: &Vec<Vec<f64>>) -> f64 {
@@ -216,7 +274,7 @@ pub fn get_gradient_complex(activated_data: &Vec<Vec<Complex<f64>>>, input_data:
         ActivationType::SOFTPLUS => activated_data.iter().map(|row| row.iter().map(|&x| softplus_derivative_complex(x)).collect()).collect(),
         ActivationType::PROBIT => activated_data.iter().map(|row| row.iter().map(|_| Complex::new(1.0, 0.0)).collect()).collect(), // Just return the value as is
         ActivationType::RANDOM => activated_data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(),                     // Just return the value as is
-        ActivationType::SOFTMAX => softmax_derivative_complex(&activated_data[0]),
+        ActivationType::SOFTMAX => softmax_derivative_complex_matrix(&activated_data),
     }
 }
 
@@ -484,6 +542,35 @@ where
     }
 
     grad_batch
+}
+
+pub fn numerical_gradient_check<F>(f: F, z: &Vec<Vec<Complex<f64>>>, epsilon: f64) -> Vec<Vec<Complex<f64>>>
+where
+    F: Fn(&Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>>,
+{
+    let num_rows = z.len();
+    let num_cols = z[0].len();
+    let mut numerical_gradient = vec![vec![Complex::new(0.0, 0.0); num_cols]; num_rows];
+
+    for i in 0..num_rows {
+        for j in 0..num_cols {
+            let mut z_plus = z.clone();
+            let mut z_minus = z.clone();
+
+            // Perturb z[i][j] by +epsilon
+            z_plus[i][j] += Complex::new(epsilon, 0.0);
+            let f_plus = f(&z_plus);
+
+            // Perturb z[i][j] by -epsilon
+            z_minus[i][j] -= Complex::new(epsilon, 0.0);
+            let f_minus = f(&z_minus);
+
+            // Compute the numerical gradient
+            numerical_gradient[i][j] = (f_plus[i][j] - f_minus[i][j]) / Complex::new(2.0 * epsilon, 0.0);
+        }
+    }
+
+    numerical_gradient
 }
 
 pub fn test_gradient_batch_error(numerical_grad_batch: &Vec<Vec<Vec<Complex<f64>>>>, analytical_grad_batch: &Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) {
