@@ -122,3 +122,14 @@ If we have multiple encoder-decoder blocks, then the output of the last encoder-
  The K and V remain the same as input in the first encoder-decoder block. 
 
 Loss Function: At each step, compute the cross-entropy loss between the predicted distribution (softmax output) and the ground truth token.
+
+
+
+Derivative of masked attention head:
+S = sigma(Q*KT/sqtr(dk)) * V
+O = S * V
+
+dl/ds = Gt * VT 
+dl/dq = dl/ds * ds/dq
+
+dl/dwq = XT * dl/dq

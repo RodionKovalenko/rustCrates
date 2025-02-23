@@ -1,10 +1,10 @@
 use num::{Complex, Float};
 use rayon::prelude::*;
 use std::f64::consts::E;
+use std::f64::consts::{PI, SQRT_2};
 use std::fmt::Debug;
 use std::marker::Copy;
 use std::ops::{Add, Div, Mul};
-use std::f64::consts::{PI, SQRT_2};
 
 use crate::neural_networks::network_components::layer::ActivationType;
 
@@ -127,7 +127,7 @@ where
         ActivationType::LINEAR => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Linear is identity
         ActivationType::RELU => data.iter().map(|row| row.iter().map(|&x| relu(x)).collect()).collect(),
         ActivationType::LEAKYRELU => data.iter().map(|row| row.iter().map(|&x| leaky_relu(x)).collect()).collect(),
-        ActivationType::ELU => data.iter().map(|row| row.iter().map(|&x| elu(x, T::one())).collect()).collect(), // Assuming alpha = 1.0
+        ActivationType::ELU => data.iter().map(|row| row.iter().map(|&x| elu(x, T::one())).collect()).collect(),             // Assuming alpha = 1.0
         ActivationType::SELU => data.iter().map(|row| row.iter().map(|&x| selu(x, T::one(), T::one())).collect()).collect(), // Assuming scale = 1.0, alpha = 1.0
         ActivationType::GELU => data.iter().map(|row| row.iter().map(|&x| gelu(x)).collect()).collect(),
         ActivationType::SOFTSIGN => data.iter().map(|row| row.iter().map(|&x| softsign(x)).collect()).collect(),
@@ -177,19 +177,18 @@ fn selu_complex(z: Complex<f64>) -> Complex<f64> {
     }
 }
 
-
 pub fn gelu_complex(z: Complex<f64>) -> Complex<f64> {
-   // Precompute sqrt(2 / pi)
-   let sqrt_2_over_pi = SQRT_2 / PI.sqrt();
+    // Precompute sqrt(2 / pi)
+    let sqrt_2_over_pi = SQRT_2 / PI.sqrt();
 
-   // Compute the argument inside tanh: z + 0.044715 * z^3
-   let f_z = sqrt_2_over_pi * (z + Complex::new(0.044715, 0.0) * z.powf(3.0));
+    // Compute the argument inside tanh: z + 0.044715 * z^3
+    let f_z = sqrt_2_over_pi * (z + Complex::new(0.044715, 0.0) * z.powf(3.0));
 
-   // Compute tanh(f(z))
-   let tanh_f_z = f_z.tanh();
+    // Compute tanh(f(z))
+    let tanh_f_z = f_z.tanh();
 
-   // Return the GELU activation: 0.5 * z * (1 + tanh(f(z)))
-   0.5 * z * (Complex::new(1.0, 0.0) + tanh_f_z)
+    // Return the GELU activation: 0.5 * z * (1 + tanh(f(z)))
+    0.5 * z * (Complex::new(1.0, 0.0) + tanh_f_z)
 }
 
 pub fn erf_complex(z: Complex<f64>) -> Complex<f64> {
@@ -235,7 +234,7 @@ pub fn activate_output_complex(data: &Vec<Vec<Complex<f64>>>, activation: Activa
         ActivationType::RELU => data.iter().map(|row| row.iter().map(|&x| relu_complex(x)).collect()).collect(),
         ActivationType::LEAKYRELU => data.iter().map(|row| row.iter().map(|&x| leaky_relu_complex(x, 0.01)).collect()).collect(),
         ActivationType::ELU => data.iter().map(|row| row.iter().map(|&x| elu_complex(x, 1.0)).collect()).collect(), // Assuming alpha = 1.0
-        ActivationType::SELU => data.iter().map(|row| row.iter().map(|&x| selu_complex(x)).collect()).collect(), // Assuming scale = 1.0, alpha = 1.0
+        ActivationType::SELU => data.iter().map(|row| row.iter().map(|&x| selu_complex(x)).collect()).collect(),    // Assuming scale = 1.0, alpha = 1.0
         ActivationType::GELU => data.iter().map(|row| row.iter().map(|&x| gelu_complex(x)).collect()).collect(),
         ActivationType::SOFTSIGN => data.iter().map(|row| row.iter().map(|&x| softsign_complex(x)).collect()).collect(),
         ActivationType::SOFTPLUS => data.iter().map(|row| row.iter().map(|&x| softplus_complex(x)).collect()).collect(),
@@ -293,7 +292,6 @@ where
 
     result
 }
-
 pub fn softmax_complex(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
     input
         .par_iter() // Parallel iterator over rows of the input
