@@ -8,9 +8,9 @@ use crate::neural_networks::{
         layer::{ActivationType, LayerType},
     },
     utils::{
-        activation::{activate_output_complex, sigmoid_complex, softmax_complex_padding},
-        derivative::{get_gradient_complex, softmax_derivative_complex_matrix},
-        matrix::{hadamard_product_2d_c, multiply_complex, transpose},
+        activation::{activate_output_complex, softmax_complex_padding},
+        derivative::{backpropagate_softmax_masked, softmax_derivative_complex_jacobian},
+        matrix::{multiply_complex, transpose},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -104,19 +104,15 @@ impl MaskedAttentionHead {
                 let k = multiply_complex(input, &self.weights_k);
                 let v = multiply_complex(input, &self.weights_v);
 
+                //[[1, 0], [1, 1]]
                 let mask = create_causal_mask(input.len(), input.len());
                 let attention_scores = multiply_complex(&q, &transpose(&k));
                 let mut attention_scores_scales = scale_attention_scores(&attention_scores, k[0].len() as f64);
-                //let attention_scores_scales = attention_scores;
 
-                // println!("V dim: {:?}, {:?}", &v.len(), &v[0].len());
-                // println!("attenthion score scales dim: {:?}, {:?}", &attention_scores.len(), &attention_scores[0].len());
                 // Apply the mask to the scaled attention scores
-                //apply_attention_mask_inplace(&mut attention_scores_scales, &mask);
+                apply_attention_mask_inplace(&mut attention_scores_scales, &mask);
 
-                //let attention_weights = softmax_complex_padding(&attention_scores_scales, padding_mask);
-                let attention_weights = activate_output_complex(&attention_scores_scales, ActivationType::SIGMOID);
-                //let attention_weights = attention_scores_scales;
+                let attention_weights = softmax_complex_padding(&attention_scores_scales, padding_mask);
 
                 (attention_weights, v)
             })
@@ -159,32 +155,53 @@ impl MaskedAttentionHead {
             let grad_wv = multiply_complex(&attention_weights_batch[batch_ind], &input_batch[batch_ind]);
             gradient_v_batch[batch_ind] = multiply_complex(&grad_wv, &previous_gradient);
 
-            let q = multiply_complex(&input_batch[batch_ind], &self.weights_q);
-            let k = multiply_complex(&input_batch[batch_ind], &self.weights_k);
-            let v = multiply_complex(&input_batch[batch_ind], &self.weights_v);
+            let q: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &self.weights_q);
+            let k: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &self.weights_k);
+            let v: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &self.weights_v);
 
             let d_k = k[0].len() as f64;
             // Compute gradient of k_scaled w.r.t. k
-            let k_scaled = scale_attention_scores(&transpose(&k), d_k);
+            let k_scaled: Vec<Vec<Complex<f64>>> = scale_attention_scores(&transpose(&k), d_k);
+            let q_scaled: Vec<Vec<Complex<f64>>> = scale_attention_scores(&q, d_k);
 
-            // Compute activation derivative (softmax or other activation)
-            let activation_derivative = get_gradient_complex(&attention_weights_batch[batch_ind], &input_batch[batch_ind], ActivationType::SIGMOID);
+            // Compute activation derivative softmax
+            let softmax_derivative: Vec<Vec<Vec<Complex<f64>>>> = softmax_derivative_complex_jacobian(&attention_weights_batch[batch_ind]);
 
-            // 2, 4 * 2, 4 = 2,2 
-            let dl_ds = multiply_complex(previous_gradient, &v);
+            /*
+                A = Q*KT/sqtr(dk)
+                S = sigma(A) * V
+                O = S * V
+
+                dl/ds = Gt * VT 
+                dl/dq = dl/ds * ds/dq
+
+                dl/dwq = XT * dl/dq
+             */
+
+            // Gradient Wq
+            // 2, 4 * 2, 4 = 2,2
+            let dl_ds: Vec<Vec<Complex<f64>>> = multiply_complex(previous_gradient, &v);
             // 2,2 * 2,2  = 2,2
-            let ds_dq = hadamard_product_2d_c(&dl_ds, &activation_derivative);
+            let dl_da: Vec<Vec<Complex<f64>>> = backpropagate_softmax_masked(&softmax_derivative, &dl_ds, &padding_mask_batch[batch_ind]);
             // 2,2 * 4, 2 = 2,4
-            let dl_dq = multiply_complex(&ds_dq, &k_scaled);
+            let dl_dq: Vec<Vec<Complex<f64>>> = multiply_complex(&dl_da, &k_scaled);
             // 2,5 * 2, 4 = 4,5
-            let dl_dwq = multiply_complex(&dl_dq, &input_batch[batch_ind]);
-            gradient_q_batch[batch_ind] = transpose(&dl_dwq);
+            let dl_dwq: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &dl_dq);
+            gradient_q_batch[batch_ind] = dl_dwq;
+
+            // Gradient Wk
+            // 2, 4 * 2,2 = 4,2
+            let dl_dk: Vec<Vec<Complex<f64>>> = multiply_complex(&q_scaled, &dl_da) ;
+            // 2,5 * 4,2 = 5, 4
+            let dl_dwk: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &transpose(&dl_dk));
+            gradient_k_batch[batch_ind] = dl_dwk;
         }
 
         // Compute the gradients for the parameters and store them
         let mut gradient = Gradient::new_default();
         gradient.set_gradient_weights_v_batch(gradient_v_batch);
         gradient.set_gradient_weights_q_batch(gradient_q_batch);
+        gradient.set_gradient_weights_k_batch(gradient_k_batch);
 
         self.gradient = Some(gradient.clone());
 

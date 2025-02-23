@@ -1,23 +1,27 @@
 #[cfg(test)]
 mod tests {
-    use crate::neural_networks::{
-        network_components::{
-            add_rms_norm_layer::RMSNormLayer,
-            gradient_struct::Gradient,
-            layer::{ActivationType, Layer, LayerEnum, LayerType},
-            linear_layer::LinearLayer,
-            softmax_output_layer::SoftmaxLayer,
-        },
-        network_types::{
-            feedforward_layer::FeedForwardLayer,
-            neural_network_generic::OperationMode,
-            transformer::{masked_attention_head::MaskedAttentionHead, transformer_network::cross_entropy_loss_batch},
-        },
-        utils::{
-            activation::{gelu_complex, sigmoid_complex, softsign_complex},
-            derivative::{
-                gelu_derivative_complex, numerical_gradient_bias, numerical_gradient_bias_without_loss, numerical_gradient_input, numerical_gradient_input_batch, numerical_gradient_input_batch_jacobi_without_loss, numerical_gradient_input_batch_without_loss, numerical_gradient_weights,
-                numerical_gradient_weights_multiple_layers_without_loss, numerical_gradient_weights_without_loss, sigmoid_derivative_complex, softsign_derivative_complex, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d,
+    use crate::{
+        database::tests,
+        neural_networks::{
+            network_components::{
+                add_rms_norm_layer::RMSNormLayer,
+                gradient_struct::Gradient,
+                layer::{ActivationType, Layer, LayerEnum, LayerType},
+                linear_layer::LinearLayer,
+                softmax_output_layer::SoftmaxLayer,
+            },
+            network_types::{
+                feedforward_layer::FeedForwardLayer,
+                neural_network_generic::OperationMode,
+                transformer::{masked_attention_head::MaskedAttentionHead, transformer_network::cross_entropy_loss_batch},
+            },
+            utils::{
+                activation::{gelu_complex, sigmoid_complex, softmax_complex, softsign_complex},
+                derivative::{
+                    gelu_derivative_complex, numerical_gradient_bias, numerical_gradient_bias_without_loss, numerical_gradient_check, numerical_gradient_input, numerical_gradient_input_batch, numerical_gradient_input_batch_jacobi_without_loss, numerical_gradient_input_batch_without_loss,
+                    numerical_gradient_weights, numerical_gradient_weights_multiple_layers_without_loss, numerical_gradient_weights_without_loss, sigmoid_derivative_complex, softmax_derivative_complex_matrix, softsign_derivative_complex, test_gradient_batch_error, test_gradient_error_1d,
+                    test_gradient_error_2d,
+                },
             },
         },
     };
@@ -514,7 +518,7 @@ mod tests {
     #[test]
     fn test_attention_head_backward() {
         let batch_size = 1;
-        let input_dim = 5; 
+        let input_dim = 5;
         let output_dim = 4;
         let epsilon: f64 = 1e-6;
 
@@ -550,8 +554,7 @@ mod tests {
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
             attention_head_layer.weights_v = weights.clone();
 
-            let dense_batch_output = attention_head_layer.forward(input, &padding_mask_batch);
-            dense_batch_output
+            attention_head_layer.forward(input, &padding_mask_batch)
         };
 
         let numerical_grad_weight_v_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &weights_v.clone(), output_batch.clone(), epsilon);
@@ -568,8 +571,7 @@ mod tests {
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
             attention_head_layer.weights_q = weights.clone();
 
-            let dense_batch_output = attention_head_layer.forward(input, &padding_mask_batch);
-            dense_batch_output
+            attention_head_layer.forward(input, &padding_mask_batch)
         };
 
         let numerical_grad_weight_q_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &weights_q.clone(), output_batch.clone(), epsilon);
@@ -581,8 +583,46 @@ mod tests {
         println!("\n dim nanalytical gradient {:?}, {}, {}", analytical_gradient_weights_q_batch.len(), analytical_gradient_weights_q_batch[0].len(), analytical_gradient_weights_q_batch[0][0].len());
 
         // For Gelu it can a little more deviation
-        //test_gradient_batch_error(&numerical_grad_weight_q_batch, &analytical_gradient_weights_q_batch, epsilon);
+        test_gradient_batch_error(&numerical_grad_weight_q_batch, &analytical_gradient_weights_q_batch, epsilon);
         attention_head_layer.weights_q = weights_q.clone();
         // Weight Q ------------------------------------------------------------------------------------------- end
+
+        // // Weight K ------------------------------------------------------------------------------------------- start
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
+            attention_head_layer.weights_k = weights.clone();
+
+            attention_head_layer.forward(input, &padding_mask_batch)
+        };
+
+        let numerical_grad_weight_k_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &weights_k.clone(), output_batch.clone(), epsilon);
+
+        println!("\n\nnumerical gradient weight k attention layer {:?}", numerical_grad_weight_k_batch);
+        println!("\n dim numerical gradient {:?}, {}, {}", numerical_grad_weight_k_batch.len(), numerical_grad_weight_k_batch[0].len(), numerical_grad_weight_k_batch[0][0].len());
+
+        println!("\n\nanalytical gradient weight k attention layer {:?}", analytical_gradient_weights_k_batch);
+        println!("\n dim nanalytical gradient {:?}, {}, {}", analytical_gradient_weights_k_batch.len(), analytical_gradient_weights_k_batch[0].len(), analytical_gradient_weights_k_batch[0][0].len());
+
+        // For Gelu it can a little more deviation
+        test_gradient_batch_error(&numerical_grad_weight_k_batch, &analytical_gradient_weights_k_batch, epsilon);
+        attention_head_layer.weights_k = weights_k.clone();
+        // Weight K ------------------------------------------------------------------------------------------- end
+    }
+
+    #[test]
+    fn test_softmax_gradient() {
+        let z = vec![vec![Complex::new(0.0, 1.0), Complex::new(1.0, 5.0), Complex::new(-2.0, -3.0)], vec![Complex::new(-5.0, 2.0), Complex::new(3.0, -7.0), Complex::new(8.0, 4.0)]];
+
+        let softmax_values = softmax_complex(&z);
+        let analytical_gradient = softmax_derivative_complex_matrix(&softmax_values);
+
+        let epsilon = 1e-6;
+        let numerical_gradient = numerical_gradient_check(softmax_complex, &z, epsilon);
+
+        println!("\n dim analytical gradient {:?}", analytical_gradient);
+        println!("\n dim numerical gradient {:?}", numerical_gradient);
+
+        test_gradient_error_2d(&numerical_gradient, &analytical_gradient, epsilon);
+
+        println!("Gradient check passed!");
     }
 }
