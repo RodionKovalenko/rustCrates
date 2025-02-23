@@ -152,6 +152,19 @@ impl MaskedAttentionHead {
             let k: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &self.weights_k);
             let v: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &self.weights_v);
 
+            /*
+               A = Q*KT/sqtr(dk)
+               S = sigma(A) * V
+               O = S * V
+
+               dl/ds = Gt * VT
+               dl/da = Gt * VT * ds/da = dl/ds * ds/da
+               dl/dq = dl/ds * ds/da * da/dq = dl/da  * da/dq
+               dl/dwq = XT * dl/ds * ds/da * da/dq = XT * dl/dq
+
+               => dl/dwq = XT * (Gt * VT * grad(A) * Kt/sqtr(dk))
+            */
+
             // 2, 4 * 2, 4 = 2,2
             let dl_ds: Vec<Vec<Complex<f64>>> = multiply_complex(previous_gradient, &v);
 
@@ -168,17 +181,6 @@ impl MaskedAttentionHead {
 
             // Compute activation derivative softmax
             let softmax_derivative: Vec<Vec<Vec<Complex<f64>>>> = softmax_derivative_complex_jacobian(&attention_weights_batch[batch_ind]);
-
-            /*
-               A = Q*KT/sqtr(dk)
-               S = sigma(A) * V
-               O = S * V
-
-               dl/ds = Gt * VT
-               dl/dq = dl/ds * ds/dq
-
-               dl/dwq = XT * dl/dq
-            */
 
             // Gradient Wq
             // 2,2 * 2,2  = 2,2
