@@ -162,11 +162,11 @@ impl Layer {
         let mut input_gradient_batch = vec![vec![vec![Complex::new(0.0, 0.0); previous_gradient_batch[0][0].len()]; previous_gradient_batch[0].len()]; input_batch.len()];
 
         // For each input sample in the batch
-        for (batch_ind, (input_sample, gradient_sample)) in input_batch.iter().zip(previous_gradient_batch).enumerate() {
+        for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_batch).enumerate() {
             // Multiply the transposed input sample with previous gradients (for weight gradients)
 
             input_gradient_batch[batch_ind] = get_gradient_complex(&output_batch[batch_ind], &raw_output_batch[batch_ind], self.activation_type.clone());
-            input_gradient_batch[batch_ind] = hadamard_product_2d_c(gradient_sample, &input_gradient_batch[batch_ind]);
+            input_gradient_batch[batch_ind] = hadamard_product_2d_c(previous_gradient, &input_gradient_batch[batch_ind]);
             weight_gradients[batch_ind] = multiply_complex(input_sample, &input_gradient_batch[batch_ind]);
 
             //Accumulate gradients for biases
