@@ -115,8 +115,8 @@ impl MaskedAttentionHead {
                 //apply_attention_mask_inplace(&mut attention_scores_scales, &mask);
 
                 //let attention_weights = softmax_complex_padding(&attention_scores_scales, padding_mask);
-                //let attention_weights = activate_output_complex(&attention_scores_scales, ActivationType::LINEAR);
-                let attention_weights = attention_scores_scales;
+                let attention_weights = activate_output_complex(&attention_scores_scales, ActivationType::SIGMOID);
+                //let attention_weights = attention_scores_scales;
 
                 (attention_weights, v)
             })
@@ -149,43 +149,36 @@ impl MaskedAttentionHead {
         let batch_size = output_batch.len();
 
         // Initialize gradients for each parameter (weights and biases)
+        let mut input_gradient_batch = vec![vec![vec![Complex::new(0.0, 0.0); previous_gradient_batch[0][0].len()]; previous_gradient_batch[0].len()]; input_batch.len()];
         let mut gradient_q_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_q[0].len()]; self.weights_q.len()]; batch_size];
         let mut gradient_k_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_k[0].len()]; self.weights_k.len()]; batch_size];
         let mut gradient_v_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_v[0].len()]; self.weights_v.len()]; batch_size];
-        let mut v: Vec<Vec<Complex<f64>>> = Vec::new();
 
         for (batch_ind, previous_gradient) in previous_gradient_batch.iter().enumerate() {
-            // [2][4]
-            let v = multiply_complex(&input_batch[batch_ind], &self.weights_v);
+            // Compute gradient of Wv
+            let grad_wv = multiply_complex(&attention_weights_batch[batch_ind], &input_batch[batch_ind]);
+            gradient_v_batch[batch_ind] = multiply_complex(&grad_wv, &previous_gradient);
+
+            let q = multiply_complex(&input_batch[batch_ind], &self.weights_q);
             let k = multiply_complex(&input_batch[batch_ind], &self.weights_k);
+            let v = multiply_complex(&input_batch[batch_ind], &self.weights_v);
 
-            // Gradient v
-            gradient_v_batch[batch_ind] = multiply_complex(&attention_weights_batch[batch_ind], &input_batch[batch_ind]);
-            gradient_v_batch[batch_ind] = multiply_complex(&gradient_v_batch[batch_ind], previous_gradient);
+            let d_k = k[0].len() as f64;
+            // Compute gradient of k_scaled w.r.t. k
+            let k_scaled = scale_attention_scores(&transpose(&k), d_k);
 
-            // Gradient q
-            //e.g dim [2][2], always quadratic
-            // let softmax_gradient: Vec<Vec<Complex<f64>>> = softmax_derivative_complex_matrix(&attention_weights_batch[batch_ind]);
-            let softmax_gradient: Vec<Vec<Complex<f64>>> = get_gradient_complex(&attention_weights_batch[batch_ind], &input_batch[batch_ind], ActivationType::LINEAR);
+            // Compute activation derivative (softmax or other activation)
+            let activation_derivative = get_gradient_complex(&attention_weights_batch[batch_ind], &input_batch[batch_ind], ActivationType::SIGMOID);
 
-            //  println!("gradient softmax dim : {}, {}", softmax_gradient.len(), softmax_gradient[0].len());
-
-            let k_scaled = scale_attention_scores(&transpose(&k), k[0].len() as f64);
-
-            // Variant 1 without activation
-            // let k_scaled_v= multiply_complex(&k_scaled, &v);
-            // let input_prev_grad = multiply_complex(&input_batch[batch_ind], previous_gradient);
-            // gradient_q_batch[batch_ind] = multiply_complex(&k_scaled_v, &input_prev_grad);
-            // gradient_q_batch[batch_ind] = transpose(&gradient_q_batch[batch_ind]);
-
-            // Variant 2 without activation
-            // 4, 4
-            let k_scaled_v= multiply_complex(&k_scaled, &v);
-            // 4,4 * 2,4 = 4, 2
-            let k_scaled_v_prev_grad = multiply_complex(&k_scaled_v, previous_gradient);
-            // 4,2 * 2, 5 = 4,5
-            let gradient_wq = multiply_complex(&k_scaled_v_prev_grad, &input_batch[batch_ind]);
-            gradient_q_batch[batch_ind] = transpose(&gradient_wq)
+            // 2, 4 * 2, 4 = 2,2 
+            let dl_ds = multiply_complex(previous_gradient, &v);
+            // 2,2 * 2,2  = 2,2
+            let ds_dq = hadamard_product_2d_c(&dl_ds, &activation_derivative);
+            // 2,2 * 4, 2 = 2,4
+            let dl_dq = multiply_complex(&ds_dq, &k_scaled);
+            // 2,5 * 2, 4 = 4,5
+            let dl_dwq = multiply_complex(&dl_dq, &input_batch[batch_ind]);
+            gradient_q_batch[batch_ind] = transpose(&dl_dwq);
         }
 
         // Compute the gradients for the parameters and store them
