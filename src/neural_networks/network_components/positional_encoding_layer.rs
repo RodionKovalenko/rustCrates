@@ -2,6 +2,8 @@ use num::Complex;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use super::gradient_struct::Gradient;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PositionalEncodingLayer {
     pub embedding_dim: usize, // Store the embedding dimension
@@ -20,35 +22,31 @@ impl PositionalEncodingLayer {
             .par_iter() // Parallel iterator for the outer loop
             .map(|input| {
                 let mut output = Vec::with_capacity(input.len());
-    
+
                 for (position, token_embeddings) in input.iter().enumerate() {
                     // Ensure all embeddings have the correct dimension
-                    assert_eq!(
-                        token_embeddings.len(),
-                        self.embedding_dim,
-                        "All token embeddings must have the same dimension as specified in the layer."
-                    );
-    
+                    assert_eq!(token_embeddings.len(), self.embedding_dim, "All token embeddings must have the same dimension as specified in the layer.");
+
                     // Step 1: Add positional encodings to token embeddings
                     let positional_encoding = generate_positional_encoding(position, self.embedding_dim);
                     let token_with_pos_encoding = add_positional_encoding(token_embeddings, &positional_encoding);
-    
+
                     // Step 2: Apply rotary positional encoding
-                    let rotated_embeddings = apply_rotary_positional_encoding(
-                        &token_with_pos_encoding,
-                        position,
-                        self.embedding_dim,
-                    );
+                    let rotated_embeddings = apply_rotary_positional_encoding(&token_with_pos_encoding, position, self.embedding_dim);
                     output.push(rotated_embeddings);
                 }
-    
+
                 output
             })
             .collect() // Collect the results from all parallel computations into a single Vec
     }
 
-    pub fn backward(&self, gradients: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-        gradients.clone()
+    pub fn backward(&self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
+        let mut gradient = Gradient::new_default();
+
+        gradient.set_gradient_input_batch(previous_gradient_batch.clone());
+        
+        gradient
     }
 }
 
