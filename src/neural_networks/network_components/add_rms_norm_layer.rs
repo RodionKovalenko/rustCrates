@@ -104,6 +104,13 @@ impl RMSNormLayer {
             }
         }
 
+        // println!("------------------------------------------------------------------------------");
+        // println!("previous gradient batch  {} {} {}", &previous_gradient_batch.len(), &previous_gradient_batch[0].len(), previous_gradient_batch[0][0].len());
+        // println!("gradient gamma dim: {} {}", &gradient_gamma_batch.len(), &gradient_gamma_batch[0].len());
+        // println!("input batch  {} {} {}", &input_batch.len(), &input_batch[0].len(), input_batch[0][0].len());
+        // println!("gamma dim: {}", &self.gamma.len());
+        // println!("------------------------------------------------------------------------------");
+
         gradient.set_gradient_input_batch(input_batch_gradients);
         gradient.set_gradient_gamma_batch(gradient_gamma_batch);
         self.gradient = Some(gradient.clone());

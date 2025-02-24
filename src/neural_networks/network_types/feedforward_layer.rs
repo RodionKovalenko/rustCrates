@@ -24,7 +24,7 @@ impl FeedForwardLayer {
         let mut layers: Vec<LayerEnum> = vec![];
         let dense_layer: Layer = Layer::new(rows, cols, &learning_rate, &ActivationType::GELU, LayerType::DenseLayer);
         let linear_layer = LinearLayer::new(learning_rate, cols, rows);
-        let rms_norm_layer = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(cols, epsilon, learning_rate))));
+        let rms_norm_layer = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(rows, epsilon, learning_rate))));
 
         layers.push(LayerEnum::Dense(Box::new(dense_layer)));
         layers.push(LayerEnum::Linear(Box::new(linear_layer)));
