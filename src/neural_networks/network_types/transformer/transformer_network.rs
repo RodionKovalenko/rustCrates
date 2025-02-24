@@ -143,42 +143,43 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
 
     for layer in transformer_network.layers.iter_mut().rev() {
         match layer {
-            // LayerEnum::Embedding(embedding_layer_box) => {
-            //     let embedding_l = Some(embedding_layer_box).unwrap();
-            //     let embeddings: Vec<Vec<Vec<Complex<f64>>>> = embedding_l.forward(&batch_ids);
+            LayerEnum::Embedding(embedding_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>>  = previous_gradient.get_gradient_input_batch();
+                    
+                    let gradient_batch: Gradient = embedding_layer.backward(&previous_gradient_batch);
 
-            //     //println!("output embedding layer: {:?}, {:?}", &embeddings.len(), &embeddings[0].len());
-            //     // println!("output embedding: {:?}", &embeddings[0]);
-            //     output = Some(embeddings);
-            // }
-            // LayerEnum::PositionalEncoding(positional_encoding_layer) => {
-            //     if let Some(previous_output) = &output {
-            //         let positional_encoding_l = Some(positional_encoding_layer).unwrap();
-            //         //println!("previous output embedding layer: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
+                    embedding_layer.update_parameters(&target_batch_ids, transformer_network.learning_rate);
 
-            //         let positional_encodings = positional_encoding_l.forward(&previous_output);
+                    gradient = Some(gradient_batch);
+                } else {
+                    println!("No previous gradient in Token Embedding Layer");
+                }
+            }
+            LayerEnum::PositionalEncoding(positional_encoding_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>>  = previous_gradient.get_gradient_input_batch();
+                    
+                    let gradient_batch: Gradient = positional_encoding_layer.backward(&previous_gradient_batch);
 
-            //         // println!("positional_encodings layer: {:?}, {:?}", &positional_encodings.len(), &positional_encodings[0].len());
+                    gradient = Some(gradient_batch);
+                } else {
+                    println!("No previous gradient in Positional Encoding Layer");
+                }
+            }
+            LayerEnum::SelfAttention(attention_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>>  = previous_gradient.get_gradient_input_batch();
+                    
+                    let gradient_batch: Gradient = attention_layer.backward(&previous_gradient_batch);
+                    // Update weights and biases
+                    attention_layer.update_parameters();
 
-            //         output = Some(positional_encodings);
-            //     } else {
-            //         println!("No previous output for Attention layer");
-            //     }
-            // }
-            // LayerEnum::SelfAttention(attention) => {
-            //     // Ensure there's an output from the previous layer before forwarding
-            //     if let Some(previous_output) = &output {
-            //         // println!("Previous output attention layer: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
-
-            //         let output_attention = attention.forward(&previous_output);
-
-            //         // println!("output attention layer: {:?}, {:?}", &output_attention.len(), &output_attention[0].len());
-            //         // Store the output for the next layer
-            //         output = Some(output_attention);
-            //     } else {
-            //         println!("No previous output for Attention layer");
-            //     }
-            // }
+                    gradient = Some(gradient_batch);
+                } else {
+                    println!("No previous gradient in Self Attention Layer");
+                }
+            }
             LayerEnum::FeedForward(dense_layer) => {
                 if let Some(previous_gradient) = gradient {
                     let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>>  = previous_gradient.get_gradient_input_batch();
@@ -193,7 +194,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     println!("weight gradients batch of ffn layer: {}, {}, {}", &weight_gradient_batch.len(), &weight_gradient_batch[0].len(), &weight_gradient_batch[0][0].len());
                     gradient = Some(gradient_batch);
                 } else {
-                    println!("No previous gradient from Dense layer");
+                    println!("No previous gradient in Dense Layer");
                 }
             }
             LayerEnum::Linear(linear_layer) => {
@@ -210,7 +211,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     println!("weight gradients batch of linear layer: {}, {}, {}", &weight_gradient_batch.len(), &weight_gradient_batch[0].len(), &weight_gradient_batch[0][0].len());
                     gradient = Some(gradient_batch);
                 } else {
-                    println!("No previous gradient from Dense layer");
+                    println!("No previous gradient in Linear Layer");
                 }
             }
             LayerEnum::Softmax(softmax_layer) => {
