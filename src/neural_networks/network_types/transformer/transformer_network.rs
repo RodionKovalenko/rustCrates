@@ -35,7 +35,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
         batch_ids.push(input_ids);
     }
 
-    //println!("tokens: {:?}", &batch_ids);
+    println!("tokens: {:?}", &batch_ids);
 
     println!("forward pass start ----------------------------------------------------------------------");
 
@@ -49,7 +49,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                 let (embeddings, padding_m) = embedding_l.forward(&batch_ids);
 
                 println!("Output embedding layer: {:?}, {:?}, {:?}", &embeddings.len(), &embeddings[0].len(), &embeddings[0][0].len());
-                // println!("output embedding: {:?}", &embeddings[0]);
+                println!("output embedding: {:?}", &embeddings[0]);
                 output = Some(embeddings);
                 padding_mask = Some(padding_m);
             }

@@ -13,11 +13,14 @@ use std::path::{Path, PathBuf};
 use crate::database::sled_config::{get_storage_path, SLED_DB_TOKENIZER};
 use crate::neural_networks::network_types::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
 
+use super::gradient_struct::Gradient;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingLayer {
     pub vocab_size: usize,
     pub embedding_dim: usize,
     pub weights: Vec<Vec<f64>>,
+    pub gradient: Option<Gradient>,
 }
 
 pub const EMBEDDING_PATH: &str = "embedding";
@@ -53,6 +56,7 @@ impl EmbeddingLayer {
             vocab_size,
             embedding_dim: embedding_dim_compressed,
             weights: vec![],
+            gradient: None,
         }
     }
 
@@ -62,6 +66,7 @@ impl EmbeddingLayer {
             vocab_size,
             embedding_dim,
             weights: vec![],
+            gradient: None,
         }
     }
 
@@ -151,27 +156,50 @@ impl EmbeddingLayer {
         (token_ids_output, padding_mask)
     }
 
-    /// Update embeddings using gradients
-    pub fn backward(&self, token_ids: &[u32], gradients: &Vec<Vec<Complex<f64>>>, learning_rate: f64) {
-        let db: &Db = Self::get_db();
-        for (i, &token_id) in token_ids.iter().enumerate() {
-            let mut token_embedding: Vec<Complex<f64>> = Self::get_embedding(db, token_id).unwrap_or_else(|err| {
-                panic!("Error retrieving embedding for token {}: {}", token_id, err);
-            });
-            for j in 0..self.embedding_dim {
-                // Gradient descent update for each weight
-                token_embedding[j] -= learning_rate * gradients[i][j];      
-            }
+    // Update embeddings using gradients
+    pub fn backward(&mut self, previous_gradients: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
+        let mut gradient = Gradient::new_default();
 
-            Self::update_embedding(&db, &token_id, &token_embedding);
+        gradient.set_gradient_input_batch(previous_gradients.clone());
+        self.gradient = Some(gradient.clone());
+
+        gradient
+    }
+
+    pub fn update_parameters(&mut self, token_id_batches: &[Vec<u32>], learning_rate: f64) {
+        let db: &Db = Self::get_db();
+        let gradient: &Gradient = self.gradient.as_ref().expect("Output batch is missing in dense layer");
+        let previous_gradients: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_input_batch();
+
+        for (batch_idx, token_ids) in token_id_batches.iter().enumerate() {
+            for (i, &token_id) in token_ids.iter().enumerate() {
+                let mut token_embedding: Vec<Complex<f64>> = Self::get_embedding(db, token_id).unwrap();
+
+                // Assuming previous_gradients[batch_idx][i] contains a single gradient
+                let gradient = &previous_gradients[batch_idx][i];
+
+                for j in 0..self.embedding_dim {
+                    token_embedding[j] -= learning_rate * gradient[j];
+                }
+
+                Self::update_embedding(db, &token_id, &token_embedding);
+            }
         }
     }
+    /// Update an embedding for a given token ID
+    pub fn update_embedding(db: &Db, token_id: &u32, embedding: &Vec<Complex<f64>>) {
+        let key = token_id.to_string();
+        let serialized_embedding = bincode::serialize(embedding).expect("Failed to serialize embedding");
+        db.insert(key, serialized_embedding).expect("Failed to save or update embedding in Sled");
+    }
+
     pub fn serialize(embedding_layer: &EmbeddingLayer, embedding_file_path: &Path) {
         println!("embedding layer saved: {:}", &embedding_layer.embedding_dim);
         let embedding_layer_meta = EmbeddingLayer {
             embedding_dim: embedding_layer.embedding_dim,
             vocab_size: embedding_layer.vocab_size,
             weights: vec![],
+            gradient: None,
         };
         let serialized: Vec<u8> = bincode::serialize(&embedding_layer_meta).expect("Failed to serialize");
         let mut file = File::create(embedding_file_path).expect("Failed to create file");
@@ -180,7 +208,8 @@ impl EmbeddingLayer {
 
     /// Load the embedding layer from a binary file
     pub fn deserialize(embedding_file_path: &Path) -> EmbeddingLayer {
-        let mut file = File::open(embedding_file_path).expect("Failed to open file");
+        println!("embedding file path: {:?}", &embedding_file_path);
+        let mut file = File::open(embedding_file_path).expect("Failed to open file ");
         let mut data = Vec::new();
         file.read_to_end(&mut data).expect("Failed to read file");
         bincode::deserialize(&data).expect("Failed to deserialize")
@@ -193,11 +222,5 @@ impl EmbeddingLayer {
             Ok(None) => Err("Token ID not found in DB".to_string()),                                                  // Return an error for missing keys
             Err(_) => Err("Failed to fetch embedding from Sled".to_string()),                                         // Handle Sled errors
         }
-    }
-    /// Update an embedding for a given token ID
-    pub fn update_embedding(db: &Db, token_id: &u32, embedding: &Vec<Complex<f64>>) {
-        let key = token_id.to_string();
-        let serialized_embedding = bincode::serialize(embedding).expect("Failed to serialize embedding");
-        db.insert(key, serialized_embedding).expect("Failed to save or update embedding in Sled");
     }
 }
