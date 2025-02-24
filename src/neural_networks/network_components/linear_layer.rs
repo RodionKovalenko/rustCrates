@@ -35,7 +35,7 @@ impl LinearLayer {
             gradients: vec![],
             gradients_bias: vec![],
             input_batch: None,
-            gradient: None
+            gradient: None,
         }
     }
     pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
@@ -63,7 +63,7 @@ impl LinearLayer {
         let input_batch = self.input_batch.as_ref().expect("Input batch is missing in linear layer");
         let mut gradient_input_batch = previous_gradient_batch.clone();
         let mut gradient = Gradient::new_default();
-        
+
         // Initialize gradients for weights and biases
         let mut weight_gradients: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()]; input_batch.len()];
         let mut bias_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.bias.len()]; input_batch.len()];
@@ -79,11 +79,11 @@ impl LinearLayer {
             //Accumulate gradients for biases
             for grad_row in previous_gradient.iter() {
                 for (k, grad_val) in grad_row.iter().enumerate() {
-                   bias_gradients[batch_ind][k] += grad_val.clone(); // Sum the gradients for biases
+                    bias_gradients[batch_ind][k] += grad_val.clone(); // Sum the gradients for biases
                 }
             }
 
-            gradient_input_batch[batch_ind] = multiply_complex( &previous_gradient, &self.weights);
+            gradient_input_batch[batch_ind] = multiply_complex(&previous_gradient, &self.weights);
         }
 
         gradient.set_gradient_input_batch(gradient_input_batch.clone());
@@ -98,15 +98,18 @@ impl LinearLayer {
         let gradient = self.gradient.as_ref().expect("No Gradient found in linear layer");
         let (weight_gradients, bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
 
+        let input_batch = gradient.get_gradient_input_batch();
+        let batch_size = input_batch.len() as f64;
+
         // Update weights and biases using gradient descent
         for (i, row) in self.weights.iter_mut().enumerate() {
             for (j, weight_value) in row.iter_mut().enumerate() {
-                *weight_value -= self.learning_rate * weight_gradients[i][j];
+                *weight_value -= self.learning_rate * (weight_gradients[i][j] / batch_size );
             }
         }
 
         for (i, value) in self.bias.iter_mut().enumerate() {
-            *value -= self.learning_rate * bias_gradients[i];
+            *value -= self.learning_rate * (bias_gradients[i] / batch_size);
         }
     }
 

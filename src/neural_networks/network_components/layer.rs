@@ -192,16 +192,19 @@ impl Layer {
     pub fn update_parameters(&mut self) {
         let gradient = self.gradient.as_ref().expect("No Gradient found in linear layer");
         let (weight_gradients, bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
+        
+        let input_batch = gradient.get_gradient_input_batch();
+        let batch_size = input_batch.len() as f64;
 
         // Update weights and biases using gradient descent
         for (i, row) in self.weights.iter_mut().enumerate() {
             for (j, weight_value) in row.iter_mut().enumerate() {
-                *weight_value -= self.learning_rate * weight_gradients[i][j];
+                *weight_value -= self.learning_rate * (weight_gradients[i][j]/ batch_size);
             }
         }
 
         for (i, value) in self.bias.iter_mut().enumerate() {
-            *value -= self.learning_rate * bias_gradients[i];
+            *value -= self.learning_rate * (bias_gradients[i] / batch_size);
         }
     }
 }
