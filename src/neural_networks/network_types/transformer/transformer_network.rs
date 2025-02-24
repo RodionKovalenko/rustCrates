@@ -77,7 +77,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
 
                     println!("Output Positional_encodings layer: {:?}, {:?}, {:?}", &positional_encodings.len(), &positional_encodings[0].len(), &positional_encodings[0][0].len());
 
-                    println!("output potitional encoding layer: {:?}", &positional_encodings);
+                    //println!("output potitional encoding layer: {:?}", &positional_encodings);
                     output = Some(positional_encodings);
                 } else {
                     println!("No previous output for Attention layer");
@@ -92,9 +92,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                     let output_attention = attention.forward(&previous_output, padding_m);
 
                     println!("Output attention layer: {:?}, {:?}, {:?}", &output_attention.len(), &output_attention[0].len(), &output_attention[0][0].len());
-
-                    //println!("output attention layer: {:?}", &output_attention);
-                    //println!("output attention layer: {:?}", &output_attention[output_attention.len() - 1][0][0..10]);
+                    println!("output attention layer: {:?}", &output_attention);
                     output = Some(output_attention);
                 } else {
                     println!("No previous output for Attention layer");
