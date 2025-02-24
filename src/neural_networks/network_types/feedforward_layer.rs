@@ -14,6 +14,7 @@ pub struct FeedForwardLayer {
     pub rms_norm_layer: Option<LayerEnum>,
     pub learning_rate: f64,
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub padding_mask_batch: Option<Vec<Vec<u32>>>,
 }
 
 impl FeedForwardLayer {
@@ -34,6 +35,7 @@ impl FeedForwardLayer {
             rms_norm_layer,
             learning_rate,
             input_batch: None,
+            padding_mask_batch: None,
         }
     }
 }
@@ -43,15 +45,16 @@ impl FeedForwardLayer {
     pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
         self.input_batch = Some(input_batch.clone());
         let mut output: Vec<Vec<Vec<Complex<f64>>>> = input_batch.clone();
+        let padding_mask_batch = self.padding_mask_batch.clone().unwrap_or_else(|| vec![vec![1; input_batch[0].len()]; input_batch.len()]);
+        self.padding_mask_batch = Some(padding_mask_batch.clone());
 
         // Apply all layers sequentially
         for layer in self.layers.iter_mut() {
             match layer {
                 LayerEnum::Dense(dense_layer) => {
-                    let output_dense = dense_layer.forward(&output);
+                    let output_dense = dense_layer.forward(&output, &padding_mask_batch);
 
                     //println!("Output FFN Dense layer: {:?}, {:?},  {:?}", &output_dense.len(), &output_dense[0].len(), &output_dense[0][0].len());
-                    //println!("dense output: {:?}", &output_dense);
                     output = output_dense;
                 }
                 LayerEnum::Linear(linear_layer) => {

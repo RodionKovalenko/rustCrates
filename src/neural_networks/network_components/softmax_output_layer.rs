@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
     network_types::neural_network_generic::OperationMode,
-    utils::activation::{softmax_complex, softmax_last_row},
+    utils::activation::{softmax_complex_padding, softmax_last_row},
 };
 
 use super::gradient_struct::Gradient;
@@ -17,6 +17,7 @@ pub struct SoftmaxLayer {
     operation_mode: OperationMode,
     softmax_output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     gradient: Option<Gradient>,
+    padding_mask_batch: Option<Vec<Vec<u32>>>,
 }
 
 impl SoftmaxLayer {
@@ -26,25 +27,42 @@ impl SoftmaxLayer {
             operation_mode,
             softmax_output_batch: None,
             gradient: None,
+            padding_mask_batch: None,
         }
     }
-    pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>, padding_mask_option: Option<Vec<Vec<u32>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+        let batch_size = input_batch.len();
+        let seq_len = input_batch[0].len();
+
+        let padding_mask_batch = padding_mask_option.unwrap_or_else(|| vec![vec![1; seq_len]; batch_size]);
+        self.padding_mask_batch = Some(padding_mask_batch);
+
+        // println!("------------------------------------------------------------------------------");
+        // println!("input batch in softmax forward: {} {} {}", &input_batch.len(), &input_batch[0].len(), input_batch[0][0].len());
+        // println!("input batch 0: {:?}", &input_batch[0][0][0..100]);
+        // println!("------------------------------------------------------------------------------");
+
         let layer_output: Vec<Vec<Vec<Complex<f64>>>> = match self.operation_mode {
             OperationMode::PRODUCTION => {
                 input_batch
-                    .par_iter() // Parallel iterator for the input batch
+                    .par_iter()
                     .map(|input| softmax_last_row(input)) // Apply `softmax_last_row` to each input
                     .collect() // Collect results into a Vec
             }
-            OperationMode::TRAINING => {
-                input_batch
-                    .par_iter() // Parallel iterator for the input batch
-                    .map(|input| softmax_complex(input)) // Apply `softmax_complex` to each input
-                    .collect() // Collect results into a Vec
+            OperationMode::TRAINING => { input_batch
+                .par_iter()
+                .zip(self.padding_mask_batch.as_ref().unwrap().par_iter())
+                .map(|(input, padding_mask_seq)| softmax_complex_padding(input, padding_mask_seq))
+                .collect::<Vec<_>>()
             }
         };
 
         self.softmax_output_batch = Some(layer_output.clone());
+
+        // println!("------------------------------------------------------------------------------");
+        // println!("output batch in softmax forward: {} {} {}", &layer_output.len(), &layer_output[0].len(), layer_output[0][0].len());
+        // println!("ouptput batch 0: {:?}", &layer_output[0][0][0..100]);
+        // println!("------------------------------------------------------------------------------");
 
         layer_output
     }
@@ -73,11 +91,7 @@ impl SoftmaxLayer {
 
             for (sample_index, softmax_sample) in softmax_output[seq_ind_start..seq_len].iter().enumerate() {
                 for (column_index, softmax_prob) in softmax_sample.iter().enumerate() {
-                    let target = if target_tokens[sample_index] == column_index as u32 {
-                        Complex::new(1.0, 0.0)
-                    } else {
-                        Complex::new(0.0, 0.0)
-                    };
+                    let target = if target_tokens[sample_index] == column_index as u32 { Complex::new(1.0, 0.0) } else { Complex::new(0.0, 0.0) };
 
                     // Compute gradient
                     let gradient = softmax_prob - target;

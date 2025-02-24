@@ -244,6 +244,57 @@ pub fn activate_output_complex(data: &Vec<Vec<Complex<f64>>>, activation: Activa
     }
 }
 
+// Main activation function for complex numbers with padding support
+pub fn activate_output_complex_padding(data: &Vec<Vec<Complex<f64>>>, activation: ActivationType, padding_mask: &Vec<u32>) -> Vec<Vec<Complex<f64>>> {
+    match activation {
+        ActivationType::SIGMOID => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] == 0 { sigmoid_complex(x) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
+        ActivationType::TANH => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] == 0 { tanh_complex(x) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
+        ActivationType::LINEAR => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] == 0 { x } else { Complex::new(0.0, 0.0) }).collect()).collect(),
+        ActivationType::RELU => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] == 0 { relu_complex(x) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
+        ActivationType::LEAKYRELU => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] == 0 { leaky_relu_complex(x, 0.01) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
+        ActivationType::ELU => data
+            .iter()
+            .enumerate()
+            .map(|(row_ind, row)| {
+                row.iter()
+                    .map(|&x| if padding_mask[row_ind] == 0 { elu_complex(x, 1.0) } else { Complex::new(0.0, 0.0) }) // Assuming alpha = 1.0
+                    .collect()
+            })
+            .collect(),
+        ActivationType::SELU => data
+            .iter()
+            .enumerate()
+            .map(|(row_ind, row)| {
+                row.iter()
+                    .map(|&x| if padding_mask[row_ind] == 0 { selu_complex(x) } else { Complex::new(0.0, 0.0) }) // Assuming scale = 1.0, alpha = 1.0
+                    .collect()
+            })
+            .collect(),
+        ActivationType::GELU => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] == 0 { gelu_complex(x) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
+        ActivationType::SOFTSIGN => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] == 0 { softsign_complex(x) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
+        ActivationType::SOFTPLUS => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] == 0 { softplus_complex(x) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
+        ActivationType::PROBIT => data
+            .iter()
+            .enumerate()
+            .map(|(row_ind, row)| {
+                row.iter()
+                    .map(|&x| if padding_mask[row_ind] == 0 { x } else { Complex::new(0.0, 0.0) }) // Just return the value as is
+                    .collect()
+            })
+            .collect(),
+        ActivationType::RANDOM => data
+            .iter()
+            .enumerate()
+            .map(|(row_ind, row)| {
+                row.iter()
+                    .map(|&x| if padding_mask[row_ind] == 0 { x } else { Complex::new(0.0, 0.0) }) // Just return the value as is
+                    .collect()
+            })
+            .collect(),
+        ActivationType::SOFTMAX => softmax_complex(data), // Handle separately if needed
+    }
+}
+
 pub fn gauss<T, V, G>(v: &T, m: &V, var: &G) -> f64
 where
     T: Debug + Clone + Into<f64> + Mul<Output = T> + Add<Output = T> + Div<Output = T>,

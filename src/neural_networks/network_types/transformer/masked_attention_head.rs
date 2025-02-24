@@ -24,6 +24,7 @@ pub struct MaskedAttentionHead {
     pub bias_v: Vec<Complex<f64>>,
 
     pub layer_type: LayerType,
+    pub learning_rate: f64,
 
     pub gradient: Option<Gradient>,
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
@@ -37,7 +38,7 @@ pub struct MaskedAttentionHead {
 }
 
 impl MaskedAttentionHead {
-    pub fn new(rows: usize, cols: usize) -> Self {
+    pub fn new(rows: usize, cols: usize, learning_rate: f64) -> Self {
         let mut weights_q: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
         let mut weights_k: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
         let mut weights_v: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
@@ -59,6 +60,7 @@ impl MaskedAttentionHead {
             bias_k,
             bias_v,
             layer_type: LayerType::InputLayer,
+            learning_rate: learning_rate,
 
             gradient: None,
             input_batch: None,
@@ -75,8 +77,8 @@ impl MaskedAttentionHead {
         self.layer_type = layer_type;
     }
 
-    pub fn create_default_attention_layer(rows: usize, cols: usize, layer_type: LayerType) -> MaskedAttentionHead {
-        let mut attention_layer: MaskedAttentionHead = MaskedAttentionHead::new(rows, cols);
+    pub fn create_default_attention_layer(rows: usize, cols: usize, layer_type: LayerType, learning_rate: f64) -> MaskedAttentionHead {
+        let mut attention_layer: MaskedAttentionHead = MaskedAttentionHead::new(rows, cols, learning_rate);
         attention_layer.set_layer_type(layer_type);
 
         attention_layer
@@ -104,6 +106,7 @@ impl MaskedAttentionHead {
                 //[[1, 0], [1, 1]]
                 let mask = create_causal_mask(input.len(), input.len());
                 let attention_scores = multiply_complex(&q, &transpose(&k));
+
                 let mut attention_scores_scales = scale_attention_scores(&attention_scores, k[0].len() as f64);
 
                 // Apply the mask to the scaled attention scores
@@ -220,7 +223,31 @@ impl MaskedAttentionHead {
 
         gradient
     }
-    pub fn update_parameters(&mut self) {}
+    pub fn update_parameters(&mut self) {
+        let gradient = self.gradient.as_ref().expect("Gradient is missing in attention head layer");
+        let (grad_w_q, grad_w_v, grad_w_k) = (gradient.get_gradient_weights_q(), gradient.get_gradient_weights_v(), gradient.get_gradient_weights_k());
+
+        // Update weights q
+        for (i, row) in self.weights_q.iter_mut().enumerate() {
+            for (j, weight_value) in row.iter_mut().enumerate() {
+                *weight_value -= self.learning_rate * grad_w_q[i][j];
+            }
+        }
+
+        // Update weights v
+        for (i, row) in self.weights_v.iter_mut().enumerate() {
+            for (j, weight_value) in row.iter_mut().enumerate() {
+                *weight_value -= self.learning_rate * grad_w_v[i][j];
+            }
+        }
+
+        // Update weights k
+        for (i, row) in self.weights_k.iter_mut().enumerate() {
+            for (j, weight_value) in row.iter_mut().enumerate() {
+                *weight_value -= self.learning_rate * grad_w_k[i][j];
+            }
+        }
+    }
 }
 
 fn scale_attention_scores(attention_scores: &Vec<Vec<Complex<f64>>>, d_k: f64) -> Vec<Vec<Complex<f64>>> {
