@@ -82,6 +82,13 @@ impl RMSNormLayer {
         let mut input_batch_gradients = vec![vec![vec![Complex::new(0.0, 0.0); dim_len]; seq_len]; batch_size];
         let mut gradient_gamma_batch = vec![vec![Complex::new(0.0, 0.0); dim_len]; batch_size];
 
+        println!("------------------------------------------------------------------------------");
+        println!("previous gradient batch  {} {} {}", &previous_gradient_batch.len(), &previous_gradient_batch[0].len(), previous_gradient_batch[0][0].len());
+        println!("input batch  {} {} {}", &input_batch.len(), &input_batch[0].len(), input_batch[0][0].len());
+        println!("gradient gamma dim: {} {}", &gradient_gamma_batch.len(), &gradient_gamma_batch[0].len());
+        println!("gamma dim: {}", &self.gamma.len());
+        println!("------------------------------------------------------------------------------");
+
         for b in 0..batch_size {
             for s in 0..seq_len {
                 let rms = self.rms(&input_batch[b][s]);
@@ -104,13 +111,6 @@ impl RMSNormLayer {
             }
         }
 
-        // println!("------------------------------------------------------------------------------");
-        // println!("previous gradient batch  {} {} {}", &previous_gradient_batch.len(), &previous_gradient_batch[0].len(), previous_gradient_batch[0][0].len());
-        // println!("gradient gamma dim: {} {}", &gradient_gamma_batch.len(), &gradient_gamma_batch[0].len());
-        // println!("input batch  {} {} {}", &input_batch.len(), &input_batch[0].len(), input_batch[0][0].len());
-        // println!("gamma dim: {}", &self.gamma.len());
-        // println!("------------------------------------------------------------------------------");
-
         gradient.set_gradient_input_batch(input_batch_gradients);
         gradient.set_gradient_gamma_batch(gradient_gamma_batch);
         self.gradient = Some(gradient.clone());
@@ -120,6 +120,12 @@ impl RMSNormLayer {
     pub fn update_parameters(&mut self) {
         let gradient = self.gradient.as_ref().expect("No gradient found in rms norm layer");
         let gradient_gamma = gradient.get_gradient_gamma_batch();
+
+        // println!("------------------------------------------------------------------------------");
+        // println!("gradient_gamma batch  {} {}", &gradient_gamma.len(), &gradient_gamma[0].len());
+        // println!("gradient gamma dim: {} ", &self.gamma.len());
+        // println!("gamma dim: {}", &self.gamma.len());
+        // println!("------------------------------------------------------------------------------");
 
         for batch_ind in 0..gradient_gamma.len() {
             for (i, value) in self.gamma.iter_mut().enumerate() {

@@ -48,13 +48,13 @@ mod tests {
         let linear_batch_output = linear_layer.forward(&input_batch);
 
         println!("linear batch output: {:?}", &linear_batch_output);
-        let _softmax_batch_output = softmax_layer.forward(&linear_batch_output);
+        let _softmax_batch_output = softmax_layer.forward(&linear_batch_output, None);
         let gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
         let (analytical_grad_batch, analytical_grad) = (gradient.get_gradient_input_batch(), gradient.get_gradient_input());
 
         // Define the loss function
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
-            let softmax_batch_output = softmax_layer.forward(&input);
+            let softmax_batch_output = softmax_layer.forward(&input, None);
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
@@ -99,7 +99,7 @@ mod tests {
 
         // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
         let linear_batch_output = linear_layer.forward(&input_batch);
-        let _softmax_batch_output = softmax_layer.forward(&linear_batch_output);
+        let _softmax_batch_output = softmax_layer.forward(&linear_batch_output, None);
 
         let gradient_linear: Gradient = softmax_layer.backward(&target_token_id_batch);
         let analytical_grad_batch_softmax: Vec<Vec<Vec<Complex<f64>>>> = gradient_linear.get_gradient_input_batch();
@@ -113,7 +113,7 @@ mod tests {
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
             linear_layer.weights = weights.clone();
             let linear_batch_output = linear_layer.forward(input);
-            let softmax_batch_output = softmax_layer.forward(&linear_batch_output);
+            let softmax_batch_output = softmax_layer.forward(&linear_batch_output, None);
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
@@ -138,7 +138,7 @@ mod tests {
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Complex<f64>>| -> Complex<f64> {
             linear_layer.bias = bias.clone();
             let linear_batch_output = linear_layer.forward(input);
-            let softmax_batch_output = softmax_layer.forward(&linear_batch_output);
+            let softmax_batch_output = softmax_layer.forward(&linear_batch_output, None);
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
@@ -290,8 +290,9 @@ mod tests {
 
         // Create a simple LinearLayer with the given input and output dimensions
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0010, 0.20), Complex::new(0.0030, 0.50), Complex::new(0.60, 0.40)]]];
+        let padding_mask_batch = vec![vec![1; input_batch[0].len()]; input_batch.len()];
 
-        let dense_output_batch = dense_layer.forward(&input_batch);
+        let dense_output_batch = dense_layer.forward(&input_batch, &padding_mask_batch);
 
         println!("\ninput batch :{:?}", &input_batch);
         println!("\ndense output_batch: {:?}", &dense_output_batch);
@@ -309,7 +310,7 @@ mod tests {
         // Define the loss function
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
             dense_layer.weights = weights.clone();
-            let dense_batch_output = dense_layer.forward(input);
+            let dense_batch_output = dense_layer.forward(input, &padding_mask_batch);
 
             dense_batch_output
         };
@@ -328,7 +329,7 @@ mod tests {
         // Define the loss function
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Complex<f64>>| -> Vec<Vec<Vec<Complex<f64>>>> {
             dense_layer.bias = bias.clone();
-            let dense_batch_output = dense_layer.forward(input);
+            let dense_batch_output = dense_layer.forward(input, &padding_mask_batch);
 
             dense_batch_output
         };
@@ -344,7 +345,7 @@ mod tests {
         // input gradient batch check
         dense_layer.bias = bias.clone();
 
-        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Vec<Vec<Vec<Complex<f64>>>> { dense_layer.forward(input) };
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Vec<Vec<Vec<Complex<f64>>>> { dense_layer.forward(input, &padding_mask_batch) };
 
         let numerical_grad_input_linear: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
 
@@ -518,8 +519,9 @@ mod tests {
         let input_dim = 5;
         let output_dim = 4;
         let epsilon: f64 = 1e-6;
+        let learning_rate = 0.0001;
 
-        let mut attention_head_layer: MaskedAttentionHead = MaskedAttentionHead::new(input_dim, output_dim);
+        let mut attention_head_layer: MaskedAttentionHead = MaskedAttentionHead::new(input_dim, output_dim, learning_rate);
 
         // Create a simple LinearLayer with the given input and output dimensions
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![

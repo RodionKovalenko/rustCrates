@@ -1,7 +1,7 @@
 use crate::neural_networks::{
     network_types::{feedforward_layer::FeedForwardLayer, transformer::self_attention_layer::SelfAttentionLayer},
     utils::{
-        activation::activate_output_complex,
+        activation::activate_output_complex_padding,
         derivative::get_gradient_complex,
         matrix::{add_vector, hadamard_product_2d_c, multiply_complex},
         weights_initializer::initialize_weights_complex,
@@ -99,6 +99,7 @@ pub struct Layer {
     pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     pub gradient: Option<Gradient>,
     pub learning_rate: f64,
+    pub padding_mask_batch: Option<Vec<Vec<u32>>>,
 }
 
 // Helper function to determine the type of layer
@@ -119,11 +120,11 @@ impl Layer {
             ..Layer::default(rows, cols, learning_rate) // Fill the rest with default values
         }
     }
-    pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>, padding_mask_batch: &Vec<Vec<u32>>) -> Vec<Vec<Vec<Complex<f64>>>> {
         self.input_batch = Some(input_batch.clone());
 
         let inactivated_batch_output: Vec<Vec<Vec<Complex<f64>>>> = input_batch
-            .par_iter() // Process the input batch in parallel
+            .par_iter()
             .map(|input| {
                 // Multiply input with weights
                 let output: Vec<Vec<Complex<f64>>> = multiply_complex(input, &self.weights);
@@ -137,9 +138,10 @@ impl Layer {
 
         let batch_output: Vec<Vec<Vec<Complex<f64>>>> = inactivated_batch_output
             .par_iter() // Process the input batch in parallel
-            .map(|input| {
+            .zip(padding_mask_batch.par_iter())
+            .map(|(input, padding_mask)| {
                 // Apply activation if the layer type is DenseLayer
-                activate_output_complex(&input, self.activation_type.clone())
+                activate_output_complex_padding(&input, self.activation_type.clone(), padding_mask)
             })
             .collect(); // Collect the results back into a Vec
 
@@ -228,6 +230,7 @@ impl Layer {
             gradient: None,
             inactivated_input_batch: None,
             learning_rate: *learning_rate,
+            padding_mask_batch: None,
         }
     }
 }

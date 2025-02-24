@@ -24,7 +24,7 @@ impl SelfAttentionLayer {
         let head_cols = cols / num_heads; // Columns per attention head
 
         for _i in 0..num_heads {
-            let attention_head = MaskedAttentionHead::create_default_attention_layer(rows, head_cols, LayerType::AttentionLayer);
+            let attention_head = MaskedAttentionHead::create_default_attention_layer(rows, head_cols, LayerType::AttentionLayer, learning_rate);
             attention_heads.push(attention_head);
         }
 
@@ -71,8 +71,7 @@ impl SelfAttentionLayer {
         }
 
         // println!("output batch size: {} {} {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
-        // println!("input batch size: {} {} {}", input_batch.len(), input_batch[0].len(), input_batch[0][0].len());
-
+      
         // Process the dense layers
         for layer in self.dense_layers.iter_mut() {
             match layer {
@@ -122,18 +121,18 @@ impl SelfAttentionLayer {
         for b in 0..batch_size {
             for i in 0..sequence_size {
                 let mut combined_output: Vec<Complex<f64>> = Vec::new();
-    
+
                 // Concatenate gradients from each attention head
                 for head_gradient_batch in &gradient_input_batches {
                     let head_output = &head_gradient_batch[b][i];
                     combined_output.extend_from_slice(head_output);
                 }
-    
+
                 // Store the combined gradients
                 combined_gradient_input_batch[b][i] = combined_output;
             }
         }
-    
+
         // Return the final gradient
         gradient.set_gradient_input_batch(combined_gradient_input_batch);
 
@@ -165,6 +164,17 @@ impl SelfAttentionLayer {
     }
 
     pub fn update_parameters(&mut self) {
+        for layer in self.dense_layers.iter_mut() {
+            match layer {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    rms_norm_layer.update_parameters();
+                }
+                _ => {}
+            }
+        }
 
+        for attention_head in self.attention_heads.iter_mut() {
+            attention_head.update_parameters();
+        }
     }
 }

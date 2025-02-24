@@ -1,16 +1,10 @@
 use crate::neural_networks::{
-    network_components::{
-        embedding_layer::EmbeddingLayer,
-        layer::LayerEnum,
-        linear_layer::LinearLayer,
-        positional_encoding_layer::PositionalEncodingLayer,
-        softmax_output_layer::SoftmaxLayer,
-    },
+    network_components::{embedding_layer::EmbeddingLayer, layer::LayerEnum, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
     network_types::{
         feedforward_layer::FeedForwardLayer,
         neural_network_generic::{create, NeuralNetwork, OperationMode},
         wavelet_network::DECOMPOSITION_LEVELS,
-    }
+    },
 };
 
 use super::self_attention_layer::SelfAttentionLayer;
@@ -23,14 +17,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let minibatch_size: usize = 50;
     let learning_rate: f64 = 0.5;
 
-    let mut transformer_network: NeuralNetwork = create(
-        number_inputs,
-        number_outputs,
-        number_of_hidden_layers,
-        number_of_hidden_neurons,
-        minibatch_size,
-        learning_rate,
-    );
+    let mut transformer_network: NeuralNetwork = create(number_inputs, number_outputs, number_of_hidden_layers, number_of_hidden_neurons, minibatch_size, learning_rate);
 
     //Add layers to the network
     let mut layers = transformer_network.layers;
@@ -55,7 +42,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let hidden_dim = 64;
     let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
 
-    let num_self_attention_layer: usize = 4;
+    let num_self_attention_layer: usize = 1;
     for _i in 0..num_self_attention_layer {
         let num_attention_heads: usize = 4;
         let rows: usize = 16;
