@@ -227,24 +227,27 @@ impl MaskedAttentionHead {
         let gradient = self.gradient.as_ref().expect("Gradient is missing in attention head layer");
         let (grad_w_q, grad_w_v, grad_w_k) = (gradient.get_gradient_weights_q(), gradient.get_gradient_weights_v(), gradient.get_gradient_weights_k());
 
+        let input_batch = gradient.get_gradient_input_batch();
+        let batch_size = input_batch.len() as f64;
+
         // Update weights q
         for (i, row) in self.weights_q.iter_mut().enumerate() {
             for (j, weight_value) in row.iter_mut().enumerate() {
-                *weight_value -= self.learning_rate * grad_w_q[i][j];
+                *weight_value -= self.learning_rate * (grad_w_q[i][j] / batch_size);
             }
         }
 
         // Update weights v
         for (i, row) in self.weights_v.iter_mut().enumerate() {
             for (j, weight_value) in row.iter_mut().enumerate() {
-                *weight_value -= self.learning_rate * grad_w_v[i][j];
+                *weight_value -= self.learning_rate * (grad_w_v[i][j] / batch_size);
             }
         }
 
         // Update weights k
         for (i, row) in self.weights_k.iter_mut().enumerate() {
             for (j, weight_value) in row.iter_mut().enumerate() {
-                *weight_value -= self.learning_rate * grad_w_k[i][j];
+                *weight_value -= self.learning_rate * (grad_w_k[i][j] / batch_size);
             }
         }
     }

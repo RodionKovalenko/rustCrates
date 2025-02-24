@@ -171,6 +171,8 @@ impl EmbeddingLayer {
         let gradient: &Gradient = self.gradient.as_ref().expect("Output batch is missing in dense layer");
         let previous_gradients: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_input_batch();
 
+        let batch_size = previous_gradients.len() as f64;
+
         for (batch_idx, token_ids) in token_id_batches.iter().enumerate() {
             for (i, &token_id) in token_ids.iter().enumerate() {
                 let mut token_embedding: Vec<Complex<f64>> = Self::get_embedding(db, token_id).unwrap();
@@ -179,7 +181,7 @@ impl EmbeddingLayer {
                 let gradient = &previous_gradients[batch_idx][i];
 
                 for j in 0..self.embedding_dim {
-                    token_embedding[j] -= learning_rate * gradient[j];
+                    token_embedding[j] -= learning_rate * (gradient[j] / batch_size);
                 }
 
                 Self::update_embedding(db, &token_id, &token_embedding);
