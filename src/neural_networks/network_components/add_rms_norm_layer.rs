@@ -121,6 +121,8 @@ impl RMSNormLayer {
         let gradient = self.gradient.as_ref().expect("No gradient found in rms norm layer");
         let gradient_gamma = gradient.get_gradient_gamma_batch();
 
+        let batch_size = gradient_gamma.len() as f64;
+
         // println!("------------------------------------------------------------------------------");
         // println!("gradient_gamma batch  {} {}", &gradient_gamma.len(), &gradient_gamma[0].len());
         // println!("gradient gamma dim: {} ", &self.gamma.len());
@@ -129,7 +131,7 @@ impl RMSNormLayer {
 
         for batch_ind in 0..gradient_gamma.len() {
             for (i, value) in self.gamma.iter_mut().enumerate() {
-                *value -= self.learning_rate * gradient_gamma[batch_ind][i];
+                *value -= self.learning_rate * (gradient_gamma[batch_ind][i] / batch_size);
             }
         }
     }
