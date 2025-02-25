@@ -289,8 +289,8 @@ mod tests {
         let mut dense_layer: Layer = Layer::new(input_dim, output_dim, &learning_rate, &ActivationType::LINEAR, LayerType::DenseLayer);
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0010, 0.20), Complex::new(0.0030, 0.50), Complex::new(0.60, 0.40)]]];
-        let padding_mask_batch = vec![vec![1; input_batch[0].len()]; input_batch.len()];
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0010, 0.20), Complex::new(0.0030, 0.50), Complex::new(0.60, 0.40)], vec![Complex::new(0.0010, 0.20), Complex::new(0.0030, 0.50), Complex::new(0.60, 0.40)]]];
+        let padding_mask_batch = vec![vec![0, 1]];
 
         let dense_output_batch = dense_layer.forward(&input_batch, &padding_mask_batch);
 
@@ -519,6 +519,7 @@ mod tests {
         let input_dim = 5;
         let output_dim = 4;
         let epsilon: f64 = 1e-6;
+
         let learning_rate = 0.0001;
 
         let mut attention_head_layer: MaskedAttentionHead = MaskedAttentionHead::new(input_dim, output_dim, learning_rate);
@@ -528,6 +529,7 @@ mod tests {
             vec![Complex::new(0.10, 0.20), Complex::new(0.30, 0.50), Complex::new(0.60, 0.40), Complex::new(0.10, 0.45), Complex::new(0.35, 0.60)],
             vec![Complex::new(0.30, 0.40), Complex::new(0.50, 0.60), Complex::new(0.70, 0.80), Complex::new(0.90, 1.11), Complex::new(2.50, 3.80)],
         ]];
+
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; output_dim]; batch_size];
 
         let output_batch = attention_head_layer.forward(&input_batch, &padding_mask_batch);

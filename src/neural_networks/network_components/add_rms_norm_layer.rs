@@ -2,9 +2,11 @@ use core::fmt::Debug;
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::utils::matrix::add_matrix;
+use crate::neural_networks::utils::matrix::{add_matrix, clip_gradients};
 
 use super::gradient_struct::Gradient;
+
+pub const EPSILON: f64 = 0.00000001;
 
 // RMSNorm Layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,7 +39,7 @@ impl RMSNormLayer {
         let rms = self.rms(input);
 
         // Normalize the input and apply the learned gamma scaling
-        input.iter().zip(self.gamma.iter()).map(|(x, &g)| (*x / rms * g)).collect()
+        input.iter().zip(self.gamma.iter()).map(|(x, &g)| (*x / (rms * g + EPSILON))).collect()
     }
 
     pub fn rms(&self, input: &Vec<Complex<f64>>) -> Complex<f64> {
@@ -82,12 +84,12 @@ impl RMSNormLayer {
         let mut input_batch_gradients = vec![vec![vec![Complex::new(0.0, 0.0); dim_len]; seq_len]; batch_size];
         let mut gradient_gamma_batch = vec![vec![Complex::new(0.0, 0.0); dim_len]; batch_size];
 
-        println!("------------------------------------------------------------------------------");
-        println!("previous gradient batch  {} {} {}", &previous_gradient_batch.len(), &previous_gradient_batch[0].len(), previous_gradient_batch[0][0].len());
-        println!("input batch  {} {} {}", &input_batch.len(), &input_batch[0].len(), input_batch[0][0].len());
-        println!("gradient gamma dim: {} {}", &gradient_gamma_batch.len(), &gradient_gamma_batch[0].len());
-        println!("gamma dim: {}", &self.gamma.len());
-        println!("------------------------------------------------------------------------------");
+        // println!("------------------------------------------------------------------------------");
+        // println!("previous gradient batch  {} {} {}", &previous_gradient_batch.len(), &previous_gradient_batch[0].len(), previous_gradient_batch[0][0].len());
+        // println!("input batch  {} {} {}", &input_batch.len(), &input_batch[0].len(), input_batch[0][0].len());
+        // println!("gradient gamma dim: {} {}", &gradient_gamma_batch.len(), &gradient_gamma_batch[0].len());
+        // println!("gamma dim: {}", &self.gamma.len());
+        // println!("------------------------------------------------------------------------------");
 
         for b in 0..batch_size {
             for s in 0..seq_len {
@@ -119,7 +121,10 @@ impl RMSNormLayer {
     }
     pub fn update_parameters(&mut self) {
         let gradient = self.gradient.as_ref().expect("No gradient found in rms norm layer");
-        let gradient_gamma = gradient.get_gradient_gamma_batch();
+        let mut gradient_gamma = gradient.get_gradient_gamma_batch();
+
+        let threshold = 0.5;
+        clip_gradients(&mut gradient_gamma, threshold);
 
         let batch_size = gradient_gamma.len() as f64;
 

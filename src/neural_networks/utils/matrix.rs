@@ -366,3 +366,55 @@ pub fn find_highest_index_batch(input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Op
 
     Some(max_index_batch) // Return the index of the token with the highest probability
 }
+
+pub fn apply_padding_mask_batch(input_batch: &mut Vec<Vec<Vec<Complex<f64>>>>, padding_mask_batch: &Vec<Vec<u32>>) {
+    for (batch_ind, input) in input_batch.iter_mut().enumerate() {
+        apply_padding_mask(input, &padding_mask_batch[batch_ind]);
+    }
+}
+
+pub fn apply_padding_mask(input: &mut Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) {
+    for (seq_ind, seq) in input.iter_mut().enumerate() {
+        if padding_mask[seq_ind] == 0 {
+            for value in seq.iter_mut() {
+                *value = Complex::new(0.0, 0.0);
+            }
+        }
+    }
+}
+
+pub fn clip_gradients(gradients: &mut Vec<Vec<Complex<f64>>>, threshold: f64) {
+    for row in gradients.iter_mut() {
+        clip_gradient_1d(row, threshold);
+    }
+}
+
+pub fn clip_gradient_1d(gradients: &mut Vec<Complex<f64>>, threshold: f64) {
+    for val in gradients.iter_mut() {
+        let norm = val.norm(); // Magnitude of the complex number
+        if norm > threshold {
+            *val = val.scale(threshold / norm); // Scale the gradient to the threshold
+        }
+    }
+}
+pub fn is_nan_or_inf(z: &Complex<f64>) -> bool {
+    z.re.is_nan() || z.re.is_infinite() || z.im.is_nan() || z.im.is_infinite()
+}
+
+pub fn contains_nan_or_inf(matrix: &Vec<Vec<Complex<f64>>>) -> bool {
+    matrix.iter().any(|row| row.iter().any(|z| is_nan_or_inf(z)))
+}
+
+pub fn check_nan_or_inf_3d(matrix_batch: &Vec<Vec<Vec<Complex<f64>>>>) {
+    for matrix in matrix_batch {
+        if contains_nan_or_inf(matrix) {
+            panic!("the value is Not Valid{:?}", matrix);
+        }
+    }
+}
+
+pub fn check_nan_or_inf(matrix: &Vec<Vec<Complex<f64>>>) {
+    if contains_nan_or_inf(matrix) {
+        panic!("the value is Not Valid{:?}", matrix);
+    }
+}

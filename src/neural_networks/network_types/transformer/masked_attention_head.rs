@@ -7,7 +7,7 @@ use crate::neural_networks::{
     utils::{
         activation::softmax_complex_padding,
         derivative::{backpropagate_softmax_masked, softmax_derivative_complex_jacobian},
-        matrix::{add_matrix, multiply_complex, transpose},
+        matrix::{add_matrix, clip_gradients, multiply_complex, transpose},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -99,19 +99,24 @@ impl MaskedAttentionHead {
             .par_iter()
             .zip(padding_mask_batch)
             .map(|(input, padding_mask)| {
+                // 1, 16 * 16, 4 = 1, 4
                 let q = multiply_complex(input, &self.weights_q);
                 let k = multiply_complex(input, &self.weights_k);
                 let v = multiply_complex(input, &self.weights_v);
 
                 //[[1, 0], [1, 1]]
-                let mask = create_causal_mask(input.len(), input.len());
-                let attention_scores = multiply_complex(&q, &transpose(&k));
+                let mask: Vec<Vec<u8>> = create_causal_mask(input.len(), input.len());
 
+                // 1, 4 * 4, 1 = 1, 1
+                let attention_scores = multiply_complex(&q, &transpose(&k));
+                // 1,1
                 let mut attention_scores_scales = scale_attention_scores(&attention_scores, k[0].len() as f64);
 
                 // Apply the mask to the scaled attention scores
+                // 1,1
                 apply_attention_mask_inplace(&mut attention_scores_scales, &mask);
 
+                // 1,1
                 let attention_weights = softmax_complex_padding(&attention_scores_scales, padding_mask);
 
                 (attention_weights, v)
@@ -121,6 +126,7 @@ impl MaskedAttentionHead {
         let batch_output: Vec<Vec<Vec<Complex<f64>>>> = attention_weights_batch_tuple
             .par_iter()
             .map(|(attention_weights, v)| {
+                // 1, 1 * 1, 4 = 1, 4
                 let output = multiply_complex(&attention_weights, &v);
                 output
             })
@@ -225,10 +231,15 @@ impl MaskedAttentionHead {
     }
     pub fn update_parameters(&mut self) {
         let gradient = self.gradient.as_ref().expect("Gradient is missing in attention head layer");
-        let (grad_w_q, grad_w_v, grad_w_k) = (gradient.get_gradient_weights_q(), gradient.get_gradient_weights_v(), gradient.get_gradient_weights_k());
+        let (mut grad_w_q, mut grad_w_v, mut grad_w_k) = (gradient.get_gradient_weights_q(), gradient.get_gradient_weights_v(), gradient.get_gradient_weights_k());
 
         let input_batch = gradient.get_gradient_input_batch();
         let batch_size = input_batch.len() as f64;
+
+        let threshold = 0.5;
+        clip_gradients(&mut grad_w_q, threshold);
+        clip_gradients(&mut grad_w_v, threshold);
+        clip_gradients(&mut grad_w_k, threshold);
 
         // Update weights q
         for (i, row) in self.weights_q.iter_mut().enumerate() {
