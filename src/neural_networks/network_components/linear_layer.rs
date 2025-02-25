@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
-    matrix::{add_vector, multiply_complex},
+    matrix::{add_vector, clip_gradient_1d, clip_gradients, multiply_complex},
     weights_initializer::initialize_weights_complex,
 };
 
@@ -96,10 +96,14 @@ impl LinearLayer {
 
     pub fn update_parameters(&mut self) {
         let gradient = self.gradient.as_ref().expect("No Gradient found in linear layer");
-        let (weight_gradients, bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
+        let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
 
         let input_batch = gradient.get_gradient_input_batch();
         let batch_size = input_batch.len() as f64;
+
+        let threshold = 0.5;
+        clip_gradients(&mut weight_gradients, threshold);
+        clip_gradient_1d(&mut bias_gradients, threshold);
 
         // Update weights and biases using gradient descent
         for (i, row) in self.weights.iter_mut().enumerate() {

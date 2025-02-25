@@ -37,11 +37,6 @@ impl SoftmaxLayer {
         let padding_mask_batch = padding_mask_option.unwrap_or_else(|| vec![vec![1; seq_len]; batch_size]);
         self.padding_mask_batch = Some(padding_mask_batch);
 
-        // println!("------------------------------------------------------------------------------");
-        // println!("input batch in softmax forward: {} {} {}", &input_batch.len(), &input_batch[0].len(), input_batch[0][0].len());
-        // println!("input batch 0: {:?}", &input_batch[0][0][0..100]);
-        // println!("------------------------------------------------------------------------------");
-
         let layer_output: Vec<Vec<Vec<Complex<f64>>>> = match self.operation_mode {
             OperationMode::PRODUCTION => {
                 input_batch
@@ -49,20 +44,14 @@ impl SoftmaxLayer {
                     .map(|input| softmax_last_row(input)) // Apply `softmax_last_row` to each input
                     .collect() // Collect results into a Vec
             }
-            OperationMode::TRAINING => { input_batch
+            OperationMode::TRAINING => input_batch
                 .par_iter()
                 .zip(self.padding_mask_batch.as_ref().unwrap().par_iter())
                 .map(|(input, padding_mask_seq)| softmax_complex_padding(input, padding_mask_seq))
-                .collect::<Vec<_>>()
-            }
+                .collect::<Vec<_>>(),
         };
 
         self.softmax_output_batch = Some(layer_output.clone());
-
-        // println!("------------------------------------------------------------------------------");
-        // println!("output batch in softmax forward: {} {} {}", &layer_output.len(), &layer_output[0].len(), layer_output[0][0].len());
-        // println!("ouptput batch 0: {:?}", &layer_output[0][0][0..100]);
-        // println!("------------------------------------------------------------------------------");
 
         layer_output
     }
@@ -96,7 +85,6 @@ impl SoftmaxLayer {
                     // Compute gradient
                     let gradient = softmax_prob - target;
 
-                    // Store in batch-indexed gradient storage
                     gradient_batch[batch_index][sample_index][column_index] = gradient / (normalizer as f64);
                 }
             }

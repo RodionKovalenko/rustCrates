@@ -77,12 +77,18 @@ pub fn initialize_weights_complex(
     cols: usize,
     weight_matrix: &mut Vec<Vec<Complex<f64>>>,
 ) {
-    let mut rng = rand::rng();
+    let fan_in = rows as f64;
+    let fan_out = cols as f64;
 
     for i in 0..rows {
         for j in 0..cols {
-            let random_value = Complex::new(rng.random_range(-0.6..0.6), rng.random_range(-0.6..0.6));
+            let random_value = Complex::new(xavier_init(fan_in, fan_out),  xavier_init(fan_in, fan_out));
             set_weights(weight_matrix, i, j, random_value);
         }
     }
+}
+
+fn xavier_init(fan_in: f64, fan_out: f64) -> f64 {
+    let limit = (6.0 / (fan_in + fan_out)).sqrt();
+    rand::rng().random_range(-limit..limit)
 }

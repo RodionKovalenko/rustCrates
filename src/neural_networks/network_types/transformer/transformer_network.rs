@@ -8,7 +8,7 @@ use crate::neural_networks::{
     },
     network_types::neural_network_generic::NeuralNetwork,
     utils::{
-        matrix::find_highest_index_batch,
+        matrix::{check_nan_or_inf, check_nan_or_inf_3d, find_highest_index_batch},
         tokenizer::{detokenize, tokenize, tokenize_batch},
     },
 };
@@ -65,6 +65,8 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                 //         }
                 //     }
                 // }
+
+                check_nan_or_inf_3d(&embeddings);
                 output = Some(embeddings);
                 padding_mask = Some(padding_m);
             }
@@ -73,12 +75,13 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                     let positional_encoding_l = Some(positional_encoding_layer).unwrap();
                     //println!("previous output embedding layer: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
 
-                    let positional_encodings = positional_encoding_l.forward(&previous_output);
+                    let positional_encodings: Vec<Vec<Vec<Complex<f64>>>> = positional_encoding_l.forward(&previous_output);
 
                     println!("Output Positional_encodings layer: {:?}, {:?}, {:?}", &positional_encodings.len(), &positional_encodings[0].len(), &positional_encodings[0][0].len());
 
                     //println!("output potitional encoding layer: {:?}", &positional_encodings);
-                    println!("output potitional encoding layer: {:?}", &positional_encodings[positional_encodings.len() - 1][positional_encodings[0].len() - 1][0..10]);
+                    //println!("output potitional encoding layer: {:?}", &positional_encodings[positional_encodings.len() - 1][positional_encodings[0].len() - 1][0..10]);
+                    check_nan_or_inf_3d(&positional_encodings);
                     output = Some(positional_encodings); 
                 } else {
                     println!("No previous output for Attention layer");
@@ -94,6 +97,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
 
                     println!("Output attention layer: {:?}, {:?}, {:?}", &output_attention.len(), &output_attention[0].len(), &output_attention[0][0].len());
                     //println!("output attention layer: {:?}", &output_attention);
+                    check_nan_or_inf_3d(&output_attention);
                     output = Some(output_attention);
                 } else {
                     println!("No previous output for Attention layer");
@@ -111,6 +115,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
 
                     println!("Output Dense FFN: {:?}, {:?},  {:?}", &output_dense.len(), &output_dense[0].len(), &output_dense[0][0].len());
 
+                    check_nan_or_inf_3d(&output_dense);
                     //println!("output dense: {:?}", &output_dense);
                     output = Some(output_dense);
                 } else {
@@ -127,6 +132,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
 
                     println!("Output Linear layer: {:?}, {:?}, {:?}", &output_linear.len(), &output_linear[0].len(), &output_linear[0][0].len());
 
+                    check_nan_or_inf_3d(&output_linear);
                     //println!("output_linear output: {:?}", &output_linear[0][0][0..20]);
                     output = Some(output_linear);
                 } else {
@@ -143,7 +149,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                     println!("Output Softmax: {:?}, {:?}, {}", &output_softmax.len(), &output_softmax[0].len(), &output_softmax[0][0].len());
 
                     println!("output_softmax output: {:?}", &output_softmax[0][0][0..10]);
-
+                    check_nan_or_inf_3d(&output_softmax);
                     output = Some(output_softmax);
                 } else {
                     println!("No previous output for Dense layer");
@@ -171,7 +177,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
 
                     let gradient_batch: Gradient = embedding_layer.backward(&previous_gradient_batch);
 
-                    embedding_layer.update_parameters(&target_batch_ids, transformer_network.learning_rate);
+                    //embedding_layer.update_parameters(&target_batch_ids, transformer_network.learning_rate);
 
                     gradient = Some(gradient_batch);
                 } else {

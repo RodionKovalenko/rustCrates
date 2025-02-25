@@ -15,7 +15,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let number_of_hidden_layers: usize = 1;
     let number_of_hidden_neurons: usize = 32;
     let minibatch_size: usize = 50;
-    let learning_rate: f64 = 0.001;
+    let learning_rate: f64 = 0.01;
 
     let mut transformer_network: NeuralNetwork = create(number_inputs, number_outputs, number_of_hidden_layers, number_of_hidden_neurons, minibatch_size, learning_rate);
 
@@ -42,7 +42,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let hidden_dim = 64;
     let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
 
-    let num_self_attention_layer: usize = 1;
+    let num_self_attention_layer: usize = 4;
     for _i in 0..num_self_attention_layer {
         let num_attention_heads: usize = 4;
         let rows: usize = 16;
