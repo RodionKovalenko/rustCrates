@@ -3,7 +3,7 @@ use crate::neural_networks::{
     utils::{
         activation::activate_output_complex_padding,
         derivative::get_gradient_complex,
-        matrix::{add_vector, hadamard_product_2d_c, multiply_complex},
+        matrix::{add_vector, apply_padding_mask_batch, clip_gradient_1d, clip_gradients, hadamard_product_2d_c, multiply_complex},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -147,6 +147,7 @@ impl Layer {
 
         self.output_batch = Some(batch_output.clone());
         self.inactivated_input_batch = Some(inactivated_batch_output);
+        self.padding_mask_batch = Some(padding_mask_batch.clone());
 
         batch_output
     }
@@ -155,6 +156,7 @@ impl Layer {
         let input_batch = self.input_batch.as_ref().expect("Input batch is missing in dense layer");
         let raw_output_batch = self.inactivated_input_batch.as_ref().expect("Raw output batch is missing in dense layer");
         let output_batch = self.output_batch.as_ref().expect("Output batch is missing in dense layer");
+        let padding_mask_batch = self.padding_mask_batch.as_ref().expect("No padding mask batch found");
 
         let mut gradient = Gradient::new_default();
 
@@ -163,8 +165,14 @@ impl Layer {
         let mut bias_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.bias.len()]; input_batch.len()];
         let mut input_gradient_batch = vec![vec![vec![Complex::new(0.0, 0.0); previous_gradient_batch[0][0].len()]; previous_gradient_batch[0].len()]; input_batch.len()];
 
+        let mut previous_gradient_batch_padded: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient_batch.clone();
+
+        apply_padding_mask_batch(&mut previous_gradient_batch_padded, padding_mask_batch);
+
+        // println!("\n\n\nprevious gradient batch padded: {:?}", previous_gradient_batch_padded);
+
         // For each input sample in the batch
-        for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_batch).enumerate() {
+        for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(&previous_gradient_batch_padded).enumerate() {
             // Multiply the transposed input sample with previous gradients (for weight gradients)
 
             input_gradient_batch[batch_ind] = get_gradient_complex(&output_batch[batch_ind], &raw_output_batch[batch_ind], self.activation_type.clone());
@@ -191,15 +199,23 @@ impl Layer {
 
     pub fn update_parameters(&mut self) {
         let gradient = self.gradient.as_ref().expect("No Gradient found in linear layer");
-        let (weight_gradients, bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
-        
+        let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
+
         let input_batch = gradient.get_gradient_input_batch();
         let batch_size = input_batch.len() as f64;
+        let threshold = 0.5;
+        clip_gradients(&mut weight_gradients, threshold);
+        clip_gradient_1d(&mut bias_gradients, threshold);
+
+        // println!("-----------------------------------------------------");
+        // println!("weights gradients dense: {:?}", &weight_gradients);
+        // println!("bias gradients dense: {:?}", &bias_gradients);
+        // println!("-----------------------------------------------------");
 
         // Update weights and biases using gradient descent
         for (i, row) in self.weights.iter_mut().enumerate() {
             for (j, weight_value) in row.iter_mut().enumerate() {
-                *weight_value -= self.learning_rate * (weight_gradients[i][j]/ batch_size);
+                *weight_value -= self.learning_rate * (weight_gradients[i][j] / batch_size);
             }
         }
 
