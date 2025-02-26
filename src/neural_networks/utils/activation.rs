@@ -1,7 +1,7 @@
 use num::{Complex, Float};
 use rayon::prelude::*;
 use std::f64::consts::E;
-use std::f64::consts::{PI, SQRT_2};
+use std::f64::consts::PI;
 use std::fmt::Debug;
 use std::marker::Copy;
 use std::ops::{Add, Div, Mul};
@@ -11,7 +11,7 @@ use crate::neural_networks::network_components::layer::ActivationType;
 /// SELU hyperparameters
 pub const LAMBDA: f64 = 1.050700987355480493419334985294598;
 pub const ALPHA: f64 = 1.673263242354377284817042991671750;
-pub const EPSILON: f64 = 0.0000000001;
+pub const EPSILON: f64 = 0.000000000000001;
 
 // Define a trait for activation functions
 pub trait RealActivation: Float + Copy {
@@ -178,17 +178,36 @@ fn selu_complex(z: Complex<f64>) -> Complex<f64> {
     }
 }
 
+// pub fn gelu_complex(z: Complex<f64>) -> Complex<f64> {
+//     // Precompute sqrt(2 / pi)
+//     let sqrt_2_over_pi = SQRT_2 / PI.sqrt();
+
+//     // Compute the argument inside tanh: z + 0.044715 * z^3
+//     let f_z = sqrt_2_over_pi * (z + Complex::new(0.044715, 0.0) * z.powf(3.0));
+
+//     // Compute tanh(f(z))
+//     let tanh_f_z = f_z.tanh();
+
+//     // Return the GELU activation: 0.5 * z * (1 + tanh(f(z)))
+//     0.5 * z * (Complex::new(1.0, 0.0) + tanh_f_z)
+// }
+
 pub fn gelu_complex(z: Complex<f64>) -> Complex<f64> {
-    // Precompute sqrt(2 / pi)
-    let sqrt_2_over_pi = SQRT_2 / PI.sqrt();
+    let sqrt_2_over_pi = (2.0 / PI).sqrt();
 
-    // Compute the argument inside tanh: z + 0.044715 * z^3
-    let f_z = sqrt_2_over_pi * (z + Complex::new(0.044715, 0.0) * z.powf(3.0));
+    let z_cubed = z.powi(3);
+    let f_z = sqrt_2_over_pi * (z + Complex::new(0.044715, 0.0) * z_cubed);
 
-    // Compute tanh(f(z))
-    let tanh_f_z = f_z.tanh();
+    // Clamping to prevent numerical instability
+    let real_part = f_z.re.max(-30.0).min(30.0);
+    let im_part = f_z.im.max(-30.0).min(30.0);
+    let clamped_f_z = Complex::new(real_part, im_part);
+    let tanh_f_z = clamped_f_z.tanh();
 
-    // Return the GELU activation: 0.5 * z * (1 + tanh(f(z)))
+    if tanh_f_z.re.is_nan() || tanh_f_z.im.is_nan() {
+        panic!("NaN detected in tanh(f(z)), z: {:?}, f(z): {:?}, clamped f(z): {:?}", z, f_z, clamped_f_z);
+    }
+
     0.5 * z * (Complex::new(1.0, 0.0) + tanh_f_z)
 }
 
@@ -338,21 +357,28 @@ pub fn softmax_complex_padding(input: &Vec<Vec<Complex<f64>>>, padding_mask: &Ve
         .par_iter()
         .enumerate() // Parallel iterator over rows of the input
         .map(|(row_ind, row)| {
-            if padding_mask.len() < row_ind {
-                panic!("row mask is smaller the index: {}, {}", padding_mask.len(), row_ind);
+            if padding_mask.len() <= row_ind {
+                panic!("Row mask is smaller than the index: {}, {}", padding_mask.len(), row_ind);
             }
             if padding_mask[row_ind] == 0 {
                 return vec![Complex::new(0.0, 0.0); row.len()];
             }
+
             let mut sum = Complex::new(0.0, 0.0);
 
-            // Calculate the sum of exponentials for the row
-            for &val in row {
-                sum = sum + val.exp();
+            // Compute exponentials with stabilization
+            let exps: Vec<Complex<f64>> = row
+                .iter()
+                .map(|&val| val.exp()) // Shift by max_val
+                .collect();
+
+            // Sum of exponentials
+            for &exp_val in &exps {
+                sum = sum + exp_val;
             }
 
-            // Calculate the softmax values for the row
-            row.iter().map(|&val| val.exp() / (sum + EPSILON)).collect::<Vec<Complex<f64>>>()
+            // Compute softmax values
+            exps.iter().map(|&exp_val| exp_val / sum).collect()
         })
         .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
 }
