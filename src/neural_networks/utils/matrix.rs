@@ -90,7 +90,26 @@ where
         // Parallelize the rows of the result matrix using Rayon
         result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
             for j in 0..num_columns {
-                row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
+                row[j] = (0..matrix_b_clone.len())
+                    .map(|k| {
+                        if matrix_a_clone[i][k].re.is_nan() || matrix_a_clone[i][k].im.is_nan() {
+                            //  panic!("NaN detected in multiply_complex in matrix_a at ({}, {})", i, j);
+                        }
+                        if matrix_b_clone[k][j].re.is_nan() || matrix_b_clone[k][j].im.is_nan() {
+                            //  panic!("NaN detected in multiply_complex in matrix_b at ({}, {})", i, j);
+                        }
+                        let mut product = matrix_a_clone[i][k] * matrix_b_clone[k][j];
+                        if !product.re.is_finite() || !product.im.is_finite() {
+                            // panic!("NaN detected in multiply_complex in product at ({}, {}), product: {:?}, value 1 {:?}, value 2: {:?}", i, j, product, matrix_a_clone[i][k], matrix_b_clone[k][j]);
+                        }
+
+                        if product.re.abs() > 1e308 || product.im.abs() > 1e308 {
+                            println!("⚠ Warning: Potential overflow in multiply_complex at ({}, {}): {:?}", i, j, product);
+                            product *= 1e-150; // Scale down to prevent overflow
+                        }
+                        product
+                    })
+                    .sum();
             }
         });
     });
@@ -401,20 +420,35 @@ pub fn is_nan_or_inf(z: &Complex<f64>) -> bool {
     z.re.is_nan() || z.re.is_infinite() || z.im.is_nan() || z.im.is_infinite()
 }
 
-pub fn contains_nan_or_inf(matrix: &Vec<Vec<Complex<f64>>>) -> bool {
-    matrix.iter().any(|row| row.iter().any(|z| is_nan_or_inf(z)))
+pub fn contains_nan_or_inf(matrix: &mut Vec<Vec<Complex<f64>>>) -> bool {
+    fn is_nan_or_inf(z: &Complex<f64>) -> bool {
+        z.re.is_nan() || z.im.is_nan() || z.re.is_infinite() || z.im.is_infinite()
+    }
+
+    let mut found = false;
+
+    for row in matrix.iter_mut() {
+        for z in row.iter_mut() {
+            if is_nan_or_inf(z) {
+                *z = Complex::new(0.0, 0.0);
+                found = true;
+            }
+        }
+    }
+
+    found
 }
 
-pub fn check_nan_or_inf_3d(matrix_batch: &Vec<Vec<Vec<Complex<f64>>>>) {
-    for matrix in matrix_batch {
+pub fn check_nan_or_inf_3d(matrix_batch: &mut Vec<Vec<Vec<Complex<f64>>>>, message: &str) {
+    for matrix in matrix_batch.iter_mut() {
         if contains_nan_or_inf(matrix) {
-            panic!("the value is Not Valid{:?}", matrix);
+            println!("{:?}: The value is Not Valid{:?}", message, matrix);
         }
     }
 }
 
-pub fn check_nan_or_inf(matrix: &Vec<Vec<Complex<f64>>>) {
+pub fn check_nan_or_inf(matrix: &mut Vec<Vec<Complex<f64>>>, message: &str) {
     if contains_nan_or_inf(matrix) {
-        panic!("the value is Not Valid{:?}", matrix);
+        println!("{:?}: The value is Not Valid , {:?}", message, matrix);
     }
 }

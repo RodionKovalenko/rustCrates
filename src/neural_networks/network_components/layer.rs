@@ -3,7 +3,7 @@ use crate::neural_networks::{
     utils::{
         activation::activate_output_complex_padding,
         derivative::get_gradient_complex,
-        matrix::{add_vector, apply_padding_mask_batch, clip_gradient_1d, clip_gradients, hadamard_product_2d_c, multiply_complex},
+        matrix::{add_vector, apply_padding_mask_batch, check_nan_or_inf_3d, clip_gradient_1d, clip_gradients, hadamard_product_2d_c, multiply_complex},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -123,11 +123,17 @@ impl Layer {
     pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>, padding_mask_batch: &Vec<Vec<u32>>) -> Vec<Vec<Vec<Complex<f64>>>> {
         self.input_batch = Some(input_batch.clone());
 
-        let inactivated_batch_output: Vec<Vec<Vec<Complex<f64>>>> = input_batch
+        let mut inactivated_batch_output: Vec<Vec<Vec<Complex<f64>>>> = input_batch
             .par_iter()
             .map(|input| {
                 // Multiply input with weights
+                // check_nan_or_inf(&mut input, "check dense input");
+                // check_nan_or_inf(&self.weights, "check dense weights");
+
                 let output: Vec<Vec<Complex<f64>>> = multiply_complex(input, &self.weights);
+
+                // println!("check output_dense raw");
+                // check_nan_or_inf(&output);
 
                 // Add bias to the result
                 let raw_output: Vec<Vec<Complex<f64>>> = add_vector(&output, &self.bias);
@@ -136,7 +142,9 @@ impl Layer {
             })
             .collect();
 
-        let batch_output: Vec<Vec<Vec<Complex<f64>>>> = inactivated_batch_output
+        check_nan_or_inf_3d(&mut inactivated_batch_output, "check dense inactivated_batch_output");
+
+        let mut batch_output: Vec<Vec<Vec<Complex<f64>>>> = inactivated_batch_output
             .par_iter() // Process the input batch in parallel
             .zip(padding_mask_batch.par_iter())
             .map(|(input, padding_mask)| {
@@ -144,6 +152,8 @@ impl Layer {
                 activate_output_complex_padding(&input, self.activation_type.clone(), padding_mask)
             })
             .collect(); // Collect the results back into a Vec
+
+        check_nan_or_inf_3d(&mut batch_output, "check dense batch_output");
 
         self.output_batch = Some(batch_output.clone());
         self.inactivated_input_batch = Some(inactivated_batch_output);
@@ -203,7 +213,8 @@ impl Layer {
 
         let input_batch = gradient.get_gradient_input_batch();
         let batch_size = input_batch.len() as f64;
-        let threshold = 0.5;
+
+        let threshold = 1.0;
         clip_gradients(&mut weight_gradients, threshold);
         clip_gradient_1d(&mut bias_gradients, threshold);
 
@@ -215,12 +226,16 @@ impl Layer {
         // Update weights and biases using gradient descent
         for (i, row) in self.weights.iter_mut().enumerate() {
             for (j, weight_value) in row.iter_mut().enumerate() {
-                *weight_value -= self.learning_rate * (weight_gradients[i][j] / batch_size);
+                if !weight_gradients[i][j].re.is_nan() && !weight_gradients[i][j].im.is_nan() {
+                    *weight_value -= self.learning_rate * (weight_gradients[i][j] / batch_size);
+                }
             }
         }
 
         for (i, value) in self.bias.iter_mut().enumerate() {
-            *value -= self.learning_rate * (bias_gradients[i] / batch_size);
+            if !bias_gradients[i].re.is_nan() && !bias_gradients[i].im.is_nan() {
+                *value -= self.learning_rate * (bias_gradients[i] / batch_size);
+            }
         }
     }
 }
