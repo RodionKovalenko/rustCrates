@@ -7,7 +7,7 @@ use crate::neural_networks::{
     utils::{
         activation::softmax_complex_padding,
         derivative::{backpropagate_softmax_masked, softmax_derivative_complex_jacobian},
-        matrix::{add_matrix, clip_gradients, multiply_complex, transpose},
+        matrix::{add_matrix, check_nan_or_inf, clip_gradients, multiply_complex, transpose},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -99,25 +99,42 @@ impl MaskedAttentionHead {
             .par_iter()
             .zip(padding_mask_batch)
             .map(|(input, padding_mask)| {
+                // check_nan_or_inf(&mut self.weights_q, "check weights q in attention head");
+                // check_nan_or_inf(&mut self.weights_k, "check weights k in attention head");
+                // check_nan_or_inf(&mut self.weights_v, "check weights v in attention head");
+
                 // 1, 16 * 16, 4 = 1, 4
-                let q = multiply_complex(input, &self.weights_q);
-                let k = multiply_complex(input, &self.weights_k);
-                let v = multiply_complex(input, &self.weights_v);
+                let mut q = multiply_complex(input, &self.weights_q);
+                let mut k = multiply_complex(input, &self.weights_k);
+                let mut v = multiply_complex(input, &self.weights_v);
+
+                check_nan_or_inf(&mut q, "check q in attention head");
+                check_nan_or_inf(&mut k, "check k in attention head");
+                check_nan_or_inf(&mut v, "check v in attention head");
 
                 //[[1, 0], [1, 1]]
                 let mask: Vec<Vec<u8>> = create_causal_mask(input.len(), input.len());
 
                 // 1, 4 * 4, 1 = 1, 1
-                let attention_scores = multiply_complex(&q, &transpose(&k));
+                let mut attention_scores = multiply_complex(&q, &transpose(&k));
+                // println!("q in attention head: {:?}", &q);
+                // println!("k in attention head: {:?}", &transpose(&k));
+                check_nan_or_inf(&mut attention_scores, "check attention scores");
                 // 1,1
                 let mut attention_scores_scales = scale_attention_scores(&attention_scores, k[0].len() as f64);
+
+                check_nan_or_inf(&mut attention_scores_scales, "check attention_scores_scales");
 
                 // Apply the mask to the scaled attention scores
                 // 1,1
                 apply_attention_mask_inplace(&mut attention_scores_scales, &mask);
 
+                check_nan_or_inf(&mut attention_scores_scales, "check attention_scores_scales mask inplace");
+
                 // 1,1
-                let attention_weights = softmax_complex_padding(&attention_scores_scales, padding_mask);
+                let mut attention_weights = softmax_complex_padding(&attention_scores_scales, padding_mask);
+
+                check_nan_or_inf(&mut attention_weights, "check attention_weights in attention head forward");
 
                 (attention_weights, v)
             })
@@ -127,7 +144,9 @@ impl MaskedAttentionHead {
             .par_iter()
             .map(|(attention_weights, v)| {
                 // 1, 1 * 1, 4 = 1, 4
-                let output = multiply_complex(&attention_weights, &v);
+                let mut output = multiply_complex(&attention_weights, &v);
+
+                check_nan_or_inf(&mut output, "check output in masked attention head");
                 output
             })
             .collect();
@@ -236,29 +255,39 @@ impl MaskedAttentionHead {
         let input_batch = gradient.get_gradient_input_batch();
         let batch_size = input_batch.len() as f64;
 
-        let threshold = 0.5;
+        let threshold = 1.0;
         clip_gradients(&mut grad_w_q, threshold);
         clip_gradients(&mut grad_w_v, threshold);
         clip_gradients(&mut grad_w_k, threshold);
 
+        check_nan_or_inf(&mut grad_w_q, "check weight gradients q in attention head");
+        check_nan_or_inf(&mut grad_w_v, "check weight gradients v in attention head");
+        check_nan_or_inf(&mut grad_w_k, "check weight gradients k in attention head");
+
         // Update weights q
         for (i, row) in self.weights_q.iter_mut().enumerate() {
             for (j, weight_value) in row.iter_mut().enumerate() {
-                *weight_value -= self.learning_rate * (grad_w_q[i][j] / batch_size);
+                if !grad_w_q[i][j].re.is_nan() && !grad_w_q[i][j].im.is_nan() {
+                    *weight_value -= self.learning_rate * (grad_w_q[i][j] / batch_size);
+                }
             }
         }
 
         // Update weights v
         for (i, row) in self.weights_v.iter_mut().enumerate() {
             for (j, weight_value) in row.iter_mut().enumerate() {
-                *weight_value -= self.learning_rate * (grad_w_v[i][j] / batch_size);
+                if !grad_w_v[i][j].re.is_nan() && !grad_w_v[i][j].im.is_nan() {
+                    *weight_value -= self.learning_rate * (grad_w_v[i][j] / batch_size);
+                }
             }
         }
 
         // Update weights k
         for (i, row) in self.weights_k.iter_mut().enumerate() {
             for (j, weight_value) in row.iter_mut().enumerate() {
-                *weight_value -= self.learning_rate * (grad_w_k[i][j] / batch_size);
+                if !grad_w_k[i][j].re.is_nan() && !grad_w_k[i][j].im.is_nan() {
+                    *weight_value -= self.learning_rate * (grad_w_k[i][j] / batch_size);
+                }
             }
         }
     }
@@ -291,7 +320,7 @@ fn create_causal_mask(rows: usize, cols: usize) -> Vec<Vec<u8>> {
 }
 
 fn apply_attention_mask_inplace(attention_scores: &mut Vec<Vec<Complex<f64>>>, mask: &Vec<Vec<u8>>) {
-    let large_negative = Complex::new(-1e9, 0.0);
+    let large_negative = Complex::new(-1e5, 0.0);
 
     for row in 0..attention_scores.len() {
         for col in 0..attention_scores[row].len() {

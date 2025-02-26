@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
     network_types::neural_network_generic::OperationMode,
-    utils::activation::{softmax_complex_padding, softmax_last_row},
+    utils::{activation::{softmax_complex_padding, softmax_last_row}, matrix::check_nan_or_inf_3d},
 };
 
 use super::gradient_struct::Gradient;
@@ -90,6 +90,7 @@ impl SoftmaxLayer {
             }
         }
 
+        check_nan_or_inf_3d(&mut gradient_batch, "gradient input batch in softmax output layer has None Values");
         let mut gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(gradient_batch);
         self.gradient = Some(gradient.clone());

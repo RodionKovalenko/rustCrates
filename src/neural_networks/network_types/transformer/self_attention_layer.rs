@@ -1,9 +1,9 @@
 use super::masked_attention_head::MaskedAttentionHead;
-use crate::neural_networks::network_components::{
+use crate::neural_networks::{network_components::{
     add_rms_norm_layer::RMSNormLayer,
     gradient_struct::Gradient,
     layer::{LayerEnum, LayerType},
-};
+}, utils::matrix::check_nan_or_inf_3d};
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
@@ -77,6 +77,8 @@ impl SelfAttentionLayer {
             match layer {
                 LayerEnum::RMSNorm(rms_norm_layer) => {
                     batch_output = rms_norm_layer.forward(&batch_output, input_batch);
+
+                    check_nan_or_inf_3d(&mut batch_output, "check rms norm in self attention layer");
                 }
                 _ => {}
             }
@@ -97,6 +99,8 @@ impl SelfAttentionLayer {
         for layer in self.dense_layers.iter_mut() {
             match layer {
                 LayerEnum::RMSNorm(rms_norm_layer) => {
+                    check_nan_or_inf_3d(&mut gradient_input_batch, "gradient input batch has NaN values in selft attention layer backward rnorm");
+
                     let gradient = rms_norm_layer.backward(&gradient_input_batch);
                     gradient_input_batch = gradient.get_gradient_input_batch();
                 }
@@ -109,7 +113,9 @@ impl SelfAttentionLayer {
 
         // Backpropagate gradients through each attention head
         for (head_ind, attention_head) in self.attention_heads.iter_mut().enumerate() {
-            let previous_head_gradient_batch = &previous_gradient_head_splitted[head_ind];
+            let mut previous_head_gradient_batch = previous_gradient_head_splitted[head_ind].clone();
+
+            check_nan_or_inf_3d(&mut previous_head_gradient_batch, "previous_head_gradient_batch NaN values in selft attention layer backward attention head");
             gradient = attention_head.backward(&previous_head_gradient_batch);
 
             gradient_input_batches.push(gradient.get_gradient_input_batch());

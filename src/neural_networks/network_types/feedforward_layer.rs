@@ -1,9 +1,9 @@
-use crate::neural_networks::network_components::{
+use crate::neural_networks::{network_components::{
     add_rms_norm_layer::RMSNormLayer,
     gradient_struct::Gradient,
     layer::{ActivationType, Layer, LayerEnum, LayerType},
     linear_layer::LinearLayer,
-};
+}, utils::matrix::{check_nan_or_inf_3d}};
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
@@ -104,14 +104,19 @@ impl FeedForwardLayer {
             match layer {
                 LayerEnum::Dense(dense) => {
                     let dense_layer = Some(dense).unwrap();
+
+                    check_nan_or_inf_3d(&mut output_gradients, "previous gradients in ffn dense layer has None values");
                     gradient = dense_layer.backward(&output_gradients);
-                    let gradient_input_batch = gradient.get_gradient_input_batch();
+                    let mut gradient_input_batch = gradient.get_gradient_input_batch();
 
                     println!("Gradient input batch FFN Dense Layer: {:?}, {:?},  {:?}", &gradient_input_batch.len(), &gradient_input_batch[0].len(), &gradient_input_batch[0][0].len());
+                    check_nan_or_inf_3d(&mut gradient_input_batch, "output gradients in ffn dense layer has None values");
                     output_gradients = gradient_input_batch;
                 }
                 LayerEnum::Linear(linear) => {
                     let linear_layer = Some(linear).unwrap();
+
+                    check_nan_or_inf_3d(&mut output_gradients, "output gradients in linear layer has None values:");
                     gradient = linear_layer.backward(&output_gradients);
                     let gradient_input_batch = gradient.get_gradient_input_batch();
 

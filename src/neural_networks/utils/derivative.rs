@@ -325,7 +325,7 @@ where
             let loss_plus = f(&input, &weights_plus);
             let loss_minus = f(&input, &weights_minus);
 
-            grad_batch[row][col] = (loss_plus - loss_minus) / (2.0 * epsilon);
+            grad_batch[row][col] += (loss_plus - loss_minus) / (2.0 * epsilon);
         }
     }
 
@@ -447,6 +447,40 @@ where
 
     grad_batch
 }
+
+pub fn numerical_gradient_weigts_transformer_multiple_layers_without_loss<F>(f: &mut F, weights: &Vec<Vec<Complex<f64>>>, output: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
+where
+    F: FnMut(&Vec<Vec<Complex<f64>>>) -> Vec<Vec<Vec<Complex<f64>>>>,
+{
+    let mut grad_batch = vec![vec![vec![Complex::new(0.0, 0.0); weights[0].len()]; weights.len()]; output.len()];
+
+    for row in 0..weights.len() {
+        for col in 0..weights[row].len() {
+            // Perturb input by epsilon
+            let mut weights_plus = weights.clone();
+            weights_plus[row][col] += epsilon;
+
+            let mut weights_minus = weights.clone();
+            weights_minus[row][col] -= epsilon;
+
+            // Compute numerical gradient
+            let loss_plus = f(&weights_plus);
+            let loss_minus = f(&weights_minus);
+
+            for batch_ind in 0..output.len() {
+                for (seq_ind, _input_vec) in output[batch_ind].iter().enumerate() {
+                    for (dim_ind, _value) in _input_vec.iter().enumerate() {
+                        let gradient: Complex<f64> = (loss_plus[batch_ind][seq_ind][dim_ind] - loss_minus[batch_ind][seq_ind][dim_ind]) / (2.0 * epsilon);
+                        grad_batch[batch_ind][row][col] += gradient;
+                    }
+                }
+            }
+        }
+    }
+
+    grad_batch
+}
+
 
 pub fn numerical_gradient_bias_without_loss<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Complex<f64>>, epsilon: f64) -> Vec<Complex<f64>>
 where

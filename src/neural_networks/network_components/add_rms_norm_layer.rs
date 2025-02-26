@@ -2,7 +2,7 @@ use core::fmt::Debug;
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::utils::matrix::{add_matrix, clip_gradients};
+use crate::neural_networks::utils::matrix::{add_matrix, check_nan_or_inf, check_nan_or_inf_3d, clip_gradients};
 
 use super::gradient_struct::Gradient;
 
@@ -39,7 +39,7 @@ impl RMSNormLayer {
         let rms = self.rms(input);
 
         // Normalize the input and apply the learned gamma scaling
-        input.iter().zip(self.gamma.iter()).map(|(x, &g)| (*x / (rms * g + EPSILON))).collect()
+        input.iter().zip(self.gamma.iter()).map(|(x, &g)| ((*x / rms) * g)).collect()
     }
 
     pub fn rms(&self, input: &Vec<Complex<f64>>) -> Complex<f64> {
@@ -112,6 +112,8 @@ impl RMSNormLayer {
                 }
             }
         }
+   
+        check_nan_or_inf_3d(&mut input_batch_gradients, "output gradients in rms norm layer has None values");
 
         gradient.set_gradient_input_batch(input_batch_gradients);
         gradient.set_gradient_gamma_batch(gradient_gamma_batch);
@@ -120,11 +122,13 @@ impl RMSNormLayer {
         gradient
     }
     pub fn update_parameters(&mut self) {
-        let gradient = self.gradient.as_ref().expect("No gradient found in rms norm layer");
-        let mut gradient_gamma = gradient.get_gradient_gamma_batch();
+        let gradient: &Gradient = self.gradient.as_ref().expect("No gradient found in rms norm layer");
+        let mut gradient_gamma: Vec<Vec<Complex<f64>>> = gradient.get_gradient_gamma_batch();
 
-        let threshold = 0.5;
+        let threshold = 1.0;
         clip_gradients(&mut gradient_gamma, threshold);
+
+        check_nan_or_inf(&mut gradient_gamma, "check weight gradients in linear layer");
 
         let batch_size = gradient_gamma.len() as f64;
 
@@ -136,7 +140,9 @@ impl RMSNormLayer {
 
         for batch_ind in 0..gradient_gamma.len() {
             for (i, value) in self.gamma.iter_mut().enumerate() {
-                *value -= self.learning_rate * (gradient_gamma[batch_ind][i] / batch_size);
+                if !gradient_gamma[batch_ind][i].re.is_nan() && !gradient_gamma[batch_ind][i].im.is_nan() {
+                    *value -= self.learning_rate * (gradient_gamma[batch_ind][i] / batch_size);
+                }
             }
         }
     }

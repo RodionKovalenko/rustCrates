@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
-    matrix::{add_vector, clip_gradient_1d, clip_gradients, multiply_complex},
+    matrix::{add_vector, check_nan_or_inf, clip_gradient_1d, clip_gradients, multiply_complex},
     weights_initializer::initialize_weights_complex,
 };
 
@@ -101,19 +101,25 @@ impl LinearLayer {
         let input_batch = gradient.get_gradient_input_batch();
         let batch_size = input_batch.len() as f64;
 
-        let threshold = 0.5;
+        let threshold = 1.0;
         clip_gradients(&mut weight_gradients, threshold);
         clip_gradient_1d(&mut bias_gradients, threshold);
+
+        check_nan_or_inf(&mut weight_gradients, "check weight gradients in linear layer");
 
         // Update weights and biases using gradient descent
         for (i, row) in self.weights.iter_mut().enumerate() {
             for (j, weight_value) in row.iter_mut().enumerate() {
-                *weight_value -= self.learning_rate * (weight_gradients[i][j] / batch_size );
+                if !weight_gradients[i][j].re.is_nan() && !weight_gradients[i][j].im.is_nan() {
+                    *weight_value -= self.learning_rate * (weight_gradients[i][j] / batch_size);
+                }
             }
         }
 
         for (i, value) in self.bias.iter_mut().enumerate() {
-            *value -= self.learning_rate * (bias_gradients[i] / batch_size);
+            if !bias_gradients[i].re.is_nan() && !bias_gradients[i].im.is_nan() {
+                *value -= self.learning_rate * (bias_gradients[i] / batch_size);
+            }
         }
     }
 
