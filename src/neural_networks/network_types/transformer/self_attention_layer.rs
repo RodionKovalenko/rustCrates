@@ -96,8 +96,6 @@ impl SelfAttentionLayer {
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
         // let input_batch = self.input_batch.as_ref().expect("Input batch not found in self-attention layer backward");
         let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient_batch.clone();
-        let batch_size = gradient_input_batch.len();
-        let sequence_size = gradient_input_batch[0].len();
 
         let mut gradient: Gradient = Gradient::new_default();
 
@@ -114,13 +112,8 @@ impl SelfAttentionLayer {
         //     }
         // }
 
-        // println!("backward previous input gradient batch: {} {} {}", &previous_gradient_batch.len(), previous_gradient_batch[0].len(), previous_gradient_batch[0][0].len());
-        // println!("backward start in self attention");
-
         let previous_gradient_head_splitted = self.split_gradient_into_heads(&gradient_input_batch);
         let mut gradient_input_batches: Vec<Vec<Vec<Vec<Complex<f64>>>>> = Vec::new();
-
-        // println!("backward splitting done in self attention");
 
         // Backpropagate gradients through each attention head
         for (head_ind, attention_head) in self.attention_heads.iter_mut().enumerate() {
@@ -147,8 +140,6 @@ impl SelfAttentionLayer {
                 }
             }
         }
-
-        // println!("combine gradient input batch in backward: {} {} {}", &combined_gradient_input_batch.len(), &combined_gradient_input_batch[0].len(), &combined_gradient_input_batch[0][0].len());
 
         // Return the final gradient
         gradient.set_gradient_input_batch(combined_gradient_input_batch);
