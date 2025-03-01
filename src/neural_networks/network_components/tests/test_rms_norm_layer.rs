@@ -3,7 +3,7 @@ mod test_rms_norm_layer {
     use crate::neural_networks::{
         network_components::add_rms_norm_layer::RMSNormLayer,
         network_types::neural_network_generic::OperationMode,
-        utils::derivative::{numerical_gradient_input_batch_jacobi_without_loss, test_gradient_batch_error},
+        utils::derivative::{numerical_gradient_input_batch_without_loss, test_gradient_batch_error},
     };
 
     use num::Complex;
@@ -19,8 +19,22 @@ mod test_rms_norm_layer {
         let epsilon = 1e-7;
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let input_batch_before: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.2, 0.3), Complex::new(0.5, 0.7), Complex::new(0.9, 0.13)]]];
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(1.0, 1.0), Complex::new(2.0, 2.0), Complex::new(3.0, 3.0)]]];
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![
+            vec![vec![
+                Complex { re: 2.8783587878162713, im: 0.8745106130787896 },
+                Complex { re: 2.634908282093512, im: -0.20236154707027212 },
+                Complex { re: 0.6006278740248395, im: -1.1437859779264576 },
+            ]],
+            vec![vec![
+                Complex { re: -0.34133995925522365, im: -0.21654721340666816 },
+                Complex { re: 0.38135819845619007, im: -0.2937659597844681 },
+                Complex { re: 0.06247390427697107, im: -0.01925084410848496 },
+            ]],
+        ];
+        let input_batch_before: Vec<Vec<Vec<Complex<f64>>>> = vec![
+            vec![vec![Complex { re: -0.1, im: 0.2 }, Complex { re: 0.3, im: 0.6 }, Complex { re: 1.0, im: 2.5 }]],
+            vec![vec![Complex { re: -0.2, im: 4.0 }, Complex { re: 3.7, im: 4.8 }, Complex { re: 5.9, im: 5.0 }]],
+        ];
 
         let mut rms_norm_layer = RMSNormLayer::new(input_dim, epsilon, learning_rate);
 
@@ -42,7 +56,8 @@ mod test_rms_norm_layer {
         };
 
         let epsilon = 1e-7;
-        let numerical_grad_rms: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_jacobi_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
+        //let numerical_grad_rms: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_jacobi_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
+        let numerical_grad_rms: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
 
         println!("\nnumerical gradient rms: {:?}", &numerical_grad_rms);
         println!("\nanalytical gradient rms: {:?}", &analytical_gradient_rms);

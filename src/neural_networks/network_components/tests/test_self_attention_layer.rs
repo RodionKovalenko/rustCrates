@@ -3,8 +3,13 @@ mod test_self_attention_layer {
     use num::Complex;
 
     use crate::neural_networks::{
-        network_types::transformer::masked_attention_head::MaskedAttentionHead,
-        utils::derivative::{numerical_gradient_input_batch_without_loss, numerical_gradient_weights_multiple_layers_without_loss, test_gradient_batch_error},
+        network_components::{gradient_struct::Gradient, layer::LayerEnum, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
+        network_types::{
+            feedforward_layer::FeedForwardLayer,
+            neural_network_generic::OperationMode,
+            transformer::{masked_attention_head::MaskedAttentionHead, self_attention_layer::SelfAttentionLayer, transformer_network::cross_entropy_loss_batch},
+        },
+        utils::derivative::{numerical_gradient_input_batch, numerical_gradient_input_batch_without_loss, numerical_gradient_weights, numerical_gradient_weights_multiple_layers_without_loss, test_gradient_batch_error},
     };
 
     #[test]
@@ -117,5 +122,85 @@ mod test_self_attention_layer {
         // For Gelu it can a little more deviation
         test_gradient_batch_error(&numerical_grad_input_batch, &analytical_gradient_input_batch, epsilon);
         // Input gradient ------------------------------------------------------------------------------------------- end
+    }
+
+    #[test]
+    fn test_self_attention_layer_backward() {
+        // Define some small batch size and input dimensions for simplicity
+        let _batch_size = 2;
+        let _seq_len: usize = 1;
+        let input_dim = 4;
+        let output_dim = 6;
+        let learning_rate = 0.01;
+        let operation_mode = OperationMode::TRAINING;
+        let num_attention_heads = 2;
+        let epsilon = 1e-7;
+
+        // Create a simple LinearLayer with the given input and output dimensions
+        let mut attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, input_dim, output_dim, learning_rate);
+        let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(output_dim, input_dim, learning_rate);
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, output_dim, input_dim);
+        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
+
+        // Define a small input batch, [2][6][4]
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![
+            vec![
+                vec![Complex::new(0.5, 0.0), Complex::new(0.8, 0.0), Complex::new(0.1, 0.0), Complex::new(0.3, 0.0)],
+                vec![Complex::new(0.9, 0.0), Complex::new(-0.8, 0.0), Complex::new(0.1, 0.0), Complex::new(0.1, 0.0)],
+                vec![Complex::new(1.2, 0.0), Complex::new(-0.3, 0.0), Complex::new(0.1, 0.0), Complex::new(0.5, 0.0)],
+                vec![Complex::new(1.2, 0.0), Complex::new(-0.3, 0.0), Complex::new(0.1, 0.0), Complex::new(0.5, 0.0)],
+                vec![Complex::new(1.2, 0.0), Complex::new(-0.3, 0.0), Complex::new(0.1, 0.0), Complex::new(0.5, 0.0)],
+                vec![Complex::new(0.9, 0.0), Complex::new(-0.8, 0.0), Complex::new(0.1, 0.0), Complex::new(0.1, 0.0)],
+            ],
+            vec![
+                vec![Complex::new(1.0, 0.0), Complex::new(2.0, 0.0), Complex::new(3.0, 0.0), Complex::new(0.4, 0.0)],
+                vec![Complex::new(3.0, 0.0), Complex::new(3.0, 0.0), Complex::new(4.0, 0.0), Complex::new(0.5, 0.0)],
+                vec![Complex::new(0.6, 0.0), Complex::new(0.8, 0.0), Complex::new(0.1, 0.0), Complex::new(0.6, 0.0)],
+                vec![Complex::new(0.6, 0.0), Complex::new(0.8, 0.0), Complex::new(0.1, 0.0), Complex::new(0.6, 0.0)],
+                vec![Complex::new(0.6, 0.0), Complex::new(0.8, 0.0), Complex::new(0.1, 0.0), Complex::new(0.6, 0.0)],
+                vec![Complex::new(3.0, 0.0), Complex::new(3.0, 0.0), Complex::new(4.0, 0.0), Complex::new(0.5, 0.0)],
+            ],
+        ];
+
+        let target_token_id_batch = vec![vec![0, 1, 1, 1, 1, 1], vec![1, 0, 0, 1, 1, 1]];
+        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1, 1, 1, 1, 1, 1], vec![1, 1, 1, 1, 1, 1]];
+        //let target_token_id_batch = vec![vec![0]];
+
+        // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
+        let attention_layer_output = attention_layer.forward(&input_batch, &padding_mask_batch);
+        println!("attention layer output: {} {} {}", attention_layer_output.len(), attention_layer_output[0].len(), attention_layer_output[0][0].len());
+        let ffn_batch_output = ffn_layer.forward(&attention_layer_output);
+        let linear_batch_output = linear_layer.forward(&ffn_batch_output);
+        let _softmax_batch_output = softmax_layer.forward(&linear_batch_output, None);
+
+        let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
+        let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax.get_gradient_input_batch());
+        let gradient_ffn: Gradient = ffn_layer.backward(&gradient_linear.get_gradient_input_batch());
+        let gradient_attention_layer: Gradient = attention_layer.backward(&gradient_ffn.get_gradient_input_batch());
+
+        let gradient_input_batch_att_l = gradient_attention_layer.get_gradient_input_batch();
+
+        // Define the loss function
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
+            let attention_layer_output = attention_layer.forward(&input, &padding_mask_batch);
+            let ffn_batch_output = ffn_layer.forward(&attention_layer_output);
+            let linear_batch_output = linear_layer.forward(&ffn_batch_output);
+            let softmax_batch_output = softmax_layer.forward(&linear_batch_output, None);
+
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
+
+            loss
+        };
+
+        let numerical_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch(&mut loss_fn, input_batch.clone(), epsilon);
+
+        // Check if gradient batch dimensions match expected shapes
+        println!("\nanalytical grad: {:?}", gradient_input_batch_att_l);
+        println!("\ngradient_input_batch_att_l gradient dim: {} {} {}", gradient_input_batch_att_l.len(), gradient_input_batch_att_l[0].len(), gradient_input_batch_att_l[0][0].len());
+
+        println!("\nnumerical grad: {:?}", numerical_gradient_input_batch);
+        println!("\numerical_gradient_input_batch gradient dim: {} {} {}", numerical_gradient_input_batch.len(), numerical_gradient_input_batch[0].len(), numerical_gradient_input_batch[0][0].len());
+
+        test_gradient_batch_error(&numerical_gradient_input_batch, &gradient_input_batch_att_l, epsilon);
     }
 }

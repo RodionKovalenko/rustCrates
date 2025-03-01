@@ -89,13 +89,13 @@ impl MaskedAttentionHead {
 impl MaskedAttentionHead {
     // Input shape e.g. [2][5] and out shape of weights [5][4] => we get final output [2][4]
     pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>, padding_mask_batch: &Vec<Vec<u32>>) -> Vec<Vec<Vec<Complex<f64>>>> {
-        // println!("input len in masked_attention : {:?}, {:?}", &input.len(), &input[0].len());
+        // println!("input len in masked_attention : {:?}, {:?}, {}", &input_batch.len(), &input_batch[0].len(), &input_batch[0][0].len());
         // println!("weights_q : {:?}, {:?}", &self.weights_q.len(), &self.weights_q[0].len());
 
         self.input_batch = Some(input_batch.clone());
         self.padding_mask_batch = Some(padding_mask_batch.clone());
 
-        let attention_weights_batch_tuple: (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<Vec<Complex<f64>>>>) = input_batch
+        let (attention_weights_batch, v_batch): (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<Vec<Complex<f64>>>>) = input_batch
             .par_iter()
             .zip(padding_mask_batch)
             .map(|(input, padding_mask)| {
@@ -140,8 +140,9 @@ impl MaskedAttentionHead {
             })
             .collect();
 
-        let batch_output: Vec<Vec<Vec<Complex<f64>>>> = attention_weights_batch_tuple
+        let batch_output: Vec<Vec<Vec<Complex<f64>>>> = attention_weights_batch
             .par_iter()
+            .zip(v_batch)
             .map(|(attention_weights, v)| {
                 // 1, 1 * 1, 4 = 1, 4
                 let mut output = multiply_complex(&attention_weights, &v);
@@ -151,7 +152,6 @@ impl MaskedAttentionHead {
             })
             .collect();
 
-        let (attention_weights_batch, _) = attention_weights_batch_tuple;
         self.attention_weights_batch = Some(attention_weights_batch);
         self.output_batch = Some(batch_output.clone());
 
@@ -210,20 +210,28 @@ impl MaskedAttentionHead {
             // Compute activation derivative softmax
             let softmax_derivative: Vec<Vec<Vec<Complex<f64>>>> = softmax_derivative_complex_jacobian(&attention_weights_batch[batch_ind]);
 
+            // println!("softmax_derivative dim: {}, {}, {}", &softmax_derivative.len(), &softmax_derivative[0].len(),  &softmax_derivative[0][0].len());
+
             // Gradient Wq
             // 2,2 * 2,2  = 2,2
             let dl_da: Vec<Vec<Complex<f64>>> = backpropagate_softmax_masked(&softmax_derivative, &dl_ds, &padding_mask_batch[batch_ind]);
+            // println!("dl_da dim: {}, {}", &dl_da.len(), &dl_da[0].len(),);
             // 2,2 * 4, 2 = 2,4
             let dl_dq: Vec<Vec<Complex<f64>>> = multiply_complex(&dl_da, &k_scaled);
+            // println!("dl_dq dim: {}, {}", &dl_dq.len(), &dl_dq[0].len(),);
+            // 2,2 * 4, 2 = 2,4
             // 2,5 * 2, 4 = 4,5
             let dl_dwq: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &dl_dq);
+            // println!("dl_dwq dim: {}, {}", &dl_dwq.len(), &dl_dwq[0].len());
             gradient_q_batch[batch_ind] = dl_dwq;
 
             // Gradient Wk
             // 2, 4 * 2,2 = 4,2
             let dl_dk: Vec<Vec<Complex<f64>>> = multiply_complex(&q_scaled, &dl_da);
+            // println!("dl_dk dim: {}, {}", &dl_dk.len(), &dl_dk[0].len());
             // 2,5 * 4,2 = 5, 4
             let dl_dwk: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &transpose(&dl_dk));
+            // println!("dl_dwk dim: {}, {}", &dl_dwk.len(), &dl_dwk[0].len());
             gradient_k_batch[batch_ind] = dl_dwk;
 
             // 2,4 * 5, 4 = 2, 5
@@ -234,6 +242,8 @@ impl MaskedAttentionHead {
             let dl_dvx = multiply_complex(&transpose(&grad_wv), &self.weights_v);
 
             gradient_input_batch[batch_ind] = add_matrix(&dl_dqx, &dl_dkx);
+            // println!("dl_dqx dim: {}, {}", &dl_dqx.len(), &dl_dqx[0].len());
+            // println!("dl_dkx dim: {}, {}", &dl_dkx.len(), &dl_dkx[0].len());
             gradient_input_batch[batch_ind] = add_matrix(&gradient_input_batch[batch_ind], &dl_dvx);
         }
 

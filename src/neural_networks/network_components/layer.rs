@@ -184,10 +184,15 @@ impl Layer {
         // For each input sample in the batch
         for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(&previous_gradient_batch_padded).enumerate() {
             // Multiply the transposed input sample with previous gradients (for weight gradients)
-
-            input_gradient_batch[batch_ind] = get_gradient_complex(&output_batch[batch_ind], &raw_output_batch[batch_ind], self.activation_type.clone());
-            input_gradient_batch[batch_ind] = hadamard_product_2d_c(previous_gradient, &input_gradient_batch[batch_ind]);
+           
+            let gradient_output = get_gradient_complex(&output_batch[batch_ind], &raw_output_batch[batch_ind], self.activation_type.clone());
+            input_gradient_batch[batch_ind] = hadamard_product_2d_c(previous_gradient, &gradient_output);
             weight_gradients[batch_ind] = multiply_complex(input_sample, &input_gradient_batch[batch_ind]);
+
+            // println!("previous gradient in ffn backward: {} {}", previous_gradient.len(), previous_gradient[0].len());
+            // println!("gradient_output in ffn backward: {} {}", gradient_output.len(), gradient_output[0].len());
+            // println!("weights in ffn in ffn backward: {} {}", &self.weights.len(), &self.weights[0].len());
+            // println!("input sample in ffn backward: {} {}", input_sample.len(), input_sample[0].len());
 
             //Accumulate gradients for biases
             for grad_row in input_gradient_batch[batch_ind].iter() {
