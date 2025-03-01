@@ -262,13 +262,13 @@ pub fn cross_entropy_loss_batch(
     predicted_softmax_batch: &Vec<Vec<Vec<Complex<f64>>>>, // Complex-valued softmax output
     targets: &Vec<Vec<u32>>,
 ) -> Complex<f64> {
-    let high_token_index_batch: Vec<Vec<u32>> = find_highest_index_batch(&predicted_softmax_batch).unwrap();
-    let mut predicted_token_batch: Vec<String> = vec![];
-    for high_token_index in high_token_index_batch.iter() {
-        let predicted_token: String = detokenize(&high_token_index).unwrap();
-        predicted_token_batch.push(predicted_token);
-    }
-    println!("predicted token: {:?}", predicted_token_batch);
+    // let high_token_index_batch: Vec<Vec<u32>> = find_highest_index_batch(&predicted_softmax_batch).unwrap();
+    // let mut predicted_token_batch: Vec<String> = vec![];
+    // for high_token_index in high_token_index_batch.iter() {
+    //     let predicted_token: String = detokenize(&high_token_index).unwrap();
+    //     predicted_token_batch.push(predicted_token);
+    // }
+    // println!("predicted token: {:?}", predicted_token_batch);
 
     let batch_len = predicted_softmax_batch.len() as f64;
     let mut total_loss: Complex<f64> = Complex::new(0.0, 0.0);
