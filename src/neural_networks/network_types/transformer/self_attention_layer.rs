@@ -1,9 +1,12 @@
 use super::masked_attention_head::MaskedAttentionHead;
-use crate::neural_networks::{network_components::{
-    add_rms_norm_layer::RMSNormLayer,
-    gradient_struct::Gradient,
-    layer::{LayerEnum, LayerType},
-}, utils::matrix::check_nan_or_inf_3d};
+use crate::neural_networks::{
+    network_components::{
+        add_rms_norm_layer::RMSNormLayer,
+        gradient_struct::Gradient,
+        layer::{LayerEnum, LayerType},
+    },
+    utils::matrix::check_nan_or_inf_3d,
+};
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
@@ -59,6 +62,9 @@ impl SelfAttentionLayer {
             attention_head_outputs.push(attention_output);
         }
 
+        // println!("input batch outputs: {:?}", &input_batch);
+        // println!("attention head outputs: {:?}", &attention_head_outputs);
+
         // Combine the outputs of the attention heads (e.g., concatenating horizontally)
         for b in 0..batch_size {
             for i in 0..sequence_size {
@@ -71,18 +77,18 @@ impl SelfAttentionLayer {
         }
 
         // println!("output batch size: {} {} {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
-      
-        // Process the dense layers
-        for layer in self.dense_layers.iter_mut() {
-            match layer {
-                LayerEnum::RMSNorm(rms_norm_layer) => {
-                    batch_output = rms_norm_layer.forward(&batch_output, input_batch);
 
-                    check_nan_or_inf_3d(&mut batch_output, "check rms norm in self attention layer");
-                }
-                _ => {}
-            }
-        }
+        // Process the dense layers
+        // for layer in self.dense_layers.iter_mut() {
+        //     match layer {
+        //         LayerEnum::RMSNorm(rms_norm_layer) => {
+        //             batch_output = rms_norm_layer.forward(&batch_output, input_batch);
+
+        //             check_nan_or_inf_3d(&mut batch_output, "check rms norm in self attention layer");
+        //         }
+        //         _ => {}
+        //     }
+        // }
 
         batch_output
     }
@@ -96,48 +102,53 @@ impl SelfAttentionLayer {
         let mut gradient: Gradient = Gradient::new_default();
 
         // Process the dense layers
-        for layer in self.dense_layers.iter_mut() {
-            match layer {
-                LayerEnum::RMSNorm(rms_norm_layer) => {
-                    check_nan_or_inf_3d(&mut gradient_input_batch, "gradient input batch has NaN values in selft attention layer backward rnorm");
+        // for layer in self.dense_layers.iter_mut() {
+        //     match layer {
+        //         LayerEnum::RMSNorm(rms_norm_layer) => {
+        //             check_nan_or_inf_3d(&mut gradient_input_batch, "gradient input batch has NaN values in selft attention layer backward rnorm");
 
-                    let gradient = rms_norm_layer.backward(&gradient_input_batch);
-                    gradient_input_batch = gradient.get_gradient_input_batch();
-                }
-                _ => {}
-            }
-        }
+        //             let gradient = rms_norm_layer.backward(&gradient_input_batch);
+        //             gradient_input_batch = gradient.get_gradient_input_batch();
+        //         }
+        //         _ => {}
+        //     }
+        // }
+
+        // println!("backward previous input gradient batch: {} {} {}", &previous_gradient_batch.len(), previous_gradient_batch[0].len(), previous_gradient_batch[0][0].len());
+        // println!("backward start in self attention");
 
         let previous_gradient_head_splitted = self.split_gradient_into_heads(&gradient_input_batch);
         let mut gradient_input_batches: Vec<Vec<Vec<Vec<Complex<f64>>>>> = Vec::new();
+
+        // println!("backward splitting done in self attention");
 
         // Backpropagate gradients through each attention head
         for (head_ind, attention_head) in self.attention_heads.iter_mut().enumerate() {
             let mut previous_head_gradient_batch = previous_gradient_head_splitted[head_ind].clone();
 
             check_nan_or_inf_3d(&mut previous_head_gradient_batch, "previous_head_gradient_batch NaN values in selft attention layer backward attention head");
+
+            // println!("backward previous head gradient batch: {} {} {}", &previous_head_gradient_batch.len(), previous_head_gradient_batch[0].len(), previous_head_gradient_batch[0][0].len());
             gradient = attention_head.backward(&previous_head_gradient_batch);
 
             gradient_input_batches.push(gradient.get_gradient_input_batch());
+
+           // println!("gradient input head {:?}", &gradient.get_gradient_input_batch());
         }
 
-        let mut combined_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![Vec::new(); sequence_size]; batch_size];
+        let mut combined_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); gradient_input_batches[0][0][0].len()]; gradient_input_batches[0][0].len()]; gradient_input_batches[0].len()];
 
-        // Combine the gradients from each attention head (concatenating horizontally)
-        for b in 0..batch_size {
-            for i in 0..sequence_size {
-                let mut combined_output: Vec<Complex<f64>> = Vec::new();
-
-                // Concatenate gradients from each attention head
-                for head_gradient_batch in &gradient_input_batches {
-                    let head_output = &head_gradient_batch[b][i];
-                    combined_output.extend_from_slice(head_output);
+        for h in 0..gradient_input_batches.len() {
+            for b in 0..gradient_input_batches[h].len() {
+                for s in 0..gradient_input_batches[h][b].len() {
+                    for d in 0..gradient_input_batches[h][b][s].len() {
+                        combined_gradient_input_batch[b][s][d] += gradient_input_batches[h][b][s][d];
+                    }
                 }
-
-                // Store the combined gradients
-                combined_gradient_input_batch[b][i] = combined_output;
             }
         }
+
+        // println!("combine gradient input batch in backward: {} {} {}", &combined_gradient_input_batch.len(), &combined_gradient_input_batch[0].len(), &combined_gradient_input_batch[0][0].len());
 
         // Return the final gradient
         gradient.set_gradient_input_batch(combined_gradient_input_batch);
@@ -170,14 +181,14 @@ impl SelfAttentionLayer {
     }
 
     pub fn update_parameters(&mut self) {
-        for layer in self.dense_layers.iter_mut() {
-            match layer {
-                LayerEnum::RMSNorm(rms_norm_layer) => {
-                    rms_norm_layer.update_parameters();
-                }
-                _ => {}
-            }
-        }
+        // for layer in self.dense_layers.iter_mut() {
+        //     match layer {
+        //         LayerEnum::RMSNorm(rms_norm_layer) => {
+        //             rms_norm_layer.update_parameters();
+        //         }
+        //         _ => {}
+        //     }
+        // }
 
         for attention_head in self.attention_heads.iter_mut() {
             attention_head.update_parameters();
