@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod test_transformer {
+    use num::Complex;
+
     use crate::neural_networks::{
         network_components::{embedding_layer::EmbeddingLayer, layer::LayerEnum, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
         network_types::{
@@ -15,7 +17,6 @@ mod test_transformer {
         utils::{derivative::numerical_gradient_weights, tokenizer::tokenize_batch},
     };
 
-    use num::Complex;
     #[test]
     #[ignore]
     fn test_transformer_backward() {
@@ -118,7 +119,7 @@ mod test_transformer {
                 })
                 .expect("No SelfAttention layer found");
 
-            let first_attention_head = first_self_attention.attention_heads.iter_mut().next().expect("No attention head fount in loss fn");
+            let first_attention_head = first_self_attention.attention_heads.iter_mut().next().expect("No attention head found in loss fn");
             first_attention_head.weights_q = weights.clone();
 
             //println!("\n\n weights_q in loss fn {:?}", weights);

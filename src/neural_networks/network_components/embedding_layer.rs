@@ -120,7 +120,7 @@ impl EmbeddingLayer {
         }
 
         // println!("token input after padding: {:?}", &token_input_ids_padded);
-        println!("padding mask after padding: {:?}", &padding_mask_batch);
+        //println!("padding mask after padding: {:?}", &padding_mask_batch);
 
         (token_input_ids_padded, padding_mask_batch)
     }

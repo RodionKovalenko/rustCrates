@@ -44,9 +44,7 @@ impl RMSNormLayer {
 
     pub fn rms(&self, input: &Vec<Complex<f64>>) -> Complex<f64> {
         let mean_square = input.iter().map(|x| x * x).sum::<Complex<f64>>() / input.len() as f64;
-        let rms = (mean_square + self.epsilon).sqrt();
-
-        rms
+        (mean_square + self.epsilon).sqrt()
     }
 
     // Forward pass for a batch of token embeddings (2D input)
@@ -84,6 +82,8 @@ impl RMSNormLayer {
         let mut input_batch_gradients = vec![vec![vec![Complex::new(0.0, 0.0); dim_len]; seq_len]; batch_size];
         let mut gradient_gamma_batch = vec![vec![Complex::new(0.0, 0.0); dim_len]; batch_size];
 
+        println!("\n\n\ninput batch rms norm: {:?}", &input_batch);
+
         // println!("------------------------------------------------------------------------------");
         // println!("previous gradient batch  {} {} {}", &previous_gradient_batch.len(), &previous_gradient_batch[0].len(), previous_gradient_batch[0][0].len());
         // println!("input batch  {} {} {}", &input_batch.len(), &input_batch[0].len(), input_batch[0][0].len());
@@ -113,6 +113,7 @@ impl RMSNormLayer {
             }
         }
    
+
         check_nan_or_inf_3d(&mut input_batch_gradients, "output gradients in rms norm layer has None values");
 
         gradient.set_gradient_input_batch(input_batch_gradients);
