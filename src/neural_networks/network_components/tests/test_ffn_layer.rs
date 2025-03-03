@@ -277,7 +277,7 @@ pub mod test_ffn_layer {
             _ => vec![],
         };
 
-        let bias_dense = match ffn_layer.layers.get(0) {
+        let _bias_dense = match ffn_layer.layers.get(0) {
             Some(LayerEnum::Dense(dense_layer)) => dense_layer.bias.clone(),
             _ => vec![],
         };
