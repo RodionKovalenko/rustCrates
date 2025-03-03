@@ -442,13 +442,13 @@ pub fn contains_nan_or_inf(matrix: &mut Vec<Vec<Complex<f64>>>) -> bool {
 pub fn check_nan_or_inf_3d(matrix_batch: &mut Vec<Vec<Vec<Complex<f64>>>>, message: &str) {
     for matrix in matrix_batch.iter_mut() {
         if contains_nan_or_inf(matrix) {
-            println!("{:?}: The value is Not Valid{:?}", message, matrix);
+            println!("{:?}: The value is Not Valid", message);
         }
     }
 }
 
 pub fn check_nan_or_inf(matrix: &mut Vec<Vec<Complex<f64>>>, message: &str) {
     if contains_nan_or_inf(matrix) {
-        println!("{:?}: The value is Not Valid , {:?}", message, matrix);
+        println!("{:?}: The value is Not Valid", message);
     }
 }
