@@ -50,7 +50,7 @@ mod test_softmax_layer {
             loss
         };
 
-        let epsilon = 1e-7;
+        let epsilon = 1e-5;
         let numerical_grad: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, linear_batch_output.clone(), epsilon);
         let numerical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch(&mut loss_fn, linear_batch_output.clone(), epsilon);
 

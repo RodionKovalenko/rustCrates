@@ -207,7 +207,7 @@ pub mod test_ffn_layer {
             loss
         };
 
-        let epsilon = 1e-7;
+        let epsilon = 1e-5;
         let numerical_grad_linear: Vec<Vec<Complex<f64>>> = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &weights_linear, epsilon);
 
         // Check if gradient batch dimensions match expected shapes
