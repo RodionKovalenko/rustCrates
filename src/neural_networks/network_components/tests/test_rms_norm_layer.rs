@@ -16,7 +16,7 @@ mod test_rms_norm_layer {
         let input_dim = 3; // Match the input dimension with your input batch
         let learning_rate = 0.01;
         let _operation_mode = OperationMode::TRAINING;
-        let epsilon = 1e-7;
+        let epsilon = 1e-5;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![
@@ -55,7 +55,6 @@ mod test_rms_norm_layer {
             linear_batch_output
         };
 
-        let epsilon = 1e-7;
         //let numerical_grad_rms: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_jacobi_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
         let numerical_grad_rms: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
 
