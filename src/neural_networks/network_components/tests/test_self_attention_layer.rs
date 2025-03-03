@@ -145,20 +145,20 @@ mod test_self_attention_layer {
         // Define a small input batch, [2][6][4]
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![
             vec![
-                vec![Complex::new(0.5, 0.0), Complex::new(0.8, 0.0), Complex::new(0.1, 0.0), Complex::new(0.3, 0.0)],
-                vec![Complex::new(0.9, 0.0), Complex::new(-0.8, 0.0), Complex::new(0.1, 0.0), Complex::new(0.1, 0.0)],
-                vec![Complex::new(1.2, 0.0), Complex::new(-0.3, 0.0), Complex::new(0.1, 0.0), Complex::new(0.5, 0.0)],
-                vec![Complex::new(1.2, 0.0), Complex::new(-0.3, 0.0), Complex::new(0.1, 0.0), Complex::new(0.5, 0.0)],
-                vec![Complex::new(1.2, 0.0), Complex::new(-0.3, 0.0), Complex::new(0.1, 0.0), Complex::new(0.5, 0.0)],
-                vec![Complex::new(0.9, 0.0), Complex::new(-0.8, 0.0), Complex::new(0.1, 0.0), Complex::new(0.1, 0.0)],
+                vec![Complex::new(0.5, 1.0), Complex::new(0.8, 4.0), Complex::new(0.1, 0.0), Complex::new(0.3, 1.0)],
+                vec![Complex::new(0.9, 0.4), Complex::new(-0.8, 5.0), Complex::new(0.1, 0.0), Complex::new(0.1, 2.0)],
+                vec![Complex::new(1.2, 0.5), Complex::new(-0.3, 1.0), Complex::new(0.1, 0.0), Complex::new(0.5, 3.0)],
+                vec![Complex::new(1.2, 0.6), Complex::new(-0.3, 2.0), Complex::new(0.1, 0.0), Complex::new(0.5, 4.0)],
+                vec![Complex::new(1.2, 0.7), Complex::new(-0.3, 3.0), Complex::new(0.1, 0.0), Complex::new(0.5, 5.0)],
+                vec![Complex::new(0.9, 0.8), Complex::new(-0.8, 4.0), Complex::new(0.1, 0.0), Complex::new(0.1, 6.0)],
             ],
             vec![
-                vec![Complex::new(1.0, 0.0), Complex::new(2.0, 0.0), Complex::new(3.0, 0.0), Complex::new(0.4, 0.0)],
-                vec![Complex::new(3.0, 0.0), Complex::new(3.0, 0.0), Complex::new(4.0, 0.0), Complex::new(0.5, 0.0)],
-                vec![Complex::new(0.6, 0.0), Complex::new(0.8, 0.0), Complex::new(0.1, 0.0), Complex::new(0.6, 0.0)],
-                vec![Complex::new(0.6, 0.0), Complex::new(0.8, 0.0), Complex::new(0.1, 0.0), Complex::new(0.6, 0.0)],
-                vec![Complex::new(0.6, 0.0), Complex::new(0.8, 0.0), Complex::new(0.1, 0.0), Complex::new(0.6, 0.0)],
-                vec![Complex::new(3.0, 0.0), Complex::new(3.0, 0.0), Complex::new(4.0, 0.0), Complex::new(0.5, 0.0)],
+                vec![Complex::new(1.0, 0.1), Complex::new(2.0, 0.4), Complex::new(3.0, 3.0), Complex::new(0.4, 0.1)],
+                vec![Complex::new(3.0, 0.2), Complex::new(3.0, 0.6), Complex::new(4.0, 2.5), Complex::new(0.5, 0.2)],
+                vec![Complex::new(0.6, 0.3), Complex::new(0.8, 0.8), Complex::new(0.1, 6.3), Complex::new(0.6, 0.3)],
+                vec![Complex::new(0.6, 0.4), Complex::new(0.8, 0.9), Complex::new(0.1, 6.4), Complex::new(0.6, 0.4)],
+                vec![Complex::new(0.6, 0.5), Complex::new(0.8, 1.2), Complex::new(0.1, 6.6), Complex::new(0.6, 0.5)],
+                vec![Complex::new(3.0, 0.6), Complex::new(3.0, 2.3), Complex::new(4.0, 1.7), Complex::new(0.5, 0.6)],
             ],
         ];
 
