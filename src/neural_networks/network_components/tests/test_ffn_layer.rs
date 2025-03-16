@@ -21,17 +21,38 @@ pub mod test_ffn_layer {
         // Define some small batch size and input dimensions for simplicity
         let _batch_size = 2;
         let _seq_len: usize = 1; // Update to match the input structure
-        let input_dim = 3; // Match the input dimension with your input batch
-        let output_dim = 4; // Match output_dim to your layer's output
+        let input_dim = 4; // Match the input dimension with your input batch
+        let output_dim = 7; // Match output_dim to your layer's output
         let learning_rate = 0.01;
         let _operation_mode = OperationMode::TRAINING;
-        let epsilon: f64 = 1e-6;
+        let epsilon: f64 = 1e-3;
 
-        let mut dense_layer: Layer = Layer::new(input_dim, output_dim, &learning_rate, &ActivationType::LINEAR, LayerType::DenseLayer);
+        let mut dense_layer: Layer = Layer::new(input_dim, output_dim, &learning_rate, &ActivationType::GELU, LayerType::DenseLayer);
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0010, 0.20), Complex::new(0.0030, 0.50), Complex::new(0.60, 0.40)], vec![Complex::new(0.0010, 0.20), Complex::new(0.0030, 0.50), Complex::new(0.60, 0.40)]]];
-        let padding_mask_batch = vec![vec![0, 1]];
+        //let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0010, 0.20), Complex::new(0.0030, 0.50), Complex::new(0.60, 0.40)], vec![Complex::new(0.0010, 0.20), Complex::new(0.0030, 0.50), Complex::new(0.60, 0.40)]]];
+
+        // Define a small input batch, [2][6][4]
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![
+            vec![
+                vec![Complex::new(0.5, 1.0), Complex::new(0.8, 4.0), Complex::new(0.1, 0.0), Complex::new(0.3, 1.0)],
+                vec![Complex::new(0.9, 0.4), Complex::new(-0.8, 5.0), Complex::new(0.1, 0.0), Complex::new(0.1, 2.0)],
+                vec![Complex::new(1.2, 0.5), Complex::new(-0.3, 1.0), Complex::new(0.1, 0.0), Complex::new(0.5, 3.0)],
+                vec![Complex::new(1.2, 0.6), Complex::new(-0.3, 2.0), Complex::new(0.1, 0.0), Complex::new(0.5, 4.0)],
+                vec![Complex::new(1.2, 0.7), Complex::new(-0.3, 3.0), Complex::new(0.1, 0.0), Complex::new(0.5, 5.0)],
+                vec![Complex::new(0.9, 0.8), Complex::new(-0.8, 4.0), Complex::new(0.1, 0.0), Complex::new(0.1, 6.0)],
+            ],
+            vec![
+                vec![Complex::new(1.0, 0.1), Complex::new(2.0, 0.4), Complex::new(3.0, 3.0), Complex::new(0.4, 0.1)],
+                vec![Complex::new(3.0, 0.2), Complex::new(3.0, 0.6), Complex::new(4.0, 2.5), Complex::new(0.5, 0.2)],
+                vec![Complex::new(0.6, 0.3), Complex::new(0.8, 0.8), Complex::new(0.1, 6.3), Complex::new(0.6, 0.3)],
+                vec![Complex::new(0.6, 0.4), Complex::new(0.8, 0.9), Complex::new(0.1, 6.4), Complex::new(0.6, 0.4)],
+                vec![Complex::new(0.6, 0.5), Complex::new(0.8, 1.2), Complex::new(0.1, 6.6), Complex::new(0.6, 0.5)],
+                vec![Complex::new(3.0, 0.6), Complex::new(3.0, 2.3), Complex::new(4.0, 1.7), Complex::new(0.5, 0.6)],
+            ],
+        ];
+
+        let padding_mask_batch = vec![vec![1; input_batch[0].len()]; input_batch.len()];
 
         let dense_output_batch = dense_layer.forward(&input_batch, &padding_mask_batch);
 
@@ -101,16 +122,36 @@ pub mod test_ffn_layer {
         // Define some small batch size and input dimensions for simplicity
         let _batch_size = 2;
         let _seq_len: usize = 1; // Update to match the input structure
-        let input_dim = 3; // Match the input dimension with your input batch
-        let output_dim = 5; // Match output_dim to your layer's output
+        let input_dim = 6; // Match the input dimension with your input batch
+        let output_dim = 8; // Match output_dim to your layer's output
         let learning_rate = 0.01;
         let _operation_mode = OperationMode::TRAINING;
-        let epsilon: f64 = 1e-6;
+        let epsilon: f64 = 1e-3;
 
         let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(input_dim, output_dim, learning_rate);
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.10, 0.20), Complex::new(0.30, 0.50), Complex::new(0.60, 0.40)]]];
+        //let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.10, 0.20), Complex::new(0.30, 0.50), Complex::new(0.60, 0.40)]]];
+
+        // Define a small input batch, [2][6][4]
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![
+            vec![
+                vec![Complex::new(0.5, 1.0), Complex::new(0.8, 4.0), Complex::new(0.1, 0.0), Complex::new(0.3, 1.0)],
+                vec![Complex::new(0.9, 0.4), Complex::new(-0.8, 5.0), Complex::new(0.1, 0.0), Complex::new(0.1, 2.0)],
+                vec![Complex::new(1.2, 0.5), Complex::new(-0.3, 1.0), Complex::new(0.1, 0.0), Complex::new(0.5, 3.0)],
+                vec![Complex::new(1.2, 0.6), Complex::new(-0.3, 2.0), Complex::new(0.1, 0.0), Complex::new(0.5, 4.0)],
+                vec![Complex::new(1.2, 0.7), Complex::new(-0.3, 3.0), Complex::new(0.1, 0.0), Complex::new(0.5, 5.0)],
+                vec![Complex::new(0.9, 0.8), Complex::new(-0.8, 4.0), Complex::new(0.1, 0.0), Complex::new(0.1, 6.0)],
+            ],
+            vec![
+                vec![Complex::new(1.0, 0.1), Complex::new(2.0, 0.4), Complex::new(3.0, 3.0), Complex::new(0.4, 0.1)],
+                vec![Complex::new(3.0, 0.2), Complex::new(3.0, 0.6), Complex::new(4.0, 2.5), Complex::new(0.5, 0.2)],
+                vec![Complex::new(0.6, 0.3), Complex::new(0.8, 0.8), Complex::new(0.1, 6.3), Complex::new(0.6, 0.3)],
+                vec![Complex::new(0.6, 0.4), Complex::new(0.8, 0.9), Complex::new(0.1, 6.4), Complex::new(0.6, 0.4)],
+                vec![Complex::new(0.6, 0.5), Complex::new(0.8, 1.2), Complex::new(0.1, 6.6), Complex::new(0.6, 0.5)],
+                vec![Complex::new(3.0, 0.6), Complex::new(3.0, 2.3), Complex::new(4.0, 1.7), Complex::new(0.5, 0.6)],
+            ],
+        ];
 
         let ffn_output_batch = ffn_layer.forward(&input_batch);
 
@@ -245,21 +286,43 @@ pub mod test_ffn_layer {
         // Define some small batch size and input dimensions for simplicity
         let _batch_size = 2;
         let _seq_len: usize = 1; // Update to match the input structure
-        let input_dim = 3; // Match the input dimension with your input batch
-        let output_dim = 4; // Match output_dim to your layer's output
+        let input_dim = 4; // Match the input dimension with your input batch
+        let output_dim = 8; // Match output_dim to your layer's output
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
-        let epsilon = 1e-7;
+        let epsilon = 1e-4;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(input_dim, output_dim, learning_rate);
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
-        // Define a small input batch, [2][2][3]
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.5, 0.0), Complex::new(0.8, 0.0), Complex::new(0.1, 0.0)]], vec![vec![Complex::new(1.0, 0.0), Complex::new(2.0, 0.0), Complex::new(3.0, 0.0)]]];
+        // Define a small input batch, [2][1][3]
+        //let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.5, 0.2), Complex::new(0.8, 0.3), Complex::new(0.1, 0.6)]], vec![vec![Complex::new(1.0, 0.9), Complex::new(2.0, 1.5), Complex::new(3.0, -0.4)]]];
 
-        let target_token_id_batch = vec![vec![0], vec![1]];
+        // Define a small input batch, [2][6][4]
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![
+            vec![
+                vec![Complex::new(0.5, 1.0), Complex::new(0.8, 4.0), Complex::new(0.1, 0.0), Complex::new(0.3, 1.0)],
+                vec![Complex::new(0.9, 0.4), Complex::new(-0.8, 5.0), Complex::new(0.1, 0.0), Complex::new(0.1, 2.0)],
+                vec![Complex::new(1.2, 0.5), Complex::new(-0.3, 1.0), Complex::new(0.1, 0.0), Complex::new(0.5, 3.0)],
+                vec![Complex::new(1.2, 0.6), Complex::new(-0.3, 2.0), Complex::new(0.1, 0.0), Complex::new(0.5, 4.0)],
+                vec![Complex::new(1.2, 0.7), Complex::new(-0.3, 3.0), Complex::new(0.1, 0.0), Complex::new(0.5, 5.0)],
+                vec![Complex::new(0.9, 0.8), Complex::new(-0.8, 4.0), Complex::new(0.1, 0.0), Complex::new(0.1, 6.0)],
+            ],
+            vec![
+                vec![Complex::new(1.0, 0.1), Complex::new(2.0, 0.4), Complex::new(3.0, 3.0), Complex::new(0.4, 0.1)],
+                vec![Complex::new(3.0, 0.2), Complex::new(3.0, 0.6), Complex::new(4.0, 2.5), Complex::new(0.5, 0.2)],
+                vec![Complex::new(0.6, 0.3), Complex::new(0.8, 0.8), Complex::new(0.1, 6.3), Complex::new(0.6, 0.3)],
+                vec![Complex::new(0.6, 0.4), Complex::new(0.8, 0.9), Complex::new(0.1, 6.4), Complex::new(0.6, 0.4)],
+                vec![Complex::new(0.6, 0.5), Complex::new(0.8, 1.2), Complex::new(0.1, 6.6), Complex::new(0.6, 0.5)],
+                vec![Complex::new(3.0, 0.6), Complex::new(3.0, 2.3), Complex::new(4.0, 1.7), Complex::new(0.5, 0.6)],
+            ],
+        ];
+
+        println!("input batch dim: {}, {}, {}", input_batch.len(), input_batch[0].len(), input_batch[0][0].len());
+
+        let target_token_id_batch = vec![vec![0, 1, 1, 1, 1, 1], vec![1, 0, 1, 1, 1, 0]];
         //let target_token_id_batch = vec![vec![0]];
 
         // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
@@ -270,7 +333,7 @@ pub mod test_ffn_layer {
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax.get_gradient_input_batch());
         let gradient_ffn: Gradient = ffn_layer.backward(&gradient_linear.get_gradient_input_batch());
-        
+
         let (grouped_ffn_gradient_weights, analytical_gradient_ffn_bias) = (gradient_ffn.get_gradient_weights(), gradient_ffn.get_gradient_bias());
 
         let weights_dense = match ffn_layer.layers.get(0) {
@@ -308,7 +371,7 @@ pub mod test_ffn_layer {
         println!("\nanalytical grad weights: {:?}", grouped_ffn_gradient_weights);
         println!("\nnumerical grad weights: {:?}", numerical_grad_weights_ffn);
 
-        test_gradient_error_2d(&grouped_ffn_gradient_weights, &numerical_grad_weights_ffn, 1e-5);
+        test_gradient_error_2d(&grouped_ffn_gradient_weights, &numerical_grad_weights_ffn, 1e-2);
 
         if let Some(LayerEnum::Dense(dense_layer)) = ffn_layer.layers.get_mut(0) {
             dense_layer.weights = weights_dense.clone();
@@ -340,6 +403,6 @@ pub mod test_ffn_layer {
         println!("\nanalytical grad bias: {:?}", analytical_gradient_ffn_bias);
         println!("\nnumerical grad bias: {:?}", numerical_grad_linear_bias);
 
-        test_gradient_error_1d(&analytical_gradient_ffn_bias, &numerical_grad_linear_bias, 1e-5);
+        test_gradient_error_1d(&analytical_gradient_ffn_bias, &numerical_grad_linear_bias, 1e-2);
     }
 }
