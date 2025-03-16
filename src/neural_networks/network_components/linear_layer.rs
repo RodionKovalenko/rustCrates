@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
-    matrix::{add_vector, check_nan_or_inf, clip_gradient_1d, clip_gradients, multiply_complex},
+    matrix::{add_vector, check_nan_or_inf, clip_gradient_1d, clip_gradients, is_nan_or_inf, multiply_complex},
     weights_initializer::initialize_weights_complex,
 };
 
@@ -110,17 +110,19 @@ impl LinearLayer {
         // Update weights and biases using gradient descent
         for (i, row) in self.weights.iter_mut().enumerate() {
             for (j, weight_value) in row.iter_mut().enumerate() {
-                if !weight_gradients[i][j].re.is_nan() && !weight_gradients[i][j].im.is_nan() {
+                if !is_nan_or_inf(&weight_gradients[i][j]) {
                     *weight_value -= self.learning_rate * (weight_gradients[i][j] / batch_size);
                 }
             }
         }
 
         for (i, value) in self.bias.iter_mut().enumerate() {
-            if !bias_gradients[i].re.is_nan() && !bias_gradients[i].im.is_nan() {
+            if !is_nan_or_inf(&bias_gradients[i]) {
                 *value -= self.learning_rate * (bias_gradients[i] / batch_size);
             }
         }
+
+        self.learning_rate *= 0.99;
     }
 
     pub fn group_gradient_batch(&self, weight_gradients_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Complex<f64>>> {

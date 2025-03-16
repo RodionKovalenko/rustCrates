@@ -2,7 +2,7 @@ use core::fmt::Debug;
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::utils::matrix::{add_matrix, check_nan_or_inf, check_nan_or_inf_3d, clip_gradients};
+use crate::neural_networks::utils::matrix::{add_matrix, check_nan_or_inf, check_nan_or_inf_3d, clip_gradients, is_nan_or_inf};
 
 use super::gradient_struct::Gradient;
 
@@ -146,10 +146,12 @@ impl RMSNormLayer {
 
         for batch_ind in 0..gradient_gamma.len() {
             for (i, value) in self.gamma.iter_mut().enumerate() {
-                if !gradient_gamma[batch_ind][i].re.is_nan() && !gradient_gamma[batch_ind][i].im.is_nan() {
+                if !is_nan_or_inf(&gradient_gamma[batch_ind][i]) {
                     *value -= self.learning_rate * (gradient_gamma[batch_ind][i] / batch_size);
                 }
             }
         }
+
+        self.learning_rate *= 0.99;
     }
 }

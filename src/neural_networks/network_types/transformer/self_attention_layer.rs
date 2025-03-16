@@ -177,14 +177,17 @@ impl SelfAttentionLayer {
     }
 
     pub fn update_parameters(&mut self) {
-        // for layer in self.dense_layers.iter_mut() {
-        //     match layer {
-        //         LayerEnum::RMSNorm(rms_norm_layer) => {
-        //             rms_norm_layer.update_parameters();
-        //         }
-        //         _ => {}
-        //     }
-        // }
+        if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
+            match norm_layer_enum {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    rms_norm_layer.update_parameters();
+                },
+                LayerEnum::Norm(norm_layer) => {
+                    norm_layer.update_parameters();
+                }
+                _ => {}
+            }
+        }
 
         for attention_head in self.attention_heads.iter_mut() {
             attention_head.update_parameters();
