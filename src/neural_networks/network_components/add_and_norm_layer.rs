@@ -2,7 +2,7 @@ use core::fmt::Debug;
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::utils::matrix::{add_matrix, check_nan_or_inf, check_nan_or_inf_3d, clip_gradients};
+use crate::neural_networks::utils::matrix::{add_matrix, check_nan_or_inf, check_nan_or_inf_3d, clip_gradients, is_nan_or_inf};
 
 use super::gradient_struct::Gradient;
 
@@ -127,28 +127,33 @@ impl NormalNormLayer {
     }
 
     pub fn update_parameters(&mut self) {
-        let gradient: &Gradient = self.gradient.as_ref().expect("No gradient found in rms norm layer");
+        let gradient: &Gradient = self.gradient.as_ref().expect("No gradient found in NormalNormLayer");
         let mut gradient_gamma: Vec<Vec<Complex<f64>>> = gradient.get_gradient_gamma_batch();
+        let mut gradient_beta: Vec<Vec<Complex<f64>>> = gradient.get_gradient_beta_batch(); // Get beta gradients
 
         let threshold = 1.0;
         clip_gradients(&mut gradient_gamma, threshold);
+        clip_gradients(&mut gradient_beta, threshold); // Clip beta gradients
 
         check_nan_or_inf(&mut gradient_gamma, "check weight gradients in linear layer");
+        check_nan_or_inf(&mut gradient_beta, "check beta gradients in NormalNormLayer");
 
         let batch_size = gradient_gamma.len() as f64;
 
-        // println!("------------------------------------------------------------------------------");
-        // println!("gradient_gamma batch  {} {}", &gradient_gamma.len(), &gradient_gamma[0].len());
-        // println!("gradient gamma dim: {} ", &self.gamma.len());
-        // println!("gamma dim: {}", &self.gamma.len());
-        // println!("------------------------------------------------------------------------------");
-
         for batch_ind in 0..gradient_gamma.len() {
             for (i, value) in self.gamma.iter_mut().enumerate() {
-                if !gradient_gamma[batch_ind][i].re.is_nan() && !gradient_gamma[batch_ind][i].im.is_nan() {
+                if !is_nan_or_inf(&gradient_gamma[batch_ind][i]) {
                     *value -= self.learning_rate * (gradient_gamma[batch_ind][i] / batch_size);
                 }
             }
+
+            for (i, value) in self.beta.iter_mut().enumerate() {
+                if !is_nan_or_inf(&gradient_beta[batch_ind][i]) {
+                    *value -= self.learning_rate * (gradient_beta[batch_ind][i] / batch_size);
+                }
+            }
         }
+
+        self.learning_rate *= 0.99;
     }
 }

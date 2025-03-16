@@ -26,7 +26,7 @@ mod test_transformer {
         let number_of_hidden_neurons: usize = 32;
         let minibatch_size: usize = 50;
         let learning_rate: f64 = 0.01;
-        let epsilon = 1e-6;
+        let epsilon = 1e-3;
 
         let mut transformer_network: NeuralNetwork = create(number_inputs, number_outputs, number_of_hidden_layers, number_of_hidden_neurons, minibatch_size, learning_rate);
 

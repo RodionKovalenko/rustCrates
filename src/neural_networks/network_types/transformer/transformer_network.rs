@@ -187,7 +187,8 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
 
                     let gradient_batch: Gradient = embedding_layer.backward(&previous_gradient_batch);
 
-                    //embedding_layer.update_parameters(&target_batch_ids, transformer_network.learning_rate);
+                    embedding_layer.update_parameters(&target_batch_ids, transformer_network.learning_rate);
+                    transformer_network.learning_rate *= 0.99;
 
                     gradient = Some(gradient_batch);
                 } else {

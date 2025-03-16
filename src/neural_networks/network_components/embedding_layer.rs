@@ -182,6 +182,10 @@ impl EmbeddingLayer {
 
                 for j in 0..self.embedding_dim {
                     token_embedding[j] -= learning_rate * (gradient[j] / batch_size);
+
+                    if token_embedding[j].re.is_infinite() || token_embedding[j].is_nan() || token_embedding[j].im.is_infinite() || token_embedding[j].im.is_nan() {
+                        token_embedding[j] = Complex::new(0.0, 0.0);
+                    }
                 }
 
                 Self::update_embedding(db, &token_id, &token_embedding);
