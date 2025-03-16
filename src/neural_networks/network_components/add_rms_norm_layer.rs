@@ -6,7 +6,7 @@ use crate::neural_networks::utils::matrix::{add_matrix, check_nan_or_inf, check_
 
 use super::gradient_struct::Gradient;
 
-pub const EPSILON: f64 = 0.00000001;
+pub const EPSILON: f64 = 0.0000000000000000000000001;
 
 // RMSNorm Layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,7 +43,14 @@ impl RMSNormLayer {
     }
 
     pub fn rms(&self, input: &Vec<Complex<f64>>) -> Complex<f64> {
-        let mean_square = input.iter().map(|x| x * x).sum::<Complex<f64>>() / input.len() as f64;
+        let mean_square = input
+            .iter()
+            .map(|x| {
+                // println!("x {:?}, x * x {:?}", x, x * x);
+                x * x
+            })
+            .sum::<Complex<f64>>()
+            / input.len() as f64;
         (mean_square + self.epsilon).sqrt()
     }
 
@@ -82,7 +89,7 @@ impl RMSNormLayer {
         let mut input_batch_gradients = vec![vec![vec![Complex::new(0.0, 0.0); dim_len]; seq_len]; batch_size];
         let mut gradient_gamma_batch = vec![vec![Complex::new(0.0, 0.0); dim_len]; batch_size];
 
-        println!("\n\n\ninput batch rms norm: {:?}", &input_batch);
+        // println!("\n\n\ninput batch rms norm: {:?}", &input_batch);
 
         // println!("------------------------------------------------------------------------------");
         // println!("previous gradient batch  {} {} {}", &previous_gradient_batch.len(), &previous_gradient_batch[0].len(), previous_gradient_batch[0][0].len());
@@ -94,25 +101,23 @@ impl RMSNormLayer {
         for b in 0..batch_size {
             for s in 0..seq_len {
                 let rms = self.rms(&input_batch[b][s]);
-                // Compute gradients
+                let rms_cubed = rms.powf(3.0);
+                let dim_f64 = dim_len as f64;
+    
                 for d_i in 0..dim_len {
-                    // Applying RMSNorm backward formula with gamma scaling
                     for d_j in 0..dim_len {
-                        if d_i == d_j {
-                            let grad = (1.0 / rms) - ((input_batch[b][s][d_i] * input_batch[b][s][d_j]) / (dim_len as f64 * rms.powf(3.0)));
-                            input_batch_gradients[b][s][d_j] += grad;
+                        let grad = if d_i == d_j {
+                            Complex::new(1.0, 0.0) / rms - (input_batch[b][s][d_i] * input_batch[b][s][d_j]) / (dim_f64 * rms_cubed)
                         } else {
-                            let grad = Complex::new(0.0, 0.0) - ((input_batch[b][s][d_i] * input_batch[b][s][d_j]) / (dim_len as f64 * rms.powf(3.0)));
-                            input_batch_gradients[b][s][d_j] += grad;
-                        }
+                            - (input_batch[b][s][d_i] * input_batch[b][s][d_j]) / (dim_f64 * rms_cubed)
+                        };
+                        input_batch_gradients[b][s][d_j] += grad * previous_gradient_batch[b][s][d_i];
                     }
-
-                    input_batch_gradients[b][s][d_i] *= self.gamma[d_i] * previous_gradient_batch[b][s][d_i];
-                    gradient_gamma_batch[b][d_i] = input_batch[b][s][d_i] / rms;
+    
+                    gradient_gamma_batch[b][d_i] += input_batch[b][s][d_i] / rms;
                 }
             }
         }
-   
 
         check_nan_or_inf_3d(&mut input_batch_gradients, "output gradients in rms norm layer has None values");
 
