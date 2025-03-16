@@ -20,10 +20,10 @@ pub struct FeedForwardLayer {
 impl FeedForwardLayer {
     // Constructor to initialize multiple attention heads
     pub fn new(rows: usize, cols: usize, learning_rate: f64) -> Self {
-        let epsilon: f64 = 0.000001;
+        let epsilon: f64 = 0.0000000001;
 
         let mut layers: Vec<LayerEnum> = vec![];
-        let dense_layer: Layer = Layer::new(rows, cols, &learning_rate, &ActivationType::GELU, LayerType::DenseLayer);
+        let dense_layer: Layer = Layer::new(rows, cols, &learning_rate, &ActivationType::SIGMOID, LayerType::DenseLayer);
         let linear_layer = LinearLayer::new(learning_rate, cols, rows);
         //let norm_layer = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(rows, epsilon, learning_rate))));
         let norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(rows, epsilon, learning_rate))));
@@ -150,14 +150,17 @@ impl FeedForwardLayer {
 
     pub fn update_parameters(&mut self) {
         // Apply RMSNorm backpropagation if it's present
-        // if let Some(rms_norm_layer) = &mut self.rms_norm_layer {
-        //     match rms_norm_layer {
-        //         LayerEnum::RMSNorm(rms_norm_layer) => {
-        //             rms_norm_layer.update_parameters();
-        //         }
-        //         _ => {}
-        //     }
-        // }
+        if let Some(layer_enum) = &mut self.norm_layer {
+            match layer_enum {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    rms_norm_layer.update_parameters();
+                },
+                LayerEnum::Norm(norm_layer) => {
+                    norm_layer.update_parameters();
+                },
+                _ => {}
+            }
+        }
 
         //1. Linear
         //2. Dense

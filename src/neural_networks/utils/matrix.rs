@@ -430,7 +430,7 @@ pub fn contains_nan_or_inf(matrix: &mut Vec<Vec<Complex<f64>>>) -> bool {
     for row in matrix.iter_mut() {
         for z in row.iter_mut() {
             if is_nan_or_inf(z) {
-                *z = Complex::new(0.0, 0.0);
+               // *z = Complex::new(0.0, 0.0);
                 found = true;
             }
         }
