@@ -564,13 +564,12 @@ where
                 let loss_plus = f(&input_plus);
                 let loss_minus = f(&input_minus);
 
-                let sum_loss_plus: Complex<f64> = loss_plus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
-
-                let sum_loss_minus: Complex<f64> = loss_minus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
-
-                // Compute numerical gradient
-                let gradient = (sum_loss_plus - sum_loss_minus) / (Complex::new(2.0 * epsilon, 0.0));
-                grad_batch[batch][seq][dim_i] = gradient;
+                 let sum_loss_plus: Complex<f64> = loss_plus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
+                 let sum_loss_minus: Complex<f64> = loss_minus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
+                 let gradient = (sum_loss_plus - sum_loss_minus) / (2.0 * epsilon);
+                
+                //let gradient = (loss_plus[batch][seq][dim_i] - loss_minus[batch][seq][dim_i]) / (2.0 * epsilon);
+                grad_batch[batch][seq][dim_i] += gradient;
             }
         }
     }
