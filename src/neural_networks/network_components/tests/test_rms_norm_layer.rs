@@ -61,6 +61,6 @@ mod test_rms_norm_layer {
         println!("\nnumerical gradient rms: {:?}", &numerical_grad_rms);
         println!("\nanalytical gradient rms: {:?}", &analytical_gradient_rms);
 
-        test_gradient_batch_error(&numerical_grad_rms, &analytical_gradient_rms, epsilon)
+        test_gradient_batch_error(&numerical_grad_rms, &analytical_gradient_rms, epsilon);
     }
 }
