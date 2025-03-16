@@ -374,7 +374,7 @@ pub fn softmax_complex_padding(input: &Vec<Vec<Complex<f64>>>, padding_mask: &Ve
 
             // Sum of exponentials
             for &exp_val in &exps {
-                sum = sum + exp_val;
+                sum += exp_val;
             }
 
             // Compute softmax values
