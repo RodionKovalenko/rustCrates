@@ -14,7 +14,7 @@ pub struct RMSNormLayer {
     gamma: Vec<Complex<f64>>, // Learnable scaling parameter (for each feature)
     epsilon: f64,             // Small constant for numerical stability
     learning_rate: f64,       // Learning rate for gamma updates
-    input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     gradient: Option<Gradient>,
 }
 

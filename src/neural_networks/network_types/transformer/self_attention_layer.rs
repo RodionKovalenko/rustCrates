@@ -1,9 +1,7 @@
 use super::masked_attention_head::MaskedAttentionHead;
 use crate::neural_networks::{
     network_components::{
-        add_rms_norm_layer::RMSNormLayer,
-        gradient_struct::Gradient,
-        layer::{LayerEnum, LayerType},
+        add_and_norm_layer::NormalNormLayer, gradient_struct::Gradient, layer::{LayerEnum, LayerType}
     },
     utils::matrix::check_nan_or_inf_3d,
 };
@@ -15,7 +13,7 @@ use serde::{Deserialize, Serialize};
 pub struct SelfAttentionLayer {
     pub attention_heads: Vec<MaskedAttentionHead>,
     pub activated_output: Vec<Vec<Complex<f64>>>,
-    pub dense_layers: Vec<LayerEnum>,
+    pub norm_layer: Option<LayerEnum>,
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
 }
 
@@ -23,7 +21,6 @@ impl SelfAttentionLayer {
     // Constructor to initialize multiple attention heads
     pub fn new(num_heads: usize, rows: usize, cols: usize, learning_rate: f64) -> Self {
         let mut attention_heads: Vec<MaskedAttentionHead> = vec![];
-        let mut layers: Vec<LayerEnum> = vec![];
         let head_cols = cols / num_heads; // Columns per attention head
 
         for _i in 0..num_heads {
@@ -32,14 +29,14 @@ impl SelfAttentionLayer {
         }
 
         let epsilon: f64 = 0.000001;
-        let rms_norm_layer = RMSNormLayer::new(cols, epsilon, learning_rate);
+        //let _norm_layer_rms = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(cols, epsilon, learning_rate))));
+        let norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(cols, epsilon, learning_rate))));
 
-        layers.push(LayerEnum::RMSNorm(Box::new(rms_norm_layer)));
 
         Self {
             attention_heads,
             activated_output: vec![],
-            dense_layers: layers,
+            norm_layer: norm_layer,
             input_batch: None,
         }
     }
@@ -79,16 +76,20 @@ impl SelfAttentionLayer {
         // println!("output batch size: {} {} {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
 
         // Process the dense layers
-        // for layer in self.dense_layers.iter_mut() {
-        //     match layer {
-        //         LayerEnum::RMSNorm(rms_norm_layer) => {
-        //             batch_output = rms_norm_layer.forward(&batch_output, input_batch);
+        if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
+            match norm_layer_enum {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    batch_output = rms_norm_layer.forward(&batch_output, input_batch);
 
-        //             check_nan_or_inf_3d(&mut batch_output, "check rms norm in self attention layer");
-        //         }
-        //         _ => {}
-        //     }
-        // }
+                    check_nan_or_inf_3d(&mut batch_output, "check rms norm in self attention layer");
+                },
+                LayerEnum::Norm(norm_layer) => {
+                    batch_output = norm_layer.forward(&batch_output, &input_batch);
+                    //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
+                }
+                _ => {}
+            }
+        }
 
         batch_output
     }
@@ -99,18 +100,22 @@ impl SelfAttentionLayer {
 
         let mut gradient: Gradient = Gradient::new_default();
 
-        // Process the dense layers
-        // for layer in self.dense_layers.iter_mut() {
-        //     match layer {
-        //         LayerEnum::RMSNorm(rms_norm_layer) => {
-        //             check_nan_or_inf_3d(&mut gradient_input_batch, "gradient input batch has NaN values in selft attention layer backward rnorm");
+        check_nan_or_inf_3d(&mut gradient_input_batch, "gradient input batch has NaN values in selft attention layer backward rnorm");
 
-        //             let gradient = rms_norm_layer.backward(&gradient_input_batch);
-        //             gradient_input_batch = gradient.get_gradient_input_batch();
-        //         }
-        //         _ => {}
-        //     }
-        // }
+        // Process the dense layers
+        if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
+            match norm_layer_enum {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    let gradient = rms_norm_layer.backward(&gradient_input_batch);
+                    gradient_input_batch = gradient.get_gradient_input_batch();
+                },
+                LayerEnum::Norm(norm_layer) => {
+                    gradient = norm_layer.backward(&gradient_input_batch);
+                    gradient_input_batch = gradient.get_gradient_input_batch();
+                }
+                _ => {}
+            }
+        }
 
         let previous_gradient_head_splitted = self.split_gradient_into_heads(&gradient_input_batch);
         let mut gradient_input_batches: Vec<Vec<Vec<Vec<Complex<f64>>>>> = Vec::new();
