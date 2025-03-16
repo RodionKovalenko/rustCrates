@@ -12,7 +12,7 @@ use num::Complex;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use super::{add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, gradient_struct::Gradient, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer};
+use super::{add_and_norm_layer::NormalNormLayer, add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, gradient_struct::Gradient, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer};
 
 impl Default for ActivationType {
     fn default() -> Self {
@@ -75,6 +75,7 @@ pub enum LayerEnum {
     Dense(Box<Layer>),
     FeedForward(Box<FeedForwardLayer>),
     RMSNorm(Box<RMSNormLayer>),
+    Norm(Box<NormalNormLayer>),
     SelfAttention(Box<SelfAttentionLayer>),
     Linear(Box<LinearLayer>),
     Softmax(Box<SoftmaxLayer>),

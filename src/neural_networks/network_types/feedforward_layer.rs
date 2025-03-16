@@ -1,9 +1,6 @@
 use crate::neural_networks::{
     network_components::{
-        add_rms_norm_layer::RMSNormLayer,
-        gradient_struct::Gradient,
-        layer::{ActivationType, Layer, LayerEnum, LayerType},
-        linear_layer::LinearLayer,
+        add_and_norm_layer::NormalNormLayer, gradient_struct::Gradient, layer::{ActivationType, Layer, LayerEnum, LayerType}, linear_layer::LinearLayer
     },
     utils::matrix::check_nan_or_inf_3d,
 };
@@ -14,7 +11,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeedForwardLayer {
     pub layers: Vec<LayerEnum>,
-    pub rms_norm_layer: Option<LayerEnum>,
+    pub norm_layer: Option<LayerEnum>,
     pub learning_rate: f64,
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     pub padding_mask_batch: Option<Vec<Vec<u32>>>,
@@ -28,14 +25,15 @@ impl FeedForwardLayer {
         let mut layers: Vec<LayerEnum> = vec![];
         let dense_layer: Layer = Layer::new(rows, cols, &learning_rate, &ActivationType::GELU, LayerType::DenseLayer);
         let linear_layer = LinearLayer::new(learning_rate, cols, rows);
-        let rms_norm_layer = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(rows, epsilon, learning_rate))));
+        //let norm_layer = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(rows, epsilon, learning_rate))));
+        let norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(rows, epsilon, learning_rate))));
 
         layers.push(LayerEnum::Dense(Box::new(dense_layer)));
         layers.push(LayerEnum::Linear(Box::new(linear_layer)));
 
         Self {
             layers,
-            rms_norm_layer,
+            norm_layer: norm_layer,
             learning_rate,
             input_batch: None,
             padding_mask_batch: None,
@@ -73,13 +71,18 @@ impl FeedForwardLayer {
         }
 
         // Apply the RMS normalization layer
-        let rms_norm_layer_enum = self.rms_norm_layer.as_mut().unwrap();
-        match rms_norm_layer_enum {
-            LayerEnum::RMSNorm(rms_norm_layer) => {
-                output = rms_norm_layer.forward(&output, &input_batch);
-                //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
+        if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
+            match norm_layer_enum {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    output = rms_norm_layer.forward(&output, &input_batch);
+                    //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
+                },
+                LayerEnum::Norm(norm_layer) => {
+                    output = norm_layer.forward(&output, &input_batch);
+                    //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
+                }
+                _ => {}
             }
-            _ => {}
         }
 
         output
@@ -91,21 +94,23 @@ impl FeedForwardLayer {
         let mut gradient = Gradient::new_default();
 
         //Apply RMSNorm backpropagation if it's present
-        if let Some(rms_norm_layer) = &mut self.rms_norm_layer {
-            match rms_norm_layer {
+        if let Some(norm_layer) = &mut self.norm_layer {
+            match norm_layer {
                 LayerEnum::RMSNorm(rms_norm_layer) => {
                     gradient = rms_norm_layer.backward(&output_gradients);
                     let gradient_input_batch = gradient.get_gradient_input_batch();
 
                     output_gradients = gradient_input_batch;
 
-                    assert_eq!(&output_gradients.len(), &prev_gradients.len());
-                    assert_eq!(&output_gradients[0].len(), &prev_gradients[0].len());
-                    assert_eq!(&output_gradients[0][0].len(), &prev_gradients[0][0].len());
-
-                    println!("input gradient batch rms: {:?}", &output_gradients);
-
                     println!("FFN, gradient from RMS Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
+                },
+                LayerEnum::Norm(norm_layer) => {
+                    gradient = norm_layer.backward(&output_gradients);
+                    let gradient_input_batch = gradient.get_gradient_input_batch();
+
+                    output_gradients = gradient_input_batch;
+
+                    println!("FFN, gradient from Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
                 }
                 _ => {}
             }
