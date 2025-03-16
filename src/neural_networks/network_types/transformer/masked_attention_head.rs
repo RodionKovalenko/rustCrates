@@ -7,7 +7,7 @@ use crate::neural_networks::{
     utils::{
         activation::softmax_complex_padding,
         derivative::{backpropagate_softmax_masked, softmax_derivative_complex_jacobian},
-        matrix::{add_matrix, check_nan_or_inf, clip_gradients, multiply_complex, transpose},
+        matrix::{add_matrix, check_nan_or_inf, clip_gradients, is_nan_or_inf, multiply_complex, transpose},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -277,7 +277,7 @@ impl MaskedAttentionHead {
         // Update weights q
         for (i, row) in self.weights_q.iter_mut().enumerate() {
             for (j, weight_value) in row.iter_mut().enumerate() {
-                if !grad_w_q[i][j].re.is_nan() && !grad_w_q[i][j].im.is_nan() {
+                if !is_nan_or_inf(&grad_w_q[i][j]) {
                     *weight_value -= self.learning_rate * (grad_w_q[i][j] / batch_size);
                 }
             }
@@ -286,7 +286,7 @@ impl MaskedAttentionHead {
         // Update weights v
         for (i, row) in self.weights_v.iter_mut().enumerate() {
             for (j, weight_value) in row.iter_mut().enumerate() {
-                if !grad_w_v[i][j].re.is_nan() && !grad_w_v[i][j].im.is_nan() {
+                if !is_nan_or_inf(&grad_w_v[i][j]) {
                     *weight_value -= self.learning_rate * (grad_w_v[i][j] / batch_size);
                 }
             }
@@ -295,11 +295,13 @@ impl MaskedAttentionHead {
         // Update weights k
         for (i, row) in self.weights_k.iter_mut().enumerate() {
             for (j, weight_value) in row.iter_mut().enumerate() {
-                if !grad_w_k[i][j].re.is_nan() && !grad_w_k[i][j].im.is_nan() {
+                if !is_nan_or_inf(&grad_w_k[i][j]) {
                     *weight_value -= self.learning_rate * (grad_w_k[i][j] / batch_size);
                 }
             }
         }
+
+        self.learning_rate *= 0.99;
     }
 }
 

@@ -421,16 +421,12 @@ pub fn is_nan_or_inf(z: &Complex<f64>) -> bool {
 }
 
 pub fn contains_nan_or_inf(matrix: &mut Vec<Vec<Complex<f64>>>) -> bool {
-    fn is_nan_or_inf(z: &Complex<f64>) -> bool {
-        z.re.is_nan() || z.im.is_nan() || z.re.is_infinite() || z.im.is_infinite()
-    }
-
     let mut found = false;
 
     for row in matrix.iter_mut() {
         for z in row.iter_mut() {
             if is_nan_or_inf(z) {
-               // *z = Complex::new(0.0, 0.0);
+                *z = Complex::new(0.0, 0.0);
                 found = true;
             }
         }

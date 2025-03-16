@@ -3,7 +3,7 @@ use crate::neural_networks::{
     utils::{
         activation::activate_output_complex_padding,
         derivative::get_gradient_complex,
-        matrix::{add_vector, apply_padding_mask_batch, check_nan_or_inf_3d, clip_gradient_1d, clip_gradients, hadamard_product_2d_c, multiply_complex},
+        matrix::{add_vector, apply_padding_mask_batch, check_nan_or_inf_3d, clip_gradient_1d, clip_gradients, hadamard_product_2d_c, is_nan_or_inf, multiply_complex},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -185,7 +185,7 @@ impl Layer {
         // For each input sample in the batch
         for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(&previous_gradient_batch_padded).enumerate() {
             // Multiply the transposed input sample with previous gradients (for weight gradients)
-           
+
             let gradient_output = get_gradient_complex(&output_batch[batch_ind], &raw_output_batch[batch_ind], self.activation_type.clone());
             input_gradient_batch[batch_ind] = hadamard_product_2d_c(previous_gradient, &gradient_output);
             weight_gradients[batch_ind] = multiply_complex(input_sample, &input_gradient_batch[batch_ind]);
@@ -232,17 +232,19 @@ impl Layer {
         // Update weights and biases using gradient descent
         for (i, row) in self.weights.iter_mut().enumerate() {
             for (j, weight_value) in row.iter_mut().enumerate() {
-                if !weight_gradients[i][j].re.is_nan() && !weight_gradients[i][j].im.is_nan() {
+                if !is_nan_or_inf(&weight_gradients[i][j]) {
                     *weight_value -= self.learning_rate * (weight_gradients[i][j] / batch_size);
                 }
             }
         }
 
         for (i, value) in self.bias.iter_mut().enumerate() {
-            if !bias_gradients[i].re.is_nan() && !bias_gradients[i].im.is_nan() {
+            if !is_nan_or_inf(&bias_gradients[i]) {
                 *value -= self.learning_rate * (bias_gradients[i] / batch_size);
             }
         }
+
+        self.learning_rate *= 0.99;
     }
 }
 
