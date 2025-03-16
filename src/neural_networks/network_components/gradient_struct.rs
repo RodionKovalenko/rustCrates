@@ -9,11 +9,13 @@ pub struct Gradient {
     gradient_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     gradient_bias_batch: Option<Vec<Vec<Complex<f64>>>>,
     gradient_gamma_batch: Option<Vec<Vec<Complex<f64>>>>,
+    gradient_beta_batch: Option<Vec<Vec<Complex<f64>>>>,
 
     gradient_weights: Option<Vec<Vec<Complex<f64>>>>,
     gradient_input: Option<Vec<Vec<Complex<f64>>>>,
     gradient_bias: Option<Vec<Complex<f64>>>,
     gradient_gamma: Option<Vec<Complex<f64>>>,
+    gradient_beta: Option<Vec<Complex<f64>>>,
 
     gradient_weights_q_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     gradient_weights_v_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
@@ -31,11 +33,13 @@ impl Gradient {
             gradient_input_batch: None,
             gradient_bias_batch: None,
             gradient_gamma_batch: None,
+            gradient_beta_batch: None,
 
             gradient_weights: None,
             gradient_input: None,
             gradient_bias: None,
             gradient_gamma: None,
+            gradient_beta: None,
 
             gradient_weights_q_batch: None,
             gradient_weights_v_batch: None,
@@ -58,6 +62,10 @@ impl Gradient {
     pub fn set_gradient_gamma_batch(&mut self, gradient_gamma_batch: Vec<Vec<Complex<f64>>>) {
         self.gradient_gamma_batch = Some(gradient_gamma_batch);
     }
+    pub fn set_gradient_beta_batch(&mut self, gradient_beta_batch: Vec<Vec<Complex<f64>>>) {
+        self.gradient_beta_batch = Some(gradient_beta_batch);
+    }
+
 
     pub fn set_gradient_input(&mut self, gradient_input: Vec<Vec<Complex<f64>>>) {
         self.gradient_input = Some(gradient_input);
@@ -70,6 +78,9 @@ impl Gradient {
     }
     pub fn set_gradient_gamma(&mut self, gradient_gamma: Vec<Complex<f64>>) {
         self.gradient_gamma = Some(gradient_gamma);
+    }
+    pub fn set_gradient_beta(&mut self, gradient_beta: Vec<Complex<f64>>) {
+        self.gradient_beta = Some(gradient_beta);
     }
 
     pub fn set_gradient_weights_q_batch(&mut self, gradient_weights_q_batch: Vec<Vec<Vec<Complex<f64>>>>) {
@@ -103,6 +114,9 @@ impl Gradient {
     }
     pub fn get_gradient_gamma_batch(&self) -> Vec<Vec<Complex<f64>>> {
         self.gradient_gamma_batch.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_gradient_beta_batch(&self) -> Vec<Vec<Complex<f64>>> {
+        self.gradient_beta_batch.clone().unwrap_or_else(|| vec![])
     }
 
     pub fn get_gradient_weights_q_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
@@ -168,6 +182,14 @@ impl Gradient {
             self.group_gradient_batch_bias(&gradient_gamma_batch)
         } else {
             self.gradient_gamma.clone().unwrap_or_else(|| vec![])
+        }
+    }
+
+    pub fn get_gradient_beta(&self) -> Vec<Complex<f64>> {
+        if let Some(gradient_beta_batch) = self.gradient_beta_batch.clone() {
+            self.group_gradient_batch_bias(&gradient_beta_batch)
+        } else {
+            self.gradient_beta.clone().unwrap_or_else(|| vec![])
         }
     }
 

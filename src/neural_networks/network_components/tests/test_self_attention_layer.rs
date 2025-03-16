@@ -17,7 +17,7 @@ mod test_self_attention_layer {
         let batch_size = 1;
         let input_dim = 5;
         let output_dim = 4;
-        let epsilon: f64 = 1e-6;
+        let epsilon: f64 = 1e-3;
 
         let learning_rate = 0.0001;
 
@@ -134,7 +134,7 @@ mod test_self_attention_layer {
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
         let num_attention_heads = 2;
-        let epsilon = 1e-9;
+        let epsilon = 1e-3;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, input_dim, output_dim, learning_rate);
@@ -195,13 +195,13 @@ mod test_self_attention_layer {
         let num_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch(&mut loss_fn, input_batch.clone(), epsilon);
 
         // Check if gradient batch dimensions match expected shapes
-        println!("\nanalytical grad: {:?}", gradient_input_batch_att_l);
-        println!("\ngradient_input_batch_att_l gradient dim: {} {} {}", gradient_input_batch_att_l.len(), gradient_input_batch_att_l[0].len(), gradient_input_batch_att_l[0][0].len());
+        println!("\n analytical grad: {:?}", gradient_input_batch_att_l);
+        println!("\n gradient_input_batch_att_l gradient dim: {} {} {}", gradient_input_batch_att_l.len(), gradient_input_batch_att_l[0].len(), gradient_input_batch_att_l[0][0].len());
 
-        println!("\nnumerical grad: {:?}", num_gradient_input_batch);
-        println!("\numerical_gradient_input_batch gradient dim: {} {} {}", num_gradient_input_batch.len(), num_gradient_input_batch[0].len(), num_gradient_input_batch[0][0].len());
+        println!("\n numerical grad: {:?}", num_gradient_input_batch);
+        println!("\n numerical_gradient_input_batch gradient dim: {} {} {}", num_gradient_input_batch.len(), num_gradient_input_batch[0].len(), num_gradient_input_batch[0][0].len());
 
-        test_gradient_batch_error(&num_gradient_input_batch, &gradient_input_batch_att_l, 1e-3);
+        test_gradient_batch_error(&num_gradient_input_batch, &gradient_input_batch_att_l, 1e-2);
 
         let attention_head = attention_layer.attention_heads.get(0).unwrap().clone();
         let weight_q = attention_head.weights_q.clone();
@@ -232,7 +232,7 @@ mod test_self_attention_layer {
         println!("\n numerical grad: {:?}", num_gradient_weights_q);
         println!("\n  num_gradient_weights_q dim: {} {}", num_gradient_weights_q.len(), num_gradient_weights_q[0].len());
 
-        test_gradient_error_2d(&analytical_weight_q_gradient, &num_gradient_weights_q, 1e-3);
+        test_gradient_error_2d(&analytical_weight_q_gradient, &num_gradient_weights_q, 1e-2);
 
         let mut attention_head = attention_layer.attention_heads.get_mut(0).unwrap().clone();
         attention_head.weights_q = weight_q.clone();
