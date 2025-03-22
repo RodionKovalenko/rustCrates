@@ -412,6 +412,7 @@ where
     grad_batch
 }
 
+// should be < 1e-7
 pub fn global_relative_error_l2(numerical_grad: &Vec<Vec<Vec<Complex<f64>>>>, analytical_grad: &Vec<Vec<Vec<Complex<f64>>>>) -> f64 {
     let mut diff_norm_sq = 0.0;
     let mut numerical_norm_sq = 0.0;

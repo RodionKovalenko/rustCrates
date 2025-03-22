@@ -26,7 +26,7 @@ mod test_linear_layer {
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
-        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim, output_dim as u32);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim, 2);
 
         //let target_token_id_batch = vec![vec![0]];
 
@@ -104,7 +104,7 @@ mod test_linear_layer {
 
         // Define a small input batch, [2][6][4]
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
-        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim, output_dim as u32);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim, 2);
 
         let linear_batch_output: Vec<Vec<Vec<Complex<f64>>>> = linear_layer.forward(&input_batch);
         let _softmax_batch_output: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.forward(&linear_batch_output, None);

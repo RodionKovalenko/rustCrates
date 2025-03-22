@@ -2,7 +2,7 @@ use core::fmt::Debug;
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::utils::matrix::{add_matrix, check_nan_or_inf, check_nan_or_inf_3d, clip_gradients, is_nan_or_inf};
+use crate::neural_networks::utils::matrix::{add_matrix, check_nan_or_inf, clip_gradients, is_nan_or_inf};
 
 use super::gradient_struct::Gradient;
 
@@ -64,60 +64,63 @@ impl NormalNormLayer {
     }
 
     pub fn backward(&mut self, grad_output: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
-        let input_batch = self.input_batch.as_ref().expect("Input batch not found in NormalNorm layer");
-
+        let input_batch = self.input_batch.as_ref().expect("Input batch not found");
         let batch_size = input_batch.len();
         let seq_len = input_batch[0].len();
         let feature_dim = input_batch[0][0].len();
-        let feature_dim_f64 = feature_dim as f64;
+        let d = feature_dim as f64;
     
-        let mut input_gradients = vec![vec![vec![Complex::new(0.0, 0.0); feature_dim]; seq_len]; batch_size];
-        let mut gamma_gradients = vec![Complex::new(0.0, 0.0); feature_dim];
-        let mut beta_gradients = vec![Complex::new(0.0, 0.0); feature_dim];
+        let mut input_grads = vec![vec![vec![Complex::new(0.0, 0.0); feature_dim]; seq_len]; batch_size];
+        let mut gamma_grad = vec![Complex::new(0.0, 0.0); feature_dim];
+        let mut beta_grad = vec![Complex::new(0.0, 0.0); feature_dim];
     
+        // Iterate over each batch and sequence
         for b in 0..batch_size {
             for s in 0..seq_len {
                 let x = &input_batch[b][s];
                 let dy = &grad_output[b][s];
     
-                let mean: Complex<f64> = x.iter().sum::<Complex<f64>>() / feature_dim_f64;
-                let variance: Complex<f64> = x.iter().map(|xi| (*xi - mean).powi(2)).sum::<Complex<f64>>() / feature_dim_f64;
-                let stddev = (variance + self.epsilon).sqrt();
+                // Compute the mean (mean of real and imaginary separately)
+                let mean = x.iter().sum::<Complex<f64>>() / d;
+                let centered: Vec<_> = x.iter().map(|xi| xi - mean).collect();
     
-                let normalized: Vec<Complex<f64>> = x.iter().map(|xi| (*xi - mean) / stddev).collect();
+                // Compute variance and standard deviation
+                let var = centered.iter().map(|c| c.norm_sqr()).sum::<f64>() / d;
+                let std_dev = (var + self.epsilon).sqrt();
+                let inv_std_dev = 1.0 / std_dev;
     
-                // Accumulate gradients w.r.t gamma and beta
+                // Compute normalized values
+                let x_hat: Vec<_> = centered.iter().map(|c| c * inv_std_dev).collect();
+    
+                // Compute gamma and beta gradients
                 for i in 0..feature_dim {
-                    gamma_gradients[i] += dy[i] * normalized[i];
-                    beta_gradients[i] += dy[i];
+                    gamma_grad[i] += dy[i] * x_hat[i]; // Sum of (dy * x_hat) for gamma
+                    beta_grad[i] += dy[i]; // Sum of dy for beta
                 }
     
-                // Intermediate terms
-                let dx_hat: Vec<Complex<f64>> = dy.iter().enumerate().map(|(i, &dyi)| dyi * self.gamma[i]).collect();
-                let dx_hat_sum: Complex<f64> = dx_hat.iter().sum::<Complex<f64>>();
-                let norm_dx_hat_dot: Complex<f64> = normalized.iter().zip(dx_hat.iter()).map(|(normi, dxhati)| *normi * *dxhati).sum();
+                // Compute intermediate values for input gradients
+                let dy_gamma: Vec<_> = dy.iter().enumerate().map(|(i, &dyi)| dyi * self.gamma[i]).collect();
+                let sum_dy_gamma = dy_gamma.iter().sum::<Complex<f64>>(); // sum(dy * gamma)
+                let sum_dy_gamma_xhat: Complex<f64> = dy_gamma.iter().zip(&x_hat).map(|(&dg, &xh)| dg * xh).sum();
     
+                // Compute input gradients (dx_hat)
                 for i in 0..feature_dim {
-                    let term1 = dx_hat[i];
-                    let term2 = dx_hat_sum / Complex::new(feature_dim_f64, 0.0);
-                    let term3 = normalized[i] * norm_dx_hat_dot / Complex::new(feature_dim_f64, 0.0);
-                    let dx = (term1 - term2 - term3) / stddev;
-                    input_gradients[b][s][i] = dx;
+                    let dx_hat = dy_gamma[i] - (sum_dy_gamma + x_hat[i] * sum_dy_gamma_xhat) / d;
+                    input_grads[b][s][i] = dx_hat * inv_std_dev;
                 }
             }
         }
     
-        check_nan_or_inf_3d(&mut input_gradients, "NormalNormLayer backward: NaN/Inf in input gradients");
-    
+        // Create a new Gradient object and set the gradients
         let mut gradient = Gradient::new_default();
-        gradient.set_gradient_input_batch(input_gradients);
-        gradient.set_gradient_gamma_batch(vec![gamma_gradients.clone()]);
-        gradient.set_gradient_beta_batch(vec![beta_gradients.clone()]);
+        gradient.set_gradient_input_batch(input_grads);
+        gradient.set_gradient_gamma(gamma_grad);
+        gradient.set_gradient_beta(beta_grad);
     
         self.gradient = Some(gradient.clone());
         gradient
     }
-
+    
     pub fn update_parameters(&mut self) {
         let gradient: &Gradient = self.gradient.as_ref().expect("No gradient found in NormalNormLayer");
         let mut gradient_gamma: Vec<Vec<Complex<f64>>> = gradient.get_gradient_gamma_batch();
