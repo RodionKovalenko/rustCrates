@@ -274,7 +274,7 @@ pub mod test_ffn_layer {
         let output_dim = 8; // Match output_dim to your layer's output
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
-        let epsilon = 1e-4;
+        let epsilon = 1e-7;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(input_dim, output_dim, learning_rate);
@@ -334,7 +334,10 @@ pub mod test_ffn_layer {
         println!("\n analytical grad weights dim: {:?}, {}", grouped_ffn_gradient_weights.len(), grouped_ffn_gradient_weights[0].len());
         println!("\n numerical grad weights dim: {:?}, {}", numerical_grad_weights_ffn.len(), numerical_grad_weights_ffn[0].len());
 
-        test_gradient_error_2d(&grouped_ffn_gradient_weights, &numerical_grad_weights_ffn, 1e-2);
+        let global_error = global_relative_error_2d_l2(&grouped_ffn_gradient_weights, &numerical_grad_weights_ffn);
+        println!("\n\n global relative gradient error weights ffn: {:?}", &global_error);
+
+        test_gradient_error_2d(&grouped_ffn_gradient_weights, &numerical_grad_weights_ffn, 1e-5);
 
         if let Some(LayerEnum::Dense(dense_layer)) = ffn_layer.layers.get_mut(0) {
             dense_layer.weights = weights_dense.clone();
@@ -366,6 +369,6 @@ pub mod test_ffn_layer {
         println!("\nanalytical grad bias: {:?}", analytical_gradient_ffn_bias);
         println!("\nnumerical grad bias: {:?}", numerical_grad_linear_bias);
 
-        test_gradient_error_1d(&analytical_gradient_ffn_bias, &numerical_grad_linear_bias, 1e-2);
+        test_gradient_error_1d(&analytical_gradient_ffn_bias, &numerical_grad_linear_bias, 1e-5);
     }
 }

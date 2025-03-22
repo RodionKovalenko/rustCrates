@@ -1,7 +1,7 @@
 use super::masked_attention_head::MaskedAttentionHead;
 use crate::neural_networks::{
     network_components::{
-        add_and_norm_layer::NormalNormLayer, gradient_struct::Gradient, layer::{LayerEnum, LayerType}
+        add_and_norm_layer::NormalNormLayer, add_rms_norm_layer::RMSNormLayer, gradient_struct::Gradient, layer::{LayerEnum, LayerType}
     },
     utils::matrix::check_nan_or_inf_3d,
 };
@@ -29,14 +29,14 @@ impl SelfAttentionLayer {
         }
 
         let epsilon: f64 = 0.000000000001;
-        //let _norm_layer_rms = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(cols, epsilon, learning_rate))));
-        let norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(cols, epsilon, learning_rate))));
+        let _norm_layer_rms = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(cols, epsilon, learning_rate))));
+        let _norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(cols, epsilon, learning_rate))));
 
 
         Self {
             attention_heads,
             activated_output: vec![],
-            norm_layer: norm_layer,
+            norm_layer: _norm_layer_rms,
             input_batch: None,
         }
     }

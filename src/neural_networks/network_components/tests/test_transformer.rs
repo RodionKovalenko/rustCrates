@@ -15,7 +15,9 @@ mod test_transformer {
             wavelet_network::DECOMPOSITION_LEVELS,
         },
         utils::{
-            derivative::{global_relative_error_2d_l2, numerical_gradient_weights}, random_arrays::{generate_random_complex_3d, generate_random_u32_batch}, tokenizer::tokenize_batch
+            derivative::{global_relative_error_2d_l2, numerical_gradient_weights, test_gradient_error_2d},
+            random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
+            tokenizer::tokenize_batch,
         },
     };
 
@@ -28,7 +30,7 @@ mod test_transformer {
         let number_of_hidden_neurons: usize = 32;
         let minibatch_size: usize = 50;
         let learning_rate: f64 = 0.01;
-        let epsilon = 1e-7;
+        let epsilon = 1e-9;
 
         let mut transformer_network: NeuralNetwork = create(number_inputs, number_outputs, number_of_hidden_layers, number_of_hidden_neurons, minibatch_size, learning_rate);
 
@@ -79,7 +81,7 @@ mod test_transformer {
 
         let output_batch = predict(&mut transformer_network, &input_batch_str);
         let (_tokens, target_ids) = tokenize_batch(&target_batch_str).unwrap();
-        backward(&mut transformer_network, &target_ids);
+        backward(&mut transformer_network, &target_ids, false);
 
         println!("\n\n output batch {:?}", &output_batch[0][0][0..100]);
         println!("\n output_batch dim {:?}, {}, {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
@@ -143,14 +145,14 @@ mod test_transformer {
         println!("\n\nanalytical gradient weight q attention layer {:?}", analytical_gradient_weight_q_batch);
         println!("\n dim nanalytical gradient {:?}, {}", analytical_gradient_weight_q_batch.len(), analytical_gradient_weight_q_batch[0].len());
 
-        // test_gradient_batch_error(&numerical_grad_weight_q_batch, &analytical_gradient_weights_q_batch, epsilon);
+        test_gradient_error_2d(&numerical_grad_weight_q_batch, &analytical_gradient_weight_q_batch, 1e-4);
         // Weight Q ------------------------------------------------------------------------------------------- end
     }
     #[test]
     #[ignore]
-    fn test_transformer_backward_separate() {
+    fn test_transformer_separate_backward() {
         let learning_rate: f64 = 0.01;
-        let epsilon = 1e-7;
+        let epsilon = 1e-8;
         let batch_size = 2;
         let output_dim = 16;
         let input_dim = 16;
@@ -176,30 +178,18 @@ mod test_transformer {
         let rows: usize = 16;
         let cols: usize = embedding_dim_compressed;
 
-        let mut attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
+        let mut attention_layer_1: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
+        let mut attention_layer_2: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
 
-        // let input_str1: &str = "Hallo, wie geht es dir?";
-        // let input_batch_str: Vec<String> = vec![input_str1.to_string()];
-
-        // let target_str1: &str = "Mir geht es gut";
-        // let target_batch_str: Vec<String> = vec![target_str1.to_string()];
-
-        // let mut batch_token_ids: Vec<Vec<u32>> = vec![];
-        // for input in &input_batch_str {
-        //     let (_tokens, input_ids) = tokenize(input).unwrap();
-        //     batch_token_ids.push(input_ids);
-        // }
-
-        // let (_tokens, target_token_ids) = tokenize_batch(&target_batch_str).unwrap();
-      
-          // Define a small input batch, [2][6][4]
-          let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
-          let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim, 2);
-          let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; output_dim]; batch_size];
+        // Define a small input batch, [2][6][4]
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim, 2);
+        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; output_dim]; batch_size];
 
         // forward
-        let output_attention = attention_layer.forward(&input_batch, &padding_mask_batch);
-        let output_ffn = ffn_layer.forward(&output_attention);
+        let output_attention_1 = attention_layer_1.forward(&input_batch, &padding_mask_batch);
+        let output_attention_2 = attention_layer_2.forward(&output_attention_1, &padding_mask_batch);
+        let output_ffn = ffn_layer.forward(&output_attention_2);
         let output_linear = linear_layer.forward(&output_ffn);
         let _output_softmax = softmax_layer.forward(&output_linear, Some(padding_mask_batch.clone()));
 
@@ -207,7 +197,8 @@ mod test_transformer {
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax.get_gradient_input_batch());
         let gradient_ffn: Gradient = ffn_layer.backward(&gradient_linear.get_gradient_input_batch());
-        let _gradient_attention_layer: Gradient = attention_layer.backward(&gradient_ffn.get_gradient_input_batch());
+        let gradient_attention_layer_1: Gradient = attention_layer_1.backward(&gradient_ffn.get_gradient_input_batch());
+        let _gradient_attention_layer_2: Gradient = attention_layer_2.backward(&gradient_attention_layer_1.get_gradient_input_batch());
 
         //let weights = attention_layer.attention_heads[0].weights_q.clone();
         //let weights = linear_layer.weights.clone();
@@ -221,7 +212,7 @@ mod test_transformer {
         //let gradient_batch_weight: Vec<Vec<Vec<Complex<f64>>>> = linear_layer.gradient.clone().unwrap().get_gradient_weight_batch();
         let gradient_batch_weight: Vec<Vec<Complex<f64>>> = gradient_ffn.get_gradient_weights();
 
-        println!("padding mask batch: {:?}", &padding_mask_batch);
+        println!("padding mask batch in test transformer: {:?}", &padding_mask_batch);
         println!("target tokens ids: {:?}", &target_token_id_batch);
 
         println!("weights dim: {} {}", weights.len(), weights[0].len());
@@ -236,8 +227,9 @@ mod test_transformer {
                 println!("Layer 2 does not exist!");
             }
 
-            let output_attention = attention_layer.forward(&input_batch, &padding_mask_batch);
-            let output_ffn = ffn_layer.forward(&output_attention);
+            let output_attention_1 = attention_layer_1.forward(&input_batch, &padding_mask_batch);
+            let output_attention_2 = attention_layer_2.forward(&output_attention_1, &padding_mask_batch);
+            let output_ffn = ffn_layer.forward(&output_attention_2);
             let output_linear = linear_layer.forward(&output_ffn);
             let output_softmax = softmax_layer.forward(&output_linear, Some(padding_mask_batch.clone()));
 
@@ -246,7 +238,7 @@ mod test_transformer {
             loss
         };
 
-       // let numerical_grad_weight_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_batch(&mut loss_fn, input_batch.clone(), &weight_q.clone(), epsilon);
+        // let numerical_grad_weight_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_batch(&mut loss_fn, input_batch.clone(), &weight_q.clone(), epsilon);
         let numerical_grad_weight_batch: Vec<Vec<Complex<f64>>> = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &weights.clone(), epsilon);
 
         let global_error = global_relative_error_2d_l2(&numerical_grad_weight_batch, &gradient_batch_weight);
@@ -258,7 +250,7 @@ mod test_transformer {
         println!("\n\nanalytical gradient weight q attention layer {:?}", gradient_batch_weight);
         println!("\n dim nanalytical gradient {:?}, {}", gradient_batch_weight.len(), gradient_batch_weight[0].len());
 
-        // test_gradient_batch_error(&numerical_grad_weight_q_batch, &analytical_gradient_weights_q_batch, epsilon);
+        test_gradient_error_2d(&numerical_grad_weight_batch, &gradient_batch_weight, 1e-3);
         // Weight Q ------------------------------------------------------------------------------------------- end
     }
 }
