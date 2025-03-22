@@ -25,9 +25,8 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             let (_tokens, target_ids) = tokenize_batch(target_batch).unwrap();
             let loss = cross_entropy_loss_batch(&predicted_softmax_batch, &target_ids);
 
-            println!("Epoch: {:?}, Loss: {:?}", epoch, loss);
-
-            if epoch % 10 == 0 {
+            if epoch % 5 == 0 {
+                println!("Epoch: {:?}, Loss: {:?}", epoch, loss);
                 let high_token_index_batch: Vec<Vec<u32>> = find_highest_index_batch(&predicted_softmax_batch).unwrap();
                 let mut predicted_token_batch: Vec<String> = vec![];
                 for high_token_index in high_token_index_batch.iter() {
@@ -69,7 +68,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                 output = Some(embeddings);
                 padding_mask = Some(padding_m);
 
-                println!("padding mask: {:?}", &padding_mask);
+                //println!("padding mask: {:?}", &padding_mask);
             }
             LayerEnum::PositionalEncoding(positional_encoding_layer) => {
                 if let Some(previous_output) = &output {

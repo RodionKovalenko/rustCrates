@@ -190,7 +190,16 @@ impl MaskedAttentionHead {
                dl/dq = dl/ds * ds/da * da/dq = dl/da  * da/dq
                dl/dwq = XT * dl/ds * ds/da * da/dq = XT * dl/dq
 
+               //Wq
                => dl/dwq = XT * (Gt * VT * grad(A) * Kt/sqtr(dk))
+               dl/dwq = dl/ds * ds/da * da/dq * dq/dWq
+
+               //Wv
+               => dl/dWv = dl/do * do/dv * dv/dwv
+
+               //Wk
+               dl/dWk = dl/ds * ds/da * da/dk * dk/dWk
+
             */
 
             // 2, 4 * 2, 4 = 2,2

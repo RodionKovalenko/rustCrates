@@ -153,9 +153,6 @@ mod test_transformer {
     fn test_transformer_separate_backward() {
         let learning_rate: f64 = 0.01;
         let epsilon = 1e-8;
-        let batch_size = 2;
-        let output_dim = 16;
-        let input_dim = 16;
 
         let embedding_dim_original: usize = 512;
         let base_2: i32 = 2;
@@ -163,10 +160,16 @@ mod test_transformer {
         let embedding_dim_compressed = (embedding_dim_original as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize;
         let vocab_size: usize = 50254;
 
+        // let batch_size = 2;
+        // let output_dim = 16;
+        // let input_dim = 16;
         // let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
         //let positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
 
         let rows: usize = 16;
+
+        let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
+        let positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
         let mut linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
         let mut softmax_layer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING);
 
@@ -181,13 +184,24 @@ mod test_transformer {
         let mut attention_layer_1: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
         let mut attention_layer_2: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
 
-        // Define a small input batch, [2][6][4]
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
-        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim, 2);
-        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; output_dim]; batch_size];
+        let input_str1: &str = "Hallo, wie geht es dir?";
+        let input_batch_str: Vec<String> = vec![input_str1.to_string()];
 
+        let target_str1: &str = "Mir geht es gut";
+        let target_batch_str: Vec<String> = vec![target_str1.to_string()];
+
+        let (_tokens, batch_ids) = tokenize_batch(&input_batch_str).unwrap();
+        let (_tokens, target_token_id_batch) = tokenize_batch(&target_batch_str).unwrap();
+
+        // Define a small input batch, [2][6][4]
+        // let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
+        //let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(input_batch_str.len(), batch_ids[0].len(), 2);
+        // let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; output_dim]; batch_size];
+       
         // forward
-        let output_attention_1 = attention_layer_1.forward(&input_batch, &padding_mask_batch);
+        let (embeddings, padding_mask_batch) = embedding_layer.forward(&batch_ids);
+        let positional_encoding_output = positional_encoding_layer.forward(&embeddings);
+        let output_attention_1 = attention_layer_1.forward(&positional_encoding_output, &padding_mask_batch);
         let output_attention_2 = attention_layer_2.forward(&output_attention_1, &padding_mask_batch);
         let output_ffn = ffn_layer.forward(&output_attention_2);
         let output_linear = linear_layer.forward(&output_ffn);
@@ -214,8 +228,8 @@ mod test_transformer {
 
         println!("padding mask batch in test transformer: {:?}", &padding_mask_batch);
         println!("target tokens ids: {:?}", &target_token_id_batch);
-
         println!("weights dim: {} {}", weights.len(), weights[0].len());
+        println!("final output dim: {} {} {}", _output_softmax.len(), _output_softmax[0].len(), _output_softmax[0][0].len());
 
         // Define the loss function
         let mut loss_fn = |_input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
@@ -227,7 +241,9 @@ mod test_transformer {
                 println!("Layer 2 does not exist!");
             }
 
-            let output_attention_1 = attention_layer_1.forward(&input_batch, &padding_mask_batch);
+            let (embeddings, padding_mask_batch) = embedding_layer.forward(&batch_ids);
+            let positional_encoding_output = positional_encoding_layer.forward(&embeddings);
+            let output_attention_1 = attention_layer_1.forward(&positional_encoding_output, &padding_mask_batch);
             let output_attention_2 = attention_layer_2.forward(&output_attention_1, &padding_mask_batch);
             let output_ffn = ffn_layer.forward(&output_attention_2);
             let output_linear = linear_layer.forward(&output_ffn);
@@ -239,7 +255,7 @@ mod test_transformer {
         };
 
         // let numerical_grad_weight_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_batch(&mut loss_fn, input_batch.clone(), &weight_q.clone(), epsilon);
-        let numerical_grad_weight_batch: Vec<Vec<Complex<f64>>> = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &weights.clone(), epsilon);
+        let numerical_grad_weight_batch: Vec<Vec<Complex<f64>>> = numerical_gradient_weights(&mut loss_fn, embeddings.clone(), &weights.clone(), epsilon);
 
         let global_error = global_relative_error_2d_l2(&numerical_grad_weight_batch, &gradient_batch_weight);
         println!("\n\n global relative gradient error: {:?}", &global_error);

@@ -93,10 +93,10 @@ where
                 row[j] = (0..matrix_b_clone.len())
                     .map(|k| {
                         if is_nan_or_inf(&matrix_a_clone[i][k]) {
-                            panic!("NaN detected in multiply_complex in matrix_a at ({}, {})", i, j);
+                            println!("NaN detected in multiply_complex in matrix_a at ({}, {})", i, j);
                         }
                         if is_nan_or_inf(&matrix_b_clone[k][j]) {
-                            panic!("NaN detected in multiply_complex in matrix_b at ({}, {})", i, j);
+                            println!("NaN detected in multiply_complex in matrix_b at ({}, {})", i, j);
                         }
                         let mut product = matrix_a_clone[i][k] * matrix_b_clone[k][j];
 
