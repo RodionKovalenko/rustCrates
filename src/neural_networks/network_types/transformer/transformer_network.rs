@@ -63,7 +63,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                 let embedding_l = Some(embedding_layer_box).unwrap();
                 let (mut embeddings, padding_m) = embedding_l.forward(&batch_ids);
 
-                //println!("padding maksin embedding layer: {:?}", padding_m);
+                //println!("\n\n embeddings: {:?} \n\n", &embeddings);
 
                 check_nan_or_inf_3d(&mut embeddings, "embedding output in forward");
                 output = Some(embeddings);
@@ -173,7 +173,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
                     let gradient_batch: Gradient = embedding_layer.backward(&previous_gradient_batch);
 
-                    //embedding_layer.update_parameters(&target_batch_ids, transformer_network.learning_rate);
+                    embedding_layer.update_parameters(&target_batch_ids, transformer_network.learning_rate);
                     transformer_network.learning_rate *= 0.99;
 
                     gradient = Some(gradient_batch);
@@ -197,7 +197,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
 
                     let gradient_batch: Gradient = attention_layer.backward(&previous_gradient_batch);
                     // Update weights and biases
-                    //attention_layer.update_parameters();
+                    attention_layer.update_parameters();
 
                     gradient = Some(gradient_batch);
                 } else {
@@ -210,7 +210,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
 
                     let gradient_batch: Gradient = dense_layer.backward(&previous_gradient_batch);
                     // Update weights and biases
-                   // dense_layer.update_parameters();
+                    dense_layer.update_parameters();
 
                     let _weight_gradient_batch = gradient_batch.get_gradient_weight_batch();
                     let _bias_gradient_batch = gradient_batch.get_gradient_bias_batch();
@@ -227,7 +227,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
 
                     let gradient_batch: Gradient = linear_layer.backward(&previous_gradient_batch);
                     // Update weights and biases
-                   // linear_layer.update_parameters();
+                    linear_layer.update_parameters();
 
                     let _weight_gradient_batch = gradient_batch.get_gradient_weight_batch();
                     let _bias_gradient_batch = gradient_batch.get_gradient_bias_batch();
