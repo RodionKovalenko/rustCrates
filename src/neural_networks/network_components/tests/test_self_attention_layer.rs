@@ -184,7 +184,7 @@ mod test_self_attention_layer {
 
         println!("global relative gradient error input: {:?}", &global_error);
 
-        test_gradient_batch_error(&num_gradient_input_batch, &gradient_input_batch_att_l, 1e-2);
+        test_gradient_batch_error(&num_gradient_input_batch, &gradient_input_batch_att_l, 1e-3);
 
         let attention_head = attention_layer.attention_heads.get(0).unwrap().clone();
         let weight_q = attention_head.weights_q.clone();
@@ -215,7 +215,7 @@ mod test_self_attention_layer {
         println!("\n numerical grad: {:?}", num_gradient_weights_q);
         println!("\n  num_gradient_weights_q dim: {} {}", num_gradient_weights_q.len(), num_gradient_weights_q[0].len());
 
-        test_gradient_error_2d(&analytical_weight_q_gradient, &num_gradient_weights_q, 1e-2);
+        test_gradient_error_2d(&analytical_weight_q_gradient, &num_gradient_weights_q, 1e-3);
 
         let global_error = global_relative_error_2d_l2(&num_gradient_weights_q, &analytical_weight_q_gradient);
 

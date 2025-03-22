@@ -15,7 +15,7 @@ mod test_transformer {
             wavelet_network::DECOMPOSITION_LEVELS,
         },
         utils::{
-            derivative::{global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_weights, numerical_gradient_weights_batch}, random_arrays::{generate_random_complex_3d, generate_random_u32_batch}, tokenizer::{tokenize, tokenize_batch}
+            derivative::{global_relative_error_2d_l2, numerical_gradient_weights}, random_arrays::{generate_random_complex_3d, generate_random_u32_batch}, tokenizer::tokenize_batch
         },
     };
 
@@ -28,7 +28,7 @@ mod test_transformer {
         let number_of_hidden_neurons: usize = 32;
         let minibatch_size: usize = 50;
         let learning_rate: f64 = 0.01;
-        let epsilon = 1e-5;
+        let epsilon = 1e-7;
 
         let mut transformer_network: NeuralNetwork = create(number_inputs, number_outputs, number_of_hidden_layers, number_of_hidden_neurons, minibatch_size, learning_rate);
 
@@ -150,7 +150,7 @@ mod test_transformer {
     #[ignore]
     fn test_transformer_backward_separate() {
         let learning_rate: f64 = 0.01;
-        let epsilon = 1e-3;
+        let epsilon = 1e-7;
         let batch_size = 2;
         let output_dim = 16;
         let input_dim = 16;
@@ -161,7 +161,7 @@ mod test_transformer {
         let embedding_dim_compressed = (embedding_dim_original as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize;
         let vocab_size: usize = 50254;
 
-        let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
+        // let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
         //let positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
 
         let rows: usize = 16;
