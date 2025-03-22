@@ -6,8 +6,8 @@ mod test_softmax_layer {
         utils::{
             activation::{gelu_complex, sigmoid_complex, softmax_complex, softsign_complex},
             derivative::{
-                gelu_derivative_complex, numerical_gradient_check, numerical_gradient_input, numerical_gradient_input_batch, sigmoid_derivative_complex, softmax_derivative_complex_matrix, softsign_derivative_complex, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d,
-            },
+                gelu_derivative_complex, global_relative_error_2d_l2, numerical_gradient_check, numerical_gradient_input, numerical_gradient_input_batch, sigmoid_derivative_complex, softmax_derivative_complex_matrix, softsign_derivative_complex, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d
+            }, random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
         },
     };
 
@@ -16,26 +16,26 @@ mod test_softmax_layer {
     #[test]
     fn test_softmax_layer_backward() {
         // Define some small batch size and input dimensions for simplicity
-        let _batch_size = 2;
+        let batch_size = 2;
         let _seq_len: usize = 1; // Update to match the input structure
-        let input_dim = 3; // Match the input dimension with your input batch
-        let output_dim = 4; // Match output_dim to your layer's output
+        let input_dim = 10; // Match the input dimension with your input batch
+        let output_dim = 10; // Match output_dim to your layer's output
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
+        let epsilon = 1e-5;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
         // Define a small input batch, [2][2][3]
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.5, 0.0), Complex::new(0.8, 0.0), Complex::new(0.1, 0.0)]], vec![vec![Complex::new(1.0, 0.0), Complex::new(2.0, 0.0), Complex::new(3.0, 0.0)]]];
-
-        let target_token_id_batch = vec![vec![0], vec![1]];
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim, output_dim as u32);
 
         // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
         let linear_batch_output = linear_layer.forward(&input_batch);
 
-        println!("linear batch output: {:?}", &linear_batch_output);
+        // println!("linear batch output: {:?}", &linear_batch_output);
         let _softmax_batch_output = softmax_layer.forward(&linear_batch_output, None);
         let gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
         let (analytical_grad_batch, analytical_grad) = (gradient.get_gradient_input_batch(), gradient.get_gradient_input());
@@ -50,19 +50,21 @@ mod test_softmax_layer {
             loss
         };
 
-        let epsilon = 1e-5;
         let numerical_grad: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, linear_batch_output.clone(), epsilon);
         let numerical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch(&mut loss_fn, linear_batch_output.clone(), epsilon);
 
         //Check if gradient batch dimensions match expected shapes
-        println!("\nanalytical grad: {:?}", analytical_grad);
-        println!("\nnumerical grad: {:?}", numerical_grad);
+        // println!("\nanalytical grad: {:?}", analytical_grad);
+        // println!("\nnumerical grad: {:?}", numerical_grad);
 
         test_gradient_error_2d(&numerical_grad, &analytical_grad, epsilon);
 
-        println!("\nanalytical grad batch: {:?}", analytical_grad_batch);
-        println!("\nnumerical grad batch: {:?}", numerical_grad_batch);
+        // println!("\nanalytical grad batch: {:?}", analytical_grad_batch);
+        // println!("\nnumerical grad batch: {:?}", numerical_grad_batch);
         test_gradient_batch_error(&numerical_grad_batch, &analytical_grad_batch, epsilon);
+
+        let global_error = global_relative_error_2d_l2(&numerical_grad, &analytical_grad);
+        println!("\n\n global relative error input gradient: {:?}", &global_error);
     }
 
     #[test]

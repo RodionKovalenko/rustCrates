@@ -63,19 +63,6 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                 let embedding_l = Some(embedding_layer_box).unwrap();
                 let (mut embeddings, padding_m) = embedding_l.forward(&batch_ids);
 
-                // println!("Output embedding layer: {:?}, {:?}, {:?}", &embeddings.len(), &embeddings[0].len(), &embeddings[0][0].len());
-                // // println!("output embedding: {:?}", &embeddings[0]);
-                // for (batch_ind, embedding_batch) in embeddings.iter().enumerate() {
-                //     println!("seq length: {}", embedding_batch.len());
-                //     for (seq_ind, embedding) in embedding_batch.iter().enumerate() {
-                //         println!("embedding dim: {}", embedding.len());
-
-                //         if padding_m[batch_ind][seq_ind] == 0 {
-                //             println!("index with padding mask 0: {:?}", embedding);
-                //         }
-                //     }
-                // }
-
                 //println!("padding maksin embedding layer: {:?}", padding_m);
 
                 check_nan_or_inf_3d(&mut embeddings, "embedding output in forward");
@@ -184,10 +171,9 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             LayerEnum::Embedding(embedding_layer) => {
                 if let Some(previous_gradient) = gradient {
                     let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
-
                     let gradient_batch: Gradient = embedding_layer.backward(&previous_gradient_batch);
 
-                    embedding_layer.update_parameters(&target_batch_ids, transformer_network.learning_rate);
+                    //embedding_layer.update_parameters(&target_batch_ids, transformer_network.learning_rate);
                     transformer_network.learning_rate *= 0.99;
 
                     gradient = Some(gradient_batch);
@@ -198,7 +184,6 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             LayerEnum::PositionalEncoding(positional_encoding_layer) => {
                 if let Some(previous_gradient) = gradient {
                     let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
-
                     let gradient_batch: Gradient = positional_encoding_layer.backward(&previous_gradient_batch);
 
                     gradient = Some(gradient_batch);
@@ -212,7 +197,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
 
                     let gradient_batch: Gradient = attention_layer.backward(&previous_gradient_batch);
                     // Update weights and biases
-                    attention_layer.update_parameters();
+                    //attention_layer.update_parameters();
 
                     gradient = Some(gradient_batch);
                 } else {
@@ -225,7 +210,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
 
                     let gradient_batch: Gradient = dense_layer.backward(&previous_gradient_batch);
                     // Update weights and biases
-                    dense_layer.update_parameters();
+                   // dense_layer.update_parameters();
 
                     let _weight_gradient_batch = gradient_batch.get_gradient_weight_batch();
                     let _bias_gradient_batch = gradient_batch.get_gradient_bias_batch();
@@ -242,7 +227,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
 
                     let gradient_batch: Gradient = linear_layer.backward(&previous_gradient_batch);
                     // Update weights and biases
-                    linear_layer.update_parameters();
+                   // linear_layer.update_parameters();
 
                     let _weight_gradient_batch = gradient_batch.get_gradient_weight_batch();
                     let _bias_gradient_batch = gradient_batch.get_gradient_bias_batch();
@@ -255,7 +240,6 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             }
             LayerEnum::Softmax(softmax_layer) => {
                 let gradient_batch: Gradient = softmax_layer.backward(target_batch_ids);
-
                 let _input_gradient_batch = gradient_batch.get_gradient_input_batch();
 
                 // println!("gradients of softmax layer: {}, {}, {}", &input_gradient_batch.len(), &input_gradient_batch[0].len(),  &input_gradient_batch[0][0].len());
@@ -281,7 +265,7 @@ pub fn cross_entropy_loss_batch(
         total_loss += cross_entropy_loss(prediction, &targets[batch_ind]);
     }
 
-    -total_loss / batch_len
+    total_loss / batch_len
 }
 
 fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, targets: &Vec<u32>) -> Complex<f64> {
@@ -297,7 +281,7 @@ fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, targets: &Vec<u32>) 
         let predicted_prob: Complex<f64> = predictions[target_moved_index][target_index];
         //println!("predicted prob: {:?}", &predicted_prob);
         if predicted_prob.norm() > 0.0 {
-            loss += predicted_prob.ln(); // Negative log of the magnitude
+            loss += -predicted_prob.ln(); // Negative log of the magnitude
         } else if predicted_prob.norm() != 0.0 {
             panic!("Predicted probability is zero or negative, which is invalid! {:?}", &predicted_prob);
         }

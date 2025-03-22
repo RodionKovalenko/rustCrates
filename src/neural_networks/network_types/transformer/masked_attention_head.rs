@@ -194,13 +194,13 @@ impl MaskedAttentionHead {
             */
 
             // 2, 4 * 2, 4 = 2,2
-            let dl_ds: Vec<Vec<Complex<f64>>> = multiply_complex(previous_gradient, &v);
+            let dl_ds: Vec<Vec<Complex<f64>>> = multiply_complex(previous_gradient, &transpose(&v));
 
             // Compute gradient of Wv
-            // 2,4 * 2, 2 = 4, 2
-            let grad_wv = multiply_complex(&previous_gradient, &attention_weights_batch[batch_ind]);
+            // 2, 4 * 2, 2 = 4, 2
+            let grad_wv = multiply_complex(&transpose(&previous_gradient), &attention_weights_batch[batch_ind]);
             // 5,2 * 4, 2 = 5, 2 * 2, 4 = 5, 4
-            gradient_v_batch[batch_ind] = multiply_complex(&transpose(&input_batch[batch_ind]), &grad_wv);
+            gradient_v_batch[batch_ind] = multiply_complex(&transpose(&input_batch[batch_ind]), &transpose(&grad_wv));
 
             let d_k = k[0].len() as f64;
             // Compute gradient of k_scaled w.r.t. k
@@ -217,29 +217,36 @@ impl MaskedAttentionHead {
             let dl_da: Vec<Vec<Complex<f64>>> = backpropagate_softmax_masked(&softmax_derivative, &dl_ds, &padding_mask_batch[batch_ind]);
             // println!("dl_da dim: {}, {}", &dl_da.len(), &dl_da[0].len(),);
             // 2,2 * 4, 2 = 2,4
-            let dl_dq: Vec<Vec<Complex<f64>>> = multiply_complex(&dl_da, &k_scaled);
+            let dl_dq: Vec<Vec<Complex<f64>>> = multiply_complex(&dl_da, &transpose(&k_scaled));
             // println!("dl_dq dim: {}, {}", &dl_dq.len(), &dl_dq[0].len(),);
             // 2,2 * 4, 2 = 2,4
             // 2,5 * 2, 4 = 4,5
-            let dl_dwq: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &dl_dq);
+            let dl_dwq: Vec<Vec<Complex<f64>>> = multiply_complex(&transpose(&input_batch[batch_ind]), &dl_dq);
             // println!("dl_dwq dim: {}, {}", &dl_dwq.len(), &dl_dwq[0].len());
             gradient_q_batch[batch_ind] = dl_dwq;
 
             // Gradient Wk
-            // 2, 4 * 2,2 = 4,2
-            let dl_dk: Vec<Vec<Complex<f64>>> = multiply_complex(&q_scaled, &dl_da);
+            // 2, 4 * 2, 2 = 4, 2 * 2, 2 =  4,2
+            let dl_dk: Vec<Vec<Complex<f64>>> = multiply_complex(&transpose(&q_scaled), &dl_da);
             // println!("dl_dk dim: {}, {}", &dl_dk.len(), &dl_dk[0].len());
             // 2,5 * 4,2 = 5, 4
-            let dl_dwk: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &transpose(&dl_dk));
+            let dl_dwk: Vec<Vec<Complex<f64>>> = multiply_complex(&transpose(&input_batch[batch_ind]), &transpose(&dl_dk));
             // println!("dl_dwk dim: {}, {}", &dl_dwk.len(), &dl_dwk[0].len());
             gradient_k_batch[batch_ind] = dl_dwk;
+        
+            // println!("\n weights_q dim: {}, {}", &self.weights_q.len(), &self.weights_q[0].len());
+            // println!("\n dl_dq dim: {}, {}", &dl_dq.len(), &dl_dq[0].len());
+            // println!("\n dl_dk dim: {}, {}", &dl_dk.len(), &dl_dk[0].len());
+            // println!("\n grad_wv dim: {}, {}", &grad_wv.len(), &grad_wv[0].len());
 
-            // 2,4 * 5, 4 = 2, 5
-            let dl_dqx = multiply_complex(&dl_dq, &self.weights_q);
-            // 4,2 * 5,4 = 2,4 * 4, 5 = 2, 5
-            let dl_dkx = multiply_complex(&transpose(&dl_dk), &self.weights_k);
-            // 4,2 * 5, 4 = 2, 5
-            let dl_dvx = multiply_complex(&transpose(&grad_wv), &self.weights_v);
+            // 4,4 * 5, 4 = 4, 5
+            let dl_dqx = multiply_complex(&dl_dq, &transpose(&self.weights_q));
+            // 4,4 * 5,4 = 4,4 * 4, 5 = 4, 5
+            let dl_dkx = multiply_complex(&transpose(&dl_dk), &transpose(&self.weights_k));
+            // 4,4 * 5, 4 = 4, 5
+            let dl_dvx = multiply_complex(&transpose(&grad_wv), &transpose(&self.weights_v));
+
+            println!("\n dl_dvx dim: {}, {}", &dl_dvx.len(), &dl_dvx[0].len());
 
             gradient_input_batch[batch_ind] = add_matrix(&dl_dqx, &dl_dkx);
             // println!("dl_dqx dim: {}, {}", &dl_dqx.len(), &dl_dqx[0].len());

@@ -332,6 +332,34 @@ where
     grad_batch
 }
 
+pub fn numerical_gradient_weights_batch<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
+where
+    F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>, &Vec<Vec<Complex<f64>>>) -> Complex<f64>,
+{
+    let mut grad_batch = vec![vec![vec![Complex::new(0.0, 0.0); weights[0].len()]; weights.len()]; input.len()];
+
+    for batch in 0..input.len() {
+        for row in 0..weights.len() {
+            for col in 0..weights[row].len() {
+                // Perturb input by epsilon
+                let mut weights_plus = weights.clone();
+                weights_plus[row][col] += epsilon;
+
+                let mut weights_minus = weights.clone();
+                weights_minus[row][col] -= epsilon;
+
+                // Compute numerical gradient
+                let loss_plus = f(&input, &weights_plus);
+                let loss_minus = f(&input, &weights_minus);
+
+                grad_batch[batch][row][col] += (loss_plus - loss_minus) / (2.0 * epsilon);
+            }
+        }
+    }
+
+    grad_batch
+}
+
 pub fn numerical_gradient_bias<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Complex<f64>>, epsilon: f64) -> Vec<Complex<f64>>
 where
     F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>, &Vec<Complex<f64>>) -> Complex<f64>,
@@ -382,6 +410,64 @@ where
     }
 
     grad_batch
+}
+
+pub fn global_relative_error_l2(numerical_grad: &Vec<Vec<Vec<Complex<f64>>>>, analytical_grad: &Vec<Vec<Vec<Complex<f64>>>>) -> f64 {
+    let mut diff_norm_sq = 0.0;
+    let mut numerical_norm_sq = 0.0;
+    let mut analytical_norm_sq = 0.0;
+
+    for (batch_n, batch_a) in numerical_grad.iter().zip(analytical_grad.iter()) {
+        for (seq_n, seq_a) in batch_n.iter().zip(batch_a.iter()) {
+            for (dim_n, dim_a) in seq_n.iter().zip(seq_a.iter()) {
+                let diff = dim_n - dim_a;
+                diff_norm_sq += diff.norm_sqr(); // Equivalent to |diff|^2
+                numerical_norm_sq += dim_n.norm_sqr();
+                analytical_norm_sq += dim_a.norm_sqr();
+            }
+        }
+    }
+
+    let diff_norm = diff_norm_sq.sqrt();
+    let total_norm = numerical_norm_sq.sqrt() + analytical_norm_sq.sqrt();
+
+    if total_norm == 0.0 {
+        return 0.0; // or f64::INFINITY depending on your use case
+    }
+
+    let global_rel_error = diff_norm / total_norm;
+
+    //assert!(global_rel_error < 1e-7);
+
+    global_rel_error
+}
+
+pub fn global_relative_error_2d_l2(numerical_grad: &Vec<Vec<Complex<f64>>>, analytical_grad: &Vec<Vec<Complex<f64>>>) -> f64 {
+    let mut diff_norm_sq = 0.0;
+    let mut numerical_norm_sq = 0.0;
+    let mut analytical_norm_sq = 0.0;
+
+    for (seq_n, seq_a) in numerical_grad.iter().zip(analytical_grad.iter()) {
+        for (dim_n, dim_a) in seq_n.iter().zip(seq_a.iter()) {
+            let diff = dim_n - dim_a;
+            diff_norm_sq += diff.norm_sqr(); // Equivalent to |diff|^2
+            numerical_norm_sq += dim_n.norm_sqr();
+            analytical_norm_sq += dim_a.norm_sqr();
+        }
+    }
+
+    let diff_norm = diff_norm_sq.sqrt();
+    let total_norm = numerical_norm_sq.sqrt() + analytical_norm_sq.sqrt();
+
+    if total_norm == 0.0 {
+        return 0.0; // or f64::INFINITY depending on your use case
+    }
+
+    let global_rel_error = diff_norm / total_norm;
+
+    //assert!(global_rel_error < 1e-7);
+
+    global_rel_error
 }
 
 pub fn numerical_gradient_weights_without_loss<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
@@ -481,7 +567,6 @@ where
     grad_batch
 }
 
-
 pub fn numerical_gradient_bias_without_loss<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Complex<f64>>, epsilon: f64) -> Vec<Complex<f64>>
 where
     F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>, &Vec<Complex<f64>>) -> Vec<Vec<Vec<Complex<f64>>>>,
@@ -564,10 +649,10 @@ where
                 let loss_plus = f(&input_plus);
                 let loss_minus = f(&input_minus);
 
-                 let sum_loss_plus: Complex<f64> = loss_plus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
-                 let sum_loss_minus: Complex<f64> = loss_minus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
-                 let gradient = (sum_loss_plus - sum_loss_minus) / (2.0 * epsilon);
-                
+                let sum_loss_plus: Complex<f64> = loss_plus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
+                let sum_loss_minus: Complex<f64> = loss_minus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
+                let gradient = (sum_loss_plus - sum_loss_minus) / (2.0 * epsilon);
+
                 //let gradient = (loss_plus[batch][seq][dim_i] - loss_minus[batch][seq][dim_i]) / (2.0 * epsilon);
                 grad_batch[batch][seq][dim_i] += gradient;
             }
@@ -604,6 +689,36 @@ where
     }
 
     numerical_gradient
+}
+
+pub fn compute_relative_errors(numerical: &Vec<Vec<Vec<Complex<f64>>>>, analytical: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<f64>>> {
+    let epsilon_tol = 1e-8;
+    let mut rel_errors = vec![vec![vec![0.0; numerical[0][0].len()]; numerical[0].len()]; numerical.len()];
+
+    for batch in 0..numerical.len() {
+        for seq in 0..numerical[batch].len() {
+            for dim in 0..numerical[batch][seq].len() {
+                let g_num = numerical[batch][seq][dim];
+                let g_ana = analytical[batch][seq][dim];
+
+                // Compute absolute difference (magnitude)
+                let diff = g_num - g_ana;
+                let abs_diff = diff.norm(); // sqrt(re^2 + im^2)
+
+                // Sum of magnitudes
+                let sum_mags = g_num.norm() + g_ana.norm();
+
+                // Relative error
+                let rel_error = abs_diff / sum_mags.max(epsilon_tol);
+                rel_errors[batch][seq][dim] = rel_error;
+
+                // Optionally print values for inspection
+                println!("Batch {}, Seq {}, Dim {}: Num = {:?}, Ana = {:?}, RelError = {:.6e}", batch, seq, dim, g_num, g_ana, rel_error);
+            }
+        }
+    }
+
+    rel_errors
 }
 
 pub fn test_gradient_batch_error(numerical_grad_batch: &Vec<Vec<Vec<Complex<f64>>>>, analytical_grad_batch: &Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) {
