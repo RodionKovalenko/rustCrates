@@ -20,7 +20,7 @@ mod test_self_attention_layer {
         let batch_size = 2;
         let input_dim = 5;
         let output_dim = 5;
-        let epsilon: f64 = 1e-3;
+        let epsilon: f64 = 1e-6;
 
         let learning_rate = 0.0001;
 
@@ -131,8 +131,8 @@ mod test_self_attention_layer {
         let output_dim = 16;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
-        let num_attention_heads = 1;
-        let epsilon = 1e-7;
+        let num_attention_heads = 4;
+        let epsilon = 1e-9;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, input_dim, output_dim, learning_rate);

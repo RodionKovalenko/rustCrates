@@ -1,6 +1,6 @@
 use crate::neural_networks::{
     network_components::{
-        add_and_norm_layer::NormalNormLayer, gradient_struct::Gradient, layer::{ActivationType, Layer, LayerEnum, LayerType}, linear_layer::LinearLayer
+        add_and_norm_layer::NormalNormLayer, add_rms_norm_layer::RMSNormLayer, gradient_struct::Gradient, layer::{ActivationType, Layer, LayerEnum, LayerType}, linear_layer::LinearLayer
     },
     utils::matrix::check_nan_or_inf_3d,
 };
@@ -25,15 +25,15 @@ impl FeedForwardLayer {
         let mut layers: Vec<LayerEnum> = vec![];
         let dense_layer: Layer = Layer::new(rows, cols, &learning_rate, &ActivationType::GELU, LayerType::DenseLayer);
         let linear_layer = LinearLayer::new(learning_rate, cols, rows);
-        //let norm_layer = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(rows, epsilon, learning_rate))));
-        let norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(rows, epsilon, learning_rate))));
+        let _norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(rows, epsilon, learning_rate))));
+        let _rms_norm_layer = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(rows, epsilon, learning_rate))));
 
         layers.push(LayerEnum::Dense(Box::new(dense_layer)));
         layers.push(LayerEnum::Linear(Box::new(linear_layer)));
 
         Self {
             layers,
-            norm_layer: norm_layer,
+            norm_layer: _rms_norm_layer,
             learning_rate,
             input_batch: None,
             padding_mask_batch: None,
