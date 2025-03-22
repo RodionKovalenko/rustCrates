@@ -85,7 +85,7 @@ impl LinearLayer {
                 }
             }
 
-            gradient_input_batch[batch_ind] = multiply_complex(&previous_gradient, &self.weights);
+            gradient_input_batch[batch_ind] = multiply_complex(&previous_gradient, &transpose(&self.weights));
         }
 
         gradient.set_gradient_input_batch(gradient_input_batch.clone());
