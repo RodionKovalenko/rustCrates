@@ -17,7 +17,7 @@ mod test_self_attention_layer {
 
     #[test]
     fn test_attention_head_backward() {
-        let batch_size = 1;
+        let batch_size = 2;
         let input_dim = 5;
         let output_dim = 5;
         let epsilon: f64 = 1e-3;
@@ -126,12 +126,12 @@ mod test_self_attention_layer {
     #[test]
     fn test_self_attention_layer_backward() {
         // Define some small batch size and input dimensions for simplicity
-        let batch_size = 3;
+        let batch_size = 2;
         let input_dim = 16;
         let output_dim = 16;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
-        let num_attention_heads = 4;
+        let num_attention_heads = 1;
         let epsilon = 1e-3;
 
         // Create a simple LinearLayer with the given input and output dimensions

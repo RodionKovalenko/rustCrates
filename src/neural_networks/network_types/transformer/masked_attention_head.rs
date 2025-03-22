@@ -246,8 +246,6 @@ impl MaskedAttentionHead {
             // 4,4 * 5, 4 = 4, 5
             let dl_dvx = multiply_complex(&transpose(&grad_wv), &transpose(&self.weights_v));
 
-            println!("\n dl_dvx dim: {}, {}", &dl_dvx.len(), &dl_dvx[0].len());
-
             gradient_input_batch[batch_ind] = add_matrix(&dl_dqx, &dl_dkx);
             // println!("dl_dqx dim: {}, {}", &dl_dqx.len(), &dl_dqx[0].len());
             // println!("dl_dkx dim: {}, {}", &dl_dkx.len(), &dl_dkx[0].len());

@@ -3,7 +3,7 @@ use crate::neural_networks::{
     utils::{
         activation::activate_output_complex_padding,
         derivative::get_gradient_complex,
-        matrix::{add_vector, apply_padding_mask_batch, check_nan_or_inf_3d, clip_gradient_1d, clip_gradients, hadamard_product_2d_c, is_nan_or_inf, multiply_complex},
+        matrix::{add_vector, apply_padding_mask_batch, check_nan_or_inf_3d, clip_gradient_1d, clip_gradients, hadamard_product_2d_c, is_nan_or_inf, multiply_complex, transpose},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -183,12 +183,15 @@ impl Layer {
         // println!("\n\n\nprevious gradient batch padded: {:?}", previous_gradient_batch_padded);
 
         // For each input sample in the batch
-        for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(&previous_gradient_batch_padded).enumerate() {
+        for (batch_ind, (input, previous_gradient)) in input_batch.iter().zip(&previous_gradient_batch_padded).enumerate() {
             // Multiply the transposed input sample with previous gradients (for weight gradients)
 
+            // 7, 7
             let gradient_output = get_gradient_complex(&output_batch[batch_ind], &raw_output_batch[batch_ind], self.activation_type.clone());
-            input_gradient_batch[batch_ind] = hadamard_product_2d_c(previous_gradient, &gradient_output);
-            weight_gradients[batch_ind] = multiply_complex(input_sample, &input_gradient_batch[batch_ind]);
+            // 7,7 hadamard 7, 7 = 7,7
+            input_gradient_batch[batch_ind] = hadamard_product_2d_c(&previous_gradient, &gradient_output);
+            // 7,8 * 7, 7 = 8, 7 * 7, 7 = 8, 7
+            weight_gradients[batch_ind] = multiply_complex(&transpose(&input), &input_gradient_batch[batch_ind]);
 
             // println!("previous gradient in ffn backward: {} {}", previous_gradient.len(), previous_gradient[0].len());
             // println!("gradient_output in ffn backward: {} {}", gradient_output.len(), gradient_output[0].len());
