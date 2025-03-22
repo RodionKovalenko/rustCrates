@@ -3,7 +3,7 @@ mod test_rms_norm_layer {
     use crate::neural_networks::{
         network_components::add_rms_norm_layer::RMSNormLayer,
         network_types::neural_network_generic::OperationMode,
-        utils::derivative::{numerical_gradient_input_batch_without_loss, test_gradient_batch_error},
+        utils::derivative::{global_relative_error_l2, numerical_gradient_input_batch_without_loss, test_gradient_batch_error},
     };
 
     use num::Complex;
@@ -60,6 +60,9 @@ mod test_rms_norm_layer {
 
         println!("\nnumerical gradient rms: {:?}", &numerical_grad_rms);
         println!("\nanalytical gradient rms: {:?}", &analytical_gradient_rms);
+
+        let global_error = global_relative_error_l2(&numerical_grad_rms, &analytical_gradient_rms);
+        println!("global relative gradient error: {:?}", &global_error);
 
         test_gradient_batch_error(&numerical_grad_rms, &analytical_gradient_rms, epsilon);
     }

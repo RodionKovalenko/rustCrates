@@ -92,16 +92,13 @@ where
             for j in 0..num_columns {
                 row[j] = (0..matrix_b_clone.len())
                     .map(|k| {
-                        if matrix_a_clone[i][k].re.is_nan() || matrix_a_clone[i][k].im.is_nan() {
-                            //  panic!("NaN detected in multiply_complex in matrix_a at ({}, {})", i, j);
+                        if is_nan_or_inf(&matrix_a_clone[i][k]) {
+                            panic!("NaN detected in multiply_complex in matrix_a at ({}, {})", i, j);
                         }
-                        if matrix_b_clone[k][j].re.is_nan() || matrix_b_clone[k][j].im.is_nan() {
-                            //  panic!("NaN detected in multiply_complex in matrix_b at ({}, {})", i, j);
+                        if is_nan_or_inf(&matrix_b_clone[k][j]) {
+                            panic!("NaN detected in multiply_complex in matrix_b at ({}, {})", i, j);
                         }
                         let mut product = matrix_a_clone[i][k] * matrix_b_clone[k][j];
-                        if !product.re.is_finite() || !product.im.is_finite() {
-                            // panic!("NaN detected in multiply_complex in product at ({}, {}), product: {:?}, value 1 {:?}, value 2: {:?}", i, j, product, matrix_a_clone[i][k], matrix_b_clone[k][j]);
-                        }
 
                         if product.re.abs() > 1e308 || product.im.abs() > 1e308 {
                             println!("⚠ Warning: Potential overflow in multiply_complex at ({}, {}): {:?}", i, j, product);
@@ -164,7 +161,7 @@ pub fn transpose<T: Debug + Clone + Sync + Send>(matrix_a: &Vec<Vec<T>>) -> Vec<
 pub fn hadamard_product_2d_c(input_1: &Vec<Vec<Complex<f64>>>, input_2: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
     // Check if the input matrices have the same dimensions
     if input_1.len() != input_2.len() || input_1[0].len() != input_2[0].len() {
-        panic!("The arrays must be of the same size in Hadamard product");
+        panic!("The arrays must be of the same size in Hadamard product {} {} - {} {}", input_1.len(), input_1[0].len(), input_2.len(), input_2[0].len());
     }
 
     // Initialize the result matrix with zeros

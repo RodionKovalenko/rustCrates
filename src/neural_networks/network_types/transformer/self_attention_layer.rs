@@ -28,7 +28,7 @@ impl SelfAttentionLayer {
             attention_heads.push(attention_head);
         }
 
-        let epsilon: f64 = 0.000001;
+        let epsilon: f64 = 0.000000000001;
         //let _norm_layer_rms = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(cols, epsilon, learning_rate))));
         let norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(cols, epsilon, learning_rate))));
 
@@ -36,7 +36,7 @@ impl SelfAttentionLayer {
         Self {
             attention_heads,
             activated_output: vec![],
-            norm_layer: norm_layer,
+            norm_layer: None,
             input_batch: None,
         }
     }

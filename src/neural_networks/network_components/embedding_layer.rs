@@ -1,4 +1,5 @@
 use bincode;
+use nalgebra::ComplexField;
 use core::fmt::Debug;
 use lazy_static::lazy_static;
 use num::Complex;
@@ -12,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 use crate::database::sled_config::{get_storage_path, SLED_DB_TOKENIZER};
 use crate::neural_networks::network_types::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
+use crate::neural_networks::utils::matrix::is_nan_or_inf;
 
 use super::gradient_struct::Gradient;
 
@@ -181,10 +183,12 @@ impl EmbeddingLayer {
                 let gradient = &previous_gradients[batch_idx][i];
 
                 for j in 0..self.embedding_dim {
-                    token_embedding[j] -= learning_rate * (gradient[j] / batch_size);
+                    if !is_nan_or_inf(&gradient[j]) {
+                        token_embedding[j] -= learning_rate * (gradient[j] / batch_size);
 
-                    if token_embedding[j].re.is_infinite() || token_embedding[j].is_nan() || token_embedding[j].im.is_infinite() || token_embedding[j].im.is_nan() {
-                        token_embedding[j] = Complex::new(0.0, 0.0);
+                        if is_nan_or_inf(&token_embedding[j]) || token_embedding[j].abs() > 2.0 {
+                            token_embedding[j] = Complex::new(0.2, 0.3);
+                        }
                     }
                 }
 
