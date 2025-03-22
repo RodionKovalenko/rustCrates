@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
     network_types::neural_network_generic::OperationMode,
-    utils::{activation::{softmax_complex_padding, softmax_last_row}, matrix::check_nan_or_inf_3d},
+    utils::{
+        activation::{softmax_complex_padding, softmax_last_row},
+        matrix::check_nan_or_inf_3d,
+    },
 };
 
 use super::gradient_struct::Gradient;
@@ -56,6 +59,49 @@ impl SoftmaxLayer {
         layer_output
     }
 
+    // pub fn backward(&mut self, target_token_ids: &Vec<Vec<u32>>) -> Gradient {
+    //     // Ensure softmax_output_batch exists (precomputed during the forward pass)
+    //     let softmax_output_batch: &Vec<Vec<Vec<Complex<f64>>>> = self.softmax_output_batch.as_ref().expect("Input batch is missing in softmax layer");
+    //     let batch_size = softmax_output_batch.len();
+    //     let seq_len = softmax_output_batch[0].len();
+    //     let vocab_dim = softmax_output_batch[0][0].len();
+
+    //     // Initialize gradient_batch with zeros
+    //     let mut gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); vocab_dim]; seq_len]; batch_size];
+    //     let normalizer = softmax_output_batch.len() * target_token_ids[0].len();
+
+    //     // Iterate over the batch of softmax outputs and target token IDs
+    //     for (batch_index, (softmax_output, target_tokens)) in softmax_output_batch.iter().zip(target_token_ids.iter()).enumerate() {
+    //         let seq_len = softmax_output.len();
+    //         let target_len = target_tokens.len();
+
+    //         if target_len > seq_len {
+    //             panic!("Target length exceeds sequence length!");
+    //         }
+
+    //         let seq_ind_start = seq_len - target_len;
+
+    //         for (sample_index, softmax_sample) in softmax_output[seq_ind_start..seq_len].iter().enumerate() {
+    //             for (column_index, softmax_prob) in softmax_sample.iter().enumerate() {
+    //                 let target = if target_tokens[sample_index] == column_index as u32 { Complex::new(1.0, 0.0) } else { Complex::new(0.0, 0.0) };
+
+    //                 // Compute gradient
+    //                 let gradient = softmax_prob - target;
+
+    //                 gradient_batch[batch_index][sample_index][column_index] = gradient / (normalizer as f64);
+    //             }
+    //         }
+    //     }
+
+    //     check_nan_or_inf_3d(&mut gradient_batch, "gradient input batch in softmax output layer has None Values");
+    //     let mut gradient = Gradient::new_default();
+    //     gradient.set_gradient_input_batch(gradient_batch);
+    //     self.gradient = Some(gradient.clone());
+
+    //     // Return the final gradient_batch
+    //     gradient
+    // }
+
     pub fn backward(&mut self, target_token_ids: &Vec<Vec<u32>>) -> Gradient {
         // Ensure softmax_output_batch exists (precomputed during the forward pass)
         let softmax_output_batch: &Vec<Vec<Vec<Complex<f64>>>> = self.softmax_output_batch.as_ref().expect("Input batch is missing in softmax layer");
@@ -78,14 +124,20 @@ impl SoftmaxLayer {
 
             let seq_ind_start = seq_len - target_len;
 
-            for (sample_index, softmax_sample) in softmax_output[seq_ind_start..seq_len].iter().enumerate() {
-                for (column_index, softmax_prob) in softmax_sample.iter().enumerate() {
-                    let target = if target_tokens[sample_index] == column_index as u32 { Complex::new(1.0, 0.0) } else { Complex::new(0.0, 0.0) };
+            for (sample_index, &token_id) in target_tokens.iter().enumerate() {
+                if token_id as usize >= vocab_dim {
+                    panic!("Target token ID {} exceeds vocabulary dimension {}", token_id, vocab_dim);
+                }
 
-                    // Compute gradient
+                if token_id == 1 {
+                    continue; // Skip padding token
+                }
+
+                for (column_index, softmax_prob) in softmax_output[sample_index + seq_ind_start].iter().enumerate() {
+                    let target = if token_id == column_index as u32 { Complex::new(1.0, 0.0) } else { Complex::new(0.0, 0.0) };
                     let gradient = softmax_prob - target;
 
-                    gradient_batch[batch_index][sample_index][column_index] = gradient / (normalizer as f64);
+                    gradient_batch[batch_index][sample_index + seq_ind_start][column_index] = gradient / (normalizer as f64);
                 }
             }
         }
