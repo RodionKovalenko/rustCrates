@@ -205,7 +205,7 @@ impl Layer {
                 }
             }
 
-            input_gradient_batch[batch_ind] = multiply_complex(&input_gradient_batch[batch_ind], &self.weights);
+            input_gradient_batch[batch_ind] = multiply_complex(&input_gradient_batch[batch_ind], &transpose(&self.weights));
         }
 
         gradient.set_gradient_input_batch(input_gradient_batch);
