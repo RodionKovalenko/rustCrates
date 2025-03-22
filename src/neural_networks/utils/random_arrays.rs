@@ -1,0 +1,34 @@
+use num::Complex;
+use rand::Rng;
+
+pub fn generate_random_complex_3d(batch_size: usize, rows: usize, cols: usize) -> Vec<Vec<Vec<Complex<f64>>>> {
+    let mut rng = rand::rng();
+
+    (0..batch_size)
+        .map(|_| {
+            (0..rows)
+                .map(|_| {
+                    (0..cols)
+                        .map(|_| {
+                            let real = rng.random_range(-1.0..1.0); // Random f64 in range [-1.0, 1.0)
+                            let imag = rng.random_range(-1.0..1.0);
+                            Complex::new(real, imag)
+                        })
+                        .collect()
+                })
+                .collect()
+        })
+        .collect()
+}
+
+pub fn generate_random_u32_batch(batch_size: usize, output_dim: usize, max_value: u32) -> Vec<Vec<u32>> {
+    let mut rng = rand::rng();
+
+    (0..batch_size)
+        .map(|_| {
+            (0..output_dim)
+                .map(|_| rng.random_range(0..max_value)) // random u32 in 0..max_value
+                .collect()
+        })
+        .collect()
+}

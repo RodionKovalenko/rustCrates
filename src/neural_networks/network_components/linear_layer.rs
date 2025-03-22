@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
-    matrix::{add_vector, check_nan_or_inf, clip_gradient_1d, clip_gradients, is_nan_or_inf, multiply_complex},
+    matrix::{add_vector, check_nan_or_inf, clip_gradient_1d, clip_gradients, is_nan_or_inf, multiply_complex, transpose},
     weights_initializer::initialize_weights_complex,
 };
 
@@ -45,10 +45,12 @@ impl LinearLayer {
             .par_iter() // Use a parallel iterator to process inputs in parallel
             .map(|input| {
                 // Perform matrix multiplication
-                let mut output = multiply_complex(input, &self.weights);
 
                 // println!("input dim in forward linear layer: {}, {}", input.len(), input[0].len());
                 // println!("weights dim in forward linear layer: {}, {}", &self.weights.len(), &self.weights[0].len());
+
+                let mut output = multiply_complex(input, &self.weights);
+
                 // println!("output dim in forward linear layer: {}, {}", output.len(), output[0].len());
 
                 // Add the bias vector
@@ -71,7 +73,7 @@ impl LinearLayer {
         // For each input sample in the batch
         for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_batch).enumerate() {
             // Multiply the transposed input sample with previous gradients (for weight gradients)
-            weight_gradients[batch_ind] = multiply_complex(input_sample, previous_gradient);
+            weight_gradients[batch_ind] = multiply_complex(&transpose(input_sample),previous_gradient);
 
             // println!("\nprevious gradient: {:?}", &previous_gradient);
             // println!("\n weights linear: {:?}", &self.weights);

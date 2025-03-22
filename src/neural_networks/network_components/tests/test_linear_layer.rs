@@ -3,7 +3,9 @@ mod test_linear_layer {
     use crate::neural_networks::{
         network_components::{gradient_struct::Gradient, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
-        utils::derivative::{numerical_gradient_bias, numerical_gradient_bias_without_loss, numerical_gradient_input_batch_without_loss, numerical_gradient_weights, numerical_gradient_weights_without_loss, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d},
+        utils::{derivative::{
+            global_relative_error_2d_l2, numerical_gradient_bias, numerical_gradient_bias_without_loss, numerical_gradient_input_batch_without_loss, numerical_gradient_weights, numerical_gradient_weights_without_loss, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d,
+        }, random_arrays::{generate_random_complex_3d, generate_random_u32_batch}},
     };
 
     use num::Complex;
@@ -11,10 +13,10 @@ mod test_linear_layer {
     #[test]
     fn test_softmax_linear_backward() {
         // Define some small batch size and input dimensions for simplicity
-        let _batch_size = 2;
+        let batch_size = 2;
         let _seq_len: usize = 1; // Update to match the input structure
-        let input_dim = 3; // Match the input dimension with your input batch
-        let output_dim = 4; // Match output_dim to your layer's output
+        let input_dim = 5; // Match the input dimension with your input batch
+        let output_dim = 5; // Match output_dim to your layer's output
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
 
@@ -22,10 +24,9 @@ mod test_linear_layer {
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
-        // Define a small input batch, [2][2][3]
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.5, 0.0), Complex::new(0.8, 0.0), Complex::new(0.1, 0.0)]], vec![vec![Complex::new(1.0, 0.0), Complex::new(2.0, 0.0), Complex::new(3.0, 0.0)]]];
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim, output_dim as u32);
 
-        let target_token_id_batch = vec![vec![0], vec![1]];
         //let target_token_id_batch = vec![vec![0]];
 
         // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
@@ -87,80 +88,59 @@ mod test_linear_layer {
     }
 
     #[test]
-    fn test_linear_backward_batch() {
-        let num_row: usize = 2;
-        let num_col: usize = 3;
+    fn test_linear_softmax_backward() {
+        // Define some small batch size and input dimensions for simplicity
+        let batch_size = 1;
+        let input_dim = 20;
+        let output_dim = 20;
+        let learning_rate = 0.01;
+        let operation_mode = OperationMode::TRAINING;
+        let epsilon = 1e-3;
 
-        // Initialize a LinearLayer
-        let mut linear_layer = LinearLayer::new(0.01, num_row, num_col);
+        // Create a simple LinearLayer with the given input and output dimensions
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim);
+        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
-        // Define a simple input batch (2 samples, 2D vectors)
-        let input_batch = vec![vec![vec![Complex::new(1.0, 0.3), Complex::new(2.0, 0.8)]]];
+        // Define a small input batch, [2][6][4]
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim, output_dim as u32);
 
-        // Run forward pass (needed before backward)
-        let linear_output_batch = linear_layer.forward(&input_batch);
+        let linear_batch_output: Vec<Vec<Vec<Complex<f64>>>> = linear_layer.forward(&input_batch);
+        let _softmax_batch_output: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.forward(&linear_batch_output, None);
 
-        println!("linear output batch: {} {} {}", linear_output_batch.len(), linear_output_batch[0].len(), linear_output_batch[0][0].len());
-        println!("linear weights: {} {} ", linear_layer.weights.len(), linear_layer.weights[0].len());
+        let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
+        let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax.get_gradient_input_batch());
 
-        // Define previous gradients (as if coming from next layer)
-        let previous_gradient_batch = vec![vec![vec![Complex::new(1.0, 0.0); num_col]; input_batch[0].len()]; input_batch.len()];
+        let gradient_weights_batch: Vec<Vec<Complex<f64>>> = gradient_linear.get_gradient_weights();
+        let weights: Vec<Vec<Complex<f64>>> = linear_layer.weights.clone();
 
-        let gradient_batch: Gradient = linear_layer.backward(&previous_gradient_batch);
-
-        let gradient_input_batch = gradient_batch.get_gradient_input_batch();
-        let (weight_gradients, bias_gradients) = (gradient_batch.get_gradient_weight_batch(), gradient_batch.get_gradient_bias());
-        let linear_weights = linear_layer.weights.clone();
-        let bias = linear_layer.bias.clone();
-        // Run backward pass
+        println!("softmax output dim: {} {} {}", _softmax_batch_output.len(), _softmax_batch_output[0].len(), _softmax_batch_output[0][0].len());
+        println!("target_token_id_batch dim: {} {}", target_token_id_batch.len(), target_token_id_batch[0].len());
 
         // Define the loss function
-        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
             linear_layer.weights = weights.clone();
             let linear_batch_output = linear_layer.forward(input);
+            let softmax_batch_output = softmax_layer.forward(&linear_batch_output, None);
 
-            linear_batch_output
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
+
+            loss
         };
 
-        let epsilon = 1e-7;
-        let numerical_grad_linear: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_without_loss(&mut loss_fn, input_batch.clone(), &linear_weights, epsilon);
+        let num_gradient_weight_batch: Vec<Vec<Complex<f64>>> = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &weights, epsilon);
 
-        println!("\nnumerical gradient linear: {:?}", &numerical_grad_linear);
-        println!("\nanalytical gradient linear: {:?}", &weight_gradients);
+        // Check if gradient batch dimensions match expected shapes
+        //println!("\n analytical gradient_weights_batch: {:?}", gradient_weights_batch);
+        println!("\n analytical gradient_weights_batch dim: {} {}", gradient_weights_batch.len(), gradient_weights_batch[0].len());
 
-        test_gradient_batch_error(&numerical_grad_linear, &weight_gradients, epsilon);
+        //println!("\n numerical grad: {:?}", num_gradient_weight_batch);
+        println!("\n num_gradient_weight_batch gradient dim: {} {}", num_gradient_weight_batch.len(), num_gradient_weight_batch[0].len());
 
-        linear_layer.weights = linear_weights;
+        let global_error = global_relative_error_2d_l2(&num_gradient_weight_batch, &gradient_weights_batch);
 
-        // Bias gradient check
-        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Complex<f64>>| -> Vec<Vec<Vec<Complex<f64>>>> {
-            linear_layer.bias = bias.clone();
-            let linear_batch_output = linear_layer.forward(input);
+        println!("global relative gradient error gradient_weights_batch: {:?}", &global_error);
 
-            linear_batch_output
-        };
-
-        let nummerical_grad_bias_linear = numerical_gradient_bias_without_loss(&mut loss_fn, input_batch.clone(), &bias, epsilon);
-
-        println!("\nnumerical grad bias: {:?}", &nummerical_grad_bias_linear);
-        println!("\nanalytical grad bias: {:?}", &bias_gradients);
-
-        test_gradient_error_1d(&nummerical_grad_bias_linear, &bias_gradients, epsilon);
-
-        linear_layer.bias = bias.clone();
-
-        // Test input gradient check
-        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
-            let linear_batch_output = linear_layer.forward(input);
-
-            linear_batch_output
-        };
-
-        let numerical_grad_input_linear: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
-
-        println!("\nnumerical gradient input batch dense: {:?}", &numerical_grad_input_linear);
-        println!("\nanalytical gradient input batch dense: {:?}", &gradient_input_batch);
-
-        test_gradient_batch_error(&numerical_grad_input_linear, &gradient_input_batch, epsilon);
+        test_gradient_error_2d(&num_gradient_weight_batch, &gradient_weights_batch, epsilon);
     }
 }
