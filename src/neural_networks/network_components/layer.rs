@@ -12,7 +12,7 @@ use num::Complex;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use super::{add_and_norm_layer::NormalNormLayer, add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, gradient_struct::Gradient, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer};
+use super::{add_and_norm_layer::NormalNormLayer, add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, gradient_struct::Gradient, input_struct::LayerInput, linear_layer::LinearLayer, output_struct::LayerOutput, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer};
 
 impl Default for ActivationType {
     fn default() -> Self {
@@ -121,7 +121,10 @@ impl Layer {
             ..Layer::default(rows, cols, learning_rate) // Fill the rest with default values
         }
     }
-    pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>, padding_mask_batch: &Vec<Vec<u32>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
+        let input_batch = input.get_input_batch();
+        let padding_mask_batch = input.get_padding_mask_batch();
+
         self.input_batch = Some(input_batch.clone());
 
         let mut inactivated_batch_output: Vec<Vec<Vec<Complex<f64>>>> = input_batch
@@ -160,7 +163,10 @@ impl Layer {
         self.inactivated_input_batch = Some(inactivated_batch_output);
         self.padding_mask_batch = Some(padding_mask_batch.clone());
 
-        batch_output
+        let mut output = LayerOutput::new_default();
+        output.set_output_batch(batch_output);
+
+        output
     }
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {

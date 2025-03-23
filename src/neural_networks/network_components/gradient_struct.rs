@@ -2,7 +2,6 @@ use core::fmt::Debug;
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
-// RMSNorm Layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Gradient {
     gradient_weights_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,

@@ -3,7 +3,7 @@ mod test_self_attention_layer {
     use num::Complex;
 
     use crate::neural_networks::{
-        network_components::{gradient_struct::Gradient, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
+        network_components::{gradient_struct::Gradient, input_struct::LayerInput, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
         network_types::{
             feedforward_layer::FeedForwardLayer,
             neural_network_generic::OperationMode,
@@ -157,12 +157,16 @@ mod test_self_attention_layer {
 
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; output_dim]; batch_size];
 
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_input_batch(input_batch.clone());
+
         // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
         let attention_layer_output = attention_layer.forward(&input_batch, &padding_mask_batch);
         println!("attention layer output: {} {} {}", attention_layer_output.len(), attention_layer_output[0].len(), attention_layer_output[0][0].len());
         let ffn_batch_output = ffn_layer.forward(&attention_layer_output);
-        let linear_batch_output = linear_layer.forward(&ffn_batch_output);
-        let _softmax_batch_output = softmax_layer.forward(&linear_batch_output, Some(padding_mask_batch.clone()));
+        layer_input.set_input_batch(ffn_batch_output);
+        let linear_output = linear_layer.forward(&layer_input);
+        let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax.get_gradient_input_batch());
@@ -179,8 +183,10 @@ mod test_self_attention_layer {
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             let attention_layer_output = attention_layer.forward(&input, &padding_mask_batch);
             let ffn_batch_output = ffn_layer.forward(&attention_layer_output);
-            let linear_batch_output = linear_layer.forward(&ffn_batch_output);
-            let softmax_batch_output = softmax_layer.forward(&linear_batch_output, Some(padding_mask_batch.clone()));
+
+            layer_input.set_input_batch(ffn_batch_output);
+            let linear_output = linear_layer.forward(&layer_input);
+            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
 
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
 
@@ -214,8 +220,10 @@ mod test_self_attention_layer {
 
             let attention_layer_output = attention_layer.forward(&input, &padding_mask_batch);
             let ffn_batch_output = ffn_layer.forward(&attention_layer_output);
-            let linear_batch_output = linear_layer.forward(&ffn_batch_output);
-            let softmax_batch_output = softmax_layer.forward(&linear_batch_output, Some(padding_mask_batch.clone()));
+
+            layer_input.set_input_batch(ffn_batch_output);
+            let linear_output = linear_layer.forward(&layer_input);
+            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
 
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
 
