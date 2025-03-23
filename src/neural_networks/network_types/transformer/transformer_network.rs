@@ -277,22 +277,25 @@ pub fn cross_entropy_loss_batch(
     total_loss / batch_len
 }
 
-fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, targets: &Vec<u32>) -> Complex<f64> {
+fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, target_tokens: &Vec<u32>) -> Complex<f64> {
     let mut loss: Complex<f64> = Complex::new(0.0, 0.0);
     let seq_len = predictions.len();
-    let target_len: usize = targets.len();
+    let target_len: usize = target_tokens.len();
 
-    for i in 0..targets.len() {
-        let target_index = targets[i] as usize;
-        let target_moved_index = seq_len - target_len + i;
+    let seq_ind_start = seq_len - target_len;
+
+    for (target_ind, &token_id) in target_tokens.iter().enumerate() {
+        if token_id == 1 {
+            continue; // skip padding
+        }
 
         //print!("target moved index: {}, ", &target_moved_index);
-        let predicted_prob: Complex<f64> = predictions[target_moved_index][target_index];
+       let predicted_prob = predictions[seq_ind_start + target_ind][token_id as usize];
         //println!("predicted prob: {:?}", &predicted_prob);
         if predicted_prob.norm() > 0.0 {
-            loss += -predicted_prob.ln(); // Negative log of the magnitude
-        } else if predicted_prob.norm() != 0.0 {
-            panic!("Predicted probability is zero or negative, which is invalid! {:?}", &predicted_prob);
+            loss += -predicted_prob.ln();
+        } else {
+            panic!("Predicted probability is zero or negative, which is invalid! {:?}", predicted_prob);
         }
     }
 

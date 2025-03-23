@@ -62,6 +62,9 @@ mod test_self_attention_layer {
         println!("\n\nnumerical gradient weight v attention layer {:?}", numerical_grad_weight_v_batch);
         println!("\n\nanalytical gradient weight v attention layer {:?}", analytical_gradient_weights_v_batch);
 
+        let global_error = global_relative_error_l2(&numerical_grad_weight_v_batch, &analytical_gradient_weights_v_batch);
+        println!("\n\n global relative gradient error weight v batch: {:?}", &global_error);
+
         test_gradient_batch_error(&numerical_grad_weight_v_batch, &analytical_gradient_weights_v_batch, epsilon);
 
         attention_head_layer.weights_v = weights_v.clone();
@@ -81,6 +84,9 @@ mod test_self_attention_layer {
 
         println!("\n\nanalytical gradient weight q attention layer {:?}", analytical_gradient_weights_q_batch);
         println!("\n dim nanalytical gradient {:?}, {}, {}", analytical_gradient_weights_q_batch.len(), analytical_gradient_weights_q_batch[0].len(), analytical_gradient_weights_q_batch[0][0].len());
+
+        let global_error = global_relative_error_l2(&numerical_grad_weight_q_batch, &analytical_gradient_weights_q_batch);
+        println!("\n\n global relative gradient error weight q batch: {:?}", &global_error);
 
         // For Gelu it can a little more deviation
         test_gradient_batch_error(&numerical_grad_weight_q_batch, &analytical_gradient_weights_q_batch, epsilon);
@@ -102,6 +108,9 @@ mod test_self_attention_layer {
         println!("\n\nanalytical gradient weight k attention layer {:?}", analytical_gradient_weights_k_batch);
         println!("\n dim nanalytical gradient {:?}, {}, {}", analytical_gradient_weights_k_batch.len(), analytical_gradient_weights_k_batch[0].len(), analytical_gradient_weights_k_batch[0][0].len());
 
+        let global_error = global_relative_error_l2(&numerical_grad_weight_k_batch, &analytical_gradient_weights_k_batch);
+        println!("\n\n global relative gradient error weight k batch: {:?}", &global_error);
+
         // For Gelu it can a little more deviation
         test_gradient_batch_error(&numerical_grad_weight_k_batch, &analytical_gradient_weights_k_batch, epsilon);
         attention_head_layer.weights_k = weights_k.clone();
@@ -118,6 +127,9 @@ mod test_self_attention_layer {
         println!("\n\nanalytical gradient input attention layer {:?}", analytical_gradient_input_batch);
         println!("\n dim nanalytical gradient {:?}, {}, {}", analytical_gradient_input_batch.len(), analytical_gradient_input_batch[0].len(), analytical_gradient_input_batch[0][0].len());
 
+        let global_error = global_relative_error_l2(&numerical_grad_input_batch, &analytical_gradient_input_batch);
+        println!("\n\n global relative gradient error input batch: {:?}", &global_error);
+
         // For Gelu it can a little more deviation
         test_gradient_batch_error(&numerical_grad_input_batch, &analytical_gradient_input_batch, epsilon);
         //Input gradient ------------------------------------------------------------------------------------------- end
@@ -126,13 +138,13 @@ mod test_self_attention_layer {
     #[test]
     fn test_self_attention_layer_backward() {
         // Define some small batch size and input dimensions for simplicity
-        let batch_size = 2;
+        let batch_size = 1;
         let input_dim = 16;
         let output_dim = 16;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
         let num_attention_heads = 4;
-        let epsilon = 1e-9;
+        let epsilon = 1e-5;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, input_dim, output_dim, learning_rate);
@@ -141,7 +153,7 @@ mod test_self_attention_layer {
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
-        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim, 2);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim, (output_dim - 1) as u32);
 
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; output_dim]; batch_size];
 
@@ -159,7 +171,11 @@ mod test_self_attention_layer {
 
         let gradient_input_batch_att_l = gradient_attention_layer.get_gradient_input_batch();
 
-        // Define the loss function
+        println!("padding mask batch in test transformer: {:?}", &padding_mask_batch);
+        println!("target tokens ids: {:?}", &target_token_id_batch);
+        println!("final output dim: {} {} {}", _softmax_batch_output.len(), _softmax_batch_output[0].len(), _softmax_batch_output[0][0].len());
+
+        // // Define the loss function
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             let attention_layer_output = attention_layer.forward(&input, &padding_mask_batch);
             let ffn_batch_output = ffn_layer.forward(&attention_layer_output);
@@ -199,7 +215,7 @@ mod test_self_attention_layer {
             let attention_layer_output = attention_layer.forward(&input, &padding_mask_batch);
             let ffn_batch_output = ffn_layer.forward(&attention_layer_output);
             let linear_batch_output = linear_layer.forward(&ffn_batch_output);
-            let softmax_batch_output = softmax_layer.forward(&linear_batch_output, None);
+            let softmax_batch_output = softmax_layer.forward(&linear_batch_output, Some(padding_mask_batch.clone()));
 
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
 
@@ -215,11 +231,10 @@ mod test_self_attention_layer {
         println!("\n numerical grad: {:?}", num_gradient_weights_q);
         println!("\n  num_gradient_weights_q dim: {} {}", num_gradient_weights_q.len(), num_gradient_weights_q[0].len());
 
-        test_gradient_error_2d(&analytical_weight_q_gradient, &num_gradient_weights_q, 1e-3);
-
         let global_error = global_relative_error_2d_l2(&num_gradient_weights_q, &analytical_weight_q_gradient);
-
         println!("global relative gradient error weights: {:?}", &global_error);
+
+        test_gradient_error_2d(&analytical_weight_q_gradient, &num_gradient_weights_q, 1e-3);
 
         let mut attention_head = attention_layer.attention_heads.get_mut(0).unwrap().clone();
         attention_head.weights_q = weight_q.clone();

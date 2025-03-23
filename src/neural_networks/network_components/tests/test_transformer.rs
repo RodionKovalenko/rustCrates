@@ -16,7 +16,6 @@ mod test_transformer {
         },
         utils::{
             derivative::{global_relative_error_2d_l2, numerical_gradient_weights, test_gradient_error_2d},
-            random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
             tokenizer::tokenize_batch,
         },
     };
@@ -152,7 +151,7 @@ mod test_transformer {
     #[ignore]
     fn test_transformer_separate_backward() {
         let learning_rate: f64 = 0.01;
-        let epsilon = 1e-8;
+        let epsilon = 1e-7;
 
         let embedding_dim_original: usize = 512;
         let base_2: i32 = 2;

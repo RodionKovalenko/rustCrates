@@ -124,7 +124,7 @@ impl SoftmaxLayer {
 
             let seq_ind_start = seq_len - target_len;
 
-            for (sample_index, &token_id) in target_tokens.iter().enumerate() {
+            for (target_ind, &token_id) in target_tokens.iter().enumerate() {
                 if token_id as usize >= vocab_dim {
                     panic!("Target token ID {} exceeds vocabulary dimension {}", token_id, vocab_dim);
                 }
@@ -133,11 +133,11 @@ impl SoftmaxLayer {
                     continue; // Skip padding token
                 }
 
-                for (column_index, softmax_prob) in softmax_output[sample_index + seq_ind_start].iter().enumerate() {
+                for (column_index, softmax_prob) in softmax_output[target_ind + seq_ind_start].iter().enumerate() {
                     let target = if token_id == column_index as u32 { Complex::new(1.0, 0.0) } else { Complex::new(0.0, 0.0) };
                     let gradient = softmax_prob - target;
 
-                    gradient_batch[batch_index][sample_index + seq_ind_start][column_index] = gradient / (normalizer as f64);
+                    gradient_batch[batch_index][target_ind + seq_ind_start][column_index] = gradient / (normalizer as f64);
                 }
             }
         }
