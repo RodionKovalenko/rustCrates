@@ -2,9 +2,7 @@ use num::Complex;
 
 use crate::neural_networks::{
     network_components::{
-        gradient_struct::Gradient,
-        input::{DataTrait, Dataset},
-        layer::LayerEnum,
+        gradient_struct::Gradient, input::{DataTrait, Dataset}, input_struct::LayerInput, layer::LayerEnum
     },
     network_types::neural_network_generic::NeuralNetwork,
     utils::{
@@ -123,16 +121,14 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
             LayerEnum::Linear(linear_layer) => {
                 let linear_layer = Some(linear_layer).unwrap();
                 if let Some(previous_output) = &output {
-                    // println!("Previous output in linear layer: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
+                    let mut linear_layer_input = LayerInput::new_default();
+                    linear_layer_input.set_input_batch(previous_output.clone());
 
                     // Forward pass for the dense layer (make sure dense accepts Vec<Vec<Complex<f64>>>)
-                    let mut output_linear = linear_layer.forward(&previous_output);
-
-                    //println!("Output Linear layer: {:?}, {:?}, {:?}", &output_linear.len(), &output_linear[0].len(), &output_linear[0][0].len());
-
-                    check_nan_or_inf_3d(&mut output_linear, "output linear layer");
-                    //println!("output_linear output: {:?}", &output_linear[0][0][0..20]);
-                    output = Some(output_linear);
+                    let output_linear = linear_layer.forward(&linear_layer_input);
+                    
+                    check_nan_or_inf_3d(&mut output_linear.get_output_batch(), "output linear layer");
+                    output = Some(output_linear.get_output_batch());
                 } else {
                     println!("No previous output for Dense layer");
                 }

@@ -1,6 +1,6 @@
 use crate::neural_networks::{
     network_components::{
-        add_and_norm_layer::NormalNormLayer, add_rms_norm_layer::RMSNormLayer, gradient_struct::Gradient, layer::{ActivationType, Layer, LayerEnum, LayerType}, linear_layer::LinearLayer
+        add_and_norm_layer::NormalNormLayer, add_rms_norm_layer::RMSNormLayer, gradient_struct::Gradient, input_struct::LayerInput, layer::{ActivationType, Layer, LayerEnum, LayerType}, linear_layer::LinearLayer
     },
     utils::matrix::check_nan_or_inf_3d,
 };
@@ -55,16 +55,20 @@ impl FeedForwardLayer {
         for layer in self.layers.iter_mut() {
             match layer {
                 LayerEnum::Dense(dense_layer) => {
-                    let output_dense = dense_layer.forward(&output, &padding_mask_batch);
+                    let mut dense_layer_input = LayerInput::new_default();
+                    dense_layer_input.set_input_batch(output.clone());
+                    dense_layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
-                    //println!("Output FFN Dense layer: {:?}, {:?},  {:?}", &output_dense.len(), &output_dense[0].len(), &output_dense[0][0].len());
-                    output = output_dense;
+                    let output_dense = dense_layer.forward(&dense_layer_input);
+                    output = output_dense.get_output_batch();
+                    //println!("Output FFN Dense layer: {:?}, {:?},  {:?}", &output.len(), &output[0].len(), &output[0][0].len());
                 }
                 LayerEnum::Linear(linear_layer) => {
-                    let output_linear = linear_layer.forward(&output);
-
-                    //println!("Output FFN Linear layer: {:?}, {:?},  {:?}", &output_linear.len(), &output_linear[0].len(), &output_linear[0][0].len());
-                    output = output_linear;
+                    let mut linear_layer_input = LayerInput::new_default();
+                    linear_layer_input.set_input_batch(output.clone());
+                    
+                    let output_linear = linear_layer.forward(&linear_layer_input);
+                    output = output_linear.get_output_batch();
                 }
                 _ => {}
             }

@@ -406,11 +406,10 @@ pub fn clip_gradients(gradients: &mut Vec<Vec<Complex<f64>>>, threshold: f64) {
 }
 
 pub fn clip_gradient_1d(gradients: &mut Vec<Complex<f64>>, threshold: f64) {
-    let threshold_max = 2.5;
     for val in gradients.iter_mut() {
         let norm = val.norm(); // Magnitude of the complex number
         if norm > threshold {
-            *val = val.scale(threshold_max / norm); // Scale the gradient to the threshold
+            *val = val.scale(threshold / norm); // Scale the gradient to the threshold
         }
     }
 }

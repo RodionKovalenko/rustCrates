@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod test_softmax_layer {
     use crate::neural_networks::{
-        network_components::{gradient_struct::Gradient, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
+        network_components::{gradient_struct::Gradient, input_struct::LayerInput, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
         utils::{
             activation::{gelu_complex, sigmoid_complex, softmax_complex, softsign_complex},
@@ -32,11 +32,13 @@ mod test_softmax_layer {
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
         let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim, 2);
 
-        // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
-        let linear_batch_output = linear_layer.forward(&input_batch);
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_input_batch(input_batch.clone());
 
-        // println!("linear batch output: {:?}", &linear_batch_output);
-        let _softmax_batch_output = softmax_layer.forward(&linear_batch_output, None);
+        // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
+        let linear_output = linear_layer.forward(&layer_input);
+        let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
+
         let gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
         let (analytical_grad_batch, analytical_grad) = (gradient.get_gradient_input_batch(), gradient.get_gradient_input());
 
@@ -50,8 +52,8 @@ mod test_softmax_layer {
             loss
         };
 
-        let numerical_grad: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, linear_batch_output.clone(), epsilon);
-        let numerical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch(&mut loss_fn, linear_batch_output.clone(), epsilon);
+        let numerical_grad: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, linear_output.get_output_batch(), epsilon);
+        let numerical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch(&mut loss_fn, linear_output.get_output_batch(), epsilon);
 
         //Check if gradient batch dimensions match expected shapes
         // println!("\nanalytical grad: {:?}", analytical_grad);
