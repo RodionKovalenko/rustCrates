@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod test_rms_norm_layer {
+mod test_norm_layer {
     use crate::neural_networks::{
         network_components::add_and_norm_layer::NormalNormLayer,
         network_types::neural_network_generic::OperationMode,
@@ -50,7 +50,7 @@ mod test_rms_norm_layer {
 
         let global_error = global_relative_error_l2(&numerical_grad_rms, &analytical_gradient_norm);
 
-        println!("global relative gradient error: {:?}", &global_error);
+        println!("\n\nglobal relative gradient error: {:?}", &global_error);
 
         test_gradient_batch_error(&numerical_grad_rms, &analytical_gradient_norm, 1e-3);
     }

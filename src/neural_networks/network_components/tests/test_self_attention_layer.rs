@@ -138,13 +138,13 @@ mod test_self_attention_layer {
     #[test]
     fn test_self_attention_layer_backward() {
         // Define some small batch size and input dimensions for simplicity
-        let batch_size = 1;
+        let batch_size = 2;
         let input_dim = 16;
         let output_dim = 16;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
         let num_attention_heads = 4;
-        let epsilon = 1e-5;
+        let epsilon = 1e-4;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, input_dim, output_dim, learning_rate);
