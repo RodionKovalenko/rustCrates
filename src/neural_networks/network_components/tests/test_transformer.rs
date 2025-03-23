@@ -3,7 +3,7 @@ mod test_transformer {
     use num::Complex;
 
     use crate::neural_networks::{
-        network_components::{embedding_layer::EmbeddingLayer, gradient_struct::Gradient, layer::LayerEnum, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
+        network_components::{embedding_layer::EmbeddingLayer, gradient_struct::Gradient, input_struct::LayerInput, layer::LayerEnum, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
         network_types::{
             feedforward_layer::FeedForwardLayer,
             neural_network_generic::{create, NeuralNetwork, OperationMode},
@@ -196,15 +196,19 @@ mod test_transformer {
         // let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
         //let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(input_batch_str.len(), batch_ids[0].len(), 2);
         // let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; output_dim]; batch_size];
-       
+
+        let mut layer_input = LayerInput::new_default();
+
         // forward
         let (embeddings, padding_mask_batch) = embedding_layer.forward(&batch_ids);
         let positional_encoding_output = positional_encoding_layer.forward(&embeddings);
         let output_attention_1 = attention_layer_1.forward(&positional_encoding_output, &padding_mask_batch);
         let output_attention_2 = attention_layer_2.forward(&output_attention_1, &padding_mask_batch);
         let output_ffn = ffn_layer.forward(&output_attention_2);
-        let output_linear = linear_layer.forward(&output_ffn);
-        let _output_softmax = softmax_layer.forward(&output_linear, Some(padding_mask_batch.clone()));
+
+        layer_input.set_input_batch(output_ffn);
+        let output_linear = linear_layer.forward(&layer_input);
+        let _output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()));
 
         // backward
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
@@ -245,8 +249,9 @@ mod test_transformer {
             let output_attention_1 = attention_layer_1.forward(&positional_encoding_output, &padding_mask_batch);
             let output_attention_2 = attention_layer_2.forward(&output_attention_1, &padding_mask_batch);
             let output_ffn = ffn_layer.forward(&output_attention_2);
-            let output_linear = linear_layer.forward(&output_ffn);
-            let output_softmax = softmax_layer.forward(&output_linear, Some(padding_mask_batch.clone()));
+            layer_input.set_input_batch(output_ffn);
+            let output_linear = linear_layer.forward(&layer_input);
+            let output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()));
 
             let loss = cross_entropy_loss_batch(&output_softmax, &target_token_id_batch);
 

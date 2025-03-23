@@ -8,4 +8,6 @@ pub mod positional_encoding_layer;
 pub mod linear_layer;
 pub mod softmax_output_layer;
 pub mod gradient_struct;
+pub mod input_struct;
+pub mod output_struct;
 pub mod tests;

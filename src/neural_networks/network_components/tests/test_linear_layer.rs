@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod test_linear_layer {
     use crate::neural_networks::{
-        network_components::{gradient_struct::Gradient, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
+        network_components::{gradient_struct::Gradient, input_struct::LayerInput, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
         utils::{
             derivative::{global_relative_error_2d_l2, numerical_gradient_bias, numerical_gradient_weights, test_gradient_error_1d, test_gradient_error_2d},
@@ -30,9 +30,12 @@ mod test_linear_layer {
 
         //let target_token_id_batch = vec![vec![0]];
 
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_input_batch(input_batch.clone());
+
         // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
-        let linear_batch_output = linear_layer.forward(&input_batch);
-        let _softmax_batch_output = softmax_layer.forward(&linear_batch_output, None);
+        let linear_output = linear_layer.forward(&layer_input);
+        let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
         let gradient_linear: Gradient = softmax_layer.backward(&target_token_id_batch);
         let analytical_grad_batch_softmax: Vec<Vec<Vec<Complex<f64>>>> = gradient_linear.get_gradient_input_batch();
@@ -43,10 +46,11 @@ mod test_linear_layer {
         let linear_weights = linear_layer.weights.clone();
 
         // Define the loss function
-        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
+        let mut loss_fn = |_input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
             linear_layer.weights = weights.clone();
-            let linear_batch_output = linear_layer.forward(input);
-            let softmax_batch_output = softmax_layer.forward(&linear_batch_output, None);
+
+            let linear_output = linear_layer.forward(&layer_input);
+            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
@@ -68,10 +72,11 @@ mod test_linear_layer {
         linear_layer.weights = linear_weights;
 
         // Define the loss function
-        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Complex<f64>>| -> Complex<f64> {
+        let mut loss_fn = |_input: &Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Complex<f64>>| -> Complex<f64> {
             linear_layer.bias = bias.clone();
-            let linear_batch_output = linear_layer.forward(input);
-            let softmax_batch_output = softmax_layer.forward(&linear_batch_output, None);
+
+            let linear_output = linear_layer.forward(&layer_input);
+            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
@@ -106,8 +111,11 @@ mod test_linear_layer {
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
         let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim, 2);
 
-        let linear_batch_output: Vec<Vec<Vec<Complex<f64>>>> = linear_layer.forward(&input_batch);
-        let _softmax_batch_output: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.forward(&linear_batch_output, None);
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_input_batch(input_batch.clone());
+
+        let linear_output = linear_layer.forward(&layer_input);
+        let _softmax_batch_output: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax.get_gradient_input_batch());
@@ -119,10 +127,11 @@ mod test_linear_layer {
         println!("target_token_id_batch dim: {} {}", target_token_id_batch.len(), target_token_id_batch[0].len());
 
         // Define the loss function
-        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
+        let mut loss_fn = |_input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
             linear_layer.weights = weights.clone();
-            let linear_batch_output = linear_layer.forward(input);
-            let softmax_batch_output = softmax_layer.forward(&linear_batch_output, None);
+
+            let linear_output = linear_layer.forward(&layer_input);
+            let softmax_batch_output: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
 

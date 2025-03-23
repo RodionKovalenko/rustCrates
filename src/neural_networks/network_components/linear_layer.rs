@@ -8,7 +8,7 @@ use crate::neural_networks::utils::{
     weights_initializer::initialize_weights_complex,
 };
 
-use super::gradient_struct::Gradient;
+use super::{gradient_struct::Gradient, input_struct::LayerInput, output_struct::LayerOutput};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinearLayer {
@@ -38,10 +38,11 @@ impl LinearLayer {
             gradient: None,
         }
     }
-    pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = input.get_input_batch();
         self.input_batch = Some(input_batch.clone());
 
-        input_batch
+        let output_batch = input_batch
             .par_iter() // Use a parallel iterator to process inputs in parallel
             .map(|input| {
                 // Perform matrix multiplication
@@ -58,7 +59,12 @@ impl LinearLayer {
 
                 output // Return the processed output for this input
             })
-            .collect() // Collect all results into a single Vec
+            .collect();
+
+        let mut layer_output = LayerOutput::new_default();
+        layer_output.set_output_batch(output_batch);
+
+        layer_output
     }
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
