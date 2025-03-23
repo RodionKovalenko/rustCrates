@@ -18,10 +18,10 @@ pub mod test_ffn_layer {
     #[test]
     fn test_ffn_dense_backward() {
         // Define some small batch size and input dimensions for simplicity
-        let _batch_size = 2;
+        let batch_size = 2;
         let _seq_len: usize = 1; // Update to match the input structure
         let input_dim = 4; // Match the input dimension with your input batch
-        let output_dim = 7; // Match output_dim to your layer's output
+        let output_dim = 6; // Match output_dim to your layer's output
         let learning_rate = 0.01;
         let _operation_mode = OperationMode::TRAINING;
         let epsilon: f64 = 1e-3;
@@ -32,24 +32,7 @@ pub mod test_ffn_layer {
         //let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0010, 0.20), Complex::new(0.0030, 0.50), Complex::new(0.60, 0.40)], vec![Complex::new(0.0010, 0.20), Complex::new(0.0030, 0.50), Complex::new(0.60, 0.40)]]];
 
         // Define a small input batch, [2][6][4]
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![
-            vec![
-                vec![Complex::new(0.5, 1.0), Complex::new(0.8, 4.0), Complex::new(0.1, 0.0), Complex::new(0.3, 1.0)],
-                vec![Complex::new(0.9, 0.4), Complex::new(-0.8, 5.0), Complex::new(0.1, 0.0), Complex::new(0.1, 2.0)],
-                vec![Complex::new(1.2, 0.5), Complex::new(-0.3, 1.0), Complex::new(0.1, 0.0), Complex::new(0.5, 3.0)],
-                vec![Complex::new(1.2, 0.6), Complex::new(-0.3, 2.0), Complex::new(0.1, 0.0), Complex::new(0.5, 4.0)],
-                vec![Complex::new(1.2, 0.7), Complex::new(-0.3, 3.0), Complex::new(0.1, 0.0), Complex::new(0.5, 5.0)],
-                vec![Complex::new(0.9, 0.8), Complex::new(-0.8, 4.0), Complex::new(0.1, 0.0), Complex::new(0.1, 6.0)],
-            ],
-            vec![
-                vec![Complex::new(1.0, 0.1), Complex::new(2.0, 0.4), Complex::new(3.0, 3.0), Complex::new(0.4, 0.1)],
-                vec![Complex::new(3.0, 0.2), Complex::new(3.0, 0.6), Complex::new(4.0, 2.5), Complex::new(0.5, 0.2)],
-                vec![Complex::new(0.6, 0.3), Complex::new(0.8, 0.8), Complex::new(0.1, 6.3), Complex::new(0.6, 0.3)],
-                vec![Complex::new(0.6, 0.4), Complex::new(0.8, 0.9), Complex::new(0.1, 6.4), Complex::new(0.6, 0.4)],
-                vec![Complex::new(0.6, 0.5), Complex::new(0.8, 1.2), Complex::new(0.1, 6.6), Complex::new(0.6, 0.5)],
-                vec![Complex::new(3.0, 0.6), Complex::new(3.0, 2.3), Complex::new(4.0, 1.7), Complex::new(0.5, 0.6)],
-            ],
-        ];
+       let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
 
         let padding_mask_batch = vec![vec![1; input_batch[0].len()]; input_batch.len()];
 
