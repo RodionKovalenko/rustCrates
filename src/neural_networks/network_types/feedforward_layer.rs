@@ -1,6 +1,6 @@
 use crate::neural_networks::{
     network_components::{
-        add_and_norm_layer::NormalNormLayer, add_rms_norm_layer::RMSNormLayer, gradient_struct::Gradient, input_struct::LayerInput, layer::{ActivationType, Layer, LayerEnum, LayerType}, linear_layer::LinearLayer
+        add_and_norm_layer::NormalNormLayer, add_rms_norm_layer::RMSNormLayer, gradient_struct::Gradient, input_struct::LayerInput, layer::{ActivationType, Layer, LayerEnum, LayerType}, linear_layer::LinearLayer, output_struct::LayerOutput
     },
     utils::matrix::check_nan_or_inf_3d,
 };
@@ -33,7 +33,7 @@ impl FeedForwardLayer {
 
         Self {
             layers,
-            norm_layer: _rms_norm_layer,
+            norm_layer: None,
             learning_rate,
             input_batch: None,
             padding_mask_batch: None,
@@ -43,7 +43,8 @@ impl FeedForwardLayer {
 
 // Implement BaseLayer for SelfAttentionLayer
 impl FeedForwardLayer {
-    pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
+        let input_batch = input.get_input_batch();
         self.input_batch = Some(input_batch.clone());
         let mut output: Vec<Vec<Vec<Complex<f64>>>> = input_batch.clone();
         let padding_mask_batch = self.padding_mask_batch.clone().unwrap_or_else(|| vec![vec![1; input_batch[0].len()]; input_batch.len()]);
@@ -89,7 +90,11 @@ impl FeedForwardLayer {
             }
         }
 
-        output
+        
+        let mut layer_output = LayerOutput::new_default();
+        layer_output.set_output_batch(output);
+
+        layer_output
     }
 
     pub fn backward(&mut self, prev_gradients: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {

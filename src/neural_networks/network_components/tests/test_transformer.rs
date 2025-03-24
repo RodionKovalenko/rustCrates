@@ -204,9 +204,11 @@ mod test_transformer {
         let positional_encoding_output = positional_encoding_layer.forward(&embeddings);
         let output_attention_1 = attention_layer_1.forward(&positional_encoding_output, &padding_mask_batch);
         let output_attention_2 = attention_layer_2.forward(&output_attention_1, &padding_mask_batch);
-        let output_ffn = ffn_layer.forward(&output_attention_2);
 
-        layer_input.set_input_batch(output_ffn);
+        layer_input.set_input_batch(output_attention_2);
+        let output_ffn = ffn_layer.forward(&layer_input);
+
+        layer_input.set_input_batch(output_ffn.get_output_batch());
         let output_linear = linear_layer.forward(&layer_input);
         let _output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()));
 
@@ -248,9 +250,10 @@ mod test_transformer {
             let positional_encoding_output = positional_encoding_layer.forward(&embeddings);
             let output_attention_1 = attention_layer_1.forward(&positional_encoding_output, &padding_mask_batch);
             let output_attention_2 = attention_layer_2.forward(&output_attention_1, &padding_mask_batch);
-            let output_ffn = ffn_layer.forward(&output_attention_2);
-            layer_input.set_input_batch(output_ffn);
-            let output_linear = linear_layer.forward(&layer_input);
+            layer_input.set_input_batch(output_attention_2);
+            let output_ffn = ffn_layer.forward(&layer_input);
+    
+            layer_input.set_input_batch(output_ffn.get_output_batch());
             let output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()));
 
             let loss = cross_entropy_loss_batch(&output_softmax, &target_token_id_batch);
