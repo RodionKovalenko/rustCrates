@@ -137,7 +137,7 @@ impl SoftmaxLayer {
                     let target = if token_id == column_index as u32 { Complex::new(1.0, 0.0) } else { Complex::new(0.0, 0.0) };
                     let gradient = softmax_prob - target;
 
-                    gradient_batch[batch_index][target_ind + seq_ind_start][column_index] = gradient / (normalizer as f64);
+                    gradient_batch[batch_index][target_ind + seq_ind_start][column_index] += gradient / (normalizer as f64);
                 }
             }
         }

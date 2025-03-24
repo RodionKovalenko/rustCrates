@@ -53,6 +53,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
 
     let mut output = None;
     let mut padding_mask = None;
+    let mut layer_input = LayerInput::new_default();
 
     for layer in transformer_network.layers.iter_mut() {
         match layer {
@@ -107,13 +108,13 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                     //println!("Previous output in dense ffn layer: {:?}, {:?}, {}", &previous_output.len(), &previous_output[0].len(), &previous_output[0][0].len());
 
                     dense_layer.padding_mask_batch = padding_mask.clone();
-                    let mut output_dense = dense_layer.forward(&previous_output);
 
-                    //println!("Output Dense FFN: {:?}, {:?},  {:?}", &output_dense.len(), &output_dense[0].len(), &output_dense[0][0].len());
+                    layer_input.set_input_batch(previous_output.to_vec());
+                    let layer_output = dense_layer.forward(&layer_input);
 
-                    check_nan_or_inf_3d(&mut output_dense, "output ffn dense");
-                    //println!("output dense: {:?}", &output_dense);
-                    output = Some(output_dense);
+                    output = Some(layer_output.get_output_batch());
+
+                    check_nan_or_inf_3d(&mut layer_output.get_output_batch(), "output ffn dense");
                 } else {
                     println!("No previous output for Dense layer");
                 }
@@ -121,13 +122,12 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
             LayerEnum::Linear(linear_layer) => {
                 let linear_layer = Some(linear_layer).unwrap();
                 if let Some(previous_output) = &output {
-                    let mut linear_layer_input = LayerInput::new_default();
-                    linear_layer_input.set_input_batch(previous_output.clone());
-
-                    // Forward pass for the dense layer (make sure dense accepts Vec<Vec<Complex<f64>>>)
-                    let output_linear = linear_layer.forward(&linear_layer_input);
+                    
+                    layer_input.set_input_batch(previous_output.clone());
+                    let output_linear = linear_layer.forward(&layer_input);
                     
                     check_nan_or_inf_3d(&mut output_linear.get_output_batch(), "output linear layer");
+
                     output = Some(output_linear.get_output_batch());
                 } else {
                     println!("No previous output for Dense layer");

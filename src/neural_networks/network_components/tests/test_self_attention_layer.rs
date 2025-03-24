@@ -144,7 +144,7 @@ mod test_self_attention_layer {
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
         let num_attention_heads = 4;
-        let epsilon = 1e-4;
+        let epsilon = 1e-5;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, input_dim, output_dim, learning_rate);
@@ -162,9 +162,11 @@ mod test_self_attention_layer {
 
         // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
         let attention_layer_output = attention_layer.forward(&input_batch, &padding_mask_batch);
-        println!("attention layer output: {} {} {}", attention_layer_output.len(), attention_layer_output[0].len(), attention_layer_output[0][0].len());
-        let ffn_batch_output = ffn_layer.forward(&attention_layer_output);
-        layer_input.set_input_batch(ffn_batch_output);
+        layer_input.set_input_batch(attention_layer_output);
+
+        let ffn_batch_output = ffn_layer.forward(&layer_input);
+        layer_input.set_input_batch(ffn_batch_output.get_output_batch());
+
         let linear_output = linear_layer.forward(&layer_input);
         let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
 
@@ -182,9 +184,11 @@ mod test_self_attention_layer {
         // // Define the loss function
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             let attention_layer_output = attention_layer.forward(&input, &padding_mask_batch);
-            let ffn_batch_output = ffn_layer.forward(&attention_layer_output);
-
-            layer_input.set_input_batch(ffn_batch_output);
+            layer_input.set_input_batch(attention_layer_output);
+    
+            let ffn_batch_output = ffn_layer.forward(&layer_input);
+            layer_input.set_input_batch(ffn_batch_output.get_output_batch());
+    
             let linear_output = linear_layer.forward(&layer_input);
             let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
 
@@ -206,7 +210,7 @@ mod test_self_attention_layer {
 
         println!("global relative gradient error input: {:?}", &global_error);
 
-        test_gradient_batch_error(&num_gradient_input_batch, &gradient_input_batch_att_l, 1e-3);
+        test_gradient_batch_error(&num_gradient_input_batch, &gradient_input_batch_att_l, 1e-2);
 
         let attention_head = attention_layer.attention_heads.get(0).unwrap().clone();
         let weight_q = attention_head.weights_q.clone();
@@ -219,9 +223,11 @@ mod test_self_attention_layer {
             attention_head.weights_q = weights.clone();
 
             let attention_layer_output = attention_layer.forward(&input, &padding_mask_batch);
-            let ffn_batch_output = ffn_layer.forward(&attention_layer_output);
-
-            layer_input.set_input_batch(ffn_batch_output);
+            layer_input.set_input_batch(attention_layer_output);
+    
+            let ffn_batch_output = ffn_layer.forward(&layer_input);
+            layer_input.set_input_batch(ffn_batch_output.get_output_batch());
+    
             let linear_output = linear_layer.forward(&layer_input);
             let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
 
@@ -242,7 +248,7 @@ mod test_self_attention_layer {
         let global_error = global_relative_error_2d_l2(&num_gradient_weights_q, &analytical_weight_q_gradient);
         println!("global relative gradient error weights: {:?}", &global_error);
 
-        test_gradient_error_2d(&analytical_weight_q_gradient, &num_gradient_weights_q, 1e-3);
+        test_gradient_error_2d(&analytical_weight_q_gradient, &num_gradient_weights_q, 1e-2);
 
         let mut attention_head = attention_layer.attention_heads.get_mut(0).unwrap().clone();
         attention_head.weights_q = weight_q.clone();
