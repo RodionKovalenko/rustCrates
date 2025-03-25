@@ -130,7 +130,7 @@ impl LinearLayer {
             }
         }
 
-        self.learning_rate *= 0.99;
+       // self.learning_rate *= 0.99;
     }
 
     pub fn group_gradient_batch(&self, weight_gradients_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Complex<f64>>> {

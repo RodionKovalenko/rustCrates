@@ -322,7 +322,6 @@ pub mod test_ffn_layer {
         let (grouped_ffn_gradient_weights, analytical_gradient_ffn_bias) = (gradient_ffn.get_gradient_weights(), gradient_ffn.get_gradient_bias());
 
         // Test gradient of input
-
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             layer_input.set_input_batch(input.to_vec());
             let ffn_batch_output = ffn_layer.forward(&layer_input);

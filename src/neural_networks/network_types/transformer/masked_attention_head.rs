@@ -113,7 +113,9 @@ impl MaskedAttentionHead {
                 check_nan_or_inf(&mut v, "check v in attention head");
 
                 //[[1, 0], [1, 1]]
-                let mask: Vec<Vec<u8>> = create_causal_mask(input.len(), input.len());
+                let mask: Vec<Vec<u8>> = create_causal_mask(input.len());
+
+                // println!("\ncausal mask: {:?}", &mask);
 
                 // 1, 4 * 4, 1 = 1, 1
                 let mut attention_scores = multiply_complex(&q, &transpose(&k));
@@ -242,7 +244,7 @@ impl MaskedAttentionHead {
             let dl_dwk: Vec<Vec<Complex<f64>>> = multiply_complex(&transpose(&input_batch[batch_ind]), &transpose(&dl_dk));
             // println!("dl_dwk dim: {}, {}", &dl_dwk.len(), &dl_dwk[0].len());
             gradient_k_batch[batch_ind] = dl_dwk;
-        
+
             // println!("\n weights_q dim: {}, {}", &self.weights_q.len(), &self.weights_q[0].len());
             // println!("\n dl_dq dim: {}, {}", &dl_dq.len(), &dl_dq[0].len());
             // println!("\n dl_dk dim: {}, {}", &dl_dk.len(), &dl_dk[0].len());
@@ -315,12 +317,12 @@ impl MaskedAttentionHead {
             }
         }
 
-        self.learning_rate *= 0.99;
+        // self.learning_rate *= 0.99;
     }
 }
 
 fn scale_attention_scores(attention_scores: &Vec<Vec<Complex<f64>>>, d_k: f64) -> Vec<Vec<Complex<f64>>> {
-    let scaling_factor = 1.0 / d_k.sqrt();
+    let scaling_factor = 1.0 / (1e-5 + d_k.sqrt());
     let mut scaled_scores = attention_scores.clone();
 
     // Scale each attention score
@@ -333,17 +335,18 @@ fn scale_attention_scores(attention_scores: &Vec<Vec<Complex<f64>>>, d_k: f64) -
     scaled_scores
 }
 
-fn create_causal_mask(rows: usize, cols: usize) -> Vec<Vec<u8>> {
-    let mut mask = vec![vec![0; cols]; rows]; // Initialize with zeros
+fn create_causal_mask(rows: usize) -> Vec<Vec<u8>> {
+    let mut mask = vec![vec![0; rows]; rows]; // Initialize with zeros
 
     for i in 0..rows {
-        for j in 0..=i.min(cols - 1) {
+        for j in 0..=i { 
             mask[i][j] = 1; // Allow attention to current and previous tokens
         }
     }
 
     mask
 }
+
 
 fn apply_attention_mask_inplace(attention_scores: &mut Vec<Vec<Complex<f64>>>, mask: &Vec<Vec<u8>>) {
     let large_negative = Complex::new(-1e5, 0.0);
