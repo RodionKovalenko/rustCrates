@@ -1,0 +1,19 @@
+cargo build --release
+
+[profile.release]
+opt-level = 3  -> for speed, e.g. better performance, more binary files
+opt-level = "z" for size, e.g. smaller size
+
+
+or 
+
+build and run in one go:
+cargo run --release
+
+after build: 
+run binary directly
+./target/release/your_binary_name
+
+
+run specific test under release version: 
+cargo test --release test_train_transformer -- --nocapture --ignored

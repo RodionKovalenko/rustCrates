@@ -158,6 +158,6 @@ impl NormalNormLayer {
             }
         }
 
-        self.learning_rate *= 0.99;
+        // self.learning_rate *= 0.99;
     }
 }
