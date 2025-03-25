@@ -12,7 +12,7 @@ use num::Complex;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use super::{add_and_norm_layer::NormalNormLayer, add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, gradient_struct::Gradient, input_struct::LayerInput, linear_layer::LinearLayer, output_struct::LayerOutput, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer};
+use super::{norm_layer::NormalNormLayer, add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, gradient_struct::Gradient, layer_input_struct::LayerInput, linear_layer::LinearLayer, layer_output_struct::LayerOutput, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer};
 
 impl Default for ActivationType {
     fn default() -> Self {

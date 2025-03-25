@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod test_softmax_layer {
     use crate::neural_networks::{
-        network_components::{gradient_struct::Gradient, input_struct::LayerInput, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
+        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
         utils::{
             activation::{gelu_complex, sigmoid_complex, softmax_complex, softsign_complex},

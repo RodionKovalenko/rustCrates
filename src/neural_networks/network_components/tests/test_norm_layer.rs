@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod test_norm_layer {
     use crate::neural_networks::{
-        network_components::add_and_norm_layer::NormalNormLayer,
+        network_components::{layer_input_struct::LayerInput, norm_layer::NormalNormLayer},
         network_types::neural_network_generic::OperationMode,
         utils::{derivative::{global_relative_error_l2, numerical_gradient_input_batch_without_loss, test_gradient_batch_error}, random_arrays::generate_random_complex_3d},
     };
@@ -21,11 +21,13 @@ mod test_norm_layer {
 
         // Create a simple LinearLayer with the given input and output dimensions
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
-        let input_batch_before: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
-
         let mut norm_layer = NormalNormLayer::new(input_dim, epsilon, learning_rate);
 
-        let rms_output_batch = norm_layer.forward(&input_batch, &input_batch_before);
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_input_batch(input_batch.clone());
+
+        let rms_output = norm_layer.forward(&layer_input);
+        let rms_output_batch = rms_output.get_output_batch();
 
         println!("input batch :{:?}", &input_batch);
         println!("\nrms output_batch: {:?}", &rms_output_batch);
@@ -37,9 +39,11 @@ mod test_norm_layer {
 
         // Define the loss function
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
-            let linear_batch_output = norm_layer.forward(input, &input_batch_before);
+            layer_input.set_input_batch(input.clone());
+            let rms_output = norm_layer.forward(&layer_input);
+            let rms_output_batch = rms_output.get_output_batch();
 
-            linear_batch_output
+            rms_output_batch
         };
 
         //let numerical_grad_rms: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_jacobi_without_loss(&mut loss_fn, input_batch.clone(), epsilon);

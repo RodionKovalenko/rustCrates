@@ -1,7 +1,7 @@
 use super::masked_attention_head::MaskedAttentionHead;
 use crate::neural_networks::{
     network_components::{
-        add_and_norm_layer::NormalNormLayer, add_rms_norm_layer::RMSNormLayer, gradient_struct::Gradient, layer::{LayerEnum, LayerType}
+        add_rms_norm_layer::RMSNormLayer, gradient_struct::Gradient, layer::{LayerEnum, LayerType}, layer_input_struct::LayerInput, layer_output_struct::LayerOutput, norm_layer::NormalNormLayer
     },
     utils::matrix::check_nan_or_inf_3d,
 };
@@ -15,6 +15,7 @@ pub struct SelfAttentionLayer {
     pub activated_output: Vec<Vec<Complex<f64>>>,
     pub norm_layer: Option<LayerEnum>,
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub time_step: usize,
 }
 
 impl SelfAttentionLayer {
@@ -38,14 +39,20 @@ impl SelfAttentionLayer {
             activated_output: vec![],
             norm_layer: _norm_layer_rms,
             input_batch: None,
+            time_step: 0
         }
     }
 }
 
 // Implement BaseLayer for SelfAttentionLayer
 impl SelfAttentionLayer {
-    pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>, padding_mask_batch: &Vec<Vec<u32>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        let input_batch = layer_input.get_input_batch();
+        let padding_mask_batch = layer_input.get_padding_mask_batch();
+
         self.input_batch = Some(input_batch.clone());
+        self.time_step = layer_input.get_time_step();
+
         let batch_size = input_batch.len();
         let sequence_size = input_batch[0].len();
 
@@ -55,7 +62,7 @@ impl SelfAttentionLayer {
 
         //println!("padding mask batch: {:?}", &padding_mask_batch);
         for attention_head in self.attention_heads.iter_mut() {
-            let attention_output = attention_head.forward(input_batch, &padding_mask_batch);
+            let attention_output = attention_head.forward(&input_batch, &padding_mask_batch);
             attention_head_outputs.push(attention_output);
         }
 
@@ -73,25 +80,32 @@ impl SelfAttentionLayer {
             }
         }
 
-        // println!("output batch size: {} {} {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_input_batch(batch_output.clone());
+        layer_input.set_input_batch_before(input_batch.clone());
 
         // Process the dense layers
         if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
             match norm_layer_enum {
                 LayerEnum::RMSNorm(rms_norm_layer) => {
-                    batch_output = rms_norm_layer.forward(&batch_output, input_batch);
+                    let output = rms_norm_layer.forward(&layer_input);
+                    batch_output = output.get_output_batch();
 
                     check_nan_or_inf_3d(&mut batch_output, "check rms norm in self attention layer");
                 },
                 LayerEnum::Norm(norm_layer) => {
-                    batch_output = norm_layer.forward(&batch_output, &input_batch);
+                     let output = norm_layer.forward(&layer_input);
+                     batch_output = output.get_output_batch();
                     //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
                 }
                 _ => {}
             }
         }
 
-        batch_output
+        let mut layer_output = LayerOutput::new_default();
+        layer_output.set_output_batch(batch_output);
+
+        layer_output
     }
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
