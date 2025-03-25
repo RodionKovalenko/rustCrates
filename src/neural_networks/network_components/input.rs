@@ -61,7 +61,7 @@ impl<T: Debug + Clone, O: Debug + Clone> Dataset<T, O> {
        input_batch.clone()
         .iter()
         .zip(target_batch.iter())
-        .map(|(input, target)| format!("{} {}", input, target))
+        .map(|(input, target)| format!("{}{}", input, target))
         .collect()
     }
 }

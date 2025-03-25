@@ -246,7 +246,7 @@ mod tests {
         // target.push(target8.to_string());
 
         let dataset = Dataset::new(input, target);
-        let num_epochs: usize = 700;
+        let num_epochs: usize = 5000;
 
         train(&mut transformer, dataset, num_epochs);
         let seconds_elapsed_end = now.elapsed();
