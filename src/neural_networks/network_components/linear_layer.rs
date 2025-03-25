@@ -4,8 +4,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
-    matrix::{add_vector, check_nan_or_inf, clip_gradient_1d, clip_gradients, is_nan_or_inf, multiply_complex, transpose},
-    weights_initializer::initialize_weights_complex,
+    adam_w::{calculate_adam_w, calculate_adam_w_bias}, matrix::{add_vector, check_nan_or_inf, clip_gradient_1d, clip_gradients, is_nan_or_inf, multiply_complex, transpose}, weights_initializer::initialize_weights_complex
 };
 
 use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
@@ -108,7 +107,7 @@ impl LinearLayer {
     }
 
     pub fn update_parameters(&mut self) {
-        let gradient = self.gradient.as_ref().expect("No Gradient found in linear layer");
+        let gradient: &mut Gradient = self.gradient.as_mut().expect("No Gradient found in linear layer");
         let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
 
         let input_batch = gradient.get_gradient_input_batch();
@@ -120,22 +119,46 @@ impl LinearLayer {
 
         check_nan_or_inf(&mut weight_gradients, "check weight gradients in linear layer");
 
-        // Update weights and biases using gradient descent
-        for (i, row) in self.weights.iter_mut().enumerate() {
-            for (j, weight_value) in row.iter_mut().enumerate() {
-                if !is_nan_or_inf(&weight_gradients[i][j]) {
-                    *weight_value -= self.learning_rate * (weight_gradients[i][j] / batch_size);
+        let mut prev_m_bias: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); self.bias.len()];
+        let mut prev_v_bias: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); self.bias.len()];
+
+        let mut prev_m_weights: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()];
+        let mut prev_v_weights: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()];
+
+        let learning_rate = self.learning_rate;
+        let time_step = self.time_step;
+
+        if let Some(previous_gradient) = &mut self.previous_gradient {
+            prev_m_bias = previous_gradient.get_prev_m_bias();
+            prev_v_bias = previous_gradient.get_prev_v_bias();
+
+            prev_m_weights = previous_gradient.get_prev_m_weigths();
+            prev_v_weights = previous_gradient.get_prev_v_weights();
+
+            calculate_adam_w_bias(&self.bias, &gradient.get_gradient_bias(), &mut prev_m_bias, &mut prev_v_bias, learning_rate, time_step);
+            calculate_adam_w(&self.weights, &gradient.get_gradient_weights(), &mut prev_m_weights, &mut prev_v_weights, learning_rate, time_step);
+        } else {
+            // Update weights and biases using gradient descent
+            for (i, row) in self.weights.iter_mut().enumerate() {
+                for (j, weight_value) in row.iter_mut().enumerate() {
+                    if !is_nan_or_inf(&weight_gradients[i][j]) {
+                        *weight_value -= self.learning_rate * (weight_gradients[i][j] / batch_size);
+                    }
+                }
+            }
+
+            for (i, value) in self.bias.iter_mut().enumerate() {
+                if !is_nan_or_inf(&bias_gradients[i]) {
+                    *value -= self.learning_rate * (bias_gradients[i] / batch_size);
                 }
             }
         }
 
-        for (i, value) in self.bias.iter_mut().enumerate() {
-            if !is_nan_or_inf(&bias_gradients[i]) {
-                *value -= self.learning_rate * (bias_gradients[i] / batch_size);
-            }
-        }
-
-        // self.learning_rate *= 0.99;
+        gradient.set_prev_m_bias(prev_m_bias);
+        gradient.set_prev_v_bias(prev_v_bias);
+        gradient.set_prev_m_weights(prev_m_weights);
+        gradient.set_prev_v_weights(prev_v_weights);
+        self.previous_gradient = Some(gradient.clone());
     }
 
     pub fn group_gradient_batch(&self, weight_gradients_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Complex<f64>>> {

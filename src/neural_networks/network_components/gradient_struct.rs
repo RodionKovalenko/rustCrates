@@ -24,6 +24,14 @@ pub struct Gradient {
     gradient_weights_v: Option<Vec<Vec<Complex<f64>>>>,
     gradient_weights_k: Option<Vec<Vec<Complex<f64>>>>,
 
+    prev_m_weights_q: Option<Vec<Vec<Complex<f64>>>>,
+    prev_m_weights_k: Option<Vec<Vec<Complex<f64>>>>,
+    prev_m_weights_v: Option<Vec<Vec<Complex<f64>>>>,
+
+    prev_v_weights_q: Option<Vec<Vec<Complex<f64>>>>,
+    prev_v_weights_k: Option<Vec<Vec<Complex<f64>>>>,
+    prev_v_weights_v: Option<Vec<Vec<Complex<f64>>>>,
+
     prev_m_weights: Option<Vec<Vec<Complex<f64>>>>,
     prev_v_weights: Option<Vec<Vec<Complex<f64>>>>,
 
@@ -73,6 +81,13 @@ impl Gradient {
 
             prev_m_gamma: None,
             prev_v_gamma: None,
+
+            prev_m_weights_k: None,
+            prev_m_weights_q: None,
+            prev_m_weights_v: None,
+            prev_v_weights_k: None,
+            prev_v_weights_q: None,
+            prev_v_weights_v: None,
         }
     }
     pub fn set_gradient_input_batch(&mut self, gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>>) {
@@ -133,6 +148,27 @@ impl Gradient {
     pub fn set_prev_v_weights(&mut self, prev_v_weights: Vec<Vec<Complex<f64>>>) {
         self.prev_v_weights = Some(prev_v_weights);
     }
+
+    pub fn set_prev_m_weights_q(&mut self, prev_m_weights_q: Vec<Vec<Complex<f64>>>) {
+        self.prev_m_weights_q = Some(prev_m_weights_q);
+    }
+    pub fn set_prev_m_weights_k(&mut self, prev_m_weights_k: Vec<Vec<Complex<f64>>>) {
+        self.prev_m_weights_k = Some(prev_m_weights_k);
+    }
+    pub fn set_prev_m_weights_v(&mut self, prev_m_weights_v: Vec<Vec<Complex<f64>>>) {
+        self.prev_m_weights_v = Some(prev_m_weights_v);
+    }
+
+    pub fn set_prev_v_weights_q(&mut self, prev_v_weights_q: Vec<Vec<Complex<f64>>>) {
+        self.prev_v_weights_q = Some(prev_v_weights_q);
+    }
+    pub fn set_prev_v_weights_k(&mut self, prev_v_weights_k: Vec<Vec<Complex<f64>>>) {
+        self.prev_v_weights_k = Some(prev_v_weights_k);
+    }
+    pub fn set_prev_v_weights_v(&mut self, prev_v_weights_v: Vec<Vec<Complex<f64>>>) {
+        self.prev_v_weights_v = Some(prev_v_weights_v);
+    }
+
     pub fn set_prev_m_bias(&mut self, prev_m_bias: Vec<Complex<f64>>) {
         self.prev_m_bias = Some(prev_m_bias);
     }
@@ -190,6 +226,28 @@ impl Gradient {
     pub fn get_prev_v_weights(&self) -> Vec<Vec<Complex<f64>>> {
         self.prev_v_weights.clone().unwrap_or_else(|| vec![])
     }
+
+
+    pub fn get_prev_m_weigths_q(&self) -> Vec<Vec<Complex<f64>>> {
+        self.prev_m_weights_q.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_prev_m_weigths_k(&self) -> Vec<Vec<Complex<f64>>> {
+        self.prev_m_weights_k.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_prev_m_weigths_v(&self) -> Vec<Vec<Complex<f64>>> {
+        self.prev_m_weights_v.clone().unwrap_or_else(|| vec![])
+    }
+
+    pub fn get_prev_v_weigths_q(&self) -> Vec<Vec<Complex<f64>>> {
+        self.prev_v_weights_q.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_prev_v_weigths_k(&self) -> Vec<Vec<Complex<f64>>> {
+        self.prev_v_weights_k.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_prev_v_weigths_v(&self) -> Vec<Vec<Complex<f64>>> {
+        self.prev_v_weights_v.clone().unwrap_or_else(|| vec![])
+    }
+
     pub fn get_prev_m_bias(&self) -> Vec<Complex<f64>> {
         self.prev_m_bias.clone().unwrap_or_else(|| vec![])
     }

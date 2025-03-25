@@ -78,10 +78,6 @@ mod tests {
         );
         assert_eq!(original_layer.gradient_w, deserialized_layer.gradient_w);
         assert_eq!(original_layer.errors, deserialized_layer.errors);
-        assert_eq!(
-            original_layer.previous_gradient,
-            deserialized_layer.previous_gradient
-        );
         assert_eq!(original_layer.m1, deserialized_layer.m1);
         assert_eq!(original_layer.v1, deserialized_layer.v1);
 
@@ -118,10 +114,6 @@ mod tests {
         );
         assert_eq!(original_layer.gradient_w, deserialized_layer.gradient_w);
         assert_eq!(original_layer.errors, deserialized_layer.errors);
-        assert_eq!(
-            original_layer.previous_gradient,
-            deserialized_layer.previous_gradient
-        );
         assert_eq!(original_layer.m1, deserialized_layer.m1);
         assert_eq!(original_layer.v1, deserialized_layer.v1);
     }

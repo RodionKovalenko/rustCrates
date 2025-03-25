@@ -60,10 +60,15 @@ impl SelfAttentionLayer {
         // Apply the attention mechanism for each head
         let mut attention_head_outputs: Vec<Vec<Vec<Vec<Complex<f64>>>>> = vec![];
 
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_input_batch(input_batch.clone());
+        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+
+
         //println!("padding mask batch: {:?}", &padding_mask_batch);
         for attention_head in self.attention_heads.iter_mut() {
-            let attention_output = attention_head.forward(&input_batch, &padding_mask_batch);
-            attention_head_outputs.push(attention_output);
+            let attention_output = attention_head.forward(&layer_input);
+            attention_head_outputs.push(attention_output.get_output_batch());
         }
 
         // println!("input batch outputs: {:?}", &input_batch);
@@ -80,7 +85,6 @@ impl SelfAttentionLayer {
             }
         }
 
-        let mut layer_input = LayerInput::new_default();
         layer_input.set_input_batch(batch_output.clone());
         layer_input.set_input_batch_before(input_batch.clone());
 

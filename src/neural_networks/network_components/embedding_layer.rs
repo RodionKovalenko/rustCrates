@@ -1,7 +1,7 @@
 use bincode;
-use nalgebra::ComplexField;
 use core::fmt::Debug;
 use lazy_static::lazy_static;
+use nalgebra::ComplexField;
 use num::Complex;
 use rand::Rng;
 use rayon::prelude::*;
@@ -63,7 +63,7 @@ impl EmbeddingLayer {
             weights: vec![],
             gradient: None,
             previous_gradient: None,
-            time_step: 0
+            time_step: 0,
         }
     }
 
@@ -75,7 +75,7 @@ impl EmbeddingLayer {
             weights: vec![],
             gradient: None,
             previous_gradient: None,
-            time_step: 0
+            time_step: 0,
         }
     }
 
@@ -221,7 +221,7 @@ impl EmbeddingLayer {
             weights: vec![],
             gradient: None,
             previous_gradient: None,
-            time_step: 0
+            time_step: 0,
         };
         let serialized: Vec<u8> = bincode::serialize(&embedding_layer_meta).expect("Failed to serialize");
         let mut file = File::create(embedding_file_path).expect("Failed to create file");
