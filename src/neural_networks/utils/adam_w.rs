@@ -5,7 +5,7 @@ pub static B_2: f64 = 0.999; // Second moment decay rate
 pub static EPSILON: f64 = 1e-8; // Small constant to prevent division by zero
 pub static WEIGHT_DECAY: f64 = 0.01; // Weight decay coefficient
 
-pub fn calculate_adam_w(weight: &Vec<Vec<Complex<f64>>>, gradient: &Vec<Vec<Complex<f64>>>, prev_m: &mut Vec<Vec<Complex<f64>>>, prev_v: &mut Vec<Vec<Complex<f64>>>, learning_rate: f64, time_step: u64) -> Vec<Vec<Complex<f64>>> {
+pub fn calculate_adam_w(weight: &Vec<Vec<Complex<f64>>>, gradient: &Vec<Vec<Complex<f64>>>, prev_m: &mut Vec<Vec<Complex<f64>>>, prev_v: &mut Vec<Vec<Complex<f64>>>, learning_rate: f64, time_step: usize) -> Vec<Vec<Complex<f64>>> {
     let mut updated_weights = weight.clone();
 
     for i in 0..weight.len() {
