@@ -3,9 +3,10 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIter
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
-    network_components::{gradient_struct::Gradient, layer::LayerType},
+    network_components::{gradient_struct::Gradient, layer::LayerType, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     utils::{
         activation::softmax_complex_padding,
+        adam_w::calculate_adam_w,
         derivative::{backpropagate_softmax_masked, softmax_derivative_complex_jacobian},
         matrix::{add_matrix, check_nan_or_inf, clip_gradients, is_nan_or_inf, multiply_complex, transpose},
         weights_initializer::initialize_weights_complex,
@@ -27,6 +28,8 @@ pub struct MaskedAttentionHead {
     pub learning_rate: f64,
 
     pub gradient: Option<Gradient>,
+    pub previous_gradient: Option<Gradient>,
+    pub time_step: usize,
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     pub attention_weights_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     pub inactivated_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
@@ -63,6 +66,7 @@ impl MaskedAttentionHead {
             learning_rate: learning_rate,
 
             gradient: None,
+            previous_gradient: None,
             input_batch: None,
             inactivated_input_batch: None,
             output_batch: None,
@@ -70,6 +74,7 @@ impl MaskedAttentionHead {
             attention_weights_batch: None,
             m1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
             v1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
+            time_step: 0,
         }
     }
 
@@ -88,12 +93,16 @@ impl MaskedAttentionHead {
 // Implement BaseLayer for Layer struct
 impl MaskedAttentionHead {
     // Input shape e.g. [2][5] and out shape of weights [5][4] => we get final output [2][4]
-    pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>, padding_mask_batch: &Vec<Vec<u32>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        let input_batch = layer_input.get_input_batch();
+        let padding_mask_batch = layer_input.get_padding_mask_batch();
+
         // println!("input len in masked_attention : {:?}, {:?}, {}", &input_batch.len(), &input_batch[0].len(), &input_batch[0][0].len());
         // println!("weights_q : {:?}, {:?}", &self.weights_q.len(), &self.weights_q[0].len());
 
         self.input_batch = Some(input_batch.clone());
         self.padding_mask_batch = Some(padding_mask_batch.clone());
+        self.time_step = layer_input.get_time_step();
 
         let (attention_weights_batch, v_batch): (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<Vec<Complex<f64>>>>) = input_batch
             .par_iter()
@@ -134,7 +143,7 @@ impl MaskedAttentionHead {
                 check_nan_or_inf(&mut attention_scores_scales, "check attention_scores_scales mask inplace");
 
                 // 1,1
-                let mut attention_weights = softmax_complex_padding(&attention_scores_scales, padding_mask);
+                let mut attention_weights = softmax_complex_padding(&attention_scores_scales, &padding_mask);
 
                 check_nan_or_inf(&mut attention_weights, "check attention_weights in attention head forward");
 
@@ -157,7 +166,10 @@ impl MaskedAttentionHead {
         self.attention_weights_batch = Some(attention_weights_batch);
         self.output_batch = Some(batch_output.clone());
 
-        batch_output
+        let mut layer_output = LayerOutput::new_default();
+        layer_output.set_output_batch(batch_output);
+
+        layer_output
     }
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
@@ -275,7 +287,7 @@ impl MaskedAttentionHead {
         gradient
     }
     pub fn update_parameters(&mut self) {
-        let gradient = self.gradient.as_ref().expect("Gradient is missing in attention head layer");
+        let gradient: &mut Gradient = self.gradient.as_mut().expect("Gradient is missing in attention head layer");
         let (mut grad_w_q, mut grad_w_v, mut grad_w_k) = (gradient.get_gradient_weights_q(), gradient.get_gradient_weights_v(), gradient.get_gradient_weights_k());
 
         let input_batch = gradient.get_gradient_input_batch();
@@ -290,34 +302,68 @@ impl MaskedAttentionHead {
         check_nan_or_inf(&mut grad_w_v, "check weight gradients v in attention head");
         check_nan_or_inf(&mut grad_w_k, "check weight gradients k in attention head");
 
-        // Update weights q
-        for (i, row) in self.weights_q.iter_mut().enumerate() {
-            for (j, weight_value) in row.iter_mut().enumerate() {
-                if !is_nan_or_inf(&grad_w_q[i][j]) {
-                    *weight_value -= self.learning_rate * (grad_w_q[i][j] / batch_size);
+        let mut prev_m_weights_q: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()];
+        let mut prev_v_weights_q: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()];
+
+        let mut prev_m_weights_k: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); grad_w_k[0].len()]; grad_w_k.len()];
+        let mut prev_v_weights_k: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); grad_w_k[0].len()]; grad_w_k.len()];
+
+        let mut prev_m_weights_v: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()];
+        let mut prev_v_weights_v: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()];
+
+        let learning_rate = self.learning_rate;
+        let time_step = self.time_step;
+
+        if let Some(previous_gradient) = &mut self.previous_gradient {
+            prev_m_weights_q = previous_gradient.get_prev_m_weigths_q();
+            prev_v_weights_q = previous_gradient.get_prev_v_weigths_q();
+
+            prev_m_weights_k = previous_gradient.get_prev_m_weigths_k();
+            prev_v_weights_k = previous_gradient.get_prev_v_weigths_k();
+
+            prev_m_weights_v = previous_gradient.get_prev_m_weigths_v();
+            prev_v_weights_v = previous_gradient.get_prev_v_weigths_v();
+
+            calculate_adam_w(&self.weights_q, &grad_w_q, &mut prev_m_weights_q, &mut prev_v_weights_q, learning_rate, time_step);
+            calculate_adam_w(&self.weights_k, &grad_w_k, &mut prev_m_weights_k, &mut prev_v_weights_k, learning_rate, time_step);
+            calculate_adam_w(&self.weights_v, &grad_w_v, &mut prev_m_weights_v, &mut prev_v_weights_v, learning_rate, time_step);
+        } else {
+            // Update weights q
+            for (i, row) in self.weights_q.iter_mut().enumerate() {
+                for (j, weight_value) in row.iter_mut().enumerate() {
+                    if !is_nan_or_inf(&grad_w_q[i][j]) {
+                        *weight_value -= self.learning_rate * (grad_w_q[i][j] / batch_size);
+                    }
+                }
+            }
+
+            // Update weights v
+            for (i, row) in self.weights_v.iter_mut().enumerate() {
+                for (j, weight_value) in row.iter_mut().enumerate() {
+                    if !is_nan_or_inf(&grad_w_v[i][j]) {
+                        *weight_value -= self.learning_rate * (grad_w_v[i][j] / batch_size);
+                    }
+                }
+            }
+
+            // Update weights k
+            for (i, row) in self.weights_k.iter_mut().enumerate() {
+                for (j, weight_value) in row.iter_mut().enumerate() {
+                    if !is_nan_or_inf(&grad_w_k[i][j]) {
+                        *weight_value -= self.learning_rate * (grad_w_k[i][j] / batch_size);
+                    }
                 }
             }
         }
 
-        // Update weights v
-        for (i, row) in self.weights_v.iter_mut().enumerate() {
-            for (j, weight_value) in row.iter_mut().enumerate() {
-                if !is_nan_or_inf(&grad_w_v[i][j]) {
-                    *weight_value -= self.learning_rate * (grad_w_v[i][j] / batch_size);
-                }
-            }
-        }
+        gradient.set_prev_m_weights_q(prev_m_weights_q);
+        gradient.set_prev_v_weights_q(prev_v_weights_q);
+        gradient.set_prev_m_weights_k(prev_m_weights_k);
+        gradient.set_prev_v_weights_k(prev_v_weights_k);
+        gradient.set_prev_m_weights_v(prev_m_weights_v);
+        gradient.set_prev_v_weights_v(prev_v_weights_v);
 
-        // Update weights k
-        for (i, row) in self.weights_k.iter_mut().enumerate() {
-            for (j, weight_value) in row.iter_mut().enumerate() {
-                if !is_nan_or_inf(&grad_w_k[i][j]) {
-                    *weight_value -= self.learning_rate * (grad_w_k[i][j] / batch_size);
-                }
-            }
-        }
-
-        // self.learning_rate *= 0.99;
+        self.previous_gradient = Some(gradient.clone());
     }
 }
 
@@ -339,14 +385,13 @@ fn create_causal_mask(rows: usize) -> Vec<Vec<u8>> {
     let mut mask = vec![vec![0; rows]; rows]; // Initialize with zeros
 
     for i in 0..rows {
-        for j in 0..=i { 
+        for j in 0..=i {
             mask[i][j] = 1; // Allow attention to current and previous tokens
         }
     }
 
     mask
 }
-
 
 fn apply_attention_mask_inplace(attention_scores: &mut Vec<Vec<Complex<f64>>>, mask: &Vec<Vec<u8>>) {
     let large_negative = Complex::new(-1e5, 0.0);

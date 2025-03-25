@@ -1,10 +1,7 @@
 use crate::neural_networks::{
     network_types::{feedforward_layer::FeedForwardLayer, transformer::self_attention_layer::SelfAttentionLayer},
     utils::{
-        activation::activate_output_complex_padding,
-        derivative::get_gradient_complex,
-        matrix::{add_vector, apply_padding_mask_batch, check_nan_or_inf_3d, clip_gradient_1d, clip_gradients, hadamard_product_2d_c, is_nan_or_inf, multiply_complex, transpose},
-        weights_initializer::initialize_weights_complex,
+        activation::activate_output_complex_padding, adam_w::{calculate_adam_w, calculate_adam_w_bias}, derivative::get_gradient_complex, matrix::{add_vector, apply_padding_mask_batch, check_nan_or_inf_3d, clip_gradient_1d, clip_gradients, hadamard_product_2d_c, is_nan_or_inf, multiply_complex, transpose}, weights_initializer::initialize_weights_complex
     },
 };
 use core::fmt::Debug;
@@ -12,7 +9,10 @@ use num::Complex;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use super::{norm_layer::NormalNormLayer, add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, gradient_struct::Gradient, layer_input_struct::LayerInput, linear_layer::LinearLayer, layer_output_struct::LayerOutput, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer};
+use super::{
+    add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput, linear_layer::LinearLayer, norm_layer::NormalNormLayer, positional_encoding_layer::PositionalEncodingLayer,
+    softmax_output_layer::SoftmaxLayer,
+};
 
 impl Default for ActivationType {
     fn default() -> Self {
@@ -92,15 +92,16 @@ pub struct Layer {
     pub activated_output: Vec<Vec<Complex<f64>>>,
     pub gradient_w: Vec<Vec<Complex<f64>>>,
     pub errors: Vec<Vec<Complex<f64>>>,
-    pub previous_gradient: Vec<Vec<Complex<f64>>>,
     pub m1: Vec<Vec<Complex<f64>>>,
     pub v1: Vec<Vec<Complex<f64>>>,
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     pub inactivated_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     pub gradient: Option<Gradient>,
+    pub previous_gradient: Option<Gradient>,
     pub learning_rate: f64,
     pub padding_mask_batch: Option<Vec<Vec<u32>>>,
+    pub time_step: usize,
 }
 
 // Helper function to determine the type of layer
@@ -223,7 +224,7 @@ impl Layer {
     }
 
     pub fn update_parameters(&mut self) {
-        let gradient = self.gradient.as_ref().expect("No Gradient found in linear layer");
+        let gradient: &mut Gradient = self.gradient.as_mut().expect("No Gradient found in linear layer");
         let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
 
         let input_batch = gradient.get_gradient_input_batch();
@@ -233,27 +234,46 @@ impl Layer {
         clip_gradients(&mut weight_gradients, threshold);
         clip_gradient_1d(&mut bias_gradients, threshold);
 
-        // println!("-----------------------------------------------------");
-        // println!("weights gradients dense: {:?}", &weight_gradients);
-        // println!("bias gradients dense: {:?}", &bias_gradients);
-        // println!("-----------------------------------------------------");
+        let mut prev_m_bias: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); self.bias.len()];
+        let mut prev_v_bias: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); self.bias.len()];
 
-        // Update weights and biases using gradient descent
-        for (i, row) in self.weights.iter_mut().enumerate() {
-            for (j, weight_value) in row.iter_mut().enumerate() {
-                if !is_nan_or_inf(&weight_gradients[i][j]) {
-                    *weight_value -= self.learning_rate * (weight_gradients[i][j] / batch_size);
+        let mut prev_m_weights: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()];
+        let mut prev_v_weights: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()];
+
+        let learning_rate = self.learning_rate;
+        let time_step = self.time_step;
+
+        if let Some(previous_gradient) = &mut self.previous_gradient {
+            prev_m_bias = previous_gradient.get_prev_m_bias();
+            prev_v_bias = previous_gradient.get_prev_v_bias();
+
+            prev_m_weights = previous_gradient.get_prev_m_weigths();
+            prev_v_weights = previous_gradient.get_prev_v_weights();
+
+            calculate_adam_w_bias(&self.bias, &gradient.get_gradient_bias(), &mut prev_m_bias, &mut prev_v_bias, learning_rate, time_step);
+            calculate_adam_w(&self.weights, &gradient.get_gradient_weights(), &mut prev_m_weights, &mut prev_v_weights, learning_rate, time_step);
+        } else {
+            // Update weights and biases using gradient descent
+            for (i, row) in self.weights.iter_mut().enumerate() {
+                for (j, weight_value) in row.iter_mut().enumerate() {
+                    if !is_nan_or_inf(&weight_gradients[i][j]) {
+                        *weight_value -= self.learning_rate * (weight_gradients[i][j] / batch_size);
+                    }
+                }
+            }
+
+            for (i, value) in self.bias.iter_mut().enumerate() {
+                if !is_nan_or_inf(&bias_gradients[i]) {
+                    *value -= self.learning_rate * (bias_gradients[i] / batch_size);
                 }
             }
         }
 
-        for (i, value) in self.bias.iter_mut().enumerate() {
-            if !is_nan_or_inf(&bias_gradients[i]) {
-                *value -= self.learning_rate * (bias_gradients[i] / batch_size);
-            }
-        }
-
-        // self.learning_rate *= 0.99;
+        gradient.set_prev_m_bias(prev_m_bias);
+        gradient.set_prev_v_bias(prev_v_bias);
+        gradient.set_prev_m_weights(prev_m_weights);
+        gradient.set_prev_v_weights(prev_v_weights);
+        self.previous_gradient = Some(gradient.clone());
     }
 }
 
@@ -273,15 +293,16 @@ impl Layer {
             activated_output: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
             gradient_w: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
             errors: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
-            previous_gradient: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
             m1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
             v1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
             input_batch: None,
             output_batch: None,
             gradient: None,
+            previous_gradient: None,
             inactivated_input_batch: None,
             learning_rate: *learning_rate,
             padding_mask_batch: None,
+            time_step: 0,
         }
     }
 }
