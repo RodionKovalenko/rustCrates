@@ -3,10 +3,10 @@ pub mod test_ffn_layer {
     use crate::neural_networks::{
         network_components::{
             gradient_struct::Gradient,
-            input_struct::LayerInput,
+            layer_input_struct::LayerInput,
             layer::{ActivationType, Layer, LayerEnum, LayerType},
             linear_layer::LinearLayer,
-            output_struct::LayerOutput,
+            layer_output_struct::LayerOutput,
             softmax_output_layer::SoftmaxLayer,
         },
         network_types::{feedforward_layer::FeedForwardLayer, neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},

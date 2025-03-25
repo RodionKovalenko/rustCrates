@@ -1,6 +1,6 @@
 use crate::neural_networks::{
     network_components::{
-        add_and_norm_layer::NormalNormLayer, add_rms_norm_layer::RMSNormLayer, gradient_struct::Gradient, input_struct::LayerInput, layer::{ActivationType, Layer, LayerEnum, LayerType}, linear_layer::LinearLayer, output_struct::LayerOutput
+        norm_layer::NormalNormLayer, add_rms_norm_layer::RMSNormLayer, gradient_struct::Gradient, layer_input_struct::LayerInput, layer::{ActivationType, Layer, LayerEnum, LayerType}, linear_layer::LinearLayer, layer_output_struct::LayerOutput
     },
     utils::matrix::check_nan_or_inf_3d,
 };
@@ -15,6 +15,7 @@ pub struct FeedForwardLayer {
     pub learning_rate: f64,
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     pub padding_mask_batch: Option<Vec<Vec<u32>>>,
+    pub time_step: usize,
 }
 
 impl FeedForwardLayer {
@@ -37,6 +38,7 @@ impl FeedForwardLayer {
             learning_rate,
             input_batch: None,
             padding_mask_batch: None,
+            time_step: 0,
         }
     }
 }
@@ -45,12 +47,13 @@ impl FeedForwardLayer {
 impl FeedForwardLayer {
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
         let input_batch = input.get_input_batch();
+
         self.input_batch = Some(input_batch.clone());
+        self.time_step = input.get_time_step();
+
         let mut output: Vec<Vec<Vec<Complex<f64>>>> = input_batch.clone();
         let padding_mask_batch = self.padding_mask_batch.clone().unwrap_or_else(|| vec![vec![1; input_batch[0].len()]; input_batch.len()]);
         self.padding_mask_batch = Some(padding_mask_batch.clone());
-
-        // println!("input batch: {} {} {}", input_batch.len(), input_batch[0].len(), input_batch[0][0].len());
 
         // Apply all layers sequentially
         for layer in self.layers.iter_mut() {
@@ -59,6 +62,7 @@ impl FeedForwardLayer {
                     let mut dense_layer_input = LayerInput::new_default();
                     dense_layer_input.set_input_batch(output.clone());
                     dense_layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+                    dense_layer_input.set_time_step(self.time_step);
 
                     let output_dense = dense_layer.forward(&dense_layer_input);
                     output = output_dense.get_output_batch();
@@ -67,6 +71,7 @@ impl FeedForwardLayer {
                 LayerEnum::Linear(linear_layer) => {
                     let mut linear_layer_input = LayerInput::new_default();
                     linear_layer_input.set_input_batch(output.clone());
+                    linear_layer_input.set_time_step(self.time_step);
                     
                     let output_linear = linear_layer.forward(&linear_layer_input);
                     output = output_linear.get_output_batch();
@@ -79,11 +84,23 @@ impl FeedForwardLayer {
         if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
             match norm_layer_enum {
                 LayerEnum::RMSNorm(rms_norm_layer) => {
-                    output = rms_norm_layer.forward(&output, &input_batch);
+                    let mut rms_input_layer = LayerInput::new_default();
+                    rms_input_layer.set_input_batch(output.clone());
+                    rms_input_layer.set_input_batch_before(input_batch.clone());
+                    rms_input_layer.set_time_step(self.time_step);
+
+                    let rms_output = rms_norm_layer.forward(&rms_input_layer);
+                    output = rms_output.get_output_batch();
                     //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
                 },
                 LayerEnum::Norm(norm_layer) => {
-                    output = norm_layer.forward(&output, &input_batch);
+                    let mut norm_input_layer = LayerInput::new_default();
+                    norm_input_layer.set_input_batch(output.clone());
+                    norm_input_layer.set_time_step(self.time_step);
+
+                    let layer_output = norm_layer.forward(&norm_input_layer);
+                    output = layer_output.get_output_batch();
+
                     //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
                 }
                 _ => {}

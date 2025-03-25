@@ -8,7 +8,7 @@ use crate::neural_networks::utils::{
     weights_initializer::initialize_weights_complex,
 };
 
-use super::{gradient_struct::Gradient, input_struct::LayerInput, output_struct::LayerOutput};
+use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinearLayer {
@@ -19,6 +19,8 @@ pub struct LinearLayer {
     pub learning_rate: f64,
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     pub gradient: Option<Gradient>,
+    pub previous_gradient: Option<Gradient>,
+    pub time_step: usize,
 }
 
 impl LinearLayer {
@@ -36,11 +38,14 @@ impl LinearLayer {
             gradients_bias: vec![],
             input_batch: None,
             gradient: None,
+            previous_gradient: None,
+            time_step: 0,
         }
     }
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = input.get_input_batch();
         self.input_batch = Some(input_batch.clone());
+        self.time_step = input.get_time_step();
 
         let output_batch = input_batch
             .par_iter() // Use a parallel iterator to process inputs in parallel
@@ -79,7 +84,7 @@ impl LinearLayer {
         // For each input sample in the batch
         for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_batch).enumerate() {
             // Multiply the transposed input sample with previous gradients (for weight gradients)
-            weight_gradients[batch_ind] = multiply_complex(&transpose(input_sample),previous_gradient);
+            weight_gradients[batch_ind] = multiply_complex(&transpose(input_sample), previous_gradient);
 
             // println!("\nprevious gradient: {:?}", &previous_gradient);
             // println!("\n weights linear: {:?}", &self.weights);
@@ -130,7 +135,7 @@ impl LinearLayer {
             }
         }
 
-       // self.learning_rate *= 0.99;
+        // self.learning_rate *= 0.99;
     }
 
     pub fn group_gradient_batch(&self, weight_gradients_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Complex<f64>>> {

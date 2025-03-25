@@ -23,6 +23,20 @@ pub struct Gradient {
     gradient_weights_q: Option<Vec<Vec<Complex<f64>>>>,
     gradient_weights_v: Option<Vec<Vec<Complex<f64>>>>,
     gradient_weights_k: Option<Vec<Vec<Complex<f64>>>>,
+
+    prev_m_weights: Option<Vec<Vec<Complex<f64>>>>,
+    prev_v_weights: Option<Vec<Vec<Complex<f64>>>>,
+
+    prev_m_bias: Option<Vec<Complex<f64>>>,
+    prev_v_bias: Option<Vec<Complex<f64>>>,
+
+    prev_m_gamma: Option<Vec<Complex<f64>>>,
+    prev_v_gamma: Option<Vec<Complex<f64>>>,
+
+    prev_m_beta: Option<Vec<Complex<f64>>>,
+    prev_v_beta: Option<Vec<Complex<f64>>>,
+
+    time_step: Option<usize>,
 }
 
 impl Gradient {
@@ -47,6 +61,18 @@ impl Gradient {
             gradient_weights_q: None,
             gradient_weights_v: None,
             gradient_weights_k: None,
+            time_step: None,
+
+            prev_m_weights: None,
+            prev_v_weights: None,
+            prev_m_bias: None,
+            prev_v_bias: None,
+
+            prev_m_beta: None,
+            prev_v_beta: None,
+
+            prev_m_gamma: None,
+            prev_v_gamma: None,
         }
     }
     pub fn set_gradient_input_batch(&mut self, gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>>) {
@@ -101,6 +127,36 @@ impl Gradient {
     pub fn set_gradient_k(&mut self, gradient_weights_k: Vec<Vec<Complex<f64>>>) {
         self.gradient_weights_k = Some(gradient_weights_k);
     }
+    pub fn set_prev_m_weights(&mut self, prev_m_weights: Vec<Vec<Complex<f64>>>) {
+        self.prev_m_weights = Some(prev_m_weights);
+    }
+    pub fn set_prev_v_weights(&mut self, prev_v_weights: Vec<Vec<Complex<f64>>>) {
+        self.prev_v_weights = Some(prev_v_weights);
+    }
+    pub fn set_prev_m_bias(&mut self, prev_m_bias: Vec<Complex<f64>>) {
+        self.prev_m_bias = Some(prev_m_bias);
+    }
+    pub fn set_prev_v_bias(&mut self, prev_v_bias: Vec<Complex<f64>>) {
+        self.prev_v_bias = Some(prev_v_bias);
+    }
+
+    pub fn set_prev_m_beta(&mut self, prev_m_beta: Vec<Complex<f64>>) {
+        self.prev_m_beta = Some(prev_m_beta);
+    }
+    pub fn set_prev_v_beta(&mut self, prev_v_beta: Vec<Complex<f64>>) {
+        self.prev_v_beta = Some(prev_v_beta);
+    }
+    pub fn set_prev_m_gamma(&mut self, prev_m_gamma: Vec<Complex<f64>>) {
+        self.prev_m_gamma = Some(prev_m_gamma);
+    }
+    pub fn set_prev_v_gamma(&mut self, prev_v_gamma: Vec<Complex<f64>>) {
+        self.prev_v_gamma = Some(prev_v_gamma);
+    }
+
+    pub fn set_time_step(&mut self, time_step: usize) {
+        self.time_step = Some(time_step);
+    }
+
 
     pub fn get_gradient_input_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
         self.gradient_input_batch.clone().unwrap_or_else(|| vec![])
@@ -126,6 +182,36 @@ impl Gradient {
     }
     pub fn get_gradient_weights_k_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
         self.gradient_weights_k_batch.clone().unwrap_or_else(|| vec![])
+    }
+
+    pub fn get_prev_m_weigths(&self) -> Vec<Vec<Complex<f64>>> {
+        self.prev_m_weights.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_prev_v_weights(&self) -> Vec<Vec<Complex<f64>>> {
+        self.prev_v_weights.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_prev_m_bias(&self) -> Vec<Complex<f64>> {
+        self.prev_m_bias.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_prev_v_bias(&self) -> Vec<Complex<f64>> {
+        self.prev_v_bias.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_time_step(&self) -> usize {
+        self.time_step.clone().unwrap_or_else(|| 0)
+    }
+
+    pub fn get_prev_m_beta(&self) -> Vec<Complex<f64>> {
+        self.prev_m_beta.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_prev_v_beta(&self) -> Vec<Complex<f64>> {
+        self.prev_v_beta.clone().unwrap_or_else(|| vec![])
+    }
+
+    pub fn get_prev_m_gamma(&self) -> Vec<Complex<f64>> {
+        self.prev_m_gamma.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_prev_v_gamma(&self) -> Vec<Complex<f64>> {
+        self.prev_v_gamma.clone().unwrap_or_else(|| vec![])
     }
 
     pub fn get_gradient_weights_q(&self) -> Vec<Vec<Complex<f64>>> {

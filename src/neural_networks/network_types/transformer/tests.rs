@@ -8,7 +8,7 @@ mod tests {
     use crate::neural_networks::{
         network_components::{
             input::{DataTrait, Dataset},
-            layer::LayerType,
+            layer::LayerType, layer_input_struct::LayerInput,
         },
         network_types::{
             neural_network_generic::{NeuralNetwork, OperationMode},
@@ -191,7 +191,11 @@ mod tests {
 
         let input_batch = vec![input_batch_1, input_batch_2, input_batch_3, input_batch_4];
         let padding_mask_batch = vec![vec![0, 1], vec![1, 0], vec![0, 1], vec![1, 0]];
-        let output = self_attention_layer.forward(&input_batch, &padding_mask_batch);
+
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_input_batch(input_batch);
+        layer_input.set_padding_mask_batch(padding_mask_batch);
+        let output = self_attention_layer.forward(&layer_input);
 
         println!("output in self attention layer: {:?}", output);
     }
