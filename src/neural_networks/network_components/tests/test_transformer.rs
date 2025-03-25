@@ -3,7 +3,7 @@ mod test_transformer {
     use num::Complex;
 
     use crate::neural_networks::{
-        network_components::{embedding_layer::EmbeddingLayer, gradient_struct::Gradient, input_struct::LayerInput, layer::LayerEnum, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
+        network_components::{embedding_layer::EmbeddingLayer, gradient_struct::Gradient, layer::LayerEnum, layer_input_struct::LayerInput, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
         network_types::{
             feedforward_layer::FeedForwardLayer,
             neural_network_generic::{create, NeuralNetwork, OperationMode},
@@ -78,7 +78,7 @@ mod test_transformer {
         let target_str1: &str = "Mir geht es gut";
         let target_batch_str: Vec<String> = vec![target_str1.to_string()];
 
-        let output_batch = predict(&mut transformer_network, &input_batch_str);
+        let output_batch = predict(&mut transformer_network, &input_batch_str, 0);
         let (_tokens, target_ids) = tokenize_batch(&target_batch_str).unwrap();
         backward(&mut transformer_network, &target_ids, false);
 
@@ -126,7 +126,7 @@ mod test_transformer {
             first_attention_head.weights_q = weights.clone();
 
             //println!("\n\n weights_q in loss fn {:?}", weights);
-            let softmax_batch_output = predict(&mut transformer_network, &input_batch_str);
+            let softmax_batch_output = predict(&mut transformer_network, &input_batch_str, 0);
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_ids);
 
@@ -167,7 +167,7 @@ mod test_transformer {
 
         let rows: usize = 16;
 
-        let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
+        let mut embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
         let positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
         let mut linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
         let mut softmax_layer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING);
@@ -198,14 +198,21 @@ mod test_transformer {
         // let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; output_dim]; batch_size];
 
         let mut layer_input = LayerInput::new_default();
+        layer_input.set_batch_ids(batch_ids.clone());
 
         // forward
-        let (embeddings, padding_mask_batch) = embedding_layer.forward(&batch_ids);
+        let (embeddings, padding_mask_batch) = embedding_layer.forward(&layer_input);
         let positional_encoding_output = positional_encoding_layer.forward(&embeddings);
-        let output_attention_1 = attention_layer_1.forward(&positional_encoding_output, &padding_mask_batch);
-        let output_attention_2 = attention_layer_2.forward(&output_attention_1, &padding_mask_batch);
 
-        layer_input.set_input_batch(output_attention_2);
+        layer_input.set_input_batch(positional_encoding_output.clone());
+        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+        let output_attention_1 = attention_layer_1.forward(&layer_input);
+
+        layer_input.set_input_batch(output_attention_1.get_output_batch());
+        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+        let output_attention_2 = attention_layer_2.forward(&layer_input);
+
+        layer_input.set_input_batch(output_attention_2.get_output_batch());
         let output_ffn = ffn_layer.forward(&layer_input);
 
         layer_input.set_input_batch(output_ffn.get_output_batch());
@@ -246,13 +253,22 @@ mod test_transformer {
                 println!("Layer 2 does not exist!");
             }
 
-            let (embeddings, padding_mask_batch) = embedding_layer.forward(&batch_ids);
+            layer_input.set_batch_ids(batch_ids.clone());
+            let (embeddings, padding_mask_batch) = embedding_layer.forward(&layer_input);
             let positional_encoding_output = positional_encoding_layer.forward(&embeddings);
-            let output_attention_1 = attention_layer_1.forward(&positional_encoding_output, &padding_mask_batch);
-            let output_attention_2 = attention_layer_2.forward(&output_attention_1, &padding_mask_batch);
-            layer_input.set_input_batch(output_attention_2);
+
+            layer_input.set_input_batch(positional_encoding_output.clone());
+
+            layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+            let output_attention_1 = attention_layer_1.forward(&layer_input);
+
+            layer_input.set_input_batch(output_attention_1.get_output_batch());
+            layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+            let output_attention_2 = attention_layer_2.forward(&layer_input);
+
+            layer_input.set_input_batch(output_attention_2.get_output_batch());
             let output_ffn = ffn_layer.forward(&layer_input);
-    
+
             layer_input.set_input_batch(output_ffn.get_output_batch());
             let output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()));
 

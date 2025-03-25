@@ -16,6 +16,7 @@ use crate::neural_networks::network_types::wavelet_network::{decompose_in_wavele
 use crate::neural_networks::utils::matrix::is_nan_or_inf;
 
 use super::gradient_struct::Gradient;
+use super::layer_input_struct::LayerInput;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingLayer {
@@ -23,6 +24,8 @@ pub struct EmbeddingLayer {
     pub embedding_dim: usize,
     pub weights: Vec<Vec<f64>>,
     pub gradient: Option<Gradient>,
+    pub previous_gradient: Option<Gradient>,
+    pub time_step: usize,
 }
 
 pub const EMBEDDING_PATH: &str = "embedding";
@@ -59,6 +62,8 @@ impl EmbeddingLayer {
             embedding_dim: embedding_dim_compressed,
             weights: vec![],
             gradient: None,
+            previous_gradient: None,
+            time_step: 0
         }
     }
 
@@ -69,6 +74,8 @@ impl EmbeddingLayer {
             embedding_dim,
             weights: vec![],
             gradient: None,
+            previous_gradient: None,
+            time_step: 0
         }
     }
 
@@ -128,11 +135,14 @@ impl EmbeddingLayer {
     }
 
     /// Look up embeddings for a batch of token IDs
-    pub fn forward(&self, token_input_ids: &Vec<Vec<u32>>) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<u32>>) {
+    pub fn forward(&mut self, layer_input: &LayerInput) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<u32>>) {
+        let token_input_ids: Vec<Vec<u32>> = layer_input.get_batch_ids();
         let db: &Db = Self::get_db();
 
+        self.time_step = layer_input.get_time_step();
+
         let mut token_ids_output: Vec<Vec<Vec<Complex<f64>>>> = vec![];
-        let (token_input_batch_padded, padding_mask) = self.apply_padding_to_batch(token_input_ids);
+        let (token_input_batch_padded, padding_mask) = self.apply_padding_to_batch(&token_input_ids);
 
         let embedding_dim = self.embedding_dim.clone();
 
@@ -210,6 +220,8 @@ impl EmbeddingLayer {
             vocab_size: embedding_layer.vocab_size,
             weights: vec![],
             gradient: None,
+            previous_gradient: None,
+            time_step: 0
         };
         let serialized: Vec<u8> = bincode::serialize(&embedding_layer_meta).expect("Failed to serialize");
         let mut file = File::create(embedding_file_path).expect("Failed to create file");

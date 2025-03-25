@@ -1,5 +1,5 @@
 use crate::neural_networks::{
-    network_components::{embedding_layer::EmbeddingLayer, layer::LayerEnum, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
+    network_components::{norm_layer::NormalNormLayer, embedding_layer::EmbeddingLayer, layer::LayerEnum, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
     network_types::{
         feedforward_layer::FeedForwardLayer,
         neural_network_generic::{create, NeuralNetwork, OperationMode},
@@ -27,9 +27,11 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     // embedding_dim_compressed  = 16
     let embedding_dim_compressed = (embedding_dim_original as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize;
     let vocab_size: usize = 50254;
+    let epsilon = 1e-10;
 
     let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
     let positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
+    let norm_layer = NormalNormLayer::new(embedding_layer.embedding_dim, epsilon, learning_rate);
 
     let rows: usize = 16;
     let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
@@ -37,6 +39,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
 
     layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
     layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
+    layers.push(LayerEnum::Norm(Box::new(norm_layer)));
 
     let rows: usize = 16;
     let hidden_dim = 64;

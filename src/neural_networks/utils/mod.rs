@@ -8,3 +8,4 @@ pub mod image;
 pub mod tests;
 pub mod tokenizer;
 pub mod random_arrays;
+pub mod adam_w;

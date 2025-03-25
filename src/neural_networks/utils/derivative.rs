@@ -429,6 +429,8 @@ pub fn global_relative_error_l2(numerical_grad: &Vec<Vec<Vec<Complex<f64>>>>, an
         }
     }
 
+    println!("absolute error: {:?}", &diff_norm_sq);
+    
     let diff_norm = diff_norm_sq.sqrt();
     let total_norm = numerical_norm_sq.sqrt() + analytical_norm_sq.sqrt();
 

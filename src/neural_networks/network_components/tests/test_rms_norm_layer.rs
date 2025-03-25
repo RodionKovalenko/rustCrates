@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod test_rms_norm_layer {
     use crate::neural_networks::{
-        network_components::add_rms_norm_layer::RMSNormLayer,
+        network_components::{add_rms_norm_layer::RMSNormLayer, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
         network_types::neural_network_generic::OperationMode,
         utils::derivative::{global_relative_error_l2, numerical_gradient_input_batch_without_loss, test_gradient_batch_error},
     };
@@ -38,7 +38,12 @@ mod test_rms_norm_layer {
 
         let mut rms_norm_layer = RMSNormLayer::new(input_dim, epsilon, learning_rate);
 
-        let rms_output_batch = rms_norm_layer.forward(&input_batch, &input_batch_before);
+        let mut rms_input_layer = LayerInput::new_default();
+        rms_input_layer.set_input_batch(input_batch.clone());
+        rms_input_layer.set_input_batch_before(input_batch_before.clone());
+
+        let rms_output = rms_norm_layer.forward(&rms_input_layer);
+        let rms_output_batch = rms_output.get_output_batch();
 
         println!("input batch :{:?}", &input_batch);
         println!("\nrms output_batch: {:?}", &rms_output_batch);
@@ -50,9 +55,12 @@ mod test_rms_norm_layer {
 
         // Define the loss function
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
-            let linear_batch_output = rms_norm_layer.forward(input, &input_batch_before);
+            rms_input_layer.set_input_batch(input.clone());
+            rms_input_layer.set_input_batch_before(input_batch_before.clone());
+    
+            let rms_output: LayerOutput = rms_norm_layer.forward(&rms_input_layer);
 
-            linear_batch_output
+            rms_output.get_output_batch()
         };
 
         //let numerical_grad_rms: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_jacobi_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
