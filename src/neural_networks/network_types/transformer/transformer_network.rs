@@ -15,7 +15,7 @@ use crate::neural_networks::{
 };
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize) {
-    for epoch in 0..num_epochs {
+    'outer: for epoch in 0..num_epochs {
         for batch_dataset in dataset.split_into_batches(4) {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
 
@@ -33,7 +33,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             // println!("target ids: {:?},", &target_ids);
             //println!("predicted softmax batch: {}, {}, {}", predicted_softmax_batch.len(), predicted_softmax_batch[0].len(), predicted_softmax_batch[0][0].len());
 
-            if epoch % 5 == 0 {
+            if epoch % 5 == 0 || loss.norm() <= 0.05 {
                 let target_len = target_ids[0].len();
                 let predicted_softmax_targets: Vec<_> = predicted_softmax_batch.iter().map(|batch| batch[batch.len() - target_len..].to_vec()).collect();
 
@@ -45,6 +45,11 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                     predicted_token_batch.push(predicted_token);
                 }
                 println!("predicted token: {:?}", predicted_token_batch);
+
+                if loss.norm() <= 0.05 {
+                    println!("loss is smaller than 0.05. Break the training: {:?}", &loss);
+                    break 'outer;
+                }
             }
 
             backward(transformer_network, &target_ids, true);
@@ -86,8 +91,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
             LayerEnum::PositionalEncoding(positional_encoding_layer) => {
                 if let Some(previous_output) = &output {
                     let positional_encoding_l = Some(positional_encoding_layer).unwrap();
-                    //println!("previous output embedding layer: {:?}, {:?}", &previous_output.len(), &previous_output[0].len());
-
+                    
                     let mut positional_encodings: Vec<Vec<Vec<Complex<f64>>>> = positional_encoding_l.forward(&previous_output);
 
                     check_nan_or_inf_3d(&mut positional_encodings, "positional encodings output in forward");
@@ -112,7 +116,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                 if let (Some(previous_output), Some(padding_m)) = (&output, &padding_mask) {
                     layer_input.set_input_batch(previous_output.clone());
                     layer_input.set_padding_mask_batch(padding_m.clone());
-                    
+
                     let output_attention = attention.forward(&layer_input);
 
                     check_nan_or_inf_3d(&mut output_attention.get_output_batch(), "output attention layer in forward");
@@ -186,7 +190,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     let gradient_batch: Gradient = embedding_layer.backward(&previous_gradient_batch);
 
                     if update_params {
-                        embedding_layer.update_parameters(&target_batch_ids, transformer_network.learning_rate);
+                       // embedding_layer.update_parameters(&target_batch_ids, transformer_network.learning_rate);
                     }
 
                     gradient = Some(gradient_batch);
@@ -197,6 +201,11 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             LayerEnum::PositionalEncoding(positional_encoding_layer) => {
                 if let Some(previous_gradient) = gradient {
                     let gradient_batch: Gradient = positional_encoding_layer.backward(&previous_gradient.get_gradient_input_batch());
+
+                    if update_params {
+                        positional_encoding_layer.update_parameters(transformer_network.learning_rate);
+                    }
+                    
                     gradient = Some(gradient_batch);
                 } else {
                     println!("No previous gradient in Positional Encoding Layer");
@@ -296,20 +305,29 @@ pub fn cross_entropy_loss_batch(
 fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, target_tokens: &Vec<u32>) -> Complex<f64> {
     let mut loss: Complex<f64> = Complex::new(0.0, 0.0);
     let seq_len = predictions.len();
-
-    let target_len: usize = target_tokens.len();
+    let target_len = target_tokens.len();
     let seq_ind_start = seq_len - target_len;
+    let mut count = 0;
 
-    for (s, seq) in predictions[seq_ind_start..].iter().enumerate() {
-        // Only target positions
-        let target_idx = target_tokens[s] as usize;
-
+    for (s, &target_idx) in target_tokens.iter().enumerate() {
         if target_idx == 1 {
             continue; // skip padding
         }
 
-        loss += -(seq[target_idx] + Complex::new(1e-10, 0.0)).ln();
+        let seq_ind = seq_ind_start + s;
+        // Find predicted index (using norm() for complex numbers)
+        let pred_idx = predictions[seq_ind].iter().enumerate().max_by(|(_, a), (_, b)| a.norm().partial_cmp(&b.norm()).unwrap()).map(|(i, _)| i).unwrap();
+
+        // Only calculate loss if prediction was wrong
+        if pred_idx != target_idx as usize {
+            loss += -(predictions[seq_ind][target_idx as usize] + Complex::new(1e-10, 0.0)).ln();
+            count += 1;
+        }
     }
 
-    loss / target_len as f64
+    if count > 0 {
+        loss / count as f64
+    } else {
+        Complex::new(0.0, 0.0)
+    }
 }

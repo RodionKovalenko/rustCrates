@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
     adam_w::calculate_adam_w_bias,
-    matrix::{check_nan_or_inf, clip_gradients, is_nan_or_inf},
+    matrix::{clip_gradient_1d, is_nan_or_inf},
 };
 
 use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
@@ -123,56 +123,49 @@ impl NormalNormLayer {
 
     pub fn update_parameters(&mut self) {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("No gradient found in NormalNormLayer");
-        let mut gradient_gamma: Vec<Vec<Complex<f64>>> = gradient.get_gradient_gamma_batch();
-        let mut gradient_beta: Vec<Vec<Complex<f64>>> = gradient.get_gradient_beta_batch(); // Get beta gradients
+        let mut gradient_gamma: Vec<Complex<f64>> = gradient.get_gradient_gamma();
+        let mut gradient_beta: Vec<Complex<f64>> = gradient.get_gradient_beta(); // Get beta gradients
 
         let threshold = 1.0;
-        clip_gradients(&mut gradient_gamma, threshold);
-        clip_gradients(&mut gradient_beta, threshold); // Clip beta gradients
-
-        check_nan_or_inf(&mut gradient_gamma, "check weight gradients in linear layer");
-        check_nan_or_inf(&mut gradient_beta, "check beta gradients in NormalNormLayer");
+        clip_gradient_1d(&mut gradient_gamma, threshold);
+        clip_gradient_1d(&mut gradient_beta, threshold); // Clip beta gradients
 
         let batch_size = gradient_gamma.len() as f64;
         let learning_rate = self.learning_rate;
 
-        let mut prev_m_gamma: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); gradient_gamma[0].len()];
-        let mut prev_v_gamma: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); gradient_gamma[0].len()];
+        let mut prev_m_gamma: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); gradient_gamma.len()];
+        let mut prev_v_gamma: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); gradient_gamma.len()];
 
-        let mut prev_m_beta: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); gradient_gamma[0].len()];
-        let mut prev_v_beta: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); gradient_gamma[0].len()];
+        let mut prev_m_beta: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); gradient_gamma.len()];
+        let mut prev_v_beta: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); gradient_gamma.len()];
 
         if let Some(previous_gradient) = &mut self.previous_gradient {
-            prev_m_gamma = previous_gradient.get_prev_v_gamma();
+            prev_m_gamma = previous_gradient.get_prev_m_gamma();
             prev_v_gamma = previous_gradient.get_prev_v_gamma();
 
             prev_m_beta = previous_gradient.get_prev_m_beta();
             prev_v_beta = previous_gradient.get_prev_v_beta();
 
-            calculate_adam_w_bias(&self.gamma, &gradient.get_gradient_gamma(), &mut prev_m_gamma, &mut prev_v_gamma, learning_rate, gradient.get_time_step());
-            calculate_adam_w_bias(&self.gamma, &gradient.get_gradient_beta(), &mut prev_m_beta, &mut prev_v_beta, learning_rate, gradient.get_time_step());
+            self.gamma = calculate_adam_w_bias(&self.gamma, &gradient.get_gradient_gamma(), &mut prev_m_gamma, &mut prev_v_gamma, learning_rate, gradient.get_time_step());
+            self.beta = calculate_adam_w_bias(&self.beta, &gradient.get_gradient_beta(), &mut prev_m_beta, &mut prev_v_beta, learning_rate, gradient.get_time_step());
         } else {
-            for batch_ind in 0..gradient_gamma.len() {
                 for (i, value) in self.gamma.iter_mut().enumerate() {
-                    if !is_nan_or_inf(&gradient_gamma[batch_ind][i]) {
-                        *value -= self.learning_rate * (gradient_gamma[batch_ind][i] / batch_size);
+                    if !is_nan_or_inf(&gradient_gamma[i]) {
+                        *value -= self.learning_rate * (gradient_gamma[i] / batch_size);
                     }
-                }
 
                 for (i, value) in self.beta.iter_mut().enumerate() {
-                    if !is_nan_or_inf(&gradient_beta[batch_ind][i]) {
-                        *value -= self.learning_rate * (gradient_beta[batch_ind][i] / batch_size);
+                    if !is_nan_or_inf(&gradient_beta[i]) {
+                        *value -= self.learning_rate * (gradient_beta[i] / batch_size);
                     }
                 }
             }
         }
-    
+
         gradient.set_prev_m_gamma(prev_m_gamma);
         gradient.set_prev_v_gamma(prev_v_gamma);
         gradient.set_prev_m_beta(prev_m_beta);
         gradient.set_prev_v_beta(prev_v_beta);
         self.previous_gradient = Some(gradient.clone());
-
-        // self.learning_rate *= 0.99;
     }
 }

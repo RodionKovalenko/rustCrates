@@ -37,7 +37,7 @@ impl SelfAttentionLayer {
         Self {
             attention_heads,
             activated_output: vec![],
-            norm_layer: _norm_layer_rms,
+            norm_layer: _norm_layer,
             input_batch: None,
             time_step: 0
         }
@@ -61,9 +61,9 @@ impl SelfAttentionLayer {
         let mut attention_head_outputs: Vec<Vec<Vec<Vec<Complex<f64>>>>> = vec![];
 
         let mut layer_input = LayerInput::new_default();
+        layer_input.set_time_step(self.time_step);
         layer_input.set_input_batch(input_batch.clone());
         layer_input.set_padding_mask_batch(padding_mask_batch.clone());
-
 
         //println!("padding mask batch: {:?}", &padding_mask_batch);
         for attention_head in self.attention_heads.iter_mut() {

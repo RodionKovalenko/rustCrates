@@ -49,14 +49,7 @@ impl LinearLayer {
         let output_batch = input_batch
             .par_iter() // Use a parallel iterator to process inputs in parallel
             .map(|input| {
-                // Perform matrix multiplication
-
-                // println!("input dim in forward linear layer: {}, {}", input.len(), input[0].len());
-                // println!("weights dim in forward linear layer: {}, {}", &self.weights.len(), &self.weights[0].len());
-
                 let mut output = multiply_complex(input, &self.weights);
-
-                // println!("output dim in forward linear layer: {}, {}", output.len(), output[0].len());
 
                 // Add the bias vector
                 output = add_vector(&output, &self.bias);
@@ -132,11 +125,11 @@ impl LinearLayer {
             prev_m_bias = previous_gradient.get_prev_m_bias();
             prev_v_bias = previous_gradient.get_prev_v_bias();
 
-            prev_m_weights = previous_gradient.get_prev_m_weigths();
+            prev_m_weights = previous_gradient.get_prev_m_weights();
             prev_v_weights = previous_gradient.get_prev_v_weights();
 
-            calculate_adam_w_bias(&self.bias, &gradient.get_gradient_bias(), &mut prev_m_bias, &mut prev_v_bias, learning_rate, time_step);
-            calculate_adam_w(&self.weights, &gradient.get_gradient_weights(), &mut prev_m_weights, &mut prev_v_weights, learning_rate, time_step);
+            self.bias = calculate_adam_w_bias(&self.bias, &gradient.get_gradient_bias(), &mut prev_m_bias, &mut prev_v_bias, learning_rate, time_step);
+            self.weights = calculate_adam_w(&self.weights, &gradient.get_gradient_weights(), &mut prev_m_weights, &mut prev_v_weights, learning_rate, time_step);
         } else {
             // Update weights and biases using gradient descent
             for (i, row) in self.weights.iter_mut().enumerate() {

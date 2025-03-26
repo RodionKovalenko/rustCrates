@@ -144,10 +144,10 @@ impl RMSNormLayer {
         let learning_rate = self.learning_rate;
 
         if let Some(previous_gradient) = &mut self.previous_gradient {
-            prev_m_gamma = previous_gradient.get_prev_v_gamma();
+            prev_m_gamma = previous_gradient.get_prev_m_gamma();
             prev_v_gamma = previous_gradient.get_prev_v_gamma();
 
-            calculate_adam_w_bias(&self.gamma, &gradient.get_gradient_gamma(), &mut prev_m_gamma, &mut prev_v_gamma, learning_rate, gradient.get_time_step());
+           self.gamma = calculate_adam_w_bias(&self.gamma, &gradient.get_gradient_gamma(), &mut prev_m_gamma, &mut prev_v_gamma, learning_rate, gradient.get_time_step());
         } else {
             for batch_ind in 0..gradient_gamma.len() {
                 for (i, value) in self.gamma.iter_mut().enumerate() {
