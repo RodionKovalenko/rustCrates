@@ -1,5 +1,6 @@
 use num::Complex;
 use num_traits::NumCast;
+use rand::Rng;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use std::fmt::Debug;
@@ -92,17 +93,10 @@ where
             for j in 0..num_columns {
                 row[j] = (0..matrix_b_clone.len())
                     .map(|k| {
-                        if is_nan_or_inf(&matrix_a_clone[i][k]) {
-                            println!("NaN detected in multiply_complex in matrix_a at ({}, {})", i, j);
-                        }
-                        if is_nan_or_inf(&matrix_b_clone[k][j]) {
-                            println!("NaN detected in multiply_complex in matrix_b at ({}, {})", i, j);
-                        }
                         let mut product = matrix_a_clone[i][k] * matrix_b_clone[k][j];
 
-                        if product.re.abs() > 1e308 || product.im.abs() > 1e308 {
-                            println!("⚠ Warning: Potential overflow in multiply_complex at ({}, {}): {:?}", i, j, product);
-                            product *= 1e-150; // Scale down to prevent overflow
+                        if is_nan_or_inf(&product) {
+                            product = Complex::new(rand::rng().random_range(-0.5..0.5), rand::rng().random_range(-0.5..0.5));
                         }
                         product
                     })
@@ -424,8 +418,12 @@ pub fn contains_nan_or_inf(matrix: &mut Vec<Vec<Complex<f64>>>) -> bool {
     for row in matrix.iter_mut() {
         for z in row.iter_mut() {
             if is_nan_or_inf(z) {
-                *z = Complex::new(0.0, 0.0);
+                *z = Complex::new(rand::rng().random_range(-0.5..0.5), rand::rng().random_range(-0.5..0.5));
                 found = true;
+            }
+
+            if  z.norm() > 100.0 {
+                *z = Complex::new(rand::rng().random_range(-0.5..0.5), rand::rng().random_range(-0.5..0.5));
             }
         }
     }
