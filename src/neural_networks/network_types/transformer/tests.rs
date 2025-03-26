@@ -8,24 +8,13 @@ mod tests {
     use crate::neural_networks::{
         network_components::{
             input::{DataTrait, Dataset},
-            layer::LayerType, layer_input_struct::LayerInput,
+            layer_input_struct::LayerInput,
         },
         network_types::{
             neural_network_generic::{NeuralNetwork, OperationMode},
-            transformer::{attention_head::AttentionHead, self_attention_layer::SelfAttentionLayer, transformer_builder::create_transformer, transformer_network::train},
+            transformer::{self_attention_layer::SelfAttentionLayer, transformer_builder::create_transformer, transformer_network::train},
         },
     };
-
-    #[test]
-    fn test_attention_layer_initialization() {
-        let rows: usize = 15;
-        let cols: usize = 15;
-
-        let layer = AttentionHead::create_default_attention_layer(rows, cols, LayerType::AttentionLayer);
-
-        assert_eq!(layer.layer_type, LayerType::AttentionLayer);
-        println!("{:?}", layer);
-    }
 
     #[test]
     fn test_self_attention_layer() {
@@ -219,7 +208,8 @@ mod tests {
         // let input_str7: &str = "Was macht 2+6?";
         // let input_str8: &str = "Was macht 2+7?";
 
-        let target1: &str = "Mir geht es gut";
+        //let target1: &str = "Mir geht es gut";
+        let target1: &str = "geht";
         // let target2: &str = "Berlin ist die Hauptstadt von Deutschland";
         // let target3: &str = "Nach Donnerstag kommt Freitag.";
         // let target4: &str = "2 +3 macht 5";

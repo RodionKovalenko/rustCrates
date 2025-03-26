@@ -65,7 +65,7 @@ mod test_linear_layer {
         println!("\nanalytical grad: {:?}", grouped_linear_gradient);
         println!("\nnumerical grad: {:?}", numerical_grad_linear);
 
-        test_gradient_error_2d(&grouped_linear_gradient, &numerical_grad_linear, epsilon);
+        test_gradient_error_2d(&grouped_linear_gradient, &numerical_grad_linear, 1e-5);
 
         // TEST BIAS
         let linear_bias = linear_layer.bias.clone();
@@ -90,7 +90,7 @@ mod test_linear_layer {
         println!("\nanalytical grad bias: {:?}", analytical_gradient_bias);
         println!("\nnumerical grad bias: {:?}", numerical_grad_linear_bias);
 
-        test_gradient_error_1d(&analytical_gradient_bias, &numerical_grad_linear_bias, epsilon);
+        test_gradient_error_1d(&analytical_gradient_bias, &numerical_grad_linear_bias, 1e-5);
     }
 
     #[test]

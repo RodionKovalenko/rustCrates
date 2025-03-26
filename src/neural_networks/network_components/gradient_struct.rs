@@ -220,7 +220,7 @@ impl Gradient {
         self.gradient_weights_k_batch.clone().unwrap_or_else(|| vec![])
     }
 
-    pub fn get_prev_m_weigths(&self) -> Vec<Vec<Complex<f64>>> {
+    pub fn get_prev_m_weights(&self) -> Vec<Vec<Complex<f64>>> {
         self.prev_m_weights.clone().unwrap_or_else(|| vec![])
     }
     pub fn get_prev_v_weights(&self) -> Vec<Vec<Complex<f64>>> {
