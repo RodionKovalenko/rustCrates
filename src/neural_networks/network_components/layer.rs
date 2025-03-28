@@ -218,9 +218,25 @@ impl Layer {
 
             // 7, 7
             let gradient_output = get_gradient_complex(&output_batch[batch_ind], &raw_output_batch[batch_ind], self.activation_type.clone());
+
+            check_nan_or_inf(&mut previous_gradient.clone(), "previous gradient in dense layer backward is not valid");
+            check_nan_or_inf(&mut gradient_output.clone(), "gradient output in dense layer backward is not valid");
+
+            // let max = previous_gradient.iter().flatten().max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
+            // let min = previous_gradient.iter().flatten().min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
+            // println!("max value previous gradeint: {:?}", &max);
+            // println!("min value previous gradeint: {:?}", &min);
+
+            let max = gradient_output.iter().flatten().max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
+            let min = gradient_output.iter().flatten().min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
+            println!("max value gradient output: {:?}", &max);
+            println!("min value gradient output: {:?}", &min);
+
             // 7,7 hadamard 7, 7 = 7,7
             input_gradient_batch[batch_ind] = hadamard_product_2d_c(&previous_gradient, &gradient_output);
             // 7,8 * 7, 7 = 8, 7 * 7, 7 = 8, 7
+            check_nan_or_inf(&mut input_gradient_batch[batch_ind], "previous gradient in dense layer backward is not valid");
+
             weight_gradients[batch_ind] = multiply_complex(&transpose(&input), &input_gradient_batch[batch_ind]);
 
             // println!("previous gradient in ffn backward: {} {}", previous_gradient.len(), previous_gradient[0].len());
