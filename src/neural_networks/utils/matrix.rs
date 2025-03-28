@@ -93,7 +93,7 @@ where
             for j in 0..num_columns {
                 row[j] = (0..matrix_b_clone.len())
                     .map(|k| {
-                        let mut product = matrix_a_clone[i][k] * matrix_b_clone[k][j];
+                        let product = matrix_a_clone[i][k] * matrix_b_clone[k][j];
 
                         if is_nan_or_inf(&product) {
                             //product = Complex::new(rand::rng().random_range(-0.5..0.5), rand::rng().random_range(-0.5..0.5));

@@ -1,11 +1,14 @@
+use crate::wavelet_transform::{dwt::transform_1_d, dwt_types::DiscreteWaletetType, modes::WaveletMode};
+
 use super::gradient_struct::Gradient;
 use num::Complex;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::f64::consts::E;
 
 // Use smaller base instead of the original 10000
 pub static INITIAL_BASE: f64 = 10000.0;
+
+pub static SCALING_FAKTOR: f64 = 8e-3;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PositionalEncodingLayer {
@@ -27,34 +30,39 @@ impl PositionalEncodingLayer {
 
     /// Apply positional encoding to a batch of embeddings
     pub fn forward(&self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
-        let scaling_factor = self.get_scaling_factor();
+        let scaling_factor = SCALING_FAKTOR;
 
         input_batch
-            .par_iter() // Parallel iterator for the outer loop
+            .par_iter() // Parallel iterator for efficiency
             .map(|input| {
                 let mut output = Vec::with_capacity(input.len());
 
                 for (position, token_embeddings) in input.iter().enumerate() {
-                    // Ensure all embeddings have the correct dimension
-                    assert_eq!(token_embeddings.len(), self.embedding_dim, "All token embeddings must have the same dimension as specified in the layer.");
+                    // Ensure correct embedding size
+                    assert_eq!(token_embeddings.len(), self.embedding_dim, "All token embeddings must match the specified dimension.");
 
-                    // Step 1: Add positional encodings to token embeddings
-                    let positional_encoding = self.generate_positional_encoding(position, scaling_factor);
+                    // Step 1: Convert complex embeddings into real & imaginary parts
+                    let real_part: Vec<f64> = token_embeddings.iter().map(|c| c.re).collect();
+                    let imag_part: Vec<f64> = token_embeddings.iter().map(|c| c.im).collect();
+
+                    // Step 2: Apply wavelet transform separately to real & imaginary parts
+                    let transformed_real = transform_1_d(&real_part, &DiscreteWaletetType::DB1, &WaveletMode::SYMMETRIC);
+                    let transformed_imag = transform_1_d(&imag_part, &DiscreteWaletetType::DB1, &WaveletMode::SYMMETRIC);
+
+                    // Step 3: Ensure wavelet-transformed outputs have correct dimensions
+                    let positional_encoding = self.pad_or_trim_wavelet_output(&transformed_real, &transformed_imag);
+
+                    // Step 4: Add wavelet-based positional encoding
                     let token_with_pos_encoding = self.add_positional_encoding(token_embeddings, &positional_encoding);
 
-                    // Step 2: Apply rotary positional encoding
+                    // Step 5: Apply rotary positional encoding
                     let rotated_embeddings = self.apply_rotary_positional_encoding(&token_with_pos_encoding, position, scaling_factor);
                     output.push(rotated_embeddings);
                 }
 
                 output
             })
-            .collect() // Collect the results from all parallel computations into a single Vec
-    }
-
-    pub fn get_scaling_factor(&self) -> f64 {
-        let clamped_log_s = self.log_scaling_factor.clamp(-6.9077, -1.609); // Ensures scaling factor is between 10 and 20000
-        E.powf(clamped_log_s)
+            .collect() // Collect results into a single Vec
     }
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
@@ -67,73 +75,34 @@ impl PositionalEncodingLayer {
         gradient
     }
 
-    pub fn update_parameters(&mut self, _learning_rate: f64) {
-        // let gradient = self.gradient.as_ref().expect("No gradient found in positional encoding layer");
-        // let previous_gradient_batch = gradient.get_gradient_input_batch();
-        // let mut total_gradient: f64 = 0.0;
-        // let mut count = 0;
-
-        // // Iterate through the batch
-        // for (_seq_idx, sequence) in previous_gradient_batch.iter().enumerate() {
-        //     for (pos, token_gradients) in sequence.iter().enumerate() {
-        //         for (dim_idx, gradient) in token_gradients.iter().enumerate() {
-        //             // Compute influence of base on gradients (e.g., positional encoding derivative)
-        //             let theta = pos as f64 / self.base.powf(2.0 * (dim_idx as f64 / self.embedding_dim as f64));
-        //             let (sin_theta, cos_theta) = theta.sin_cos();
-
-        //             // Compute gradient approximation
-        //             let grad_real = gradient.re * cos_theta + gradient.im * sin_theta;
-        //             let grad_imag = gradient.im * cos_theta - gradient.re * sin_theta;
-
-        //             // Aggregate the gradient information
-        //             total_gradient += grad_real.abs() + grad_imag.abs();
-        //             count += 1;
-        //         }
-        //     }
-        // }
-
-        // // Compute mean gradient contribution
-        // if count > 0 {
-        //     let avg_gradient = total_gradient / count as f64;
-
-        //     // Update base using simple gradient descent
-        //     self.log_scaling_factor -= learning_rate * avg_gradient;
-        // }
-    }
-
-    /// Function to generate a positional encoding (for simplicity, we use a fixed formula here)
-    fn generate_positional_encoding(&self, position: usize, scaling_factor: f64) -> Vec<f64> {
-        let mut positional_encoding = vec![0.0; self.embedding_dim];
+    /// Ensures wavelet output matches `embedding_dim`
+    fn pad_or_trim_wavelet_output(&self, real: &[f64], imag: &[f64]) -> Vec<Complex<f64>> {
+        let mut wavelet_output = Vec::with_capacity(self.embedding_dim);
 
         for i in 0..self.embedding_dim {
-            let angle = position as f64 / ((self.base * scaling_factor).powf(2.0 * (i as f64 / 2.0) / self.embedding_dim as f64));
-
-            if i % 2 == 0 {
-                positional_encoding[i] = angle.sin();
-            } else {
-                positional_encoding[i] = angle.cos();
-            }
+            let real_val = real.get(i).copied().unwrap_or(0.0);
+            let imag_val = imag.get(i).copied().unwrap_or(0.0);
+            wavelet_output.push(Complex::new(real_val, imag_val));
         }
 
-        positional_encoding
+        wavelet_output
     }
 
-    /// Function to add positional encoding to token embeddings
-    fn add_positional_encoding(&self, token_embeddings: &Vec<Complex<f64>>, positional_encoding: &Vec<f64>) -> Vec<Complex<f64>> {
+    /// Adds wavelet-based positional encoding to token embeddings
+    fn add_positional_encoding(&self, token_embeddings: &Vec<Complex<f64>>, positional_encoding: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
         token_embeddings
             .iter()
             .zip(positional_encoding.iter())
             .map(|(embedding, pos_encoding)| {
-                // Add positional encoding to the real part of the complex embedding (you can also apply to the imaginary part)
-                Complex::new(embedding.re + pos_encoding, embedding.im)
+                Complex::new(embedding.re + pos_encoding.re, embedding.im + pos_encoding.im)
             })
             .collect()
     }
 
-    /// Function to apply rotary positional encoding to a single token's embedding
+    /// Applies rotary positional encoding to a single token embedding
     fn apply_rotary_positional_encoding(&self, embedding: &[Complex<f64>], position: usize, scaling_factor: f64) -> Vec<Complex<f64>> {
         assert_eq!(embedding.len(), self.embedding_dim);
-        assert_eq!(self.embedding_dim % 2, 0);
+        assert_eq!(self.embedding_dim % 2, 0, "Embedding dimension must be even for RoPE.");
 
         let mut rotated_embedding = Vec::with_capacity(self.embedding_dim);
         let half_dim = self.embedding_dim / 2;

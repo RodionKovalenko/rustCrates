@@ -12,32 +12,33 @@ path = "src/lib.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+backtrace = "0.3"
 rand="0.9.0"
 serde = { version = "1.0.217", features = ["derive"] }
-serde_derive = "1.0.217"
-serde_json = "1.0.138"
+serde_derive = "1.0.219"
+serde_json = "1.0.140"
 num = "0.4"
 num-complex = { version = "0.4", features = ["serde"] }
 enigo = "0.3.0"
-webbrowser = "1.0.3"
+webbrowser = "1.0.4"
 url = "2.2.1"
 curl = "*"
 futures = "0.3.30"
 hyper = "1.6.0"
-tokio = { version = "1.43.0", features = ["full"] }
-reqwest = "0.12.11"
+tokio = { version = "1.44.1", features = ["full"] }
+reqwest = "0.12.15"
 error-chain = "*"
-chrono = {version="0.4.39",features = ["serde"]}
+chrono = {version="0.4.40",features = ["serde"]}
 num-traits = "0.2.14"
 cast = "0.3.0"
-image = "0.25.5"
+image = "0.25.6"
 serde-big-array = "0.5.1"
 sled = "0.34" 
-tokenizers = "0.21.0"
+tokenizers = "0.21.1"
 ndarray = "0.16.1"  # Use the latest version if available
 plotters = "0.3"   #
 yahoo_finance_api = "3.0.0"
-time = "0.3.37"
+time = "0.3.41"
 csv = "1.1"
 nalgebra = "0.33.2"
 ndarray-rand = "0.15"
