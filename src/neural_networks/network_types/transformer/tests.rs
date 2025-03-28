@@ -1,8 +1,10 @@
 #[cfg(test)]
 
 mod tests {
+    use std::panic::{self, PanicInfo};
     use std::time::Instant;
 
+    use backtrace::Backtrace;
     use num::Complex;
 
     use crate::neural_networks::{
