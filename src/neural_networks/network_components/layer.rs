@@ -1,13 +1,18 @@
 use crate::neural_networks::{
     network_types::{feedforward_layer::FeedForwardLayer, transformer::self_attention_layer::SelfAttentionLayer},
     utils::{
-        activation::activate_output_complex_padding, adam_w::{calculate_adam_w, calculate_adam_w_bias}, derivative::get_gradient_complex, matrix::{add_vector, apply_padding_mask_batch, check_nan_or_inf_3d, clip_gradient_1d, clip_gradients, hadamard_product_2d_c, is_nan_or_inf, multiply_complex, transpose}, weights_initializer::initialize_weights_complex
+        activation::activate_output_complex_padding,
+        adam_w::{calculate_adam_w, calculate_adam_w_bias},
+        derivative::get_gradient_complex,
+        matrix::{add_vector, apply_padding_mask_batch, check_nan_or_inf, check_nan_or_inf_3d, clip_gradient_1d, clip_gradients, hadamard_product_2d_c, is_nan_or_inf, multiply_complex, transpose},
+        weights_initializer::initialize_weights_complex,
     },
 };
 use core::fmt::Debug;
 use num::Complex;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 
 use super::{
     add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput, linear_layer::LinearLayer, norm_layer::NormalNormLayer, positional_encoding_layer::PositionalEncodingLayer,
@@ -131,18 +136,36 @@ impl Layer {
         let mut inactivated_batch_output: Vec<Vec<Vec<Complex<f64>>>> = input_batch
             .par_iter()
             .map(|input| {
-                // Multiply input with weights
-                // check_nan_or_inf(&mut input, "check dense input");
-                // check_nan_or_inf(&self.weights, "check dense weights");
+                let mut output: Vec<Vec<Complex<f64>>> = multiply_complex(input, &self.weights);
 
-                let output: Vec<Vec<Complex<f64>>> = multiply_complex(input, &self.weights);
-
-                // println!("check output_dense raw");
-                // check_nan_or_inf(&output);
+                check_nan_or_inf(&mut output, "check dense inactivated_batch_output without bias");
 
                 // Add bias to the result
-                let raw_output: Vec<Vec<Complex<f64>>> = add_vector(&output, &self.bias);
+                let mut raw_output: Vec<Vec<Complex<f64>>> = add_vector(&output, &self.bias);
 
+                if check_nan_or_inf(&mut raw_output, "check dense inactivated_batch_output with bias") {
+                    let max = &self.weights.iter().flatten().max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
+                    let min = &self.weights.iter().flatten().min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
+
+                    println!("max value in weights dense: {:?}", max);
+                    println!("max value in weights dense: {:?}", min);
+
+                    let max = input.iter().flatten().max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
+                    let min = input.iter().flatten().min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
+
+                    println!("max value in input dense: {:?}", max);
+                    println!("max value in input dense: {:?}", min);
+
+                    let max = raw_output.iter().flatten().max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
+                    let min = raw_output.iter().flatten().min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
+                    println!("max value in raw output with bias dense: {:?}", max);
+                    println!("max value in raw output with bias dense: {:?}", min);
+
+                    let max = &self.bias.iter().max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
+                    let min = &self.bias.iter().min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
+                    println!("max value in bias dense: {:?}", max);
+                    println!("max value in bias dense: {:?}", min);
+                }
                 raw_output
             })
             .collect();
@@ -230,7 +253,7 @@ impl Layer {
         let input_batch = gradient.get_gradient_input_batch();
         let batch_size = input_batch.len() as f64;
 
-        let threshold = 1.0;
+        let threshold = 0.5;
         clip_gradients(&mut weight_gradients, threshold);
         clip_gradient_1d(&mut bias_gradients, threshold);
 

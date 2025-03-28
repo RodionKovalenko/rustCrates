@@ -21,7 +21,7 @@ impl PositionalEncodingLayer {
             embedding_dim,
             base: INITIAL_BASE,
             gradient: None,
-            log_scaling_factor: 1e-3,
+            log_scaling_factor: -4.5,
         }
     }
 
@@ -67,38 +67,38 @@ impl PositionalEncodingLayer {
         gradient
     }
 
-    pub fn update_parameters(&mut self, learning_rate: f64) {
-        let gradient = self.gradient.as_ref().expect("No gradient found in positional encoding layer");
-        let previous_gradient_batch = gradient.get_gradient_input_batch();
-        let mut total_gradient: f64 = 0.0;
-        let mut count = 0;
+    pub fn update_parameters(&mut self, _learning_rate: f64) {
+        // let gradient = self.gradient.as_ref().expect("No gradient found in positional encoding layer");
+        // let previous_gradient_batch = gradient.get_gradient_input_batch();
+        // let mut total_gradient: f64 = 0.0;
+        // let mut count = 0;
 
-        // Iterate through the batch
-        for (_seq_idx, sequence) in previous_gradient_batch.iter().enumerate() {
-            for (pos, token_gradients) in sequence.iter().enumerate() {
-                for (dim_idx, gradient) in token_gradients.iter().enumerate() {
-                    // Compute influence of base on gradients (e.g., positional encoding derivative)
-                    let theta = pos as f64 / self.base.powf(2.0 * (dim_idx as f64 / self.embedding_dim as f64));
-                    let (sin_theta, cos_theta) = theta.sin_cos();
+        // // Iterate through the batch
+        // for (_seq_idx, sequence) in previous_gradient_batch.iter().enumerate() {
+        //     for (pos, token_gradients) in sequence.iter().enumerate() {
+        //         for (dim_idx, gradient) in token_gradients.iter().enumerate() {
+        //             // Compute influence of base on gradients (e.g., positional encoding derivative)
+        //             let theta = pos as f64 / self.base.powf(2.0 * (dim_idx as f64 / self.embedding_dim as f64));
+        //             let (sin_theta, cos_theta) = theta.sin_cos();
 
-                    // Compute gradient approximation
-                    let grad_real = gradient.re * cos_theta + gradient.im * sin_theta;
-                    let grad_imag = gradient.im * cos_theta - gradient.re * sin_theta;
+        //             // Compute gradient approximation
+        //             let grad_real = gradient.re * cos_theta + gradient.im * sin_theta;
+        //             let grad_imag = gradient.im * cos_theta - gradient.re * sin_theta;
 
-                    // Aggregate the gradient information
-                    total_gradient += grad_real.abs() + grad_imag.abs();
-                    count += 1;
-                }
-            }
-        }
+        //             // Aggregate the gradient information
+        //             total_gradient += grad_real.abs() + grad_imag.abs();
+        //             count += 1;
+        //         }
+        //     }
+        // }
 
-        // Compute mean gradient contribution
-        if count > 0 {
-            let avg_gradient = total_gradient / count as f64;
+        // // Compute mean gradient contribution
+        // if count > 0 {
+        //     let avg_gradient = total_gradient / count as f64;
 
-            // Update base using simple gradient descent
-            self.log_scaling_factor -= learning_rate * avg_gradient;
-        }
+        //     // Update base using simple gradient descent
+        //     self.log_scaling_factor -= learning_rate * avg_gradient;
+        // }
     }
 
     /// Function to generate a positional encoding (for simplicity, we use a fixed formula here)

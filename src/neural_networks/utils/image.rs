@@ -1,7 +1,7 @@
 use std::path::Path;
 use image::{GenericImageView, ImageBuffer, Pixel, Rgba, RgbaImage};
 use num_traits::Num;
-use crate::neural_networks::utils::file::{get_files_in_directory};
+use crate::neural_networks::utils::file::get_files_in_directory;
 
 pub fn get_pixels_from_images(directory: &str) -> Vec<Vec<Vec<Vec<i32>>>> {
     let mut image_pixel_data: Vec<Vec<Vec<Vec<i32>>>> = vec![];
