@@ -1,5 +1,3 @@
-use std::f64::consts::{PI, SQRT_2};
-
 use crate::neural_networks::network_components::layer::ActivationType;
 use nalgebra::ComplexField;
 use num::abs;
@@ -49,22 +47,44 @@ fn selu_derivative_complex(z: Complex<f64>) -> Complex<f64> {
 }
 
 pub fn gelu_derivative_complex(inactivated_input: Complex<f64>) -> Complex<f64> {
-    // Compute sqrt(2 / pi)
-    let sqrt_2_over_pi = SQRT_2 / PI.sqrt();
+    use std::f64::consts::PI;
+
+    let sqrt_2_over_pi = (2.0 / PI).sqrt();
 
     // f(x) = sqrt(2 / pi) * (x + 0.044715 * x^3)
-    let f_x = sqrt_2_over_pi * (inactivated_input + Complex::new(0.044715, 0.0) * inactivated_input.powf(3.0));
+    let x3 = inactivated_input.powi(3);
+    let f_x = sqrt_2_over_pi * (inactivated_input + Complex::new(0.044715, 0.0) * x3);
 
-    // tanh(f(x)) and sech(f(x))
-    let tanh_f_x = f_x.tanh();
-    let sech_f_x = 1.0 / f_x.cosh();
-    let sech_f_x_squared = sech_f_x.powi(2);
+    // Numerically stable tanh approximation
+    let tanh_f_x = if f_x.norm() > 20.0 {
+        Complex::new(1.0, 0.0) // tanh saturates for large values
+    } else {
+        f_x.tanh()
+    };
+
+    // Compute sech^2(f_x) safely: sech^2(x) = 4 / (exp(2x) + 2 + exp(-2x))
+    let sech_f_x_squared = if f_x.norm() > 20.0 {
+        Complex::new(0.0, 0.0) // sech^2(x) approaches 0 for large x
+    } else {
+        Complex::new(1.0, 0.0) - tanh_f_x.powi(2)
+    };
 
     // f'(x) = sqrt(2 / pi) * (1 + 0.134145 * x^2)
-    let f_prime_x = sqrt_2_over_pi * (Complex::new(1.0, 0.0) + Complex::new(0.134145, 0.0) * inactivated_input.powf(2.0));
+    let f_prime_x = sqrt_2_over_pi * (Complex::new(1.0, 0.0) + Complex::new(0.134145, 0.0) * inactivated_input.powi(2));
 
     // GELU'(x) = 0.5 * (1 + tanh(f(x))) + 0.5 * x * sech^2(f(x)) * f'(x)
-    0.5 * (Complex::new(1.0, 0.0) + tanh_f_x) + 0.5 * inactivated_input * sech_f_x_squared * f_prime_x
+    let gelu_derivative = Complex::new(0.5, 0.0) * (Complex::new(1.0, 0.0) + tanh_f_x)
+        + Complex::new(0.5, 0.0) * inactivated_input * sech_f_x_squared * f_prime_x;
+
+    // Smoothly clamp extreme values instead of hard zeroing
+    if gelu_derivative.norm() > 1e6 {
+        return gelu_derivative / gelu_derivative.norm() * Complex::new(1e6, 0.0);
+    }
+    if gelu_derivative.norm() < 1e-12 {
+        return Complex::new(1e-12, 0.0);
+    }
+
+    gelu_derivative
 }
 
 pub fn softsign_derivative_complex(z: Complex<f64>) -> Complex<f64> {

@@ -1,19 +1,20 @@
 extern crate reqwest;
 
-use error_chain::*;
-use reqwest::Client;
-use std::io::Read;
-use std::io::prelude::*;
-use chrono::{DateTime, Timelike, Local, Datelike};
-use crate::uphold_api::file_utils;
 use crate::uphold_api::cryptocurrency_dto::CryptocurrencyDto;
+use crate::uphold_api::file_utils;
+use chrono::{DateTime, Datelike, Local, Timelike};
 use file_utils::get_or_create_file;
+use reqwest::Client;
+use std::io::prelude::*;
+use std::io::Read;
+use thiserror::Error;
 
-error_chain! {
-    foreign_links {
-        Io(std::io::Error);
-        HttpRequest(reqwest::Error);
-    }
+#[derive(Error, Debug)]
+pub enum MyError {
+    #[error("IO Error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("HTTP Request Error: {0}")]
+    HttpRequest(#[from] reqwest::Error),
 }
 
 pub const AAVE_EUR: &str = "AAVE-EUR";
@@ -63,18 +64,13 @@ pub const XRP_EUR: &str = "XRP-EUR";
 pub const ZIL_EUR: &str = "ZIL-EUR";
 pub const ZRX_EUR: &str = "ZRX-EUR";
 
-
 pub const FILE_NAME: &str = "cryptocurrency_rates_history";
 const FILE_FORMAT: &str = "json";
 
 static CRYPTOCURRENCIES: [&str; 46] = [
-    AAVE_EUR, ADA_EUR, ATOM_EUR, BAL_EUR, BTC_EUR, BCH_EUR, BTG_EUR, BTC0_EUR, COMP_EUR, DASH_EUR,
-    DCR_EUR, EOS_EUR, ENJ_EUR, ETH_EUR, FIL_EUR, FLOW_EUR, HBAR_EUR, HNT_EUR, IOTA_EUR, LTC_EUR,
-    MKR_EUR, NEO_EUR, NANO_EUR, MATIC_EUR, REN_EUR, SRM_EUR, SOL_EUR, SNX_EUR, XTZ_EUR, GRT_EUR,
-    THETA_EUR, UMA_EUR, UNI_EUR, VET_EUR, WBTC_EUR, DGB_EUR, DOGE_EUR, DOT_EUR, LINK_EUR, NEM_EUR,
-    TRX_EUR, XLM_EUR, XCH_EUR, XRP_EUR, ZIL_EUR, ZRX_EUR,
+    AAVE_EUR, ADA_EUR, ATOM_EUR, BAL_EUR, BTC_EUR, BCH_EUR, BTG_EUR, BTC0_EUR, COMP_EUR, DASH_EUR, DCR_EUR, EOS_EUR, ENJ_EUR, ETH_EUR, FIL_EUR, FLOW_EUR, HBAR_EUR, HNT_EUR, IOTA_EUR, LTC_EUR, MKR_EUR, NEO_EUR, NANO_EUR, MATIC_EUR, REN_EUR, SRM_EUR, SOL_EUR, SNX_EUR, XTZ_EUR, GRT_EUR, THETA_EUR,
+    UMA_EUR, UNI_EUR, VET_EUR, WBTC_EUR, DGB_EUR, DOGE_EUR, DOT_EUR, LINK_EUR, NEM_EUR, TRX_EUR, XLM_EUR, XCH_EUR, XRP_EUR, ZIL_EUR, ZRX_EUR,
 ];
-
 
 // let mut res = reqwest::get("https://api.uphold.com/v0/ticker/BAL-EUR")?;
 // let mut body = String::new();
@@ -89,7 +85,7 @@ static CRYPTOCURRENCIES: [&str; 46] = [
 #[allow(unused_imports)]
 #[allow(unused_variables)]
 #[allow(unused_assignments)]
-pub async fn update_currency_prices_from_uphold_web_api() -> Result<()> {
+pub async fn update_currency_prices_from_uphold_web_api() -> Result<(), MyError> {
     let mut data_array = self::get_data();
     let full_file_name = format!("{}.{}", FILE_NAME, FILE_FORMAT);
 
@@ -117,8 +113,7 @@ pub async fn update_currency_prices_from_uphold_web_api() -> Result<()> {
         res = client.get(&request_url).send().await?;
         body = res.text().await?;
 
-        let json: serde_json::Value =
-            serde_json::from_str(&mut body).expect("JSON was not well-formatted");
+        let json: serde_json::Value = serde_json::from_str(&mut body).expect("JSON was not well-formatted");
 
         let data_record = CryptocurrencyDto {
             full_date: current_date,

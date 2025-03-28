@@ -1,6 +1,5 @@
 use num::Complex;
 use num_traits::NumCast;
-use rand::Rng;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use std::fmt::Debug;
