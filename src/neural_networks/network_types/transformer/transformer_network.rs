@@ -307,7 +307,7 @@ fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, target_tokens: &Vec<
     let seq_len = predictions.len();
     let target_len = target_tokens.len();
     let seq_ind_start = seq_len - target_len;
-    let mut count = 0;
+    let seq_len = predictions.len();
 
     for (s, &target_idx) in target_tokens.iter().enumerate() {
         if target_idx == 1 {
@@ -321,13 +321,10 @@ fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, target_tokens: &Vec<
         // Only calculate loss if prediction was wrong
         if pred_idx != target_idx as usize {
             loss += -(predictions[seq_ind][target_idx as usize] + Complex::new(1e-10, 0.0)).ln();
-            count += 1;
         }
     }
 
-    if count > 0 {
-        loss / count as f64
-    } else {
-        Complex::new(0.0, 0.0)
-    }
+   
+    loss / seq_len as f64
+   
 }

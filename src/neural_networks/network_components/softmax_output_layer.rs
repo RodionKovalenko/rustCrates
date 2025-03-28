@@ -67,7 +67,7 @@ impl SoftmaxLayer {
         let vocab_dim = softmax_output_batch[0][0].len();
 
         let mut gradient_batch = vec![vec![vec![Complex::new(0.0, 0.0); vocab_dim]; seq_len]; batch_size];
-        let normalizer = batch_size as f64;
+        let normalizer = (seq_len * batch_size) as f64;
 
         for (batch_index, (softmax_output, target_tokens)) in softmax_output_batch.iter().zip(target_token_ids.iter()).enumerate() {
             let target_len = target_tokens.len();
@@ -95,6 +95,7 @@ impl SoftmaxLayer {
                         let mut gradient = softmax_prob - target;
 
                         if is_nan_or_inf(&gradient) {
+                            panic!("gradient is not valid: {:?}", &gradient);
                             gradient = Complex::new(0.0, 0.0);
                         }
 

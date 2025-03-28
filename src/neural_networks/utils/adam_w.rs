@@ -36,7 +36,7 @@ pub fn calculate_adam_w(weights: &Vec<Vec<Complex<f64>>>, gradient: &Vec<Vec<Com
             updated_weights[i][j] = Complex::new(weight_update.re.clamp(-1.0, 1.0), weight_update.im.clamp(-1.0, 1.0));
 
             if updated_weights[i][j].norm() > 2.0 {
-                updated_weights[i][j] = Complex::new(rand::rng().random_range(-0.5..0.5), rand::rng().random_range(-0.5..0.5));
+              //  updated_weights[i][j] = Complex::new(rand::rng().random_range(-0.5..0.5), rand::rng().random_range(-0.5..0.5));
             }
         }
     }
@@ -72,7 +72,7 @@ pub fn calculate_adam_w_bias(bias: &Vec<Complex<f64>>, gradient: &Vec<Complex<f6
         updated_bias[i] = Complex::new(bias_update.re.clamp(-1.0, 1.0), bias_update.im.clamp(-1.0, 1.0));
 
         if updated_bias[i].norm() > 2.0 {
-            updated_bias[i] = Complex::new(rand::rng().random_range(-0.5..0.5), rand::rng().random_range(-0.5..0.5));
+           // updated_bias[i] = Complex::new(rand::rng().random_range(-0.5..0.5), rand::rng().random_range(-0.5..0.5));
         }
     }
 

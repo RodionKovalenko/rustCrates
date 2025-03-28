@@ -96,7 +96,8 @@ where
                         let mut product = matrix_a_clone[i][k] * matrix_b_clone[k][j];
 
                         if is_nan_or_inf(&product) {
-                            product = Complex::new(rand::rng().random_range(-0.5..0.5), rand::rng().random_range(-0.5..0.5));
+                            //product = Complex::new(rand::rng().random_range(-0.5..0.5), rand::rng().random_range(-0.5..0.5));
+                            panic!("matrix multiply complex has invalid values: result: {:?}, a: {:?}, b: {:?}", &product, &matrix_a_clone[i][k], &matrix_b_clone[k][j]);
                         }
                         product
                     })
@@ -418,12 +419,12 @@ pub fn contains_nan_or_inf(matrix: &mut Vec<Vec<Complex<f64>>>) -> bool {
     for row in matrix.iter_mut() {
         for z in row.iter_mut() {
             if is_nan_or_inf(z) {
-                *z = Complex::new(rand::rng().random_range(-0.5..0.5), rand::rng().random_range(-0.5..0.5));
+               // *z = Complex::new(rand::rng().random_range(-0.5..0.5), rand::rng().random_range(-0.5..0.5));
                 found = true;
             }
 
             if  z.norm() > 100.0 {
-                *z = Complex::new(rand::rng().random_range(-0.5..0.5), rand::rng().random_range(-0.5..0.5));
+               // *z = Complex::new(rand::rng().random_range(-0.5..0.5), rand::rng().random_range(-0.5..0.5));
             }
         }
     }
@@ -439,8 +440,11 @@ pub fn check_nan_or_inf_3d(matrix_batch: &mut Vec<Vec<Vec<Complex<f64>>>>, messa
     }
 }
 
-pub fn check_nan_or_inf(matrix: &mut Vec<Vec<Complex<f64>>>, message: &str) {
+pub fn check_nan_or_inf(matrix: &mut Vec<Vec<Complex<f64>>>, message: &str) -> bool {
     if contains_nan_or_inf(matrix) {
         println!("{:?}: The value is Not Valid", message);
+        true
+    } else {
+        false
     }
 }

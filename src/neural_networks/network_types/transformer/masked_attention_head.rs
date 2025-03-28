@@ -293,7 +293,7 @@ impl MaskedAttentionHead {
         let input_batch = gradient.get_gradient_input_batch();
         let batch_size = input_batch.len() as f64;
 
-        let threshold = 1.0;
+        let threshold = 0.5;
         clip_gradients(&mut grad_w_q, threshold);
         clip_gradients(&mut grad_w_v, threshold);
         clip_gradients(&mut grad_w_k, threshold);
