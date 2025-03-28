@@ -92,11 +92,10 @@ impl SoftmaxLayer {
                     for (column_index, softmax_prob) in softmax_output[seq_ind].iter().enumerate() {
                         let target = if token_id == column_index as u32 { Complex::new(1.0, 0.0) } else { Complex::new(0.0, 0.0) };
 
-                        let mut gradient = softmax_prob - target;
+                        let gradient = softmax_prob - target;
 
                         if is_nan_or_inf(&gradient) {
                             panic!("gradient is not valid: {:?}", &gradient);
-                            gradient = Complex::new(0.0, 0.0);
                         }
 
                         gradient_batch[batch_index][seq_ind][column_index] += gradient / normalizer;

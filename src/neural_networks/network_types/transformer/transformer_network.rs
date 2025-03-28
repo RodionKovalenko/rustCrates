@@ -92,6 +92,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                 if let Some(previous_output) = &output {
                     let positional_encoding_l = Some(positional_encoding_layer).unwrap();
                     
+                    // println!("forward pos encoding");
                     let mut positional_encodings: Vec<Vec<Vec<Complex<f64>>>> = positional_encoding_l.forward(&previous_output);
 
                     check_nan_or_inf_3d(&mut positional_encodings, "positional encodings output in forward");
@@ -104,6 +105,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                 if let Some(previous_output) = &output {
                     layer_input.set_input_batch(previous_output.clone());
 
+                    // println!("forward norm");
                     let norm_output = norm_layer.forward(&layer_input);
 
                     output = Some(norm_output.get_output_batch());
@@ -117,6 +119,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                     layer_input.set_input_batch(previous_output.clone());
                     layer_input.set_padding_mask_batch(padding_m.clone());
 
+                    // println!("forward self-attention");
                     let output_attention = attention.forward(&layer_input);
 
                     check_nan_or_inf_3d(&mut output_attention.get_output_batch(), "output attention layer in forward");
@@ -132,6 +135,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                     //println!("Previous output in dense ffn layer: {:?}, {:?}, {}", &previous_output.len(), &previous_output[0].len(), &previous_output[0][0].len());
 
                     dense_layer.padding_mask_batch = padding_mask.clone();
+                    // println!("forward ffn");
 
                     layer_input.set_input_batch(previous_output.to_vec());
                     let layer_output = dense_layer.forward(&layer_input);
@@ -146,6 +150,8 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
             LayerEnum::Linear(linear_layer) => {
                 let linear_layer = Some(linear_layer).unwrap();
                 if let Some(previous_output) = &output {
+
+                    // println!("forward linear");
                     layer_input.set_input_batch(previous_output.clone());
                     let output_linear = linear_layer.forward(&layer_input);
 
@@ -161,9 +167,11 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                 if let Some(previous_output) = &output {
                     let mut output_softmax: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer_clone.forward(&previous_output, padding_mask.clone());
 
+                    // println!("forward softmax start");
                     //println!("Output Softmax: {:?}, {:?}, {}", &output_softmax.len(), &output_softmax[0].len(), &output_softmax[0][0].len());
                     check_nan_or_inf_3d(&mut output_softmax, "output softmax");
                     output = Some(output_softmax);
+                    println!("forward softmax end");
                 } else {
                     println!("No previous output for Dense layer");
                 }
@@ -186,12 +194,15 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
         match layer {
             LayerEnum::Embedding(embedding_layer) => {
                 if let Some(previous_gradient) = gradient {
+
+                    println!("backward embedding start");
                     let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
                     let gradient_batch: Gradient = embedding_layer.backward(&previous_gradient_batch);
 
                     if update_params {
-                       // embedding_layer.update_parameters(&target_batch_ids, transformer_network.learning_rate);
+                       embedding_layer.update_parameters(&target_batch_ids, transformer_network.learning_rate);
                     }
+                    println!("backward embedding end");
 
                     gradient = Some(gradient_batch);
                 } else {
@@ -200,12 +211,10 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             }
             LayerEnum::PositionalEncoding(positional_encoding_layer) => {
                 if let Some(previous_gradient) = gradient {
+                    println!("backward positional encoding start");
                     let gradient_batch: Gradient = positional_encoding_layer.backward(&previous_gradient.get_gradient_input_batch());
 
-                    if update_params {
-                        positional_encoding_layer.update_parameters(transformer_network.learning_rate);
-                    }
-                    
+                    println!("backward positional encoding end");
                     gradient = Some(gradient_batch);
                 } else {
                     println!("No previous gradient in Positional Encoding Layer");
@@ -213,14 +222,17 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             }
             LayerEnum::Norm(norm_layer) => {
                 if let Some(previous_gradient) = gradient {
+                    println!("backward norm start");
                     let gradient_batch: Gradient = norm_layer.backward(&previous_gradient.get_gradient_input_batch());
                     gradient = Some(gradient_batch);
+                    println!("backward norm end");
                 } else {
                     println!("No previous gradient for norm layer");
                 }
             }
             LayerEnum::SelfAttention(attention_layer) => {
                 if let Some(previous_gradient) = gradient {
+                    println!("backward attention layer start");
                     let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
 
                     let gradient_batch: Gradient = attention_layer.backward(&previous_gradient_batch);
@@ -228,6 +240,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     if update_params {
                         attention_layer.update_parameters();
                     }
+                    println!("backward attention layer end");
 
                     gradient = Some(gradient_batch);
                 } else {
@@ -237,13 +250,14 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             LayerEnum::FeedForward(dense_layer) => {
                 if let Some(previous_gradient) = gradient {
                     let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
-
+                    println!("backward dense start");
                     let gradient_batch: Gradient = dense_layer.backward(&previous_gradient_batch);
                     // Update weights and biases
                     if update_params {
                         dense_layer.update_parameters();
                     }
 
+                    println!("backward dense end");
                     let _weight_gradient_batch = gradient_batch.get_gradient_weight_batch();
                     let _bias_gradient_batch = gradient_batch.get_gradient_bias_batch();
 
@@ -257,11 +271,13 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                 if let Some(previous_gradient) = gradient {
                     let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
 
+                    println!("backward linear start");
                     let gradient_batch: Gradient = linear_layer.backward(&previous_gradient_batch);
                     // Update weights and biases
                     if update_params {
                         linear_layer.update_parameters();
                     }
+                    println!("backward linear end");
 
                     let _weight_gradient_batch = gradient_batch.get_gradient_weight_batch();
                     let _bias_gradient_batch = gradient_batch.get_gradient_bias_batch();
@@ -273,11 +289,12 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                 }
             }
             LayerEnum::Softmax(softmax_layer) => {
+                println!("backward softmax start");
                 let gradient_batch: Gradient = softmax_layer.backward(target_batch_ids);
                 let _input_gradient_batch = gradient_batch.get_gradient_input_batch();
 
                 // println!("gradients of softmax layer: {}, {}, {}", &input_gradient_batch.len(), &input_gradient_batch[0].len(),  &input_gradient_batch[0][0].len());
-
+                println!("backward softmax end");
                 gradient = Some(gradient_batch);
             }
             _ => {}

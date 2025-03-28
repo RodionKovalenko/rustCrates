@@ -1,4 +1,4 @@
-use std::cmp::{Ordering};
+use std::cmp::Ordering;
 use crate::utils::array::{convolve, get_coef, integrate, linspace};
 use crate::utils::convolution_modes::ConvolutionMode;
 use crate::wavelet_transform::cwt_type_resolver::transform_by_type;
