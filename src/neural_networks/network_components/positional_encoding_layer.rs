@@ -6,9 +6,9 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 // Use smaller base instead of the original 10000
-pub static INITIAL_BASE: f64 = 10000.0;
+pub static INITIAL_BASE: f64 = 1000.0;
 
-pub static SCALING_FAKTOR: f64 = 8e-3;
+pub static SCALING_FAKTOR: f64 = 1e-2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PositionalEncodingLayer {

@@ -1,5 +1,4 @@
 use num::Complex;
-use rand::Rng;
 
 pub static B_1: f64 = 0.9; // First moment decay rate
 pub static B_2: f64 = 0.999; // Second moment decay rate
