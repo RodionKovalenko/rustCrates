@@ -2,6 +2,7 @@ use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use sled::Db;
 use std::fmt::Debug;
+use std::sync::Mutex;
 
 use crate::{
     database::sled_config::{get_storage_path, SLED_DB_TRANSFORMER},
@@ -9,7 +10,6 @@ use crate::{
 };
 
 pub const FILE_NAME: &str = "feedforward_network.json";
-pub const FILE_NAME_TRANSFORMER: &str = "feedforward_network.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum OperationMode {
@@ -28,28 +28,32 @@ pub struct NeuralNetwork {
     pub minibatch_size: usize,
 }
 
+lazy_static! {
+    static ref DB: Mutex<Db> = Mutex::new(sled::open(get_storage_path(SLED_DB_TRANSFORMER)).expect("Failed to open the database"));
+}
+
 // Provide more flexible methods for getting properties of the network
 impl NeuralNetwork {
-    fn get_db() -> &'static Db {
-        lazy_static! {
-            static ref DB: Db = sled::open(get_storage_path(SLED_DB_TRANSFORMER)).expect("Failed to open the database");
-        }
+    pub fn get_db() -> &'static Mutex<Db> {
         &DB
     }
     pub fn save_to_sled(&self, filename: &str) {
-        let db: &Db = Self::get_db();
+        let db = Self::get_db().lock().expect("Failed to lock DB");
         let serialized_embedding = bincode::serialize(&self).expect("Failed to serialize transformer model");
-        db.insert(filename, serialized_embedding).expect("Failed to save or update transformer model in Sled");
 
-        println!("network was saved to sled database");
+        println!("📝 Saving network to key: {}", filename); // Debugging
+        db.insert(filename, serialized_embedding).expect("Failed to save or update transformer model in Sled");
+        db.flush().expect("Failed to flush DB");
+
+        println!("✅ Network was saved to Sled database under key: {}", filename);
     }
-    pub fn get_from_db(filename: &str) -> Result<NeuralNetwork, String>  {
-        let key = filename.to_string();
-        let db: &Db = Self::get_db();
-        match db.get(&key) {
-            Ok(Some(ivec)) => bincode::deserialize(&ivec).map_err(|_| "Failed to deserialize embedding".to_string()), // Directly return Vec<f64>
-            Ok(None) => Err("Token ID not found in DB".to_string()),                                                  // Return an error for missing keys
-            Err(_) => Err("Failed to fetch embedding from Sled".to_string()),                                         // Handle Sled errors
+    pub fn get_from_db(filename: &str) -> Result<NeuralNetwork, String> {
+        let db = Self::get_db().lock().expect("Failed to lock DB");
+
+        match db.get(&filename) {
+            Ok(Some(ivec)) => bincode::deserialize(&ivec).map_err(|_| "Failed to deserialize embedding".to_string()),
+            Ok(None) => Err("Transformer Model not found in DB".to_string()),
+            Err(_) => Err("Failed to fetch transformer model from Sled".to_string()),
         }
     }
     pub fn get_number_of_input_neurons(&self) -> usize {
