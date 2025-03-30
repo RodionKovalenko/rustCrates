@@ -4,16 +4,19 @@ mod tests {
     use num::Complex;
     use std::time::Instant;
 
-    use crate::{database::sled_config::SLED_DB_TRANSFORMER, neural_networks::{
-        network_components::{
-            input::{DataTrait, Dataset},
-            layer_input_struct::LayerInput,
+    use crate::{
+        database::sled_config::SLED_DB_TRANSFORMER,
+        neural_networks::{
+            network_components::{
+                input::{DataTrait, Dataset},
+                layer_input_struct::LayerInput,
+            },
+            network_types::{
+                neural_network_generic::{NeuralNetwork, OperationMode},
+                transformer::{self_attention_layer::SelfAttentionLayer, transformer_builder::create_transformer, transformer_network::train},
+            },
         },
-        network_types::{
-            neural_network_generic::{NeuralNetwork, OperationMode},
-            transformer::{self_attention_layer::SelfAttentionLayer, transformer_builder::create_transformer, transformer_network::train},
-        },
-    }};
+    };
 
     #[test]
     fn test_self_attention_layer() {
@@ -199,7 +202,8 @@ mod tests {
                 println!("Loaded transformer from the database!");
                 transformer
             }
-            Err(_) => {
+            Err(e) => {
+                println!("error: {:?}", e);
                 // Create a new transformer since the database didn't have one
                 let transformer: NeuralNetwork = create_transformer(OperationMode::TRAINING);
                 println!("Created a new transformer for training.");
