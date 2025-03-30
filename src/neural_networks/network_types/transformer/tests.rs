@@ -4,7 +4,7 @@ mod tests {
     use num::Complex;
     use std::time::Instant;
 
-    use crate::neural_networks::{
+    use crate::{database::sled_config::SLED_DB_TRANSFORMER, neural_networks::{
         network_components::{
             input::{DataTrait, Dataset},
             layer_input_struct::LayerInput,
@@ -13,7 +13,7 @@ mod tests {
             neural_network_generic::{NeuralNetwork, OperationMode},
             transformer::{self_attention_layer::SelfAttentionLayer, transformer_builder::create_transformer, transformer_network::train},
         },
-    };
+    }};
 
     #[test]
     fn test_self_attention_layer() {
@@ -192,7 +192,20 @@ mod tests {
     #[ignore]
     fn test_train_transformer() {
         let now = Instant::now();
-        let mut transformer: NeuralNetwork = create_transformer(OperationMode::TRAINING);
+
+        let mut transformer = match NeuralNetwork::get_from_db(SLED_DB_TRANSFORMER) {
+            Ok(transformer) => {
+                // Successfully loaded transformer from the database
+                println!("Loaded transformer from the database!");
+                transformer
+            }
+            Err(_) => {
+                // Create a new transformer since the database didn't have one
+                let transformer: NeuralNetwork = create_transformer(OperationMode::TRAINING);
+                println!("Created a new transformer for training.");
+                transformer
+            }
+        };
 
         let seconds_elapsed = now.elapsed();
         println!("time elapsed in seconds: {:?}", &seconds_elapsed);
@@ -207,8 +220,8 @@ mod tests {
         // let input_str7: &str = "Was macht 2+6?";
         // let input_str8: &str = "Was macht 2+7?";
 
-        let target1: &str = "Mir geht es gut";
-        //let target1: &str = "geht gut";
+        //let target1: &str = "Mir geht es gut. Und wie geht es dir? Findest du das Wetter schön heute?";
+        let target1: &str = "geht gut";
         // let target2: &str = "Berlin ist die Hauptstadt von Deutschland";
         // let target3: &str = "Nach Donnerstag kommt Freitag.";
         // let target4: &str = "2 +3 macht 5";

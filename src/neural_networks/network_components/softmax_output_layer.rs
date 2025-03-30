@@ -84,22 +84,15 @@ impl SoftmaxLayer {
 
                 let seq_ind = seq_ind_start + target_ind;
 
-                // Find predicted index
-                let pred_idx = softmax_output[seq_ind].iter().enumerate().max_by(|(_, a), (_, b)| a.norm().partial_cmp(&b.norm()).unwrap()).map(|(i, _)| i).unwrap();
+                for (column_index, softmax_prob) in softmax_output[seq_ind].iter().enumerate() {
+                    let target = if token_id == column_index as u32 { Complex::new(1.0, 0.0) } else { Complex::new(0.0, 0.0) };
+                    let gradient = softmax_prob - target; // ✅ Compute gradient consistently
 
-                // Only compute gradient if prediction was wrong
-                if pred_idx != token_id as usize {
-                    for (column_index, softmax_prob) in softmax_output[seq_ind].iter().enumerate() {
-                        let target = if token_id == column_index as u32 { Complex::new(1.0, 0.0) } else { Complex::new(0.0, 0.0) };
-
-                        let gradient = softmax_prob - target;
-
-                        if is_nan_or_inf(&gradient) {
-                            panic!("gradient is not valid: {:?}", &gradient);
-                        }
-
-                        gradient_batch[batch_index][seq_ind][column_index] += gradient / normalizer;
+                    if is_nan_or_inf(&gradient) {
+                        panic!("Gradient is not valid: {:?}", &gradient);
                     }
+
+                    gradient_batch[batch_index][seq_ind][column_index] += gradient / normalizer;
                 }
             }
         }
