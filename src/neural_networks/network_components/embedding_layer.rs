@@ -31,7 +31,7 @@ pub const EMBEDDING_PATH: &str = "embedding";
 pub const FILE_NAME: &str = "embedding_layer.json";
 
 impl EmbeddingLayer {
-    fn get_db() -> &'static Db {
+    pub fn get_db() -> &'static Db {
         lazy_static! {
             static ref DB: Db = sled::open(get_storage_path(SLED_DB_TOKENIZER)).expect("failed to open database in the embedding layer");
         }
