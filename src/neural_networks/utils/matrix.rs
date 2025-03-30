@@ -348,33 +348,24 @@ pub fn find_highest_index_last_row(input_batch: &Vec<Vec<Vec<Complex<f64>>>>) ->
 
     Some(max_index_batch) // Return the index of the token with the highest probability
 }
-
-pub fn find_highest_index_batch(input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Option<Vec<Vec<u32>>> {
-    let mut max_index_batch: Vec<Vec<u32>> = Vec::new();
-
-    for (batch_ind, input) in input_batch.iter().enumerate() {
-        for row in input {
-            // Initialize variables to track the index of the highest magnitude
-            let mut max_index = 0;
-            let mut max_magnitude = 0.0;
-
-            // Iterate through the last row to find the highest magnitude
-            for (i, value) in row.iter().enumerate() {
-                let magnitude = value.norm(); // norm() gives the magnitude (absolute value) of the complex number
-                if magnitude > max_magnitude {
-                    max_magnitude = magnitude;
-                    max_index = i;
-                }
-            }
-            if max_index_batch.len() <= batch_ind {
-                max_index_batch.push(Vec::new());
-            }
-
-            max_index_batch[batch_ind].push(max_index as u32);
-        }
-    }
-
-    Some(max_index_batch) // Return the index of the token with the highest probability
+pub fn find_highest_index_batch(predicted_softmax_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<u32>> {
+    predicted_softmax_batch
+        .iter()
+        .map(|batch| {
+            batch
+                .iter()
+                .map(|token_probs| {
+                    // Find index with highest probability (argmax)
+                    token_probs
+                        .iter()
+                        .enumerate()
+                        .max_by(|(_, a), (_, b)| a.norm().partial_cmp(&b.norm()).unwrap())
+                        .map(|(index, _)| index as u32) // Convert index to u32
+                        .unwrap_or(0) // Default to 0 if something goes wrong
+                })
+                .collect()
+        })
+        .collect()
 }
 
 pub fn apply_padding_mask_batch(input_batch: &mut Vec<Vec<Vec<Complex<f64>>>>, padding_mask_batch: &Vec<Vec<u32>>) {

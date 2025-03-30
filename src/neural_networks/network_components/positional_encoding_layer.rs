@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 // Use smaller base instead of the original 10000
 pub static INITIAL_BASE: f64 = 1000.0;
 
-pub static SCALING_FAKTOR: f64 = 1e-2;
+pub static SCALING_FAKTOR: f64 = 1.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PositionalEncodingLayer {
@@ -46,8 +46,8 @@ impl PositionalEncodingLayer {
                     let imag_part: Vec<f64> = token_embeddings.iter().map(|c| c.im).collect();
 
                     // Step 2: Apply wavelet transform separately to real & imaginary parts
-                    let transformed_real = transform_1_d(&real_part, &DiscreteWaletetType::DB1, &WaveletMode::SYMMETRIC);
-                    let transformed_imag = transform_1_d(&imag_part, &DiscreteWaletetType::DB1, &WaveletMode::SYMMETRIC);
+                    let transformed_real = transform_1_d(&real_part, &DiscreteWaletetType::DB2, &WaveletMode::SYMMETRIC);
+                    let transformed_imag = transform_1_d(&imag_part, &DiscreteWaletetType::DB2, &WaveletMode::SYMMETRIC);
 
                     // Step 3: Ensure wavelet-transformed outputs have correct dimensions
                     let positional_encoding = self.pad_or_trim_wavelet_output(&transformed_real, &transformed_imag);
@@ -59,6 +59,11 @@ impl PositionalEncodingLayer {
                     let rotated_embeddings = self.apply_rotary_positional_encoding(&token_with_pos_encoding, position, scaling_factor);
                     output.push(rotated_embeddings);
                 }
+
+                // let max = output.iter().flatten().max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
+                // let min = output.iter().flatten().min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
+                // println!("max value positional encoding: {:?}", &max);
+                // println!("min value positional encoding: {:?}", &min);
 
                 output
             })
@@ -90,13 +95,7 @@ impl PositionalEncodingLayer {
 
     /// Adds wavelet-based positional encoding to token embeddings
     fn add_positional_encoding(&self, token_embeddings: &Vec<Complex<f64>>, positional_encoding: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
-        token_embeddings
-            .iter()
-            .zip(positional_encoding.iter())
-            .map(|(embedding, pos_encoding)| {
-                Complex::new(embedding.re + pos_encoding.re, embedding.im + pos_encoding.im)
-            })
-            .collect()
+        token_embeddings.iter().zip(positional_encoding.iter()).map(|(embedding, pos_encoding)| Complex::new(embedding.re + pos_encoding.re, embedding.im + pos_encoding.im)).collect()
     }
 
     /// Applies rotary positional encoding to a single token embedding
@@ -108,7 +107,15 @@ impl PositionalEncodingLayer {
         let half_dim = self.embedding_dim / 2;
 
         for i in 0..half_dim {
-            let theta = position as f64 / ((self.base * scaling_factor).powf(2.0 * i as f64 / self.embedding_dim as f64));
+            let mut theta = position as f64 / ((self.base * scaling_factor).powf(2.0 * i as f64 / self.embedding_dim as f64));
+
+            // ✅ Ensure theta is between [-1.0, 1.0]
+            theta = theta.clamp(-1.0, 1.0);
+
+            if theta.abs() > 1.0 {
+                println!("theta is out of bounds: {}", theta);
+            }
+
             let (sin_theta, cos_theta) = theta.sin_cos();
 
             let even_idx = 2 * i;

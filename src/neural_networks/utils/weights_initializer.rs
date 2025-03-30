@@ -1,4 +1,5 @@
 use num::Complex;
+use rand::rngs::ThreadRng;
 use rand::Rng;
 use std::fmt::Debug;
 
@@ -52,12 +53,9 @@ where
 }
 
 // Initialize weights for Vec<Vec<f64>>
-pub fn initialize_weights(
-    num_layer_inputs_dim2: usize,
-    number_hidden_neurons: usize,
-    weight_matrix: &mut Vec<Vec<f64>>,
-) {
-    let mut rng = rand::rng();
+// Correcting the RNG method usage to rand::thread_rng
+pub fn initialize_weights(num_layer_inputs_dim2: usize, number_hidden_neurons: usize, weight_matrix: &mut Vec<Vec<f64>>) {
+    let mut rng = rand::rng(); // Use the thread-local RNG
 
     for _i in 0..num_layer_inputs_dim2 {
         weight_matrix.push(Vec::new());
@@ -65,30 +63,27 @@ pub fn initialize_weights(
 
     for i in 0..num_layer_inputs_dim2 {
         for j in 0..number_hidden_neurons {
-            let random_value = rng.random_range(-0.6..0.6);
+            let random_value = rng.random_range(-0.6..0.6); // Use gen_range for sampling
             set_weights(weight_matrix, i, j, random_value);
         }
     }
 }
 
-// Initialize weights for fixed-size array with Complex<f64>
-pub fn initialize_weights_complex(
-    rows: usize, 
-    cols: usize,
-    weight_matrix: &mut Vec<Vec<Complex<f64>>>,
-) {
+// Initialize weights for Vec<Vec<Complex<f64>>>
+pub fn initialize_weights_complex(rows: usize, cols: usize, weight_matrix: &mut Vec<Vec<Complex<f64>>>) {
     let fan_in = rows as f64;
     let fan_out = cols as f64;
+    let mut rng = rand::rng(); // Use the thread-local RNG
 
     for i in 0..rows {
         for j in 0..cols {
-            let random_value = Complex::new(xavier_init(fan_in, fan_out),  xavier_init(fan_in, fan_out));
+            let random_value = Complex::new(xavier_init(fan_in, fan_out, &mut rng), xavier_init(fan_in, fan_out, &mut rng));
             set_weights(weight_matrix, i, j, random_value);
         }
     }
 }
 
-fn xavier_init(fan_in: f64, fan_out: f64) -> f64 {
+fn xavier_init(fan_in: f64, fan_out: f64, rng: &mut ThreadRng) -> f64 {
     let limit = (6.0 / (fan_in + fan_out)).sqrt();
-    rand::rng().random_range(-limit..limit)
+    rng.random_range(-limit..limit)
 }

@@ -1,0 +1,20 @@
+
+For inference: 
+1.Greedy Decoding: Use when you want deterministic, high-probability outputs (best for tasks requiring consistency).
+
+2. Top-k Sampling: Use when you want some diversity but still want to limit the number of possible candidates.
+
+3. Top-p (Nucleus) Sampling: Use when you want to sample from the most probable tokens while keeping the total probability mass flexible (good for diverse yet plausible results).
+
+4. Temperature Sampling: Use when you want to adjust the randomness of the output based on a temperature parameter.
+
+For training: 
+1.Teacher Forcing: Generally used during training to speed up convergence. The model gets the true previous token instead of its own predicted token.
+
+2. Greedy Decoding: Rarely used during training, more for evaluation/inference.
+
+3. Random Sampling (with Temperature): Encourages exploration of diverse possibilities in the predictions, helps the model avoid overfitting by introducing randomness.
+
+4. Top-k Sampling: A good option when you want a mix of exploration and exploitation, helping the model make less deterministic choices.
+
+5. Top-p (Nucleus) Sampling: Another method to encourage diversity in the outputs, while keeping the focus on probable tokens.

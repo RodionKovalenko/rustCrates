@@ -6,10 +6,11 @@ use crate::neural_networks::{
         input::{DataTrait, Dataset},
         layer::LayerEnum,
         layer_input_struct::LayerInput,
+        sampling_methods::top_p_temperature_sampling,
     },
-    network_types::neural_network_generic::NeuralNetwork,
+    network_types::neural_network_generic::{NeuralNetwork, FILE_NAME_TRANSFORMER},
     utils::{
-        matrix::{check_nan_or_inf_3d, find_highest_index_batch},
+        matrix::check_nan_or_inf_3d,
         tokenizer::{detokenize, tokenize, tokenize_batch},
     },
 };
@@ -19,9 +20,6 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
         for batch_dataset in dataset.split_into_batches(4) {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
 
-            // let (_tokens, input_ids) = tokenize_batch(input_batch).unwrap();
-            // println!("input Ids: {:?}", &input_ids);
-
             let input_batch_extended = batch_dataset.extend_input_with_target(input_batch, target_batch);
 
             // println!("input batch extended: {:?}", &input_batch_extended);
@@ -29,21 +27,29 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             let (_tokens, target_ids) = tokenize_batch(target_batch).unwrap();
             let loss = cross_entropy_loss_batch(&predicted_softmax_batch, &target_ids);
 
-            //println!("target tokens: {:?}", &_tokens);
+            // let (_tokens, input_ids) = tokenize_batch(input_batch).unwrap();
+            // println!("input Ids: {:?}", &input_ids);
             // println!("target ids: {:?},", &target_ids);
+
             //println!("predicted softmax batch: {}, {}, {}", predicted_softmax_batch.len(), predicted_softmax_batch[0].len(), predicted_softmax_batch[0][0].len());
 
-            if epoch % 5 == 0 || loss.norm() <= 0.05 {
-                let target_len = target_ids[0].len();
-                let predicted_softmax_targets: Vec<_> = predicted_softmax_batch.iter().map(|batch| batch[batch.len() - target_len..].to_vec()).collect();
+            if epoch % 10 == 0 {
+                transformer_network.save_to_sled(&FILE_NAME_TRANSFORMER);
+            }
 
+            if epoch % 5 == 0 || loss.norm() <= 0.05 {
                 println!("Epoch: {:?}, Loss: {:?}", epoch, loss);
-                let high_token_index_batch: Vec<Vec<u32>> = find_highest_index_batch(&predicted_softmax_targets).unwrap();
-                let mut predicted_token_batch: Vec<String> = vec![];
-                for high_token_index in high_token_index_batch.iter() {
-                    let predicted_token: String = detokenize(&high_token_index).unwrap();
-                    predicted_token_batch.push(predicted_token);
-                }
+
+                let target_len = target_ids[0].len();
+
+                let p = 0.9; // Top-p (Nucleus) threshold
+                let temperature = 0.7; // Temperature for controlling randomness
+                let predicted_softmax_targets: Vec<Vec<Vec<Complex<f64>>>> = predicted_softmax_batch.iter().map(|batch| batch[batch.len() - target_len..].to_vec()).collect();
+
+                let sampled_tokens = top_p_temperature_sampling(&predicted_softmax_targets, p, temperature);
+                println!("Top-p + Temperature Sampling: {:?}", sampled_tokens);
+
+                let predicted_token_batch: Vec<String> = sampled_tokens.iter().map(|token_indices| detokenize(token_indices).unwrap()).collect();
                 println!("predicted token: {:?}", predicted_token_batch);
 
                 if loss.norm() <= 0.05 {
@@ -322,7 +328,6 @@ fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, target_tokens: &Vec<
     let seq_len = predictions.len();
     let target_len = target_tokens.len();
     let seq_ind_start = seq_len - target_len;
-    let seq_len = predictions.len();
 
     for (s, &target_idx) in target_tokens.iter().enumerate() {
         if target_idx == 1 {
@@ -330,13 +335,7 @@ fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, target_tokens: &Vec<
         }
 
         let seq_ind = seq_ind_start + s;
-        // Find predicted index (using norm() for complex numbers)
-        let pred_idx = predictions[seq_ind].iter().enumerate().max_by(|(_, a), (_, b)| a.norm().partial_cmp(&b.norm()).unwrap()).map(|(i, _)| i).unwrap();
-
-        // Only calculate loss if prediction was wrong
-        if pred_idx != target_idx as usize {
-            loss += -(predictions[seq_ind][target_idx as usize] + Complex::new(1e-10, 0.0)).ln();
-        }
+        loss += -(predictions[seq_ind][target_idx as usize] + Complex::new(1e-10, 0.0)).ln();
     }
 
     loss / seq_len as f64
