@@ -1,7 +1,6 @@
 use bincode;
 use core::fmt::Debug;
 use lazy_static::lazy_static;
-use nalgebra::ComplexField;
 use num::Complex;
 use rand::Rng;
 use rayon::prelude::*;
@@ -34,7 +33,7 @@ pub const FILE_NAME: &str = "embedding_layer.json";
 impl EmbeddingLayer {
     fn get_db() -> &'static Db {
         lazy_static! {
-            static ref DB: Db = sled::open(get_storage_path(SLED_DB_TOKENIZER)).unwrap();
+            static ref DB: Db = sled::open(get_storage_path(SLED_DB_TOKENIZER)).expect("failed to open database in the embedding layer");
         }
         &DB
     }
@@ -196,9 +195,9 @@ impl EmbeddingLayer {
                     if !is_nan_or_inf(&gradient[j]) {
                         token_embedding[j] -= learning_rate * (gradient[j] / batch_size);
 
-                        if is_nan_or_inf(&token_embedding[j]) || token_embedding[j].abs() > 2.0 {
-                            token_embedding[j] = Complex::new(0.2, 0.3);
-                        }
+                        // if is_nan_or_inf(&token_embedding[j]) {
+                        //     token_embedding[j] = Complex::new(0.2, 0.3);
+                        // }
                     }
                 }
 

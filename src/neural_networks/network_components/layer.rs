@@ -227,10 +227,10 @@ impl Layer {
             // println!("max value previous gradeint: {:?}", &max);
             // println!("min value previous gradeint: {:?}", &min);
 
-            let max = gradient_output.iter().flatten().max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
-            let min = gradient_output.iter().flatten().min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
-            println!("max value gradient output: {:?}", &max);
-            println!("min value gradient output: {:?}", &min);
+            // let max = gradient_output.iter().flatten().max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
+            // let min = gradient_output.iter().flatten().min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
+            // println!("max value gradient output: {:?}", &max);
+            // println!("min value gradient output: {:?}", &min);
 
             // 7,7 hadamard 7, 7 = 7,7
             input_gradient_batch[batch_ind] = hadamard_product_2d_c(&previous_gradient, &gradient_output);

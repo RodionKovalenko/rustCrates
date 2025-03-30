@@ -11,7 +11,7 @@ mod test_self_attention_layer {
         },
         utils::{
             derivative::{global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_input_batch, numerical_gradient_input_batch_without_loss, numerical_gradient_weights, numerical_gradient_weights_multiple_layers_without_loss, test_gradient_batch_error, test_gradient_error_2d},
-            random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
+            random_arrays::{generate_random_complex_3d, generate_u32_batch_from_indices},
         },
     };
 
@@ -157,12 +157,12 @@ mod test_self_attention_layer {
     fn test_self_attention_layer_backward() {
         // Define some small batch size and input dimensions for simplicity
         let batch_size = 2;
-        let input_dim = 16;
-        let output_dim = 16;
+        let input_dim = 8;
+        let output_dim = 8;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
-        let num_attention_heads = 4;
-        let epsilon = 1e-5;
+        let num_attention_heads = 2;
+        let epsilon = 1e-7;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, input_dim, output_dim, learning_rate);
@@ -171,7 +171,7 @@ mod test_self_attention_layer {
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
-        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim, (output_dim - 1) as u32);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_u32_batch_from_indices(batch_size, output_dim);
 
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; output_dim]; batch_size];
 
@@ -194,8 +194,9 @@ mod test_self_attention_layer {
         let gradient_ffn: Gradient = ffn_layer.backward(&gradient_linear.get_gradient_input_batch());
         let gradient_attention_layer: Gradient = attention_layer.backward(&gradient_ffn.get_gradient_input_batch());
 
-        let gradient_input_batch_att_l = gradient_attention_layer.get_gradient_input_batch();
+        let gradient_input_batch_att_l = gradient_attention_layer.get_gradient_input();
 
+        //println!("input batch: {:?}", &input_batch);
         println!("padding mask batch in test transformer: {:?}", &padding_mask_batch);
         println!("target tokens ids: {:?}", &target_token_id_batch);
         println!("final output dim: {} {} {}", _softmax_batch_output.len(), _softmax_batch_output[0].len(), _softmax_batch_output[0][0].len());
@@ -219,16 +220,17 @@ mod test_self_attention_layer {
             loss
         };
 
-        let num_gradient_input_batch = numerical_gradient_input_batch(&mut loss_fn, input_batch.clone(), epsilon);
+        let num_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch(&mut loss_fn, input_batch.clone(), epsilon);
+        let num_gradient_input_batch_aggregated = gradient_attention_layer.group_gradient_batch(&num_gradient_input_batch);
 
         // Check if gradient batch dimensions match expected shapes
-        println!("\n analytical grad: {:?}", gradient_input_batch_att_l);
-        println!("\n gradient_input_batch_att_l gradient dim: {} {} {}", gradient_input_batch_att_l.len(), gradient_input_batch_att_l[0].len(), gradient_input_batch_att_l[0][0].len());
+        //println!("\n analytical grad: {:?}", gradient_input_batch_att_l);
+        println!("\n gradient_input_batch_att_l gradient dim: {} {}", gradient_input_batch_att_l.len(), gradient_input_batch_att_l[0].len());
 
-        println!("\n numerical grad: {:?}", num_gradient_input_batch);
-        println!("\n numerical_gradient_input_batch gradient dim: {} {} {}", num_gradient_input_batch.len(), num_gradient_input_batch[0].len(), num_gradient_input_batch[0][0].len());
+        // println!("\n numerical grad: {:?}", num_gradient_input_batch);
+        println!("\n numerical_gradient_input_batch gradient dim: {} {}", num_gradient_input_batch_aggregated.len(), num_gradient_input_batch_aggregated[0].len());
 
-        let global_error = global_relative_error_l2(&num_gradient_input_batch, &gradient_input_batch_att_l);
+        let global_error = global_relative_error_2d_l2(&num_gradient_input_batch_aggregated, &gradient_input_batch_att_l);
 
         println!("global relative gradient error input: {:?}", &global_error);
 
@@ -272,6 +274,14 @@ mod test_self_attention_layer {
 
         let global_error = global_relative_error_2d_l2(&num_gradient_weights_q, &analytical_weight_q_gradient);
         println!("global relative gradient error weights: {:?}", &global_error);
+
+        for (i, numeric_gradient) in num_gradient_weights_q.iter().enumerate() {
+            let row_sum_numeric: Complex<f64> = numeric_gradient.iter().sum();
+            let row_sum_analytic: Complex<f64> = analytical_weight_q_gradient[i].iter().sum();
+
+            println!("row_sum numerical: {}", row_sum_numeric);
+            println!("row sum analytical: {}", row_sum_analytic);
+        }
 
         test_gradient_error_2d(&analytical_weight_q_gradient, &num_gradient_weights_q, 1e-2);
 
