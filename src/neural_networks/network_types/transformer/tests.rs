@@ -5,14 +5,14 @@ mod tests {
     use std::time::Instant;
 
     use crate::{
-        database::sled_config::SLED_DB_TRANSFORMER,
+        database::sled_db::SLED_DB_TRANSFORMER,
         neural_networks::{
             network_components::{
                 input::{DataTrait, Dataset},
                 layer_input_struct::LayerInput,
             },
             network_types::{
-                neural_network_generic::{NeuralNetwork, OperationMode},
+                neural_network_generic::{get_from_db, NeuralNetwork, OperationMode},
                 transformer::{self_attention_layer::SelfAttentionLayer, transformer_builder::create_transformer, transformer_network::train},
             },
         },
@@ -196,7 +196,7 @@ mod tests {
     fn test_train_transformer() {
         let now = Instant::now();
 
-        let mut transformer = match NeuralNetwork::get_from_db(SLED_DB_TRANSFORMER) {
+        let mut transformer = match get_from_db(SLED_DB_TRANSFORMER) {
             Ok(transformer) => {
                 // Successfully loaded transformer from the database
                 println!("Loaded transformer from the database!");

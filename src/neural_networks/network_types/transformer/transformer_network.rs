@@ -1,6 +1,6 @@
 use num::Complex;
 
-use crate::{database::sled_config::SLED_DB_TRANSFORMER, neural_networks::{
+use crate::{database::sled_db::SLED_DB_TRANSFORMER, neural_networks::{
     network_components::{
         gradient_struct::Gradient,
         input::{DataTrait, Dataset},
@@ -8,7 +8,7 @@ use crate::{database::sled_config::SLED_DB_TRANSFORMER, neural_networks::{
         layer_input_struct::LayerInput,
         sampling_methods::top_p_temperature_sampling,
     },
-    network_types::neural_network_generic::NeuralNetwork,
+    network_types::neural_network_generic::{save_to_sled, NeuralNetwork},
     utils::{
         matrix::check_nan_or_inf_3d,
         tokenizer::{detokenize, tokenize, tokenize_batch},
@@ -34,7 +34,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             //println!("predicted softmax batch: {}, {}, {}", predicted_softmax_batch.len(), predicted_softmax_batch[0].len(), predicted_softmax_batch[0][0].len());
 
             if epoch % 10 == 0 {
-                transformer_network.save_to_sled(SLED_DB_TRANSFORMER);
+                save_to_sled(SLED_DB_TRANSFORMER, &transformer_network);
             }
 
             if epoch % 5 == 0 || loss.norm() <= 0.05 {

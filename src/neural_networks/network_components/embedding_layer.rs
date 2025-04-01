@@ -1,6 +1,5 @@
 use bincode;
 use core::fmt::Debug;
-use lazy_static::lazy_static;
 use num::Complex;
 use rand::Rng;
 use rayon::prelude::*;
@@ -10,7 +9,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use crate::database::sled_config::{get_storage_path, SLED_DB_TOKENIZER};
+use crate::database::sled_db::{get_db, get_storage_path};
 use crate::neural_networks::network_types::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
 use crate::neural_networks::utils::matrix::is_nan_or_inf;
 
@@ -22,7 +21,10 @@ pub struct EmbeddingLayer {
     pub vocab_size: usize,
     pub embedding_dim: usize,
     pub weights: Vec<Vec<f64>>,
+
+    #[serde(skip_serializing)]
     pub gradient: Option<Gradient>,
+    #[serde(skip_serializing)]
     pub previous_gradient: Option<Gradient>,
     pub time_step: usize,
 }
@@ -31,16 +33,9 @@ pub const EMBEDDING_PATH: &str = "embedding";
 pub const FILE_NAME: &str = "embedding_layer.json";
 
 impl EmbeddingLayer {
-    pub fn get_db() -> &'static Db {
-        lazy_static! {
-            static ref DB: Db = sled::open(get_storage_path(SLED_DB_TOKENIZER)).expect("failed to open database in the embedding layer");
-        }
-        &DB
-    }
-
     pub fn new(vocab_size: usize, embedding_dim: usize) -> Self {
         let mut rng = rand::rng();
-        let db: &Db = Self::get_db();
+        let db: &Db = get_db();
 
         // Generate random embeddings and store them in the Sled database
         for token_id in 0..vocab_size {
@@ -136,7 +131,7 @@ impl EmbeddingLayer {
     /// Look up embeddings for a batch of token IDs
     pub fn forward(&mut self, layer_input: &LayerInput) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<u32>>) {
         let token_input_ids: Vec<Vec<u32>> = layer_input.get_batch_ids();
-        let db: &Db = Self::get_db();
+        let db: &Db = get_db();
 
         self.time_step = layer_input.get_time_step();
 
@@ -178,7 +173,7 @@ impl EmbeddingLayer {
     }
 
     pub fn update_parameters(&mut self, token_id_batches: &[Vec<u32>], learning_rate: f64) {
-        let db: &Db = Self::get_db();
+        let db: &Db = get_db();
         let gradient: &Gradient = self.gradient.as_ref().expect("Output batch is missing in dense layer");
         let previous_gradients: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_input_batch();
 
@@ -186,7 +181,7 @@ impl EmbeddingLayer {
 
         for (batch_idx, token_ids) in token_id_batches.iter().enumerate() {
             for (i, &token_id) in token_ids.iter().enumerate() {
-                let mut token_embedding: Vec<Complex<f64>> = Self::get_embedding(db, token_id).unwrap();
+                let mut token_embedding: Vec<Complex<f64>> = Self::get_embedding(&db, token_id).unwrap();
 
                 // Assuming previous_gradients[batch_idx][i] contains a single gradient
                 let gradient = &previous_gradients[batch_idx][i];

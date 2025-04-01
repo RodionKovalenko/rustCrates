@@ -18,8 +18,12 @@ use super::gradient_struct::Gradient;
 pub struct SoftmaxLayer {
     learning_rate: f64,
     operation_mode: OperationMode,
+
+    #[serde(skip_serializing)]
     softmax_output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip_serializing)]
     gradient: Option<Gradient>,
+    #[serde(skip_serializing)]
     padding_mask_batch: Option<Vec<Vec<u32>>>,
 }
 

@@ -14,6 +14,7 @@ pub static SCALING_FAKTOR: f64 = 1.0;
 pub struct PositionalEncodingLayer {
     pub embedding_dim: usize, // Store the embedding dimension
     pub base: f64,
+    #[serde(skip_serializing)]
     pub gradient: Option<Gradient>,
     pub log_scaling_factor: f64,
 }

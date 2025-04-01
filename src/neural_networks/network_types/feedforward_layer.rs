@@ -13,7 +13,9 @@ pub struct FeedForwardLayer {
     pub layers: Vec<LayerEnum>,
     pub norm_layer: Option<LayerEnum>,
     pub learning_rate: f64,
+    #[serde(skip_serializing)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip_serializing)]
     pub padding_mask_batch: Option<Vec<Vec<u32>>>,
     pub time_step: usize,
 }
