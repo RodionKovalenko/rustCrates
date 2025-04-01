@@ -19,6 +19,7 @@ pub struct SelfAttentionLayer {
     pub attention_heads: Vec<MaskedAttentionHead>,
     pub activated_output: Vec<Vec<Complex<f64>>>,
     pub norm_layer: Option<LayerEnum>,
+    #[serde(skip_serializing)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     pub time_step: usize,
 }

@@ -86,6 +86,8 @@ pub enum LayerEnum {
     Softmax(Box<SoftmaxLayer>),
 }
 
+
+
 // Layer struct
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Layer {
@@ -93,18 +95,31 @@ pub struct Layer {
     pub bias: Vec<Complex<f64>>,
     pub activation_type: ActivationType,
     pub layer_type: LayerType,
+
+    #[serde(skip_serializing)]
     pub inactivated_output: Vec<Vec<Complex<f64>>>,
+    #[serde(skip_serializing)]
     pub activated_output: Vec<Vec<Complex<f64>>>,
+    #[serde(skip_serializing)]
     pub gradient_w: Vec<Vec<Complex<f64>>>,
+    #[serde(skip_serializing)]
     pub errors: Vec<Vec<Complex<f64>>>,
+    #[serde(skip_serializing)]
     pub m1: Vec<Vec<Complex<f64>>>,
+    #[serde(skip_serializing)]
     pub v1: Vec<Vec<Complex<f64>>>,
+    #[serde(skip_serializing)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip_serializing)]
     pub inactivated_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip_serializing)]
     pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip_serializing)]
     pub gradient: Option<Gradient>,
+    #[serde(skip_serializing)]
     pub previous_gradient: Option<Gradient>,
     pub learning_rate: f64,
+    #[serde(skip_serializing)]
     pub padding_mask_batch: Option<Vec<Vec<u32>>>,
     pub time_step: usize,
 }

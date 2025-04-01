@@ -13,11 +13,16 @@ use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_out
 pub struct LinearLayer {
     pub weights: Vec<Vec<Complex<f64>>>,
     pub bias: Vec<Complex<f64>>,
+    #[serde(skip_serializing)]
     pub gradients: Vec<Vec<Complex<f64>>>,
+    #[serde(skip_serializing)]
     pub gradients_bias: Vec<Vec<Complex<f64>>>,
     pub learning_rate: f64,
+    #[serde(skip_serializing)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip_serializing)]
     pub gradient: Option<Gradient>,
+    #[serde(skip_serializing)]
     pub previous_gradient: Option<Gradient>,
     pub time_step: usize,
 }

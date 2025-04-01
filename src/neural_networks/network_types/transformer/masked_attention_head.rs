@@ -27,13 +27,20 @@ pub struct MaskedAttentionHead {
     pub layer_type: LayerType,
     pub learning_rate: f64,
 
+    #[serde(skip_serializing)]
     pub gradient: Option<Gradient>,
+    #[serde(skip_serializing)]
     pub previous_gradient: Option<Gradient>,
     pub time_step: usize,
+    #[serde(skip_serializing)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip_serializing)]
     pub attention_weights_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip_serializing)]
     pub inactivated_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip_serializing)]
     pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip_serializing)]
     pub padding_mask_batch: Option<Vec<Vec<u32>>>,
 
     pub m1: Vec<Vec<Complex<f64>>>,
