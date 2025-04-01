@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::fmt::Debug;
+use std::{fmt::Debug, path::Path};
 
 use crate::{
     database::sled_db::get_storage_path_transformer_db,
@@ -8,6 +8,8 @@ use crate::{
         utils::file::{derialize_bin, serialize_bin},
     },
 };
+
+use super::transformer::transformer_builder::create_transformer;
 
 pub const FILE_NAME: &str = "feedforward_network.json";
 
@@ -79,6 +81,10 @@ pub fn save_to_sled(filename: &str, neural_network: &NeuralNetwork) {
 pub fn get_from_db(filename: &str) -> Result<NeuralNetwork, String> {
     let filepath_buf: std::path::PathBuf = get_storage_path_transformer_db(filename);
     let filepath: &str = filepath_buf.to_str().unwrap();
+
+    if !Path::new(filepath).exists() {
+        return Ok(create_transformer(OperationMode::TRAINING));
+    }
 
     let transformer_result: Result<NeuralNetwork, std::io::Error> = derialize_bin::<NeuralNetwork>(filepath);
     let transformer = transformer_result.unwrap();
