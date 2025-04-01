@@ -15,13 +15,13 @@ pub struct NormalNormLayer {
     gamma: Vec<Complex<f64>>, // Learnable scaling parameter
     beta: Vec<Complex<f64>>,  // Learnable bias parameter
     epsilon: f64,
-    learning_rate: f64,
+    pub learning_rate: f64,
 
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     gradient: Option<Gradient>,
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     previous_gradient: Option<Gradient>,
     time_step: usize,
 }

@@ -96,30 +96,18 @@ pub struct Layer {
     pub activation_type: ActivationType,
     pub layer_type: LayerType,
 
-    #[serde(skip_serializing)]
-    pub inactivated_output: Vec<Vec<Complex<f64>>>,
-    #[serde(skip_serializing)]
-    pub activated_output: Vec<Vec<Complex<f64>>>,
-    #[serde(skip_serializing)]
-    pub gradient_w: Vec<Vec<Complex<f64>>>,
-    #[serde(skip_serializing)]
-    pub errors: Vec<Vec<Complex<f64>>>,
-    #[serde(skip_serializing)]
-    pub m1: Vec<Vec<Complex<f64>>>,
-    #[serde(skip_serializing)]
-    pub v1: Vec<Vec<Complex<f64>>>,
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub inactivated_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub gradient: Option<Gradient>,
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub previous_gradient: Option<Gradient>,
     pub learning_rate: f64,
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub padding_mask_batch: Option<Vec<Vec<u32>>>,
     pub time_step: usize,
 }
@@ -343,12 +331,6 @@ impl Layer {
             bias,
             activation_type: ActivationType::SIGMOID,
             layer_type: LayerType::InputLayer,
-            inactivated_output: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
-            activated_output: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
-            gradient_w: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
-            errors: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
-            m1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
-            v1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
             input_batch: None,
             output_batch: None,
             gradient: None,
