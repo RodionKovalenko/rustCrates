@@ -1,7 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
-use crate::{database::sled_db::get_db, neural_networks::network_components::layer::LayerEnum};
+use crate::{
+    database::sled_db::get_storage_path_transformer_db,
+    neural_networks::{
+        network_components::layer::LayerEnum,
+        utils::file::{derialize_bin, serialize_bin},
+    },
+};
 
 pub const FILE_NAME: &str = "feedforward_network.json";
 
@@ -63,30 +69,21 @@ pub fn create(number_inputs: usize, number_outputs: usize, number_of_hidden_laye
 }
 
 pub fn save_to_sled(filename: &str, neural_network: &NeuralNetwork) {
-    let db = get_db();
-    let serialized_embedding = bincode::serialize(neural_network).expect("Failed to serialize transformer model");
+    let serialized_embedding = bincode::serialize(&neural_network).expect("Failed to serialize transformer model");
+    let filepath_buf: std::path::PathBuf = get_storage_path_transformer_db(filename);
+    let filepath: &str = filepath_buf.to_str().unwrap();
 
-    // ✅ Try deserializing to verify correctness before storing
-    match bincode::deserialize::<NeuralNetwork>(&serialized_embedding) {
-        Ok(_) => println!("✅ Serialization self-check passed!"),
-        Err(e) => panic!("❌ Serialization self-check failed: {:?}", e), // Stop execution if broken
-    }
-
-    println!("📝 Saving network to key: {}", filename); // Debugging
-    db.insert(filename, serialized_embedding).expect("❌ Failed to save or update transformer model in Sled");
-    db.flush().expect("❌ Failed to flush DB");
-
-    println!("✅ Network was saved to Sled database under key: {}", filename);
+    serialize_bin(&serialized_embedding, filepath).expect("File cannot be serialized");
 }
 
 pub fn get_from_db(filename: &str) -> Result<NeuralNetwork, String> {
-    let db = get_db();
+    let filepath_buf: std::path::PathBuf = get_storage_path_transformer_db(filename);
+    let filepath: &str = filepath_buf.to_str().unwrap();
 
-    match db.get(&filename) {
-        Ok(Some(ivec)) => bincode::deserialize(&ivec).map_err(|_| "Failed to deserialize embedding".to_string()),
-        Ok(None) => Err("Transformer Model not found in DB".to_string()),
-        Err(_) => Err("Failed to fetch transformer model from Sled".to_string()),
-    }
+    let transformer_result: Result<NeuralNetwork, std::io::Error> = derialize_bin::<NeuralNetwork>(filepath);
+    let transformer = transformer_result.unwrap();
+
+    Ok(transformer)
 }
 
 pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64) {

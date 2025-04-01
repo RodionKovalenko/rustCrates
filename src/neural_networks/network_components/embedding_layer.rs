@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use crate::database::sled_db::{get_db, get_storage_path};
+use crate::database::sled_db::{get_db_embedding, get_storage_path_embedding_db};
 use crate::neural_networks::network_types::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
 use crate::neural_networks::utils::matrix::is_nan_or_inf;
 
@@ -35,7 +35,7 @@ pub const FILE_NAME: &str = "embedding_layer.json";
 impl EmbeddingLayer {
     pub fn new(vocab_size: usize, embedding_dim: usize) -> Self {
         let mut rng = rand::rng();
-        let db: &Db = get_db();
+        let db: &Db = get_db_embedding();
 
         // Generate random embeddings and store them in the Sled database
         for token_id in 0..vocab_size {
@@ -74,7 +74,7 @@ impl EmbeddingLayer {
     }
 
     pub fn get_or_create(vocab_size: usize, embedding_dim: usize, force_create: bool) -> Self {
-        let mut embedding_path: PathBuf = get_storage_path(EMBEDDING_PATH);
+        let mut embedding_path: PathBuf = get_storage_path_embedding_db(EMBEDDING_PATH);
         embedding_path.push(FILE_NAME);
 
         let embedding_file_path: &Path = Path::new(&embedding_path);
@@ -131,7 +131,7 @@ impl EmbeddingLayer {
     /// Look up embeddings for a batch of token IDs
     pub fn forward(&mut self, layer_input: &LayerInput) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<u32>>) {
         let token_input_ids: Vec<Vec<u32>> = layer_input.get_batch_ids();
-        let db: &Db = get_db();
+        let db: &Db = get_db_embedding();
 
         self.time_step = layer_input.get_time_step();
 
@@ -173,7 +173,7 @@ impl EmbeddingLayer {
     }
 
     pub fn update_parameters(&mut self, token_id_batches: &[Vec<u32>], learning_rate: f64) {
-        let db: &Db = get_db();
+        let db: &Db = get_db_embedding();
         let gradient: &Gradient = self.gradient.as_ref().expect("Output batch is missing in dense layer");
         let previous_gradients: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_input_batch();
 
