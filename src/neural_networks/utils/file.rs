@@ -1,5 +1,6 @@
 use crate::neural_networks::network_types::neural_network_generic::FILE_NAME;
 use crate::neural_networks::network_types::neural_network_generic::NeuralNetwork;
+use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::io::{Read, Write};
@@ -49,6 +50,28 @@ pub fn serialize(feed_net: &NeuralNetwork) {
     }
 }
 
+pub fn serialize_bin(binary_data: &Vec<u8>, filepath: &str) -> io::Result<()> {
+    let mut file: File = get_or_create_file( filepath, false);
+    file.write_all(&binary_data).expect("Writing binary file has not succeeded");
+
+    Ok(())
+}
+
+pub fn derialize_bin<T>(filepath: &str) ->io::Result<T> 
+where T: DeserializeOwned {
+    let mut file: File = get_or_create_file( filepath, false);
+
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)?;
+   
+    let my_struct: T = bincode::deserialize(&buffer).map_err(|e| {
+        io::Error::new(io::ErrorKind::InvalidData, format!("Deserialization failed: {}", e))
+    })?;
+
+    // Return the deserialized struct
+    Ok(my_struct)
+}
+
 pub fn serialize_generic<T: Sized + Serialize>(array: &T, filename: &str) {
     let cloned_array = array;
     let mut file = get_or_create_file(filename, true);
@@ -73,4 +96,13 @@ pub fn deserialize(network: NeuralNetwork) -> NeuralNetwork {
     }
 
     save_network
+}
+
+pub fn remove_file(filepath: &str) {
+    if Path::new(filepath).exists() {
+        fs::remove_file(filepath).expect("Failed to remove file");
+        println!("File removed successfully");
+    } else {
+        eprintln!("File does not exist, cannot remove.");
+    }
 }
