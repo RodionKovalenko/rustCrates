@@ -19,11 +19,11 @@ pub struct SoftmaxLayer {
     learning_rate: f64,
     operation_mode: OperationMode,
 
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     softmax_output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     gradient: Option<Gradient>,
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     padding_mask_batch: Option<Vec<Vec<u32>>>,
 }
 

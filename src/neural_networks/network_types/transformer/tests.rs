@@ -8,11 +8,10 @@ mod tests {
         database::sled_db::SLED_DB_TRANSFORMER,
         neural_networks::{
             network_components::{
-                input::{DataTrait, Dataset},
-                layer_input_struct::LayerInput,
+                input::{DataTrait, Dataset}, layer_input_struct::LayerInput
             },
             network_types::{
-                neural_network_generic::{get_from_db, NeuralNetwork, OperationMode},
+                neural_network_generic::{get_from_db, update_learning_rate, NeuralNetwork, OperationMode},
                 transformer::{self_attention_layer::SelfAttentionLayer, transformer_builder::create_transformer, transformer_network::train},
             },
         },
@@ -210,6 +209,9 @@ mod tests {
                 transformer
             }
         };
+
+        let learning_rate = 0.001;
+        update_learning_rate(&mut transformer, learning_rate);
 
         let seconds_elapsed = now.elapsed();
         println!("time elapsed in seconds: {:?}", &seconds_elapsed);

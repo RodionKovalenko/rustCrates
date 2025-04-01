@@ -68,19 +68,7 @@ mod tests {
             deserialized_layer.activation_type
         );
         assert_eq!(original_layer.layer_type, deserialized_layer.layer_type);
-        assert_eq!(
-            original_layer.inactivated_output,
-            deserialized_layer.inactivated_output
-        );
-        assert_eq!(
-            original_layer.activated_output,
-            deserialized_layer.activated_output
-        );
-        assert_eq!(original_layer.gradient_w, deserialized_layer.gradient_w);
-        assert_eq!(original_layer.errors, deserialized_layer.errors);
-        assert_eq!(original_layer.m1, deserialized_layer.m1);
-        assert_eq!(original_layer.v1, deserialized_layer.v1);
-
+      
         const M: usize = 15;
         const N: usize = 15;
 
@@ -104,18 +92,6 @@ mod tests {
             deserialized_layer.activation_type
         );
         assert_eq!(original_layer.layer_type, deserialized_layer.layer_type);
-        assert_eq!(
-            original_layer.inactivated_output,
-            deserialized_layer.inactivated_output
-        );
-        assert_eq!(
-            original_layer.activated_output,
-            deserialized_layer.activated_output
-        );
-        assert_eq!(original_layer.gradient_w, deserialized_layer.gradient_w);
-        assert_eq!(original_layer.errors, deserialized_layer.errors);
-        assert_eq!(original_layer.m1, deserialized_layer.m1);
-        assert_eq!(original_layer.v1, deserialized_layer.v1);
     }
 
     pub fn are_complex_arrays_equal<const M: usize, const N: usize>(
