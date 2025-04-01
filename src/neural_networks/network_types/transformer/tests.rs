@@ -209,7 +209,7 @@ mod tests {
             }
         };
 
-        let learning_rate = 0.001;
+        let learning_rate = 0.0001;
         update_learning_rate(&mut transformer, learning_rate);
 
         let seconds_elapsed = now.elapsed();
