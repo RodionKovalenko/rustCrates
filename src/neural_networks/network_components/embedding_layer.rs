@@ -20,11 +20,11 @@ use super::layer_input_struct::LayerInput;
 pub struct EmbeddingLayer {
     pub vocab_size: usize,
     pub embedding_dim: usize,
-    pub weights: Vec<Vec<f64>>,
+    pub learning_rate: f64,
 
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub gradient: Option<Gradient>,
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub previous_gradient: Option<Gradient>,
     pub time_step: usize,
 }
@@ -54,7 +54,7 @@ impl EmbeddingLayer {
         Self {
             vocab_size,
             embedding_dim: embedding_dim_compressed,
-            weights: vec![],
+            learning_rate: 0.001,
             gradient: None,
             previous_gradient: None,
             time_step: 0,
@@ -66,9 +66,9 @@ impl EmbeddingLayer {
         Self {
             vocab_size,
             embedding_dim,
-            weights: vec![],
             gradient: None,
             previous_gradient: None,
+            learning_rate: 0.001,
             time_step: 0,
         }
     }
@@ -212,9 +212,9 @@ impl EmbeddingLayer {
         let embedding_layer_meta = EmbeddingLayer {
             embedding_dim: embedding_layer.embedding_dim,
             vocab_size: embedding_layer.vocab_size,
-            weights: vec![],
             gradient: None,
             previous_gradient: None,
+            learning_rate: 0.001,
             time_step: 0,
         };
         let serialized: Vec<u8> = bincode::serialize(&embedding_layer_meta).expect("Failed to serialize");

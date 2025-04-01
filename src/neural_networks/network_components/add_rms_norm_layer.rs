@@ -13,13 +13,13 @@ pub const EPSILON: f64 = 0.0000000000000000000000001;
 pub struct RMSNormLayer {
     gamma: Vec<Complex<f64>>, // Learnable scaling parameter (for each feature)
     epsilon: f64,             // Small constant for numerical stability
-    learning_rate: f64,       // Learning rate for gamma updates
+    pub learning_rate: f64,       // Learning rate for gamma updates
 
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     gradient: Option<Gradient>,
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     previous_gradient: Option<Gradient>,
     time_step: usize,
 }

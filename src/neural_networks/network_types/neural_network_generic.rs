@@ -22,161 +22,6 @@ pub struct NeuralNetwork {
     pub minibatch_size: usize,
 }
 
-pub fn save_to_sled(filename: &str, neural_network: &NeuralNetwork) {
-    let db = get_db();
-
-    // Clear old layers
-    for i in 0.. {
-        let key = format!("{}_layer_{}", filename, i);
-        if db.remove(&key).is_err() {
-            break; // Stop when there's nothing left
-        }
-    }
-
-    for (i, layer) in neural_network.layers.iter().enumerate() {
-        match layer {
-            LayerEnum::Embedding(embedding_layer) => {
-                // Serialize the layer after ensuring it is in the correct state
-                let key = format!("{}_layer_{}", filename, i);
-                let serialized_layer = bincode::serialize(embedding_layer).expect("Failed to serialize layer");
-                db.insert(&key, serialized_layer).expect("Failed to save layer");
-                db.flush().expect("Failed to flush DB after saving layer");
-            }
-            LayerEnum::PositionalEncoding(positional_encoding_layer) => {
-                // Serialize the layer after ensuring it is in the correct state
-                let key = format!("{}_layer_{}", filename, i);
-                let serialized_layer = bincode::serialize(positional_encoding_layer).expect("Failed to serialize layer");
-                db.insert(&key, serialized_layer).expect("Failed to save layer");
-                db.flush().expect("Failed to flush DB after saving layer");
-            }
-            LayerEnum::Dense(dense_layer) => {
-                // Serialize the layer after ensuring it is in the correct state
-                let key = format!("{}_layer_{}", filename, i);
-                let serialized_layer = bincode::serialize(dense_layer).expect("Failed to serialize layer");
-                db.insert(&key, serialized_layer).expect("Failed to save layer");
-                db.flush().expect("Failed to flush DB after saving layer");
-            }
-            LayerEnum::SelfAttention(attention_layer) => {
-                // Serialize the layer after ensuring it is in the correct state
-                let key = format!("{}_layer_{}", filename, i);
-                let serialized_layer = bincode::serialize(attention_layer).expect("Failed to serialize layer");
-                db.insert(&key, serialized_layer).expect("Failed to save layer");
-                db.flush().expect("Failed to flush DB after saving layer");
-            }
-            LayerEnum::FeedForward(feed_forward_layer) => {
-                // Serialize the layer after ensuring it is in the correct state
-                let key = format!("{}_layer_{}", filename, i);
-                let serialized_layer = bincode::serialize(feed_forward_layer).expect("Failed to serialize layer");
-                db.insert(&key, serialized_layer).expect("Failed to save layer");
-                db.flush().expect("Failed to flush DB after saving layer");
-            }
-            LayerEnum::Linear(linear_layer) => {
-                // Serialize the layer after ensuring it is in the correct state
-                let key = format!("{}_layer_{}", filename, i);
-                let serialized_layer = bincode::serialize(linear_layer).expect("Failed to serialize layer");
-                db.insert(&key, serialized_layer).expect("Failed to save layer");
-                db.flush().expect("Failed to flush DB after saving layer");
-            }
-            LayerEnum::Softmax(softmax_layer) => {
-                // Serialize the layer after ensuring it is in the correct state
-                let key = format!("{}_layer_{}", filename, i);
-                let serialized_layer = bincode::serialize(softmax_layer).expect("Failed to serialize layer");
-                db.insert(&key, serialized_layer).expect("Failed to save layer");
-                db.flush().expect("Failed to flush DB after saving layer");
-            }
-            _ => {} // Other layers you may need to handle
-        }
-    }
-
-    let serialized_metadata: Vec<u8> = bincode::serialize(&(
-        neural_network.learning_rate,
-        neural_network.number_of_input_neurons,
-        neural_network.number_of_output_neurons,
-        neural_network.number_of_hidden_layers,
-        neural_network.number_of_hidden_neurons,
-        neural_network.minibatch_size,
-    ))
-    .expect("Failed to serialize metadata");
-
-    db.insert(format!("{}_metadata", filename), serialized_metadata).expect("Failed to save metadata");
-    db.flush().expect("Failed to flush DB");
-    println!("✅ Network was saved in Sled under key: {}", filename);
-}
-
-pub fn get_from_db(filename: &str) -> Result<NeuralNetwork, String> {
-    let db = get_db();
-
-    let mut layers = Vec::new();
-    let mut i = 0;
-
-    // Load metadata
-    let metadata_key = format!("{}_metadata", filename);
-    let metadata: (f64, usize, usize, usize, usize, usize) = match db.get(&metadata_key).ok().flatten() {
-        Some(raw_metadata) => match bincode::deserialize(&raw_metadata) {
-            Ok(metadata) => metadata,
-            Err(_) => return Err("Failed to deserialize metadata".to_string()),
-        },
-        None => return Err("Failed to load metadata".to_string()),
-    };
-
-    // Deserialize layers
-    loop {
-        let key = format!("{}_layer_{}", filename, i);
-        match db.get(&key) {
-            Ok(Some(ivec)) => {
-                // Attempt to deserialize the layer based on its type
-                match bincode::deserialize(&ivec) {
-                    Ok(layer) => {
-                       match layer {
-                            LayerEnum::Embedding(embedding_layer) => {
-                                layers.push(LayerEnum::Embedding(embedding_layer));
-                            }
-                            LayerEnum::PositionalEncoding(positional_encoding_layer) => {
-                                layers.push(LayerEnum::PositionalEncoding(positional_encoding_layer));
-                            }
-                            LayerEnum::Norm(norm_layer) => {
-                                layers.push(LayerEnum::Norm(norm_layer));
-                            }
-                            LayerEnum::SelfAttention(attention_layer) => {
-                                layers.push(LayerEnum::SelfAttention(attention_layer));
-                            }
-                            LayerEnum::FeedForward(feed_forward_layer) => {
-                                layers.push(LayerEnum::FeedForward(feed_forward_layer));
-                            }
-                            LayerEnum::Linear(linear_layer) => {
-                                layers.push(LayerEnum::Linear(linear_layer));
-                            }
-                            LayerEnum::Softmax(softmax_layer) => {
-                                layers.push(LayerEnum::Softmax(softmax_layer));
-                            }
-                            _ => {} // Handle other layers if necessary
-                        }
-                    },
-                    Err(_) => return Err(format!("Failed to deserialize layer {} from DB", i)),
-                }
-            }
-            Ok(None) => break, // No more layers
-            Err(e) => return Err(format!("Failed to fetch layer {}: {}", i, e)),
-        }
-        i += 1;
-    }
-
-    if layers.is_empty() {
-        return Err("No layers found in DB".to_string());
-    }
-
-    // Return the reconstructed neural network
-    Ok(NeuralNetwork {
-        layers,
-        learning_rate: metadata.0,
-        number_of_input_neurons: metadata.1,
-        number_of_output_neurons: metadata.2,
-        number_of_hidden_layers: metadata.3,
-        number_of_hidden_neurons: metadata.4,
-        minibatch_size: metadata.5,
-    })
-}
-
 // Provide more flexible methods for getting properties of the network
 impl NeuralNetwork {
     pub fn get_number_of_input_neurons(&self) -> usize {
@@ -215,4 +60,86 @@ pub fn create(number_inputs: usize, number_outputs: usize, number_of_hidden_laye
     };
 
     feed_net
+}
+
+pub fn save_to_sled(filename: &str, neural_network: &NeuralNetwork) {
+    let db = get_db();
+    let serialized_embedding = bincode::serialize(neural_network).expect("Failed to serialize transformer model");
+
+    // ✅ Try deserializing to verify correctness before storing
+    match bincode::deserialize::<NeuralNetwork>(&serialized_embedding) {
+        Ok(_) => println!("✅ Serialization self-check passed!"),
+        Err(e) => panic!("❌ Serialization self-check failed: {:?}", e), // Stop execution if broken
+    }
+
+    println!("📝 Saving network to key: {}", filename); // Debugging
+    db.insert(filename, serialized_embedding).expect("❌ Failed to save or update transformer model in Sled");
+    db.flush().expect("❌ Failed to flush DB");
+
+    println!("✅ Network was saved to Sled database under key: {}", filename);
+}
+
+pub fn get_from_db(filename: &str) -> Result<NeuralNetwork, String> {
+    let db = get_db();
+
+    match db.get(&filename) {
+        Ok(Some(ivec)) => bincode::deserialize(&ivec).map_err(|_| "Failed to deserialize embedding".to_string()),
+        Ok(None) => Err("Transformer Model not found in DB".to_string()),
+        Err(_) => Err("Failed to fetch transformer model from Sled".to_string()),
+    }
+}
+
+pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64) {
+    for layer in transformer.layers.iter_mut() {
+        match layer {
+            LayerEnum::Embedding(embedding_layer) => {
+                embedding_layer.learning_rate = learning_rate;
+            }
+            LayerEnum::Norm(norm_layer) => {
+                norm_layer.learning_rate = learning_rate;
+            }
+            LayerEnum::RMSNorm(norm_layer) => {
+                norm_layer.learning_rate = learning_rate;
+            }
+            LayerEnum::Dense(dense_layer) => {
+                dense_layer.learning_rate = learning_rate;
+            }
+            LayerEnum::SelfAttention(self_attention_layer) => {
+                for attention_head in self_attention_layer.attention_heads.iter_mut() {
+                    attention_head.learning_rate = learning_rate;
+                }
+                if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
+                    match norm_layer {
+                        LayerEnum::RMSNorm(rms_norm_layer) => {
+                            rms_norm_layer.learning_rate = learning_rate;
+                        }
+                        LayerEnum::Norm(norm_layer) => {
+                            norm_layer.learning_rate = learning_rate;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            LayerEnum::FeedForward(dense_layer) => {
+                dense_layer.learning_rate = learning_rate;
+
+                if let Some(norm_layer) = dense_layer.norm_layer.as_mut() {
+                    match norm_layer {
+                        LayerEnum::RMSNorm(rms_norm_layer) => {
+                            rms_norm_layer.learning_rate = learning_rate;
+                        }
+                        LayerEnum::Norm(norm_layer) => {
+                            norm_layer.learning_rate = learning_rate;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            LayerEnum::Linear(linear_layer) => {
+                linear_layer.learning_rate = learning_rate;
+            }
+            LayerEnum::Softmax(_softmax_layer) => {}
+            LayerEnum::PositionalEncoding(_positional_encoding_layer) => {}
+        }
+    }
 }
