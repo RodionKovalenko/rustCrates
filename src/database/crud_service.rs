@@ -1,7 +1,7 @@
 use sled::{self, Db, IVec};
 use std::convert::TryInto;
 
-use super::sled_db::{get_storage_path, SLED_DB_TOKENIZER};
+use super::sled_db::{get_storage_path_embedding_db, SLED_DB_EMBEDDING};
 
 pub fn insert_token(token: &str) -> Result<(), sled::Error> {
     // Example data to store: Text as key and number as value
@@ -10,7 +10,7 @@ pub fn insert_token(token: &str) -> Result<(), sled::Error> {
 
     let existing_value = get_value(token).unwrap();
     // Open a Sled database (it will create a new one if it doesn't exist)
-    let db: Db = sled::open(get_storage_path(SLED_DB_TOKENIZER))?;
+    let db: Db = sled::open(get_storage_path_embedding_db(SLED_DB_EMBEDDING))?;
 
     if existing_value == 0 {
         let iter = db.iter().rev(); // Reverse iteration
@@ -39,7 +39,7 @@ pub fn insert_token(token: &str) -> Result<(), sled::Error> {
 
 pub fn get_value(token: &str) -> Result<i64, sled::Error> {
     // Open a Sled database (it will create a new one if it doesn't exist)
-    let db = sled::open(get_storage_path(SLED_DB_TOKENIZER))?;
+    let db = sled::open(get_storage_path_embedding_db(SLED_DB_EMBEDDING))?;
 
     let key = token.as_bytes();
     let mut number: i64 = 0;
