@@ -1,7 +1,7 @@
 use sled::{self, Db, IVec};
 use std::convert::TryInto;
 
-use super::sled_config::{get_storage_path, SLED_DB_TOKENIZER};
+use super::sled_db::{get_storage_path, SLED_DB_TOKENIZER};
 
 pub fn insert_token(token: &str) -> Result<(), sled::Error> {
     // Example data to store: Text as key and number as value
