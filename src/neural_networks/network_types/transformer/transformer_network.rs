@@ -1,19 +1,24 @@
+use std::cmp::Ordering;
+
 use num::Complex;
 
-use crate::{database::sled_db::SLED_DB_TRANSFORMER_V1, neural_networks::{
-    network_components::{
-        gradient_struct::Gradient,
-        input::{DataTrait, Dataset},
-        layer::LayerEnum,
-        layer_input_struct::LayerInput,
-        sampling_methods::top_p_temperature_sampling,
+use crate::{
+    database::sled_db::SLED_DB_TRANSFORMER_V1,
+    neural_networks::{
+        network_components::{
+            gradient_struct::Gradient,
+            input::{DataTrait, Dataset},
+            layer::LayerEnum,
+            layer_input_struct::LayerInput,
+        },
+        network_types::neural_network_generic::{save_to_sled, NeuralNetwork},
+        utils::{
+            matrix::check_nan_or_inf_3d,
+            tokenizer::{detokenize, tokenize, tokenize_batch},
+        },
     },
-    network_types::neural_network_generic::{save_to_sled, NeuralNetwork},
-    utils::{
-        matrix::check_nan_or_inf_3d,
-        tokenizer::{detokenize, tokenize, tokenize_batch},
-    },
-}};
+    utils::sampling_methods::{greedy_decoding, top_p_temperature_sampling},
+};
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize) {
     'outer: for epoch in 0..num_epochs {
@@ -23,8 +28,8 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             let input_batch_extended = batch_dataset.extend_input_with_target(input_batch, target_batch);
 
             // println!("input batch extended: {:?}", &input_batch_extended);
-            let predicted_softmax_batch = predict(transformer_network, &input_batch_extended, epoch);
-            let (_tokens, target_ids) = tokenize_batch(target_batch).unwrap();
+            let predicted_softmax_batch: Vec<Vec<Vec<Complex<f64>>>> = predict(transformer_network, &input_batch_extended, epoch);
+            let (_tokens, target_ids) = tokenize_batch(target_batch, true).unwrap();
             let loss = cross_entropy_loss_batch(&predicted_softmax_batch, &target_ids);
 
             // let (_tokens, input_ids) = tokenize_batch(input_batch).unwrap();
@@ -37,23 +42,50 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                 save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
             }
 
-            if epoch % 5 == 0 || loss.norm() <= 0.05 {
+            if epoch % 5 == 0 || loss.norm() <= 0.01 {
                 println!("Epoch: {:?}, Loss: {:?}", epoch, loss);
 
                 let target_len = target_ids[0].len();
-
                 let p = 0.9; // Top-p (Nucleus) threshold
                 let temperature = 0.7; // Temperature for controlling randomness
-                let predicted_softmax_targets: Vec<Vec<Vec<Complex<f64>>>> = predicted_softmax_batch.iter().map(|batch| batch[batch.len() - target_len..].to_vec()).collect();
+                let predicted_softmax_targets: Vec<Vec<Vec<Complex<f64>>>> = predicted_softmax_batch
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(_batch_ind, input_seq)| {
+                        let mut valid_seq_opt = None;
+
+                        // Slide backwards to find a valid window of length `target_len`
+                        for offset in (0..=input_seq.len() - target_len).rev() {
+                            let window = &input_seq[offset..offset + target_len];
+                            let max = window.iter().flat_map(|w| w.iter()).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
+
+                            if let Some(max) = max {
+                                if max.norm() > 0.0 {
+                                    valid_seq_opt = Some(window.to_vec());
+                                    break;
+                                }
+                            }
+                        }
+
+                        valid_seq_opt
+                    })
+                    .collect();
+
+                //println!("predicted softmax targets at 0: {:?}", &predicted_softmax_targets[0][0][0..100]);
 
                 let sampled_tokens = top_p_temperature_sampling(&predicted_softmax_targets, p, temperature);
                 println!("Top-p + Temperature Sampling: {:?}", sampled_tokens);
-
+                
                 let predicted_token_batch: Vec<String> = sampled_tokens.iter().map(|token_indices| detokenize(token_indices).unwrap()).collect();
-                println!("predicted token: {:?}", predicted_token_batch);
+                println!("predicted token tempareture sampling: {:?}", predicted_token_batch);
 
-                if loss.norm() <= 0.05 {
+                let sampled_greedy_tokens = greedy_decoding(&predicted_softmax_targets);
+                let predicted_token_batch: Vec<String> = sampled_greedy_tokens.iter().map(|token_indices| detokenize(token_indices).unwrap()).collect();
+                println!("predicted token highest index: {:?}", predicted_token_batch);
+
+                if loss.norm() <= 0.01 {
                     println!("loss is smaller than 0.05. Break the training: {:?}", &loss);
+                    save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
                     break 'outer;
                 }
             }
@@ -92,7 +124,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                 output = Some(embeddings);
                 padding_mask = Some(padding_m);
 
-                //println!("padding mask: {:?}", &padding_mask);
+                // println!("padding mask: {:?}", &padding_mask);
             }
             LayerEnum::PositionalEncoding(positional_encoding_layer) => {
                 if let Some(previous_output) = &output {
@@ -335,7 +367,7 @@ fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, target_tokens: &Vec<
         }
 
         let seq_ind = seq_ind_start + s;
-        loss += -(predictions[seq_ind][target_idx as usize] + Complex::new(1e-10, 0.0)).ln();
+        loss += -(predictions[seq_ind][target_idx as usize] + 1e-15).ln();
     }
 
     loss / seq_len as f64

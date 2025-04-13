@@ -6,3 +6,5 @@ pub mod data_converter;
 pub mod array_complex;
 pub mod array_operations;
 pub mod linalg;
+pub mod normalization;
+pub mod sampling_methods;

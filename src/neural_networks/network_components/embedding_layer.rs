@@ -1,5 +1,6 @@
 use bincode;
 use core::fmt::Debug;
+use std::cmp::Ordering;
 use num::Complex;
 use rand::Rng;
 use rayon::prelude::*;
@@ -12,6 +13,7 @@ use std::path::{Path, PathBuf};
 use crate::database::sled_db::{get_db_embedding, get_storage_path_embedding_db};
 use crate::neural_networks::network_types::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
 use crate::neural_networks::utils::matrix::is_nan_or_inf;
+use crate::utils::normalization::normalize;
 
 use super::gradient_struct::Gradient;
 use super::layer_input_struct::LayerInput;
@@ -92,7 +94,7 @@ impl EmbeddingLayer {
         }
     }
 
-    pub fn apply_padding_to_batch(&self, token_input_ids_batch: &Vec<Vec<u32>>) -> (Vec<Vec<u32>>, Vec<Vec<u32>>) {
+    pub fn apply_padding_to_batch(token_input_ids_batch: &Vec<Vec<u32>>) -> (Vec<Vec<u32>>, Vec<Vec<u32>>) {
         let max_token_len = token_input_ids_batch.iter().map(|seq| seq.len()).max().unwrap_or(0);
 
         //println!("token input before padding: {:?}", &token_input_ids_batch);
@@ -136,7 +138,7 @@ impl EmbeddingLayer {
         self.time_step = layer_input.get_time_step();
 
         let mut token_ids_output: Vec<Vec<Vec<Complex<f64>>>> = vec![];
-        let (token_input_batch_padded, padding_mask) = self.apply_padding_to_batch(&token_input_ids);
+        let (token_input_batch_padded, padding_mask) = EmbeddingLayer::apply_padding_to_batch(&token_input_ids);
 
         let embedding_dim = self.embedding_dim.clone();
 
@@ -177,7 +179,13 @@ impl EmbeddingLayer {
         let gradient: &Gradient = self.gradient.as_ref().expect("Output batch is missing in dense layer");
         let previous_gradients: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_input_batch();
 
-        let batch_size = previous_gradients.len() as f64;
+        let batch_size = (previous_gradients.len() * self.vocab_size) as f64;
+
+        let max = previous_gradients.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
+        let min = previous_gradients.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Greater));
+
+        println!("max in backward embedding layer gradient batch: {:?}", max);
+        println!("min in backward embedding layer gradient batch: {:?}", min);
 
         for (batch_idx, token_ids) in token_id_batches.iter().enumerate() {
             for (i, &token_id) in token_ids.iter().enumerate() {
@@ -186,24 +194,29 @@ impl EmbeddingLayer {
                 // Assuming previous_gradients[batch_idx][i] contains a single gradient
                 let gradient = &previous_gradients[batch_idx][i];
 
+                // println!("gradient embedding: {:?}", gradient);
                 for j in 0..self.embedding_dim {
-                    if !is_nan_or_inf(&gradient[j]) {
-                        token_embedding[j] -= learning_rate * (gradient[j] / batch_size);
+                    if is_nan_or_inf(&gradient[j]) {
+                        panic!("gradient in embedding is invalid, contains NaN or infinity values: {:?}", &gradient[j]);
+                    }
+                    token_embedding[j] -= learning_rate * (gradient[j] / batch_size);
 
-                        // if is_nan_or_inf(&token_embedding[j]) {
-                        //     token_embedding[j] = Complex::new(0.2, 0.3);
-                        // }
+                    if is_nan_or_inf(&token_embedding[j]) {
+                        panic!("embedding is invalid, contains NaN or infinity values: {:?}", &token_embedding[j]);
                     }
                 }
 
                 Self::update_embedding(db, &token_id, &token_embedding);
+                // println!("new token embedding: {:?}", token_embedding);
             }
         }
     }
     /// Update an embedding for a given token ID
     pub fn update_embedding(db: &Db, token_id: &u32, embedding: &Vec<Complex<f64>>) {
+        let embedding_normalized = normalize(embedding);
+        
         let key = token_id.to_string();
-        let serialized_embedding = bincode::serialize(embedding).expect("Failed to serialize embedding");
+        let serialized_embedding = bincode::serialize(&embedding_normalized).expect("Failed to serialize embedding");
         db.insert(key, serialized_embedding).expect("Failed to save or update embedding in Sled");
     }
 

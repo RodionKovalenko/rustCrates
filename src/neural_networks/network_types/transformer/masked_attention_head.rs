@@ -279,6 +279,12 @@ impl MaskedAttentionHead {
             gradient_input_batch[batch_ind] = add_matrix(&gradient_input_batch[batch_ind], &dl_dvx);
         }
 
+        // let max = gradient_input_batch.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
+        // let min = gradient_input_batch.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Greater));
+
+        // println!("max in backward attention head gradient batch: {:?}", max);
+        // println!("min in backward attention head gradient batch: {:?}", min);
+
         // Compute the gradients for the parameters and store them
         let mut gradient = Gradient::new_default();
         gradient.set_gradient_weights_v_batch(gradient_v_batch);
@@ -372,7 +378,7 @@ impl MaskedAttentionHead {
 }
 
 fn scale_attention_scores(attention_scores: &Vec<Vec<Complex<f64>>>, d_k: f64) -> Vec<Vec<Complex<f64>>> {
-    let scaling_factor = 1.0 / (1e-5 + d_k.sqrt());
+    let scaling_factor = 1.0 / (1e-8 + d_k.sqrt());
     let mut scaled_scores = attention_scores.clone();
 
     // Scale each attention score

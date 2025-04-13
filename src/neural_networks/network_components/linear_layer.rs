@@ -96,6 +96,12 @@ impl LinearLayer {
             gradient_input_batch[batch_ind] = multiply_complex(&previous_gradient, &transpose(&self.weights));
         }
 
+        // let max = gradient_input_batch.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
+        // let min = gradient_input_batch.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Greater));
+
+        // println!("max in backward linear gradient batch: {:?}", max);
+        // println!("min in backward linear gradient batch: {:?}", min);
+
         gradient.set_gradient_input_batch(gradient_input_batch.clone());
         gradient.set_gradient_weight_batch(weight_gradients);
         gradient.set_gradient_bias_batch(bias_gradients);

@@ -123,9 +123,18 @@ impl RMSNormLayer {
                     gradient_gamma_batch[b][d_i] += input_batch[b][s][d_i] / rms;
                 }
             }
+
+            // let scaling_factor = Complex::new(1.0 / 50254.0, 1.0 / 50254.0);
+            // input_batch_gradients[b] = multiply_scalar_with_matrix::<Complex<f64>>(scaling_factor, &input_batch_gradients[b]);
         }
 
         check_nan_or_inf_3d(&mut input_batch_gradients, "output gradients in rms norm layer has None values");
+
+        // let max = input_batch_gradients.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
+        // let min = input_batch_gradients.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Greater));
+
+        // println!("max in backward rms norm layer gradient batch: {:?}", max);
+        // println!("min in backward rms norm layer gradient batch: {:?}", min);
 
         gradient.set_gradient_input_batch(input_batch_gradients);
         gradient.set_gradient_gamma_batch(gradient_gamma_batch);
