@@ -86,8 +86,6 @@ pub enum LayerEnum {
     Softmax(Box<SoftmaxLayer>),
 }
 
-
-
 // Layer struct
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Layer {
@@ -225,27 +223,12 @@ impl Layer {
             check_nan_or_inf(&mut previous_gradient.clone(), "previous gradient in dense layer backward is not valid");
             check_nan_or_inf(&mut gradient_output.clone(), "gradient output in dense layer backward is not valid");
 
-            // let max = previous_gradient.iter().flatten().max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
-            // let min = previous_gradient.iter().flatten().min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
-            // println!("max value previous gradeint: {:?}", &max);
-            // println!("min value previous gradeint: {:?}", &min);
-
-            // let max = gradient_output.iter().flatten().max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
-            // let min = gradient_output.iter().flatten().min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
-            // println!("max value gradient output: {:?}", &max);
-            // println!("min value gradient output: {:?}", &min);
-
             // 7,7 hadamard 7, 7 = 7,7
             input_gradient_batch[batch_ind] = hadamard_product_2d_c(&previous_gradient, &gradient_output);
             // 7,8 * 7, 7 = 8, 7 * 7, 7 = 8, 7
             check_nan_or_inf(&mut input_gradient_batch[batch_ind], "previous gradient in dense layer backward is not valid");
 
             weight_gradients[batch_ind] = multiply_complex(&transpose(&input), &input_gradient_batch[batch_ind]);
-
-            // println!("previous gradient in ffn backward: {} {}", previous_gradient.len(), previous_gradient[0].len());
-            // println!("gradient_output in ffn backward: {} {}", gradient_output.len(), gradient_output[0].len());
-            // println!("weights in ffn in ffn backward: {} {}", &self.weights.len(), &self.weights[0].len());
-            // println!("input sample in ffn backward: {} {}", input_sample.len(), input_sample[0].len());
 
             //Accumulate gradients for biases
             for grad_row in input_gradient_batch[batch_ind].iter() {
@@ -255,6 +238,9 @@ impl Layer {
             }
 
             input_gradient_batch[batch_ind] = multiply_complex(&input_gradient_batch[batch_ind], &transpose(&self.weights));
+
+            // let scaling_factor = Complex::new(1.0 / 50254.0, 1.0 / 50254.0);
+            // input_gradient_batch[batch_ind] = multiply_scalar_with_matrix::<Complex<f64>>(scaling_factor, &input_gradient_batch[batch_ind]);
         }
 
         gradient.set_gradient_input_batch(input_gradient_batch);

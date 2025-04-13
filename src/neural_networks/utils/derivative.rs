@@ -479,6 +479,8 @@ pub fn global_relative_error_2d_l2(numerical_grad: &Vec<Vec<Complex<f64>>>, anal
         }
     }
 
+    println!("absolute error: {:?}", &diff_norm_sq);
+    
     let diff_norm = diff_norm_sq.sqrt();
     let total_norm = numerical_norm_sq.sqrt() + analytical_norm_sq.sqrt();
 
@@ -669,15 +671,18 @@ where
                 input_minus[batch][seq][dim_i] -= epsilon;
 
                 // Compute numerical gradient
-                let loss_plus = f(&input_plus);
-                let loss_minus = f(&input_minus);
+                let loss_plus: Vec<Vec<Vec<Complex<f64>>>> = f(&input_plus);
+                let loss_minus: Vec<Vec<Vec<Complex<f64>>>> = f(&input_minus);
 
-                let sum_loss_plus: Complex<f64> = loss_plus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
-                let sum_loss_minus: Complex<f64> = loss_minus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
-                let gradient = (sum_loss_plus - sum_loss_minus) / (2.0 * epsilon);
+                // println!("output loss plus: {:?}", &loss_plus);
+                // println!("output loss minus: {:?} \n\n", &loss_minus);
 
-                //let gradient = (loss_plus[batch][seq][dim_i] - loss_minus[batch][seq][dim_i]) / (2.0 * epsilon);
-                grad_batch[batch][seq][dim_i] += gradient;
+                // let sum_loss_plus: Complex<f64> = loss_plus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
+                // let sum_loss_minus: Complex<f64> = loss_minus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
+                // let gradient = (sum_loss_plus - sum_loss_minus) / (2.0 * epsilon);
+
+                let gradient = (loss_plus[batch][seq][dim_i] - loss_minus[batch][seq][dim_i]) / (2.0 * epsilon);
+                grad_batch[batch][seq][dim_i] = gradient;
             }
         }
     }

@@ -79,7 +79,7 @@ mod test_transformer {
         let target_batch_str: Vec<String> = vec![target_str1.to_string()];
 
         let output_batch = predict(&mut transformer_network, &input_batch_str, 0);
-        let (_tokens, target_ids) = tokenize_batch(&target_batch_str).unwrap();
+        let (_tokens, target_ids) = tokenize_batch(&target_batch_str, true).unwrap();
         backward(&mut transformer_network, &target_ids, false);
 
         println!("\n\n output batch {:?}", &output_batch[0][0][0..100]);
@@ -189,8 +189,8 @@ mod test_transformer {
         let target_str1: &str = "Mir geht es gut";
         let target_batch_str: Vec<String> = vec![target_str1.to_string()];
 
-        let (_tokens, batch_ids) = tokenize_batch(&input_batch_str).unwrap();
-        let (_tokens, target_token_id_batch) = tokenize_batch(&target_batch_str).unwrap();
+        let (_tokens, batch_ids) = tokenize_batch(&input_batch_str, false).unwrap();
+        let (_tokens, target_token_id_batch) = tokenize_batch(&target_batch_str, true).unwrap();
 
         // Define a small input batch, [2][6][4]
         // let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);

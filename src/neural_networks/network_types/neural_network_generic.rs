@@ -75,9 +75,8 @@ pub fn save_to_sled(filename: &str, neural_network: &NeuralNetwork) {
     let filepath_buf: std::path::PathBuf = get_storage_path_transformer_db(filename);
     let filepath: &str = filepath_buf.to_str().unwrap();
 
-    println!("Transfomer model is saved in file: {:?}", &filepath);
-
     serialize_bin(&serialized_embedding, filepath).expect("File cannot be serialized");
+    println!("✅ Transfomer model is saved in file: {:?}", &filepath);
 }
 
 pub fn get_from_db(filename: &str) -> Result<NeuralNetwork, String> {
@@ -89,7 +88,7 @@ pub fn get_from_db(filename: &str) -> Result<NeuralNetwork, String> {
         return Ok(create_transformer(OperationMode::TRAINING));
     }
 
-    println!("Transfomer model is loading from file: {:?}", &filepath);
+    println!("✅ Transfomer model is loading from file: {:?}", &filepath);
     let transformer_result: Result<NeuralNetwork, std::io::Error> = derialize_bin::<NeuralNetwork>(filepath);
     let transformer = transformer_result.unwrap();
 

@@ -101,6 +101,11 @@ impl SoftmaxLayer {
             }
         }
 
+        // let max = gradient_batch.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
+        // let min = gradient_batch.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Greater));
+        // println!("max in backward softmax gradient batch: {:?}", max);
+        // println!("min in backward softmax gradient batch: {:?}", min);
+
         check_nan_or_inf_3d(&mut gradient_batch, "gradient input batch in softmax output layer has None Values");
         let mut gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(gradient_batch);
