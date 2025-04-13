@@ -13,16 +13,17 @@ mod test_norm_layer {
         // Define some small batch size and input dimensions for simplicity
         let _batch_size = 1;
         let _seq_len: usize = 1; // Update to match the input structure
-        let input_dim = 3; // Match the input dimension with your input batch
+        let _input_dim = 3; // Match the input dimension with your input batch
         let _output_dim = 1;
         let learning_rate = 0.01;
         let _operation_mode = OperationMode::TRAINING;
         let epsilon = 1e-3;
 
         // Create a simple LinearLayer with the given input and output dimensions
-        // let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
+        //let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(_batch_size, _output_dim, input_dim);
+        //let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(1.0, 0.0), Complex::new(2.0, 0.0), Complex::new(3.0, 0.0), Complex::new(4.0, 0.0)]]];
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(1.0, 0.0), Complex::new(2.0, 0.0), Complex::new(3.0, 0.0)]]];
-        let mut norm_layer = NormalNormLayer::new(input_dim, 1e-8, learning_rate);
+        let mut norm_layer = NormalNormLayer::new(input_batch[0][0].len(), 1e-8, learning_rate);
 
         let mut layer_input = LayerInput::new_default();
         layer_input.set_input_batch(input_batch.clone());
