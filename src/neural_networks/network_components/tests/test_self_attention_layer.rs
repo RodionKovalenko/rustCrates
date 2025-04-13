@@ -161,13 +161,16 @@ mod test_self_attention_layer {
         let output_dim = 8;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
-        let num_attention_heads = 2;
-        let epsilon = 1e-7;
+        let num_attention_heads = 4;
+        let epsilon = 1e-9;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, input_dim, output_dim, learning_rate);
-        let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(output_dim, input_dim, learning_rate);
-        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, output_dim, input_dim);
+
+        let sequence_len = 8;
+        let embedding_dim = 16;
+        let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(sequence_len, embedding_dim, learning_rate);
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, sequence_len, embedding_dim);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
@@ -279,8 +282,8 @@ mod test_self_attention_layer {
             let row_sum_numeric: Complex<f64> = numeric_gradient.iter().sum();
             let row_sum_analytic: Complex<f64> = analytical_weight_q_gradient[i].iter().sum();
 
-            println!("row_sum numerical: {}", row_sum_numeric);
-            println!("row sum analytical: {}", row_sum_analytic);
+            println!("row_sum numerical: {:?}, {:?}", row_sum_numeric.re, row_sum_numeric.im);
+            println!("row sum analytical: {:?}, {:?}", row_sum_analytic.re, row_sum_analytic.im);
         }
 
         test_gradient_error_2d(&analytical_weight_q_gradient, &num_gradient_weights_q, 1e-2);

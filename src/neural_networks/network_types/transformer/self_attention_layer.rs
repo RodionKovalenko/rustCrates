@@ -42,7 +42,7 @@ impl SelfAttentionLayer {
         Self {
             attention_heads,
             activated_output: vec![],
-            norm_layer: _norm_layer,
+            norm_layer: None,
             input_batch: None,
             time_step: 0,
         }
@@ -171,6 +171,12 @@ impl SelfAttentionLayer {
                 }
             }
         }
+
+        // let max = combined_gradient_input_batch.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
+        // let min = combined_gradient_input_batch.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Greater));
+
+        // println!("max in backward self-attention layer gradient batch: {:?}", max);
+        // println!("min in backward self-attention layer gradient batch: {:?}", min);
 
         // Return the final gradient
         gradient.set_gradient_input_batch(combined_gradient_input_batch);

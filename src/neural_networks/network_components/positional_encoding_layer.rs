@@ -6,7 +6,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 // Use smaller base instead of the original 10000
-pub static INITIAL_BASE: f64 = 1000.0;
+pub static INITIAL_BASE: f64 = 50.0;
 
 pub static SCALING_FAKTOR: f64 = 1.0;
 
@@ -42,18 +42,18 @@ impl PositionalEncodingLayer {
                     // Ensure correct embedding size
                     assert_eq!(token_embeddings.len(), self.embedding_dim, "All token embeddings must match the specified dimension.");
 
-                    // Step 1: Convert complex embeddings into real & imaginary parts
+                    //Step 1: Convert complex embeddings into real & imaginary parts
                     let real_part: Vec<f64> = token_embeddings.iter().map(|c| c.re).collect();
                     let imag_part: Vec<f64> = token_embeddings.iter().map(|c| c.im).collect();
 
                     // Step 2: Apply wavelet transform separately to real & imaginary parts
-                    let transformed_real = transform_1_d(&real_part, &DiscreteWaletetType::DB2, &WaveletMode::SYMMETRIC);
-                    let transformed_imag = transform_1_d(&imag_part, &DiscreteWaletetType::DB2, &WaveletMode::SYMMETRIC);
+                    let transformed_real: Vec<f64> = transform_1_d(&real_part, &DiscreteWaletetType::DB2, &WaveletMode::SYMMETRIC);
+                    let transformed_imag: Vec<f64> = transform_1_d(&imag_part, &DiscreteWaletetType::DB2, &WaveletMode::SYMMETRIC);
 
                     // Step 3: Ensure wavelet-transformed outputs have correct dimensions
                     let positional_encoding = self.pad_or_trim_wavelet_output(&transformed_real, &transformed_imag);
 
-                    // Step 4: Add wavelet-based positional encoding
+                    //Step 4: Add wavelet-based positional encoding
                     let token_with_pos_encoding = self.add_positional_encoding(token_embeddings, &positional_encoding);
 
                     // Step 5: Apply rotary positional encoding
@@ -96,7 +96,25 @@ impl PositionalEncodingLayer {
 
     /// Adds wavelet-based positional encoding to token embeddings
     fn add_positional_encoding(&self, token_embeddings: &Vec<Complex<f64>>, positional_encoding: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
-        token_embeddings.iter().zip(positional_encoding.iter()).map(|(embedding, pos_encoding)| Complex::new(embedding.re + pos_encoding.re, embedding.im + pos_encoding.im)).collect()
+        let len = positional_encoding.len();
+        let half_len = len >> 1; 
+        
+        (0..half_len).map(|i| {
+            let trend_encoding = &positional_encoding[i];
+            let detail_encoding = &positional_encoding[i + half_len];
+    
+            let trend_applied = Complex::new(
+                token_embeddings[i].re + trend_encoding.re,
+                token_embeddings[i].im + trend_encoding.im
+            );
+    
+            let detail_applied = Complex::new(
+                token_embeddings[i + half_len].re + detail_encoding.re,
+                token_embeddings[i + half_len].im + detail_encoding.im
+            );
+    
+            vec![trend_applied, detail_applied]
+        }).flatten().collect()
     }
 
     /// Applies rotary positional encoding to a single token embedding

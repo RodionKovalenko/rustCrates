@@ -23,7 +23,7 @@ pub struct FeedForwardLayer {
 impl FeedForwardLayer {
     // Constructor to initialize multiple attention heads
     pub fn new(rows: usize, cols: usize, learning_rate: f64) -> Self {
-        let epsilon: f64 = 0.0000000001;
+        let epsilon: f64 = 0.00000001;
 
         let mut layers: Vec<LayerEnum> = vec![];
         let dense_layer: Layer = Layer::new(rows, cols, &learning_rate, &ActivationType::GELU, LayerType::DenseLayer);
@@ -36,7 +36,7 @@ impl FeedForwardLayer {
 
         Self {
             layers,
-            norm_layer: _norm_layer,
+            norm_layer: _rms_norm_layer,
             learning_rate,
             input_batch: None,
             padding_mask_batch: None,

@@ -112,7 +112,7 @@ pub fn transform_1_df64(data: &Vec<f64>, dw_type: &DiscreteWaletetType, mode: &W
     // for even number of elements in array add one and calculate middle index again
     if data.len() % 2 != 0 {
         n += 1;
-        middle_index = (n.clone() >> 1) as usize;
+        middle_index = (n >> 1) as usize;
     }
 
     let mut data_trans: Vec<f64> = vec![0.0; n.clone() as usize];
@@ -122,18 +122,18 @@ pub fn transform_1_df64(data: &Vec<f64>, dw_type: &DiscreteWaletetType, mode: &W
         value_high = 0.0;
 
         for (l_p_ind, low_p_f_value) in low_pass_filter.iter().enumerate() {
-            index_low = ((i.clone() + l_p_ind as i32) % (data_clone.len() as i32)) as usize;
+            index_low = ((i + l_p_ind as i32) % (data_clone.len() as i32)) as usize;
 
             // Low-Pass
-            value_low += data_clone[index_low].clone() * low_p_f_value.clone();
+            value_low += data_clone[index_low] * low_p_f_value;
 
             // High-Pass
-            value_high += data_clone[index_low.clone()].clone() * high_pass_filter[l_p_ind.clone()].clone();
+            value_high += data_clone[index_low] * high_pass_filter[l_p_ind];
         }
 
-        index_high = (ind_transform.clone() + middle_index.clone() as i32) as usize;
+        index_high = (ind_transform + middle_index as i32) as usize;
 
-        set_value(&mut data_trans, value_low, &(ind_transform.clone() as usize));
+        set_value(&mut data_trans, value_low, &(ind_transform as usize));
         set_value(&mut data_trans, value_high, &index_high);
 
         ind_transform += 1;
@@ -169,22 +169,22 @@ pub fn inverse_transform_1_d<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> 
         value_high = 0.0;
 
         for l_p_ind in (0..inverse_low_pass_filter.len()).step_by(2) {
-            index_low = ((l_p_ind.clone() as i32 + 1) % inverse_low_pass_filter.len() as i32) as usize;
-            ind_trend = ((l_p_ind.clone() as i32 / 2 + i.clone()) % data.len() as i32) as usize;
-            index_high = ((ind_trend.clone() as i32 + middle_index.clone() as i32) % data.len() as i32) as usize;
+            index_low = ((l_p_ind as i32 + 1) % inverse_low_pass_filter.len() as i32) as usize;
+            ind_trend = ((l_p_ind as i32 / 2 + i) % data.len() as i32) as usize;
+            index_high = ((ind_trend as i32 + middle_index as i32) % data.len() as i32) as usize;
 
             // value low = trend value + fluctuation value
-            value_low += data[ind_trend.clone()].to_f64().unwrap() * &inverse_low_pass_filter[index_low.clone()];
-            value_low += data[index_high.clone()].to_f64().unwrap() * &inverse_high_pass_filter[index_low.clone()];
+            value_low += data[ind_trend].to_f64().unwrap() * &inverse_low_pass_filter[index_low];
+            value_low += data[index_high].to_f64().unwrap() * &inverse_high_pass_filter[index_low];
 
             // high value = trend value + fluctuation value
-            value_high += data[ind_trend.clone()].to_f64().unwrap() * &inverse_low_pass_filter[l_p_ind.clone()];
-            value_high += data[index_high.clone()].to_f64().unwrap() * &inverse_high_pass_filter[l_p_ind.clone()];
+            value_high += data[ind_trend].to_f64().unwrap() * &inverse_low_pass_filter[l_p_ind];
+            value_high += data[index_high].to_f64().unwrap() * &inverse_high_pass_filter[l_p_ind];
         }
 
-        set_value(&mut data_trans, value_low.clone(), &(ind_transform.clone()));
+        set_value(&mut data_trans, value_low, &(ind_transform));
         ind_transform += 1;
-        set_value(&mut data_trans, value_high.clone(), &(ind_transform.clone()));
+        set_value(&mut data_trans, value_high, &(ind_transform));
         ind_transform += 1;
     }
 

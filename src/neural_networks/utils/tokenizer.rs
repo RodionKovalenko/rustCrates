@@ -6,12 +6,17 @@ use std::{error::Error, path::Path};
 pub const TOKENIZER_GTP_NEOXT_PATH: &str = "src/neural_networks/tokenizers/gtp_neox_tokenizer.json";
 
 
-pub fn tokenize_batch(text_batch: &Vec<String>) -> Result<(Vec<Vec<String>>, Vec<Vec<u32>>), Box<dyn Error + Send + Sync>> {
+pub fn tokenize_batch(text_batch: &Vec<String>, with_eos: bool) -> Result<(Vec<Vec<String>>, Vec<Vec<u32>>), Box<dyn Error + Send + Sync>> {
     let mut encoded_tokens_batch = Vec::new();
     let mut encoded_ids_batch = Vec::new();
 
     for text in text_batch {
-        let (encoded_tokens, encoded_ids) = tokenize(&text).unwrap();
+        let (mut encoded_tokens, mut encoded_ids) = tokenize(&text).unwrap();
+
+        if with_eos {
+            encoded_ids.push(0); // EOS token ID
+            encoded_tokens.push("<|endoftext|>".to_string()); // Optional: track string tokens too
+        }
 
         encoded_tokens_batch.push(encoded_tokens);
         encoded_ids_batch.push(encoded_ids);
