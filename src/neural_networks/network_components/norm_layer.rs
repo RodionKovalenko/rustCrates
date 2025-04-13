@@ -129,7 +129,7 @@ impl NormalNormLayer {
                 let mu_i = mean_batch[b][s];
                 let var_i = var_batch[b][s];
 
-                let var_pow_minut_3_2 = -var_i.powf(-1.5) / 2.0;
+                let var_pow_minus_3_2 = -var_i.powf(-1.5) / 2.0;
                 let var_inv = 1.0 / var_i.sqrt();
 
                 for f in 0..feature_dim {
@@ -142,20 +142,24 @@ impl NormalNormLayer {
 
                     let mut dl_dvar_sum = Complex::new(0.0, 0.0);
                     let mut dl_dmu_sum = Complex::new(0.0, 0.0);
-                    let mut dl_d_xi_sum_minus = Complex::new(0.0, 0.0);
+                    let mut dl_dxi_sum_minus = Complex::new(0.0, 0.0);
+
+                    let mut dl_dxi_hat_sum = Complex::new(0.0, 0.0);
 
                     for d in 0..feature_dim {
                         let x_i: Complex<f64> = input_batch[b][s][d]; // original_input
-                        dl_d_xi_sum_minus += -2.0 * (x_i - mu_i) / n;
-                        dl_dvar_sum += dl_xhat[b][s][d] * (x_i - mu_i) * var_pow_minut_3_2;
+                        dl_dxi_sum_minus += -2.0 * (x_i - mu_i) / n;
+                        dl_dvar_sum += dl_xhat[b][s][d] * (x_i - mu_i) * var_pow_minus_3_2;
+
+                        dl_dxi_hat_sum += dl_xhat[b][s][d] * -var_inv;
                     }
 
-                    dl_dmu_sum += dl_xhat[b][s][f] * -var_inv + dl_dvar_sum * dl_d_xi_sum_minus;
+                    dl_dmu_sum += dl_dxi_hat_sum + dl_dvar_sum * dl_dxi_sum_minus;
 
                     dl_dvar[b][s][f] += dl_dvar_sum;
                     dl_dmu[b][s][f] += dl_dmu_sum;
 
-                    input_grads[b][s][f] += (dl_xhat[b][s][f] / var_i.sqrt()) + (dl_dmu[b][s][f] / n) + (dl_dvar[b][s][f] * (2.0 * (input_batch[b][s][f] - mu_i) / n));
+                    input_grads[b][s][f] += (dl_xhat[b][s][f] * var_inv) + (dl_dmu[b][s][f] / n) + (dl_dvar[b][s][f] * (2.0 * (input_batch[b][s][f] - mu_i) / n));
                 }
             }
         }
