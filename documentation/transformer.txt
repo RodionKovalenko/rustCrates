@@ -34,7 +34,7 @@ Rotary Positional Encoding is used as positional encoding algrorithms.
 
 6. Add and Norm: RMS Norm is applied here.
 
-7. Linear layer. Just matrix multiplication of weights and bias adding.
+7. Linear layer. Just matrix multiplication of weights and bias adding. output[30][50254]
 
 8. Softmax layer. The output is [30][50254] for the input of 30 token ids. 
 

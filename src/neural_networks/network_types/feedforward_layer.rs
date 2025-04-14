@@ -36,7 +36,7 @@ impl FeedForwardLayer {
 
         Self {
             layers,
-            norm_layer: _rms_norm_layer,
+            norm_layer: None,
             learning_rate,
             input_batch: None,
             padding_mask_batch: None,

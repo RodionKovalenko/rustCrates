@@ -33,7 +33,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
     let norm_layer = NormalNormLayer::new(embedding_layer.embedding_dim, epsilon, learning_rate);
 
-    let rows: usize = 16;
+    let rows: usize = 64;
     let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
     let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode);
 
@@ -41,14 +41,14 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
     layers.push(LayerEnum::Norm(Box::new(norm_layer)));
 
-    let rows: usize = 16;
-    let hidden_dim = 64;
+    let rows: usize = 64;
+    let hidden_dim = 5096;
     let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
 
     let num_self_attention_layer: usize = 4;
     for _i in 0..num_self_attention_layer {
         let num_attention_heads: usize = 4;
-        let rows: usize = 16;
+        let rows: usize = 64;
         let cols: usize = embedding_dim_compressed;
 
         let attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);

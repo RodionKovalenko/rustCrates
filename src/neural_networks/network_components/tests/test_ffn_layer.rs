@@ -12,7 +12,7 @@ pub mod test_ffn_layer {
         network_types::{feedforward_layer::FeedForwardLayer, neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
         utils::{
             derivative::{
-                global_relative_error_2d_l2, numerical_gradient_bias, numerical_gradient_bias_without_loss, numerical_gradient_input, numerical_gradient_input_batch_without_loss, numerical_gradient_weights, numerical_gradient_weights_multiple_layers_without_loss, numerical_gradient_weights_without_loss, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d
+                global_relative_error_2d_l2, numerical_gradient_bias, numerical_gradient_bias_without_loss, numerical_gradient_input, numerical_gradient_input_batch_sum_without_loss, numerical_gradient_weights, numerical_gradient_weights_multiple_layers_without_loss, numerical_gradient_weights_without_loss, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d
             },
             random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
         },
@@ -107,7 +107,7 @@ pub mod test_ffn_layer {
             dense_layer.forward(&dense_layer_input).get_output_batch()
         };
 
-        let numerical_grad_input_linear: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
+        let numerical_grad_input_linear: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_sum_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
 
         println!("\nnumerical gradient input batch linear: {:?}", &numerical_grad_input_linear);
         println!("\nanalytical gradient input batch linear: {:?}", &dense_analytical_input_gradient_batch);
