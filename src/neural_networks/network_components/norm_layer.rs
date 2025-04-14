@@ -109,61 +109,53 @@ impl NormalNormLayer {
         let seq_len = input_batch[0].len();
         let feature_dim = input_batch[0][0].len();
 
-        // Initialize the gradients for input, gamma, and beta
+        // Initialize the gradients
         let mut input_grads = vec![vec![vec![Complex::new(0.0, 0.0); feature_dim]; seq_len]; batch_size];
         let mut gamma_grad = vec![Complex::new(0.0, 0.0); feature_dim];
         let mut beta_grad = vec![Complex::new(0.0, 0.0); feature_dim];
 
-        // dl/dx_hat
-        let mut dl_xhat: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); feature_dim]; seq_len]; batch_size];
-        // dl/dmu
-        let mut dl_dmu: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); feature_dim]; seq_len]; batch_size];
-        // dl/dvar
-        let mut dl_dvar: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); feature_dim]; seq_len]; batch_size];
-
         let n = feature_dim as f64;
         let eps = 1e-5;
 
-        // Calculate gradients for gamma and beta
         for b in 0..batch_size {
             for s in 0..seq_len {
-                let mu_i = mean_batch[b][s];
-                let var_i = var_batch[b][s] + eps;
+                let mu = mean_batch[b][s];
+                let var = var_batch[b][s] + eps;
+                let std_inv = 1.0 / var.sqrt();
+                let var_pow_minus_3_2 = var.powf(-1.5);
 
-                let var_pow_minus_3_2 = var_i.powf(-1.5);
-                let std_inv = 1.0 / var_i.sqrt();
-
-                let mut dl_dx_hat_sum = Complex::new(0.0, 0.0);
-                let mut dl_dvar_sum = Complex::new(0.0, 0.0);
-                // sum  x_i - mu_i
-                let mut xi_minus_mu_sum = Complex::new(0.0, 0.0);
-                let mut xi_minus_mu_sum_2 = Complex::new(0.0, 0.0);
+                // Precompute useful terms for mean/var gradients
+                let mut dxhat_sum = Complex::new(0.0, 0.0);
+                let mut dxhat_xmu_sum = Complex::new(0.0, 0.0);
+                let mut x_i_minus_mu_i_sum: Complex<f64> = Complex::new(0.0, 0.0);
 
                 for f in 0..feature_dim {
-                    let x_i: Complex<f64> = input_batch[b][s][f]; // original_input
-                    let x_hat: &Complex<f64> = &normalized_batch[b][s][f]; // The normalized input
+                    let x = input_batch[b][s][f];
+                    let x_hat = normalized_batch[b][s][f];
+                    let dout = grad_output[b][s][f];
 
-                    gamma_grad[f] += grad_output[b][s][f] * x_hat;
-                    beta_grad[f] += grad_output[b][s][f];
+                    // ∂L/∂gamma and ∂L/∂beta
+                    gamma_grad[f] += dout * x_hat;
+                    beta_grad[f] += dout;
 
-                    dl_xhat[b][s][f] = grad_output[b][s][f] * self.gamma[f];
-                    dl_dx_hat_sum += dl_xhat[b][s][f] * (-std_inv);
-
-                    dl_dvar_sum += dl_xhat[b][s][f] * (x_i - mu_i) * var_pow_minus_3_2 * -0.5;
-                    xi_minus_mu_sum += x_i - mu_i;
-                    xi_minus_mu_sum_2 += -2.0 * (x_i - mu_i);
+                    let dxhat = dout * self.gamma[f];
+                    dxhat_sum += dxhat;
+                    dxhat_xmu_sum += dxhat * (x - mu);
+                    x_i_minus_mu_i_sum += x - mu;
                 }
 
                 for f in 0..feature_dim {
-                    dl_dvar[b][s][f] = dl_dvar_sum;
-                    dl_dmu[b][s][f] = dl_dx_hat_sum + dl_dvar[b][s][f] * (xi_minus_mu_sum_2 / n);
+                    let x = input_batch[b][s][f];
+                    let dxhat = grad_output[b][s][f] * self.gamma[f];
 
-                    input_grads[b][s][f] = (dl_xhat[b][s][f] * std_inv) + (dl_dmu[b][s][f] / n) + (dl_dvar[b][s][f] * (2.0 * (input_batch[b][s][f] - mu_i) / n));
+                    let dvar = dxhat * (x - mu) * (-0.5) * var_pow_minus_3_2;
+                    let dmu = dxhat * (-std_inv) + dvar * (-2.0 * x_i_minus_mu_i_sum / n);
+
+                    input_grads[b][s][f] = (dxhat * std_inv) + (dvar * (2.0 * (x - mu) / n)) + dmu / n;
                 }
             }
         }
 
-        // Prepare the gradient object
         let mut gradient = Gradient::new_default();
         gradient.set_time_step(self.time_step);
         gradient.set_gradient_input_batch(input_grads);
