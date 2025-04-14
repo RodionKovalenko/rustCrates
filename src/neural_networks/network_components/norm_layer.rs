@@ -122,39 +122,43 @@ impl NormalNormLayer {
         let mut dl_dvar: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); feature_dim]; seq_len]; batch_size];
 
         let n = feature_dim as f64;
+        let eps = 1e-5;
 
         // Calculate gradients for gamma and beta
         for b in 0..batch_size {
             for s in 0..seq_len {
                 let mu_i = mean_batch[b][s];
-                let var_i = var_batch[b][s];
+                let var_i = var_batch[b][s] + eps;
 
-                let var_pow_minus_3_2 = -var_i.powf(-1.5) / 2.0;
+                let var_pow_minus_3_2 = var_i.powf(-1.5);
                 let std_inv = 1.0 / var_i.sqrt();
 
-                for f in 0..feature_dim {
-                    dl_xhat[b][s][f] += grad_output[b][s][f] * self.gamma[f];
-                }
+                let mut dl_dx_hat_sum = Complex::new(0.0, 0.0);
+                let mut dl_dvar_sum = Complex::new(0.0, 0.0);
+                // sum  x_i - mu_i
+                let mut xi_minus_mu_sum = Complex::new(0.0, 0.0);
+                let mut xi_minus_mu_sum_2 = Complex::new(0.0, 0.0);
 
                 for f in 0..feature_dim {
+                    let x_i: Complex<f64> = input_batch[b][s][f]; // original_input
                     let x_hat: &Complex<f64> = &normalized_batch[b][s][f]; // The normalized input
 
                     gamma_grad[f] += grad_output[b][s][f] * x_hat;
                     beta_grad[f] += grad_output[b][s][f];
 
-                    let mut dl_dxi_sum_minus = Complex::new(0.0, 0.0);
-                    let mut dl_xi_hat_sum = Complex::new(0.0, 0.0);
+                    dl_xhat[b][s][f] = grad_output[b][s][f] * self.gamma[f];
+                    dl_dx_hat_sum += dl_xhat[b][s][f] * (-std_inv);
 
-                    for d in 0..feature_dim {
-                        let x_i: Complex<f64> = input_batch[b][s][d]; // original_input
-                        dl_dxi_sum_minus += (x_i - mu_i) / n;
-                        dl_dvar[b][s][f] += dl_xhat[b][s][d] * ((x_i - mu_i) * var_pow_minus_3_2);
-                        dl_xi_hat_sum += dl_xhat[b][s][d];
-                    }
+                    dl_dvar_sum += dl_xhat[b][s][f] * (x_i - mu_i) * var_pow_minus_3_2 * -0.5;
+                    xi_minus_mu_sum += x_i - mu_i;
+                    xi_minus_mu_sum_2 += -2.0 * (x_i - mu_i);
+                }
 
-                    dl_dmu[b][s][f] += (-std_inv * dl_xhat[b][s][f]) + (dl_xhat[b][s][f] * ((input_batch[b][s][f] - mu_i) * var_pow_minus_3_2) * (input_batch[b][s][f] - mu_i));
+                for f in 0..feature_dim {
+                    dl_dvar[b][s][f] = dl_dvar_sum;
+                    dl_dmu[b][s][f] = dl_dx_hat_sum + dl_dvar[b][s][f] * (xi_minus_mu_sum_2 / n);
 
-                    input_grads[b][s][f] += (dl_xhat[b][s][f] * std_inv) + (dl_dmu[b][s][f] / n) + (dl_dvar[b][s][f] * (2.0 * (input_batch[b][s][f] - mu_i) / n));
+                    input_grads[b][s][f] = (dl_xhat[b][s][f] * std_inv) + (dl_dmu[b][s][f] / n) + (dl_dvar[b][s][f] * (2.0 * (input_batch[b][s][f] - mu_i) / n));
                 }
             }
         }
