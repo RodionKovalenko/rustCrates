@@ -152,8 +152,7 @@ impl NormalNormLayer {
                         dl_xi_hat_sum += dl_xhat[b][s][d];
                     }
 
-                   //dl_dmu[b][s][f] += -std_inv * dl_xhat[b][s][f] - 2.0 * (dl_xhat[b][s][f] * ((input_batch[b][s][f] - mu_i) * var_pow_minus_3_2) * dl_dxi_sum_minus);
-                    dl_dmu[b][s][f] += -std_inv *  dl_xhat[b][s][f] + (dl_xhat[b][s][f] * ((input_batch[b][s][f] - mu_i) * var_pow_minus_3_2) * (input_batch[b][s][f]  - mu_i));
+                    dl_dmu[b][s][f] += (-std_inv * dl_xhat[b][s][f]) + (dl_xhat[b][s][f] * ((input_batch[b][s][f] - mu_i) * var_pow_minus_3_2) * (input_batch[b][s][f] - mu_i));
 
                     input_grads[b][s][f] += (dl_xhat[b][s][f] * std_inv) + (dl_dmu[b][s][f] / n) + (dl_dvar[b][s][f] * (2.0 * (input_batch[b][s][f] - mu_i) / n));
                 }

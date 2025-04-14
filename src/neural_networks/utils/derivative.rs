@@ -654,7 +654,7 @@ where
     grad_batch
 }
 
-pub fn numerical_gradient_input_batch_without_loss<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
+pub fn numerical_gradient_input_batch_sum_without_loss<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
 where
     F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>>,
 {
@@ -677,9 +677,41 @@ where
                 // println!("output loss plus: {:?}", &loss_plus);
                 // println!("output loss minus: {:?} \n\n", &loss_minus);
 
-                // let sum_loss_plus: Complex<f64> = loss_plus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
-                // let sum_loss_minus: Complex<f64> = loss_minus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
-                // let gradient = (sum_loss_plus - sum_loss_minus) / (2.0 * epsilon);
+                let sum_loss_plus: Complex<f64> = loss_plus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
+                let sum_loss_minus: Complex<f64> = loss_minus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
+                let gradient = (sum_loss_plus - sum_loss_minus) / (2.0 * epsilon);
+
+                //let gradient = (loss_plus[batch][seq][dim_i] - loss_minus[batch][seq][dim_i]) / (2.0 * epsilon);
+                grad_batch[batch][seq][dim_i] = gradient;
+            }
+        }
+    }
+
+    grad_batch
+}
+
+pub fn numerical_gradient_input_batch_without_loss<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
+where
+    F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>>,
+{
+    let mut grad_batch = vec![vec![vec![Complex::new(0.0, 0.0); input[0][0].len()]; input[0].len()]; input.len()];
+
+    for batch in 0..input.len() {
+        for seq in 0..input[batch].len() {
+            for dim_i in 0..input[batch][seq].len() {
+                // Perturb input by epsilon
+                let mut input_plus = input.clone();
+                input_plus[batch][seq][dim_i] += epsilon;
+
+                let mut input_minus = input.clone();
+                input_minus[batch][seq][dim_i] -= epsilon;
+
+                // Compute numerical gradient
+                let loss_plus: Vec<Vec<Vec<Complex<f64>>>> = f(&input_plus);
+                let loss_minus: Vec<Vec<Vec<Complex<f64>>>> = f(&input_minus);
+
+                // println!("output loss plus: {:?}", &loss_plus);
+                // println!("output loss minus: {:?} \n\n", &loss_minus);
 
                 let gradient = (loss_plus[batch][seq][dim_i] - loss_minus[batch][seq][dim_i]) / (2.0 * epsilon);
                 grad_batch[batch][seq][dim_i] = gradient;
