@@ -4,7 +4,7 @@ mod test_linear_layer {
         network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
         utils::{
-            derivative::{global_relative_error_2d_l2, numerical_gradient_bias, numerical_gradient_weights, test_gradient_error_1d, test_gradient_error_2d},
+            derivative::{global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_bias, numerical_gradient_input_batch, numerical_gradient_weights, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d},
             random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
         },
     };
@@ -101,7 +101,7 @@ mod test_linear_layer {
         let output_dim = 20;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
-        let epsilon = 1e-3;
+        let epsilon = 1e-7;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim);
@@ -121,6 +121,7 @@ mod test_linear_layer {
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax.get_gradient_input_batch());
 
         let gradient_weights_batch: Vec<Vec<Complex<f64>>> = gradient_linear.get_gradient_weights();
+        let gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient_linear.get_gradient_input_batch();
         let weights: Vec<Vec<Complex<f64>>> = linear_layer.weights.clone();
 
         println!("softmax output dim: {} {} {}", _softmax_batch_output.len(), _softmax_batch_output[0].len(), _softmax_batch_output[0][0].len());
@@ -151,6 +152,33 @@ mod test_linear_layer {
 
         println!("global relative gradient error gradient_weights_batch: {:?}", &global_error);
 
-        test_gradient_error_2d(&num_gradient_weight_batch, &gradient_weights_batch, epsilon);
+        test_gradient_error_2d(&num_gradient_weight_batch, &gradient_weights_batch, 1e-5);
+
+        // TEST GRADIENT OF THE INPUT BATCH
+        // Define the loss function
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
+            layer_input.set_input_batch(input.clone());
+            let linear_output = linear_layer.forward(&layer_input);
+            let softmax_batch_output: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.forward(&linear_output.get_output_batch(), None);
+
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
+
+            loss
+        };
+
+        let num_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch(&mut loss_fn, input_batch.clone(), epsilon);
+
+        // Check if gradient batch dimensions match expected shapes
+        //println!("\n analytical gradient_weights_batch: {:?}", gradient_weights_batch);
+        println!("\n analytical gradient_weights_batch dim: {} {}", gradient_input_batch.len(), gradient_input_batch[0].len());
+
+        //println!("\n numerical grad: {:?}", num_gradient_weight_batch);
+        println!("\n numerical num_gradient_input_batch gradient dim: {} {}", num_gradient_input_batch.len(), num_gradient_input_batch[0].len());
+
+        let global_error = global_relative_error_l2(&num_gradient_input_batch, &gradient_input_batch);
+
+        println!("global relative gradient error gradient input batch: {:?}", &global_error);
+
+        test_gradient_batch_error(&num_gradient_input_batch, &gradient_input_batch, 1e-5);
     }
 }
