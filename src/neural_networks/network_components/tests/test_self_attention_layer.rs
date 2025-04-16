@@ -168,7 +168,7 @@ mod test_self_attention_layer {
         let mut attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, input_dim, output_dim, learning_rate);
 
         let sequence_len = 8;
-        let embedding_dim = 16;
+        let embedding_dim = 64;
         let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(sequence_len, embedding_dim, learning_rate);
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, sequence_len, embedding_dim);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);

@@ -1,6 +1,12 @@
 use crate::neural_networks::{
     network_components::{
-        norm_layer::NormalNormLayer, add_rms_norm_layer::RMSNormLayer, gradient_struct::Gradient, layer_input_struct::LayerInput, layer::{ActivationType, Layer, LayerEnum, LayerType}, linear_layer::LinearLayer, layer_output_struct::LayerOutput
+        add_rms_norm_layer::RMSNormLayer,
+        gradient_struct::Gradient,
+        layer::{ActivationType, Layer, LayerEnum, LayerType},
+        layer_input_struct::LayerInput,
+        layer_output_struct::LayerOutput,
+        linear_layer::LinearLayer,
+        norm_layer::NormalNormLayer,
     },
     utils::matrix::check_nan_or_inf_3d,
 };
@@ -26,7 +32,7 @@ impl FeedForwardLayer {
         let epsilon: f64 = 0.00000001;
 
         let mut layers: Vec<LayerEnum> = vec![];
-        let dense_layer: Layer = Layer::new(rows, cols, &learning_rate, &ActivationType::GELU, LayerType::DenseLayer);
+        let dense_layer: Layer = Layer::new(rows, cols, &learning_rate, &ActivationType::SIGMOID, LayerType::DenseLayer);
         let linear_layer = LinearLayer::new(learning_rate, cols, rows);
         let _norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(rows, epsilon, learning_rate))));
         let _rms_norm_layer = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(rows, epsilon, learning_rate))));
@@ -36,7 +42,7 @@ impl FeedForwardLayer {
 
         Self {
             layers,
-            norm_layer: None,
+            norm_layer: _norm_layer,
             learning_rate,
             input_batch: None,
             padding_mask_batch: None,
@@ -74,7 +80,7 @@ impl FeedForwardLayer {
                     let mut linear_layer_input = LayerInput::new_default();
                     linear_layer_input.set_input_batch(output.clone());
                     linear_layer_input.set_time_step(self.time_step);
-                    
+
                     let output_linear = linear_layer.forward(&linear_layer_input);
                     output = output_linear.get_output_batch();
                 }
@@ -94,7 +100,7 @@ impl FeedForwardLayer {
                     let rms_output = rms_norm_layer.forward(&rms_input_layer);
                     output = rms_output.get_output_batch();
                     //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
-                },
+                }
                 LayerEnum::Norm(norm_layer) => {
                     let mut norm_input_layer = LayerInput::new_default();
                     norm_input_layer.set_input_batch(output.clone());
@@ -109,7 +115,6 @@ impl FeedForwardLayer {
             }
         }
 
-        
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(output);
 
@@ -130,7 +135,7 @@ impl FeedForwardLayer {
                     output_gradients = gradient_input_batch;
 
                     // println!("FFN, gradient from RMS Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
-                },
+                }
                 LayerEnum::Norm(norm_layer) => {
                     // println!("ffn rms norm backward start");
                     gradient = norm_layer.backward(&output_gradients);
@@ -139,7 +144,7 @@ impl FeedForwardLayer {
 
                     output_gradients = gradient_input_batch;
 
-                    // println!("FFN, gradient from Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
+                    println!("FFN, gradient from Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
                 }
                 _ => {}
             }
@@ -159,7 +164,7 @@ impl FeedForwardLayer {
                     // println!("ffn dense backward end");
                     let mut gradient_input_batch = gradient.get_gradient_input_batch();
 
-                    // println!("Gradient input batch FFN Dense Layer: {:?}, {:?},  {:?}", &gradient_input_batch.len(), &gradient_input_batch[0].len(), &gradient_input_batch[0][0].len());
+                    println!("Gradient input batch FFN Dense Layer: {:?}, {:?},  {:?}", &gradient_input_batch.len(), &gradient_input_batch[0].len(), &gradient_input_batch[0][0].len());
                     check_nan_or_inf_3d(&mut gradient_input_batch, "output gradients in ffn dense layer has None values");
                     output_gradients = gradient_input_batch;
                 }
@@ -173,12 +178,14 @@ impl FeedForwardLayer {
                     // println!("ffn linear backward end");
                     let gradient_input_batch = gradient.get_gradient_input_batch();
 
-                    // println!("Gradient input batch FFN Linear Layer: {:?}, {:?},  {:?}", &gradient_input_batch.len(), &gradient_input_batch[0].len(), &gradient_input_batch[0][0].len());
+                    println!("Gradient input batch FFN Linear Layer: {:?}, {:?},  {:?}", &gradient_input_batch.len(), &gradient_input_batch[0].len(), &gradient_input_batch[0][0].len());
                     output_gradients = gradient_input_batch;
                 }
                 _ => {}
             }
         }
+
+        gradient.set_gradient_input_batch(output_gradients);
 
         gradient
     }
@@ -189,10 +196,10 @@ impl FeedForwardLayer {
             match layer_enum {
                 LayerEnum::RMSNorm(rms_norm_layer) => {
                     rms_norm_layer.update_parameters();
-                },
+                }
                 LayerEnum::Norm(norm_layer) => {
                     norm_layer.update_parameters();
-                },
+                }
                 _ => {}
             }
         }
