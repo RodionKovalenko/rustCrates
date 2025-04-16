@@ -3,16 +3,17 @@ pub mod test_ffn_layer {
     use crate::neural_networks::{
         network_components::{
             gradient_struct::Gradient,
-            layer_input_struct::LayerInput,
             layer::{ActivationType, Layer, LayerEnum, LayerType},
-            linear_layer::LinearLayer,
+            layer_input_struct::LayerInput,
             layer_output_struct::LayerOutput,
+            linear_layer::LinearLayer,
             softmax_output_layer::SoftmaxLayer,
         },
         network_types::{feedforward_layer::FeedForwardLayer, neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
         utils::{
             derivative::{
-                global_relative_error_2d_l2, numerical_gradient_bias, numerical_gradient_bias_without_loss, numerical_gradient_input, numerical_gradient_input_batch_sum_without_loss, numerical_gradient_weights, numerical_gradient_weights_multiple_layers_without_loss, numerical_gradient_weights_without_loss, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d
+                global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_bias, numerical_gradient_bias_without_loss, numerical_gradient_input_batch, numerical_gradient_input_batch_sum_without_loss, numerical_gradient_weights, numerical_gradient_weights_without_loss,
+                test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d,
             },
             random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
         },
@@ -113,76 +114,6 @@ pub mod test_ffn_layer {
         println!("\nanalytical gradient input batch linear: {:?}", &dense_analytical_input_gradient_batch);
 
         test_gradient_batch_error(&numerical_grad_input_linear, &dense_analytical_input_gradient_batch, epsilon);
-    }
-
-    #[test]
-    fn test_ffn_network_backward() {
-        // Define some small batch size and input dimensions for simplicity
-        let batch_size = 2;
-        let _seq_len: usize = 1; // Update to match the input structure
-        let input_dim = 8; // Match the input dimension with your input batch
-        let output_dim = 8; // Match output_dim to your layer's output
-        let learning_rate = 0.01;
-        let _operation_mode = OperationMode::TRAINING;
-        let epsilon: f64 = 1e-3;
-
-        let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(input_dim, output_dim, learning_rate);
-
-        // Create a simple LinearLayer with the given input and output dimensions
-        //let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.10, 0.20), Complex::new(0.30, 0.50), Complex::new(0.60, 0.40)]]];
-
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
-
-        let mut layer_input = LayerInput::new_default();
-        layer_input.set_input_batch(input_batch.clone());
-
-        let ffn_output = ffn_layer.forward(&layer_input);
-        let ffn_output_batch = ffn_output.get_output_batch();
-
-        println!("\ninput batch :{:?}", &input_batch);
-        println!("\ndense output_batch: {:?}", &ffn_output_batch);
-
-        let previous_gradient = vec![vec![vec![Complex::new(1.0, 0.0); ffn_output_batch[0][0].len()]; ffn_output_batch[0].len()]; ffn_output_batch.len()];
-
-        let gradient = ffn_layer.backward(&previous_gradient);
-        let dense_analytical_gradient_batch = gradient.get_gradient_weight_batch();
-
-        // let weights_linear: Vec<Vec<Complex<f64>>> = match ffn_layer.layers.get(1) {
-        //     Some(LayerEnum::Linear(linear_layer)) => linear_layer.weights.clone(),
-        //     _ => vec![],
-        // };
-
-        let weights_dense: Vec<Vec<Complex<f64>>> = match ffn_layer.layers.get(0) {
-            Some(LayerEnum::Dense(dense_layer)) => dense_layer.weights.clone(),
-            _ => vec![],
-        };
-
-        // Define the loss function
-        let mut loss_fn = |_input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
-            // if let Some(LayerEnum::Linear(linear_layer)) = ffn_layer.layers.get_mut(1) {
-            //     linear_layer.weights = weights.clone();
-            // } else {
-            //     println!("Layer 2 does not exist!");
-            // }
-            if let Some(LayerEnum::Dense(dense_layer)) = ffn_layer.layers.get_mut(0) {
-                dense_layer.weights = weights.clone();
-            } else {
-                println!("Layer 2 does not exist!");
-            }
-
-            let ffn_output = ffn_layer.forward(&layer_input);
-            let ffn_output_batch = ffn_output.get_output_batch();
-            ffn_output_batch
-        };
-
-        // println!("linear weights: {:?}", &weights_linear);
-        let dense_numerical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &weights_dense.clone(), ffn_output_batch.clone(), epsilon);
-
-        println!("\nnumerical gradient ffn layer {:?}", dense_numerical_grad_batch);
-        println!("\nanalytical gradient ffn layer {:?}", dense_analytical_gradient_batch);
-
-        // For Gelu it can a little more deviation
-        test_gradient_batch_error(&dense_numerical_grad_batch, &dense_analytical_gradient_batch, epsilon);
     }
 
     #[test]
@@ -336,15 +267,18 @@ pub mod test_ffn_layer {
             loss
         };
 
-        let numerical_grad_input_ffn: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, input_batch.clone(), epsilon);
-        let analytical_grad_input_ffn = gradient_ffn.get_gradient_input();
+        let numerical_grad_input_ffn: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch(&mut loss_fn, input_batch.clone(), epsilon);
+        let analytical_grad_input_ffn: Vec<Vec<Vec<Complex<f64>>>> = gradient_ffn.get_gradient_input_batch();
 
         // Check if gradient batch dimensions match expected shapes
         println!("\n analytical grad input dim: {:?}, {}", analytical_grad_input_ffn.len(), analytical_grad_input_ffn[0].len());
         println!("numerical grad input dim: {:?}, {}", numerical_grad_input_ffn.len(), numerical_grad_input_ffn[0].len());
 
-        let global_error = global_relative_error_2d_l2(&analytical_grad_input_ffn, &numerical_grad_input_ffn);
+        let global_error = global_relative_error_l2(&analytical_grad_input_ffn, &numerical_grad_input_ffn);
         println!("\n\n global relative gradient error input ffn: {:?}", &global_error);
+
+        // println!("\n\n  gradient input ffn numerical gradient: {:?}", &numerical_grad_input_ffn);
+        // println!("\n\n  gradient input ffn analytical gradient: {:?}", &analytical_grad_input_ffn);
 
         let weights_dense = match ffn_layer.layers.get(0) {
             Some(LayerEnum::Dense(dense_layer)) => dense_layer.weights.clone(),
