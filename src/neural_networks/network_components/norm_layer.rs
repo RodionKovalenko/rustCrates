@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
     adam_w::calculate_adam_w_bias,
-    matrix::{clip_gradient_1d, is_nan_or_inf},
+    matrix::{add_matrix_3d, clip_gradient_1d, is_nan_or_inf},
 };
 
 use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
@@ -66,10 +66,13 @@ impl NormalNormLayer {
 
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
         let input_batch: &Vec<Vec<Vec<Complex<f64>>>> = &layer_input.get_input_batch();
+        let input_batch_before: &Vec<Vec<Vec<Complex<f64>>>> = &&layer_input.get_input_batch_before();
         let mut output_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
         let mut normalized_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
         let mut mean_batch: Vec<Vec<Complex<f64>>> = Vec::new();
         let mut var_batch: Vec<Vec<Complex<f64>>> = Vec::new();
+
+        let input_batch = add_matrix_3d(input_batch, input_batch_before);
 
         for input in input_batch.iter() {
             let mut norm_seq = Vec::new();

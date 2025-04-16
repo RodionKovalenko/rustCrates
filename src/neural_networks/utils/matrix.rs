@@ -304,6 +304,20 @@ pub fn add_matrix<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<Vec<T>>, ma
     matrix_result
 }
 
+pub fn add_matrix_3d<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<Vec<Vec<T>>>, matrix_b: &Vec<Vec<Vec<T>>>) -> Vec<Vec<Vec<T>>> {
+    let mut matrix_result: Vec<Vec<Vec<T>>> = matrix_a.clone();
+
+    for i in 0..matrix_a.len() {
+        for j in 0..matrix_a[i].len() {
+            for k in 0..matrix_a[i][j].len() {
+                matrix_result[i][j][k] = matrix_result[i][j][k].clone() + matrix_b[i % matrix_b.len()][j % matrix_b[0].len()][k % matrix_b[0][0].len()].clone();
+            }
+        }
+    }
+
+    matrix_result
+}
+
 pub fn add_vector<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<T>) -> Vec<Vec<T>> {
     let mut matrix_result: Vec<Vec<T>> = matrix_a.clone();
 
