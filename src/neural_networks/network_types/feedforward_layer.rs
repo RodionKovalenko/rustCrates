@@ -32,7 +32,7 @@ impl FeedForwardLayer {
         let epsilon: f64 = 0.00000001;
 
         let mut layers: Vec<LayerEnum> = vec![];
-        let dense_layer: Layer = Layer::new(rows, cols, &learning_rate, &ActivationType::SIGMOID, LayerType::DenseLayer);
+        let dense_layer: Layer = Layer::new(rows, cols, &learning_rate, &ActivationType::SELU, LayerType::DenseLayer);
         let linear_layer = LinearLayer::new(learning_rate, cols, rows);
         let _norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(rows, epsilon, learning_rate))));
         let _rms_norm_layer = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(rows, epsilon, learning_rate))));
@@ -144,7 +144,7 @@ impl FeedForwardLayer {
 
                     output_gradients = gradient_input_batch;
 
-                    println!("FFN, gradient from Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
+                    // println!("FFN, gradient from Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
                 }
                 _ => {}
             }
@@ -164,7 +164,7 @@ impl FeedForwardLayer {
                     // println!("ffn dense backward end");
                     let mut gradient_input_batch = gradient.get_gradient_input_batch();
 
-                    println!("Gradient input batch FFN Dense Layer: {:?}, {:?},  {:?}", &gradient_input_batch.len(), &gradient_input_batch[0].len(), &gradient_input_batch[0][0].len());
+                    // println!("Gradient input batch FFN Dense Layer: {:?}, {:?},  {:?}", &gradient_input_batch.len(), &gradient_input_batch[0].len(), &gradient_input_batch[0][0].len());
                     check_nan_or_inf_3d(&mut gradient_input_batch, "output gradients in ffn dense layer has None values");
                     output_gradients = gradient_input_batch;
                 }
@@ -178,7 +178,7 @@ impl FeedForwardLayer {
                     // println!("ffn linear backward end");
                     let gradient_input_batch = gradient.get_gradient_input_batch();
 
-                    println!("Gradient input batch FFN Linear Layer: {:?}, {:?},  {:?}", &gradient_input_batch.len(), &gradient_input_batch[0].len(), &gradient_input_batch[0][0].len());
+                    // println!("Gradient input batch FFN Linear Layer: {:?}, {:?},  {:?}", &gradient_input_batch.len(), &gradient_input_batch[0].len(), &gradient_input_batch[0][0].len());
                     output_gradients = gradient_input_batch;
                 }
                 _ => {}
