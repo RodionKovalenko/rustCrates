@@ -127,10 +127,7 @@ impl NormalNormLayer {
                 let var_pow_minus_3_2 = 1.0 / var.powf(1.5);
 
                 // Precompute useful terms for mean/var gradients
-                let mut dhat_sum = Complex::new(0.0, 0.0);
                 let mut dvar_sum = Complex::new(0.0, 0.0);
-                let mut dx_minus_mu_sum = Complex::new(0.0, 0.0);
-                let mut dxhat_vec = vec![Complex::new(0.0, 0.0); feature_dim];
 
                 for d in 0..feature_dim {
                     let x = input_batch[b][s][d];
@@ -142,24 +139,16 @@ impl NormalNormLayer {
                     beta_grad[d] += dout;
 
                     let dxhat = dout * self.gamma[d];
-                    dxhat_vec[d] = dxhat;
-                    dhat_sum += dxhat;
 
                     dvar_sum += dxhat * (x - mu) * (-0.5) * var_pow_minus_3_2;
-
-                    dx_minus_mu_sum += -2.0 * (x - mu) / n;
                 }
 
                 for f in 0..feature_dim {
                     let dxhat = grad_output[b][s][f] * self.gamma[f];
                     let x = input_batch[b][s][f];
 
-                    // let dvar: Complex<f64> = dxhat * (x - mu) * (-0.5) * var_pow_minus_3_2;
-                    // let dmu: Complex<f64> = dxhat * (-std_inv) + dxhat * (x - mu) * var_pow_minus_3_2 * ((x - mu) / n);
-
                     let dvar: Complex<f64> = dxhat * (x - mu) * (-0.5) * var_pow_minus_3_2;
                     let dmu: Complex<f64> = dxhat * (-std_inv) + dvar_sum * ((x - mu) / n);
-
 
                     input_grads[b][s][f] = (dxhat * std_inv) + (dvar * (2.0 * (x - mu) / n)) + dmu / n;
                 }
