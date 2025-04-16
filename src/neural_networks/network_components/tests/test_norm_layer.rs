@@ -142,6 +142,6 @@ mod test_norm_layer {
 
         println!("\n\nglobal relative gradient error: {:?}", &global_error);
 
-        test_gradient_batch_error(&numerical_grad_rms, &analytical_gradient_norm, 1e-2);
+        test_gradient_batch_error(&numerical_grad_rms, &analytical_gradient_norm, 1e-7);
     }
 }

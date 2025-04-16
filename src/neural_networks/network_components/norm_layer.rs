@@ -139,7 +139,6 @@ impl NormalNormLayer {
                     beta_grad[d] += dout;
 
                     let dxhat: Complex<f64> = dout * self.gamma[d];
-
                     dvar_sum += dxhat * (x - mu) * (-0.5) * var_pow_minus_3_2;
                 }
 
