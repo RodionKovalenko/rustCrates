@@ -23,7 +23,7 @@ pub struct NormalNormLayer {
     #[serde(skip)]
     mean_batch: Option<Vec<Vec<Complex<f64>>>>,
     #[serde(skip)]
-    var_batch: Option<Vec<Vec<f64>>>,
+    var_batch: Option<Vec<Vec<Complex<f64>>>>,
     #[serde(skip)]
     gradient: Option<Gradient>,
     #[serde(skip)]
@@ -51,13 +51,13 @@ impl NormalNormLayer {
         }
     }
 
-    pub fn normalize(&self, input: &Vec<Complex<f64>>) -> (Vec<Complex<f64>>, Complex<f64>, f64) {
-        let len = input.len() as f64;
-        let mean = input.iter().sum::<Complex<f64>>() / len;
+    pub fn normalize(&self, input: &Vec<Complex<f64>>) -> (Vec<Complex<f64>>, Complex<f64>, Complex<f64>) {
+        let len: f64 = input.len() as f64;
+        let mean: Complex<f64> = input.iter().sum::<Complex<f64>>() / len;
 
-        let variance: f64 = input.iter().map(|x| (*x - mean).norm_sqr()).sum::<f64>() / len;
+        let variance: Complex<f64> = input.iter().map(|x| (*x - mean).powu(2)).sum::<Complex<f64>>() / len;
 
-        let stddev = (variance + self.epsilon).sqrt();
+        let stddev: Complex<f64> = (variance + Complex::new(self.epsilon, 0.0)).sqrt();
 
         let normalized: Vec<Complex<f64>> = input.iter().enumerate().map(|(i, x)| ((*x - mean) / stddev) * self.gamma[i] + self.beta[i]).collect();
 
@@ -69,7 +69,7 @@ impl NormalNormLayer {
         let mut output_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
         let mut normalized_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
         let mut mean_batch: Vec<Vec<Complex<f64>>> = Vec::new();
-        let mut var_batch: Vec<Vec<f64>> = Vec::new();
+        let mut var_batch: Vec<Vec<Complex<f64>>> = Vec::new();
 
         for input in input_batch.iter() {
             let mut norm_seq = Vec::new();
@@ -112,40 +112,40 @@ impl NormalNormLayer {
         let feature_dim = input_batch[0][0].len();
 
         // Initialize the gradients
-        let mut input_grads = vec![vec![vec![Complex::new(0.0, 0.0); feature_dim]; seq_len]; batch_size];
-        let mut gamma_grad = vec![Complex::new(0.0, 0.0); feature_dim];
-        let mut beta_grad = vec![Complex::new(0.0, 0.0); feature_dim];
+        let mut input_grads: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); feature_dim]; seq_len]; batch_size];
+        let mut gamma_grad: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); feature_dim];
+        let mut beta_grad: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); feature_dim];
 
         let n = feature_dim as f64;
-        let eps = 1e-5;
+        let eps = 1e-8;
 
         for b in 0..batch_size {
             for s in 0..seq_len {
-                let mu = mean_batch[b][s];
-                let var = var_batch[b][s] + eps;
-                let std_inv = 1.0 / var.sqrt();
-                let var_pow_minus_3_2 = 1.0 / var.powf(1.5);
+                let mu: Complex<f64> = mean_batch[b][s];
+                let var: Complex<f64> = var_batch[b][s] + eps;
+                let std_inv: Complex<f64> = 1.0 / var.sqrt();
+                let var_pow_minus_3_2: Complex<f64> = 1.0 / var.powf(1.5);
 
                 // Precompute useful terms for mean/var gradients
                 let mut dvar_sum = Complex::new(0.0, 0.0);
 
                 for d in 0..feature_dim {
-                    let x = input_batch[b][s][d];
-                    let x_hat = normalized_batch[b][s][d];
-                    let dout = grad_output[b][s][d];
+                    let x: Complex<f64> = input_batch[b][s][d];
+                    let x_hat: Complex<f64> = normalized_batch[b][s][d];
+                    let dout: Complex<f64> = grad_output[b][s][d];
 
                     // ∂L/∂gamma and ∂L/∂beta
                     gamma_grad[d] += dout * x_hat;
                     beta_grad[d] += dout;
 
-                    let dxhat = dout * self.gamma[d];
+                    let dxhat: Complex<f64> = dout * self.gamma[d];
 
                     dvar_sum += dxhat * (x - mu) * (-0.5) * var_pow_minus_3_2;
                 }
 
                 for f in 0..feature_dim {
-                    let dxhat = grad_output[b][s][f] * self.gamma[f];
-                    let x = input_batch[b][s][f];
+                    let dxhat: Complex<f64> = grad_output[b][s][f] * self.gamma[f];
+                    let x: Complex<f64> = input_batch[b][s][f];
 
                     let dvar: Complex<f64> = dxhat * (x - mu) * (-0.5) * var_pow_minus_3_2;
                     let dmu: Complex<f64> = dxhat * (-std_inv) + dvar_sum * ((x - mu) / n);
