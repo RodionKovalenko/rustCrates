@@ -360,6 +360,7 @@ fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, target_tokens: &Vec<
     let seq_len = predictions.len();
     let target_len = target_tokens.len();
     let seq_ind_start = seq_len - target_len;
+    let mut count = 0.0;
 
     for (s, &target_idx) in target_tokens.iter().enumerate() {
         if target_idx == 1 {
@@ -368,7 +369,8 @@ fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, target_tokens: &Vec<
 
         let seq_ind = seq_ind_start + s;
         loss += -(predictions[seq_ind][target_idx as usize] + 1e-15).ln();
+        count +=1.0;
     }
 
-    loss / seq_len as f64
+    loss / count
 }
