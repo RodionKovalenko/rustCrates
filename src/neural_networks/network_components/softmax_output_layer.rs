@@ -7,7 +7,7 @@ use crate::neural_networks::{
     network_types::neural_network_generic::OperationMode,
     utils::{
         activation::{softmax_complex_padding, softmax_last_row},
-        matrix::{check_nan_or_inf_3d, is_nan_or_inf},
+        matrix::check_nan_or_inf_3d,
     },
 };
 
@@ -71,32 +71,37 @@ impl SoftmaxLayer {
         let vocab_dim = softmax_output_batch[0][0].len();
 
         let mut gradient_batch = vec![vec![vec![Complex::new(0.0, 0.0); vocab_dim]; seq_len]; batch_size];
-        let normalizer = (seq_len * batch_size) as f64;
 
         for (batch_index, (softmax_output, target_tokens)) in softmax_output_batch.iter().zip(target_token_ids.iter()).enumerate() {
             let target_len = target_tokens.len();
             let seq_ind_start = seq_len - target_len;
+            let mut target_count = 0.0;
 
-            for (target_ind, &token_id) in target_tokens.iter().enumerate() {
-                if token_id as usize >= vocab_dim {
-                    panic!("Target token ID {} exceeds vocabulary dimension {}", token_id, vocab_dim);
+            for &target_class in target_tokens.iter() {
+                if target_class != 1 {
+                    target_count += 1.0;
+                }
+            }
+
+            let normalizer = batch_size as f64 * target_count;
+
+            for (t, &target_class) in target_tokens.iter().enumerate() {
+                if target_class as usize >= vocab_dim {
+                    panic!("Target token ID {} exceeds vocabulary dimension {}", target_class, vocab_dim);
                 }
 
-                if token_id == 1 {
+                if target_class == 1 {
                     continue; // Skip padding token
                 }
 
-                let seq_ind = seq_ind_start + target_ind;
+                let seq_ind = seq_ind_start + t;
 
-                for (column_index, softmax_prob) in softmax_output[seq_ind].iter().enumerate() {
-                    let target = if token_id == column_index as u32 { Complex::new(1.0, 0.0) } else { Complex::new(0.0, 0.0) };
-                    let gradient = softmax_prob - target; // ✅ Compute gradient consistently
-
-                    if is_nan_or_inf(&gradient) {
-                        panic!("Gradient is not valid: {:?}", &gradient);
-                    }
-
-                    gradient_batch[batch_index][seq_ind][column_index] += gradient / normalizer;
+                for (c, softmax_prob) in softmax_output[seq_ind].iter().enumerate() {
+                    if target_class == c as u32 {
+                        gradient_batch[batch_index][seq_ind][c] += (softmax_prob - Complex::new(1.0, 0.0)) / normalizer;
+                    } else {
+                        gradient_batch[batch_index][seq_ind][c] += softmax_prob / normalizer;
+                    };
                 }
             }
         }
