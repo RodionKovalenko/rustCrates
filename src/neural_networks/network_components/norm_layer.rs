@@ -19,6 +19,8 @@ pub struct NormalNormLayer {
     #[serde(skip)]
     input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
+    input_batch_before: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
     normalized_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     mean_batch: Option<Vec<Vec<Complex<f64>>>>,
@@ -41,6 +43,7 @@ impl NormalNormLayer {
             epsilon,
             learning_rate,
             input_batch: None,
+            input_batch_before: None,
             normalized_batch: None,
             mean_batch: None,
             var_batch: None,
@@ -65,14 +68,14 @@ impl NormalNormLayer {
     }
 
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        let input_batch: &Vec<Vec<Vec<Complex<f64>>>> = &layer_input.get_input_batch();
-        let input_batch_before: &Vec<Vec<Vec<Complex<f64>>>> = &&layer_input.get_input_batch_before();
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = layer_input.get_input_batch();
+        let input_batch_before: Vec<Vec<Vec<Complex<f64>>>> = layer_input.get_input_batch_before();
         let mut output_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
         let mut normalized_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
         let mut mean_batch: Vec<Vec<Complex<f64>>> = Vec::new();
         let mut var_batch: Vec<Vec<Complex<f64>>> = Vec::new();
 
-        let input_batch = add_matrix_3d(input_batch, input_batch_before);
+        let input_batch = add_matrix_3d(&input_batch, &input_batch_before);
 
         for input in input_batch.iter() {
             let mut norm_seq = Vec::new();
@@ -92,6 +95,8 @@ impl NormalNormLayer {
         }
 
         self.input_batch = Some(input_batch.clone());
+        //self.input_batch = Some(layer_input.get_input_batch());
+        self.input_batch_before = Some(input_batch_before.clone());
         self.normalized_batch = Some(normalized_batch);
         self.mean_batch = Some(mean_batch);
         self.var_batch = Some(var_batch);
@@ -130,29 +135,34 @@ impl NormalNormLayer {
                 let var_pow_minus_3_2: Complex<f64> = 1.0 / var.powf(1.5);
 
                 // Precompute useful terms for mean/var gradients
-                let mut dvar_sum = Complex::new(0.0, 0.0);
-
-                for d in 0..feature_dim {
-                    let x: Complex<f64> = input_batch[b][s][d];
-                    let x_hat: Complex<f64> = normalized_batch[b][s][d];
-                    let dout: Complex<f64> = grad_output[b][s][d];
-
-                    // ∂L/∂gamma and ∂L/∂beta
-                    gamma_grad[d] += dout * x_hat;
-                    beta_grad[d] += dout;
-
-                    let dxhat: Complex<f64> = dout * self.gamma[d];
-                    dvar_sum += dxhat * (x - mu) * (-0.5) * var_pow_minus_3_2;
-                }
-
                 for f in 0..feature_dim {
+                    let mut dvar_sum = Complex::new(0.0, 0.0);
+                    let mut dmu_sum = Complex::new(0.0, 0.0);
+                    let mut dx_minus_mu_sum = Complex::new(0.0, 0.0);
+                    for d in 0..feature_dim {
+                        let x: Complex<f64> = input_batch[b][s][d];
+                        let x_hat: Complex<f64> = normalized_batch[b][s][d];
+                        let dout: Complex<f64> = grad_output[b][s][d];
+
+                        // ∂L/∂gamma and ∂L/∂beta
+                        gamma_grad[d] += dout * x_hat;
+                        beta_grad[d] += dout;
+
+                        let dxhat: Complex<f64> = dout * self.gamma[f];
+                        dvar_sum += dxhat * (x - mu) * (-0.5) * var_pow_minus_3_2;
+                        dx_minus_mu_sum += -2.0 * (x - mu) / n;
+                    }
+                    for d in 0..feature_dim {
+                        let dout: Complex<f64> = grad_output[b][s][d];
+                        dmu_sum += dout * (-std_inv);
+                    }
+
                     let dxhat: Complex<f64> = grad_output[b][s][f] * self.gamma[f];
                     let x: Complex<f64> = input_batch[b][s][f];
 
-                    let dvar: Complex<f64> = dxhat * (x - mu) * (-0.5) * var_pow_minus_3_2;
-                    let dmu: Complex<f64> = dxhat * (-std_inv) + dvar_sum * ((x - mu) / n);
+                    let dmu = dmu_sum * self.gamma[f] + dvar_sum * dx_minus_mu_sum;
 
-                    input_grads[b][s][f] = (dxhat * std_inv) + (dvar * (2.0 * (x - mu) / n)) + dmu / n;
+                    input_grads[b][s][f] = (dxhat * std_inv) + (dvar_sum * (2.0 * (x - mu) / n)) + dmu / n;
                 }
             }
         }
