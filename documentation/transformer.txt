@@ -126,10 +126,111 @@ Loss Function: At each step, compute the cross-entropy loss between the predicte
 
 
 Derivative of masked attention head:
-S = sigma(Q*KT/sqtr(dk)) * V
+
+A = Q*KT/sqtr(dk)
+S = sigma(A)
 O = S * V
 
-dl/ds = Gt * VT 
-dl/dq = dl/ds * ds/dq
 
-dl/dwq = XT * dl/dq
+# Gradiet of Wq
+dl/dWq = dl/dO * dO/dS * dS/dA * dA/dQ * dQ/dWq
+
+dl/dO = Gt
+dO/dS = VT
+dS/dA = gradient sigma(A)
+dA/dQ = KT/sqtr(dk)
+dQ/dWq = XT
+
+Example with dimensions: 
+Gt (2, 4)
+X (2, 5)
+W (5, 4)
+Q = 2,5 * 5,4 = 2,4
+K = 2,5 * 5,4 = 2,4
+V = 2,5 * 5,4 = 2,4
+
+dl/dWq = dl/dO * dO/dS * dS/dA * dA/dQ * dQ/dWq
+dl/dWq = XT * (Gt * VT * ds/dA * KT/sqtr(dk))
+
+dl/dWq = 2,5 * (2,4 * 4,2 * 2,2 * 4,2) = 2,5
+
+The order of matrix multiplication can be explained:
+
+dl/dWq = (((dl/dO * dO/dS) * dS/dA) * dA/dQ) * dQ/dWq
+
+Multiplication is FROM RIGHT TO LEFT:
+dl/dWq = dQ/dWq * (dA/dQ * ( dS/dA * (dl/dO * dO/dS)))
+
+=> dl/dWq = XT * (KT/sqtr(dk) * (ds/dA * (Gt * VT)))
+=> dl/dWq = 4 * (3 * (2 * (1)))
+
+1. (Gt * VT) = 2,4 * 4, 2 = 2,2
+2. ds/dA * 1 = 2,2 * 2,2 = 2,2
+3. KT/sqtr(dk) * 2 = 4,2 2,2 = 4,2
+4. 4 * 3 = XT * 3 = 5,2 * 4,2 = 5,2 * 2, 4 = 5,4
+
+#Gradient of Wk
+A = Q*KT/sqtr(dk)
+S = sigma(A)
+O = S * V
+
+dl/dWk = dl/dO * dO/dS * dS/dA * dA/dKT * dKT/dWk
+
+dl/dO = Gt
+dO/dS = VT
+dS/dA = gradient sigma(A)
+dA/dKT = Q/sqtr(dk)
+dKT/dWk = XT
+
+Example with dimensions: 
+Gt (2, 4)
+X (2, 5)
+W (5, 4)
+Q = 2,5 * 5,4 = 2,4
+K = 2,5 * 5,4 = 2,4
+V = 2,5 * 5,4 = 2,4
+
+dl/dWk = dl/dO * dO/dS * dS/dA * dA/dKT * dKT/dWk
+
+dl/dWk = (((dl/dO * dO/dS) * dS/dA) * dA/dKT) * dKT/dWk
+
+Multiplication is FROM RIGHT TO LEFT:
+dl/dWk = dKT/dWk * (dA/dKT * (dS/dA * (dl/dO * dO/dS)))
+
+=> dl/dWk = XT * (QT/sqtr(dk) * (ds/dA * (Gt * VT)))
+=> dl/dWq = 4 * (3 * (2 * (1)))
+
+1. (Gt * VT) = 2,4 * 4, 2 = 2,2
+2. ds/dA * 1 = 2,2 * 2,2 = 2,2
+3. QT/sqtr(dk) * 2 = 4,2 * 2,2 = 4,2
+4. 4 * 3 = XT * 3 = 5,2 * 4,2 = 5,2 * 2, 4 = 5,4
+
+
+#Gradient of Wv
+A = Q*KT/sqtr(dk)
+S = sigma(A)
+O = S * V
+
+dl/dWv = dl/dO * dO/dV * dV/dWv
+
+dl/dO = Gt
+dO/dS = VT
+dV/dWv = XT
+
+Example with dimensions: 
+Gt (2, 4)
+X (2, 5)
+W (5, 4)
+Q = 2,5 * 5,4 = 2,4
+K = 2,5 * 5,4 = 2,4
+V = 2,5 * 5,4 = 2,4
+
+dl/dWv = dl/dO * dO/dV * dV/dWv
+
+dl/dWv = (dl/dO * dO/dV) * dV/dWv
+
+Multiplication is FROM RIGHT TO LEFT:
+dl/dWv = dV/dWv * (dl/dO * dO/dV)
+
+=> dl/dWv = XT * (Gt * ST)
+=> dl/dWv = 5,2 * (2,4 * 2, 2) = 5, 2 * 4,2 = 5, 4
