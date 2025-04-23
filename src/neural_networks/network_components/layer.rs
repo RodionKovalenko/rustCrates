@@ -209,6 +209,10 @@ impl Layer {
 
         let mut previous_gradient_batch_padded: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient_batch.clone();
 
+        // println!("-------------------------------------------------");
+        // println!("previous gradient batch padded in backward in dense: {:?} {} {}", &previous_gradient_batch_padded.len(), previous_gradient_batch_padded[0].len(), previous_gradient_batch_padded[0][0].len());
+        // println!("padding_mask_batch in backward in dense: {:?}, {} \n\n", &padding_mask_batch.len(), padding_mask_batch[0].len());
+
         apply_padding_mask_batch(&mut previous_gradient_batch_padded, padding_mask_batch);
 
         // println!("\n\n\nprevious gradient batch padded: {:?}", previous_gradient_batch_padded);
@@ -224,12 +228,8 @@ impl Layer {
             check_nan_or_inf(&mut gradient_output.clone(), "gradient output in dense layer backward is not valid");
 
             // 7,7 hadamard 7, 7 = 7,7
-            if previous_gradient.len() == gradient_output.len() && previous_gradient[0].len() == gradient_output[0].len() {
-                input_gradient_batch[batch_ind] = hadamard_product_2d_c(&previous_gradient, &gradient_output);
-            } else {
-                input_gradient_batch[batch_ind] = multiply_complex(&gradient_output, &transpose(&previous_gradient));
-            }
-
+            input_gradient_batch[batch_ind] = hadamard_product_2d_c(&previous_gradient, &gradient_output);
+           
             // 7,8 * 7, 7 = 8, 7 * 7, 7 = 8, 7
             check_nan_or_inf(&mut input_gradient_batch[batch_ind], "previous gradient in dense layer backward is not valid");
 
