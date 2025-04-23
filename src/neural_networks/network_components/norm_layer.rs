@@ -21,6 +21,8 @@ pub struct NormalNormLayer {
     #[serde(skip)]
     input_batch_before: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
+    previous_gradient_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
     normalized_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     mean_batch: Option<Vec<Vec<Complex<f64>>>>,
@@ -44,6 +46,7 @@ impl NormalNormLayer {
             learning_rate,
             input_batch: None,
             input_batch_before: None,
+            previous_gradient_input_batch: None,
             normalized_batch: None,
             mean_batch: None,
             var_batch: None,
@@ -102,6 +105,7 @@ impl NormalNormLayer {
         self.var_batch = Some(var_batch);
         self.time_step = layer_input.get_time_step();
         self.output_batch = Some(output_batch.clone());
+        self.previous_gradient_input_batch = Some(layer_input.get_previous_gradient_input_batch());
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(output_batch);
@@ -111,6 +115,8 @@ impl NormalNormLayer {
 
     pub fn backward(&mut self, grad_output: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
         let input_batch = self.input_batch.as_ref().expect("Input batch not found");
+        let _input_batch_before = self.input_batch_before.as_ref().expect("Input batch before not found");
+        let previous_gradient_input_batch = self.previous_gradient_input_batch.as_mut().expect("Previous gradient input batch not found");
         let normalized_batch = self.normalized_batch.as_ref().expect("Normalized batch not found");
         let mean_batch = self.mean_batch.as_ref().expect("Mean not found");
         let var_batch = self.var_batch.as_ref().expect("Variance not found");
@@ -127,7 +133,11 @@ impl NormalNormLayer {
         let n = feature_dim as f64;
         let eps = 1e-8;
 
+        println!("\n GRADIENT INPUT:  : {}, {}, {}", input_grads.len(), input_grads[0].len(), input_grads[0][0].len());
+        println!("previous gradient input batch: {:?}, {}, {}", &previous_gradient_input_batch.len(), previous_gradient_input_batch[0].len(), previous_gradient_input_batch[0][0].len());
+
         for b in 0..batch_size {
+            //previous_gradient_input_batch[b] = transpose(&previous_gradient_input_batch[b]);
             for s in 0..seq_len {
                 let mu: Complex<f64> = mean_batch[b][s];
                 let var: Complex<f64> = var_batch[b][s] + eps;
@@ -159,10 +169,17 @@ impl NormalNormLayer {
 
                     let dxhat: Complex<f64> = grad_output[b][s][f] * self.gamma[f];
                     let x: Complex<f64> = input_batch[b][s][f];
+                    let _x_orig: Complex<f64> = _input_batch_before[b][s][f];
+                    let _x_input = x - _x_orig;
 
                     let dmu = dmu_sum * self.gamma[f] + dvar_sum * dx_minus_mu_sum;
 
-                    input_grads[b][s][f] = (dxhat * std_inv) + (dvar_sum * (2.0 * (x - mu) / n)) + dmu / n;
+                    let gradient: Complex<f64> = (dxhat * std_inv) + (dvar_sum * (2.0 * (x - mu) / n)) + dmu / n;
+                   
+                    for j in 0..feature_dim {
+                        let _identity: f64 = if j == f { 1.0 } else { 0.0 };
+                        input_grads[b][s][j] += gradient * _identity + gradient * previous_gradient_input_batch[b][s][j];
+                    }
                 }
             }
         }

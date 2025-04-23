@@ -7,6 +7,7 @@ pub struct LayerOutput {
     output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     output_record: Option<Vec<Vec<Complex<f64>>>>,
     l2_regularization: Option<Vec<Vec<Complex<f64>>>>,
+    input_gradient_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
 }
 
 impl LayerOutput {
@@ -15,6 +16,7 @@ impl LayerOutput {
             output_batch: None,
             output_record: None,
             l2_regularization: None,
+            input_gradient_batch: None,
         }
     }
 
@@ -27,6 +29,9 @@ impl LayerOutput {
     pub fn set_l2_regularization(&mut self, l2_regularization: Vec<Vec<Complex<f64>>>) {
         self.l2_regularization = Some(l2_regularization);
     }
+    pub fn set_input_gradient_batch(&mut self, input_gradient_batch: Vec<Vec<Vec<Complex<f64>>>>) {
+        self.input_gradient_batch = Some(input_gradient_batch);
+    }
 
     pub fn get_output_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
         self.output_batch.clone().unwrap_or_else(|| vec![])
@@ -36,5 +41,8 @@ impl LayerOutput {
     }
     pub fn get_l2_regularization(&self) -> Vec<Vec<Complex<f64>>> {
         self.l2_regularization.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_input_gradient_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
+        self.input_gradient_batch.clone().unwrap_or_else(|| vec![])
     }
 }

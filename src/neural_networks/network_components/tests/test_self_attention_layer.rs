@@ -198,6 +198,8 @@ mod test_self_attention_layer {
         let gradient_attention_layer: Gradient = attention_layer.backward(&gradient_ffn.get_gradient_input_batch());
 
         let gradient_input_batch_att_l = gradient_attention_layer.get_gradient_input();
+        let gradient_input_batch_att_batch = gradient_attention_layer.get_gradient_input_batch();
+
 
         //println!("input batch: {:?}", &input_batch);
         println!("padding mask batch in test transformer: {:?}", &padding_mask_batch);
@@ -236,6 +238,16 @@ mod test_self_attention_layer {
         let global_error = global_relative_error_2d_l2(&num_gradient_input_batch_aggregated, &gradient_input_batch_att_l);
 
         println!("global relative gradient error input: {:?}", &global_error);
+
+        for b in 0..gradient_input_batch_att_batch.len() {
+            for s in 0..gradient_input_batch_att_batch[b].len() {
+                let analytical_row_sum: Complex<f64> = gradient_input_batch_att_batch[b][s].iter().sum();
+                let numerical_row_sum: Complex<f64> = num_gradient_input_batch[b][s].iter().sum();
+
+                println!("analytical row sum: {:?}", analytical_row_sum);
+                println!("numerical row sum: {:?}", numerical_row_sum);
+            }
+        }
 
         //test_gradient_batch_error(&num_gradient_input_batch, &gradient_input_batch_att_l, 1e-2);
 

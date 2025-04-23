@@ -7,6 +7,7 @@ pub struct LayerInput {
     input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     batch_ids: Option<Vec<Vec<u32>>>,
     input_batch_before: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    previous_gradient_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     padding_mask_batch: Option<Vec<Vec<u32>>>,
     input_record: Option<Vec<Vec<Complex<f64>>>>,
     time_step: usize,
@@ -20,6 +21,7 @@ impl LayerInput {
             input_batch_before: None,
             padding_mask_batch: None,
             input_record: None,
+            previous_gradient_input_batch: None,
             time_step: 0,
         }
     }
@@ -28,6 +30,9 @@ impl LayerInput {
     }
     pub fn set_input_batch_before(&mut self, input_batch_before: Vec<Vec<Vec<Complex<f64>>>>) {
         self.input_batch_before = Some(input_batch_before);
+    }
+    pub fn set_previous_gradient_input_batch(&mut self, previous_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>>) {
+        self.previous_gradient_input_batch = Some(previous_gradient_input_batch);
     }
     pub fn set_padding_mask_batch(&mut self, padding_mask_batch: Vec<Vec<u32>>) {
         self.padding_mask_batch = Some(padding_mask_batch);
@@ -50,6 +55,9 @@ impl LayerInput {
     }
     pub fn get_input_batch_before(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
         self.input_batch_before.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_previous_gradient_input_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
+        self.previous_gradient_input_batch.clone().unwrap_or_else(|| vec![])
     }
     pub fn get_input_record(&self) -> Vec<Vec<Complex<f64>>> {
         self.input_record.clone().unwrap_or_else(|| vec![])
