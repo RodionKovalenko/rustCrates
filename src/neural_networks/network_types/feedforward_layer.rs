@@ -63,6 +63,9 @@ impl FeedForwardLayer {
         let padding_mask_batch = self.padding_mask_batch.clone().unwrap_or_else(|| vec![vec![1; input_batch[0].len()]; input_batch.len()]);
         self.padding_mask_batch = Some(padding_mask_batch.clone());
 
+        let mut linear_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![];
+        let mut dense_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![];
+
         // Apply all layers sequentially
         for layer in self.layers.iter_mut() {
             match layer {
@@ -83,6 +86,20 @@ impl FeedForwardLayer {
 
                     let output_linear = linear_layer.forward(&linear_layer_input);
                     output = output_linear.get_output_batch();
+
+                    linear_gradient_input_batch = output_linear.get_input_gradient_batch();
+                    // println!("gradient input batch in linear layer: {} {} {}", input_gradient_batch.len(), input_gradient_batch[0].len(), input_gradient_batch[0][0].len());
+                }
+                _ => {}
+            }
+        }
+
+
+        for layer in self.layers.iter_mut() {
+            match layer {
+                LayerEnum::Dense(dense_layer) => {
+                   let gradient_dense = dense_layer.backward(&linear_gradient_input_batch);
+                   dense_gradient_input_batch = gradient_dense.get_gradient_input_batch();
                 }
                 _ => {}
             }
@@ -96,6 +113,7 @@ impl FeedForwardLayer {
                     rms_input_layer.set_input_batch(output.clone());
                     rms_input_layer.set_input_batch_before(input_batch.clone());
                     rms_input_layer.set_time_step(self.time_step);
+                    rms_input_layer.set_previous_gradient_input_batch(dense_gradient_input_batch);
 
                     let rms_output = rms_norm_layer.forward(&rms_input_layer);
                     output = rms_output.get_output_batch();
@@ -106,6 +124,7 @@ impl FeedForwardLayer {
                     norm_input_layer.set_input_batch(output.clone());
                     norm_input_layer.set_input_batch_before(input_batch.clone());
                     norm_input_layer.set_time_step(self.time_step);
+                    norm_input_layer.set_previous_gradient_input_batch(dense_gradient_input_batch);
 
                     let layer_output = norm_layer.forward(&norm_input_layer);
                     output = layer_output.get_output_batch();

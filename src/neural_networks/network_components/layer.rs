@@ -224,7 +224,12 @@ impl Layer {
             check_nan_or_inf(&mut gradient_output.clone(), "gradient output in dense layer backward is not valid");
 
             // 7,7 hadamard 7, 7 = 7,7
-            input_gradient_batch[batch_ind] = hadamard_product_2d_c(&previous_gradient, &gradient_output);
+            if previous_gradient.len() == gradient_output.len() && previous_gradient[0].len() == gradient_output[0].len() {
+                input_gradient_batch[batch_ind] = hadamard_product_2d_c(&previous_gradient, &gradient_output);
+            } else {
+                input_gradient_batch[batch_ind] = multiply_complex(&gradient_output, &transpose(&previous_gradient));
+            }
+
             // 7,8 * 7, 7 = 8, 7 * 7, 7 = 8, 7
             check_nan_or_inf(&mut input_gradient_batch[batch_ind], "previous gradient in dense layer backward is not valid");
 
@@ -237,10 +242,10 @@ impl Layer {
                 }
             }
 
+            // println!("previous_gradientin dense: {} {}", previous_gradient.len(), previous_gradient[0].len());
+            // println!("gradient_output dense: {} {}", gradient_output.len(), gradient_output[0].len());
+            // println!("input gradient batch in dense: {} {}", input_gradient_batch[batch_ind].len(), input_gradient_batch[batch_ind][0].len());
             input_gradient_batch[batch_ind] = multiply_complex(&input_gradient_batch[batch_ind], &transpose(&self.weights));
-
-            // let scaling_factor = Complex::new(1.0 / 50254.0, 1.0 / 50254.0);
-            // input_gradient_batch[batch_ind] = multiply_scalar_with_matrix::<Complex<f64>>(scaling_factor, &input_gradient_batch[batch_ind]);
         }
 
         gradient.set_gradient_input_batch(input_gradient_batch);
