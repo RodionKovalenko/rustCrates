@@ -200,13 +200,17 @@ mod test_self_attention_layer {
         let gradient_input_batch_att_l = gradient_attention_layer.get_gradient_input();
         let gradient_input_batch_att_batch = gradient_attention_layer.get_gradient_input_batch();
 
+        let attention_head = attention_layer.attention_heads.get(0).unwrap().clone();
+        let weight_q = attention_head.weights_q.clone();
+        let gradient = attention_head.gradient.as_ref().unwrap();
+        let analytical_weight_q_gradient = gradient.get_gradient_weights_q();
 
         //println!("input batch: {:?}", &input_batch);
         println!("padding mask batch in test transformer: {:?}", &padding_mask_batch);
         println!("target tokens ids: {:?}", &target_token_id_batch);
         println!("final output dim: {} {} {}", _softmax_batch_output.len(), _softmax_batch_output[0].len(), _softmax_batch_output[0][0].len());
 
-        // // Define the loss function
+        // TEST INPUT GRADIENT
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             layer_input.set_input_batch(input.clone());
             layer_input.set_padding_mask_batch(padding_mask_batch.clone());
@@ -250,11 +254,6 @@ mod test_self_attention_layer {
         }
 
         //test_gradient_batch_error(&num_gradient_input_batch, &gradient_input_batch_att_l, 1e-2);
-
-        let attention_head = attention_layer.attention_heads.get(0).unwrap().clone();
-        let weight_q = attention_head.weights_q.clone();
-        let gradient = attention_head.gradient.as_ref().unwrap();
-        let analytical_weight_q_gradient = gradient.get_gradient_weights_q();
 
         // Test weights q
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {

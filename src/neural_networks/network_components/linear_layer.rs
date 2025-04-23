@@ -67,7 +67,6 @@ impl LinearLayer {
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(output_batch);
-        layer_output.set_input_gradient_batch(self.calculate_input_gradient_batch());
 
         layer_output
     }
@@ -111,19 +110,6 @@ impl LinearLayer {
         self.gradient = Some(gradient.clone());
 
         gradient
-    }
-
-    pub fn calculate_input_gradient_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
-        let input_batch = self.input_batch.as_ref().expect("Input batch is missing in dense layer");
-
-        let mut input_gradient_batch = vec![vec![vec![Complex::new(0.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
-
-        for batch_ind in 0..input_batch.len() {
-            input_gradient_batch[batch_ind] = transpose(&self.weights);
-
-        }
-        
-        input_gradient_batch
     }
 
     pub fn update_parameters(&mut self) {

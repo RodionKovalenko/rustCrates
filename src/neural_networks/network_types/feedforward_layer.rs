@@ -60,11 +60,12 @@ impl FeedForwardLayer {
         self.time_step = input.get_time_step();
 
         let mut output: Vec<Vec<Vec<Complex<f64>>>> = input_batch.clone();
-        let padding_mask_batch = self.padding_mask_batch.clone().unwrap_or_else(|| vec![vec![1; input_batch[0].len()]; input_batch.len()]);
-        self.padding_mask_batch = Some(padding_mask_batch.clone());
+        let mut padding_mask_batch = input.get_padding_mask_batch();
 
-        let mut linear_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![];
-        let mut dense_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![];
+        if padding_mask_batch.is_empty() {
+            padding_mask_batch = vec![vec![1; input_batch[0].len()]; input_batch.len()];
+        }
+        self.padding_mask_batch = Some(padding_mask_batch.clone());
 
         // Apply all layers sequentially
         for layer in self.layers.iter_mut() {
@@ -86,24 +87,13 @@ impl FeedForwardLayer {
 
                     let output_linear = linear_layer.forward(&linear_layer_input);
                     output = output_linear.get_output_batch();
-
-                    linear_gradient_input_batch = output_linear.get_input_gradient_batch();
                     // println!("gradient input batch in linear layer: {} {} {}", input_gradient_batch.len(), input_gradient_batch[0].len(), input_gradient_batch[0][0].len());
                 }
                 _ => {}
             }
         }
 
-
-        for layer in self.layers.iter_mut() {
-            match layer {
-                LayerEnum::Dense(dense_layer) => {
-                   let gradient_dense = dense_layer.backward(&linear_gradient_input_batch);
-                   dense_gradient_input_batch = gradient_dense.get_gradient_input_batch();
-                }
-                _ => {}
-            }
-        }
+        let previous_gradient_input_batch = self.calculate_input_gradient_batch();
 
         // Apply the RMS normalization layer
         if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
@@ -113,7 +103,7 @@ impl FeedForwardLayer {
                     rms_input_layer.set_input_batch(output.clone());
                     rms_input_layer.set_input_batch_before(input_batch.clone());
                     rms_input_layer.set_time_step(self.time_step);
-                    rms_input_layer.set_previous_gradient_input_batch(dense_gradient_input_batch);
+                    rms_input_layer.set_previous_gradient_input_batch(previous_gradient_input_batch);
 
                     let rms_output = rms_norm_layer.forward(&rms_input_layer);
                     output = rms_output.get_output_batch();
@@ -124,7 +114,7 @@ impl FeedForwardLayer {
                     norm_input_layer.set_input_batch(output.clone());
                     norm_input_layer.set_input_batch_before(input_batch.clone());
                     norm_input_layer.set_time_step(self.time_step);
-                    norm_input_layer.set_previous_gradient_input_batch(dense_gradient_input_batch);
+                    norm_input_layer.set_previous_gradient_input_batch(previous_gradient_input_batch);
 
                     let layer_output = norm_layer.forward(&norm_input_layer);
                     output = layer_output.get_output_batch();
@@ -189,6 +179,35 @@ impl FeedForwardLayer {
         gradient.set_gradient_input_batch(output_gradients);
 
         gradient
+    }
+
+    pub fn calculate_input_gradient_batch(&mut self) -> Vec<Vec<Vec<Complex<f64>>>> {
+        let linear_layer = match self.layers.get(1) {
+            Some(LayerEnum::Linear(linear_layer)) => linear_layer,
+            _ => &Box::new(LinearLayer::new(0.01, 2, 3)),
+        };
+
+        let input_batch = linear_layer.input_batch.as_ref().expect("no input batch found in ");
+
+        let mut output_gradients = vec![vec![vec![Complex::new(1.0, 0.0); linear_layer.weights[0].len()]; input_batch[0].len()]; input_batch.len()];
+
+        // forward -> Dense, Linear
+        // backward -> Linear, Dense
+        for layer in self.layers.iter_mut().rev() {
+            match layer {
+                LayerEnum::Dense(dense_layer) => {
+                    let gradient = dense_layer.backward(&output_gradients);
+                    output_gradients = gradient.get_gradient_input_batch();
+                }
+                LayerEnum::Linear(linear_layer) => {
+                    let gradient = linear_layer.backward(&output_gradients);
+                    output_gradients = gradient.get_gradient_input_batch();
+                }
+                _ => {}
+            }
+        }
+
+        output_gradients
     }
 
     pub fn update_parameters(&mut self) {

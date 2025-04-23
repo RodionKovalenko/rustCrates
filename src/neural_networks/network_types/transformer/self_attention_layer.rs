@@ -92,6 +92,7 @@ impl SelfAttentionLayer {
 
         layer_input.set_input_batch(batch_output.clone());
         layer_input.set_input_batch_before(input_batch.clone());
+        layer_input.set_previous_gradient_input_batch(self.calculate_input_gradient_batch());
 
         // Process the dense layers
         if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
@@ -182,6 +183,44 @@ impl SelfAttentionLayer {
         gradient.set_gradient_input_batch(combined_gradient_input_batch);
 
         gradient
+    }
+
+    pub fn calculate_input_gradient_batch(&mut self) -> Vec<Vec<Vec<Complex<f64>>>> {
+        let input_batch = self.input_batch.as_ref().expect("No input batch found");
+        let num_heads = self.attention_heads.len();
+        assert!(num_heads > 0, "No attention heads found in self-attention layer!");
+
+        let gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(1.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
+
+        let previous_gradient_head_splitted = self.split_gradient_into_heads(&gradient_input_batch);
+        let mut gradient_input_batches: Vec<Vec<Vec<Vec<Complex<f64>>>>> = Vec::new();
+
+        // Backpropagate gradients through each attention head
+        for (head_ind, attention_head) in self.attention_heads.iter_mut().enumerate() {
+            let mut previous_head_gradient_batch = previous_gradient_head_splitted[head_ind].clone();
+
+            check_nan_or_inf_3d(&mut previous_head_gradient_batch, "previous_head_gradient_batch NaN values in selft attention layer backward attention head");
+
+            // println!("backward previous head gradient batch: {} {} {}", &previous_head_gradient_batch.len(), previous_head_gradient_batch[0].len(), previous_head_gradient_batch[0][0].len());
+             let gradient = attention_head.backward(&previous_head_gradient_batch);
+
+            gradient_input_batches.push(gradient.get_gradient_input_batch());
+            // println!("gradient input head {:?}", &gradient.get_gradient_input_batch());
+        }
+
+        let mut combined_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); gradient_input_batches[0][0][0].len()]; gradient_input_batches[0][0].len()]; gradient_input_batches[0].len()];
+
+        for h in 0..gradient_input_batches.len() {
+            for b in 0..gradient_input_batches[h].len() {
+                for s in 0..gradient_input_batches[h][b].len() {
+                    for d in 0..gradient_input_batches[h][b][s].len() {
+                        combined_gradient_input_batch[b][s][d] += gradient_input_batches[h][b][s][d];
+                    }
+                }
+            }
+        }
+
+        combined_gradient_input_batch
     }
 
     pub fn split_gradient_into_heads(&self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Vec<Complex<f64>>>>> {
