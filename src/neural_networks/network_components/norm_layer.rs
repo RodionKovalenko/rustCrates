@@ -133,8 +133,8 @@ impl NormalNormLayer {
         let n = feature_dim as f64;
         let eps = 1e-8;
 
-        println!("\n GRADIENT INPUT:  : {}, {}, {}", input_grads.len(), input_grads[0].len(), input_grads[0][0].len());
-        println!("previous gradient input batch: {:?}, {}, {}", &previous_gradient_input_batch.len(), previous_gradient_input_batch[0].len(), previous_gradient_input_batch[0][0].len());
+        // println!("\n GRADIENT INPUT:  : {}, {}, {}", input_grads.len(), input_grads[0].len(), input_grads[0][0].len());
+        // println!("previous gradient input batch: {:?}, {}, {}", &previous_gradient_input_batch.len(), previous_gradient_input_batch[0].len(), previous_gradient_input_batch[0][0].len());
 
         for b in 0..batch_size {
             //previous_gradient_input_batch[b] = transpose(&previous_gradient_input_batch[b]);
