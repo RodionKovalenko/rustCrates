@@ -209,28 +209,17 @@ impl Layer {
 
         let mut previous_gradient_batch_padded: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient_batch.clone();
 
-        // println!("-------------------------------------------------");
-        // println!("previous gradient batch padded in backward in dense: {:?} {} {}", &previous_gradient_batch_padded.len(), previous_gradient_batch_padded[0].len(), previous_gradient_batch_padded[0][0].len());
-        // println!("padding_mask_batch in backward in dense: {:?}, {} \n\n", &padding_mask_batch.len(), padding_mask_batch[0].len());
-
         apply_padding_mask_batch(&mut previous_gradient_batch_padded, padding_mask_batch);
 
         // println!("\n\n\nprevious gradient batch padded: {:?}", previous_gradient_batch_padded);
 
-        // For each input sample in the batch
         for (batch_ind, (input, previous_gradient)) in input_batch.iter().zip(&previous_gradient_batch_padded).enumerate() {
-            // Multiply the transposed input sample with previous gradients (for weight gradients)
-
-            // 7, 7
             let gradient_output = get_gradient_complex(&output_batch[batch_ind], &raw_output_batch[batch_ind], self.activation_type.clone());
 
             check_nan_or_inf(&mut previous_gradient.clone(), "previous gradient in dense layer backward is not valid");
             check_nan_or_inf(&mut gradient_output.clone(), "gradient output in dense layer backward is not valid");
 
-            // 7,7 hadamard 7, 7 = 7,7
             input_gradient_batch[batch_ind] = hadamard_product_2d_c(&previous_gradient, &gradient_output);
-           
-            // 7,8 * 7, 7 = 8, 7 * 7, 7 = 8, 7
             check_nan_or_inf(&mut input_gradient_batch[batch_ind], "previous gradient in dense layer backward is not valid");
 
             weight_gradients[batch_ind] = multiply_complex(&transpose(&input), &input_gradient_batch[batch_ind]);
@@ -242,9 +231,6 @@ impl Layer {
                 }
             }
 
-            // println!("previous_gradientin dense: {} {}", previous_gradient.len(), previous_gradient[0].len());
-            // println!("gradient_output dense: {} {}", gradient_output.len(), gradient_output[0].len());
-            // println!("input gradient batch in dense: {} {}", input_gradient_batch[batch_ind].len(), input_gradient_batch[batch_ind][0].len());
             input_gradient_batch[batch_ind] = multiply_complex(&input_gradient_batch[batch_ind], &transpose(&self.weights));
         }
 
@@ -263,7 +249,7 @@ impl Layer {
         let input_batch = gradient.get_gradient_input_batch();
         let batch_size = input_batch.len() as f64;
 
-        let threshold = 0.5;
+        let threshold = 1.0;
         clip_gradients(&mut weight_gradients, threshold);
         clip_gradient_1d(&mut bias_gradients, threshold);
 

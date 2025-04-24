@@ -47,18 +47,8 @@ pub fn calculate_adam_w(weights: &[Vec<Complex<f64>>], gradient: &[Vec<Complex<f
         })
         .collect();
 
-    // let max = updated_weights
-    //     .iter()
-    //     .filter_map(|w| w.iter().max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less)))
-    //     .max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
-
-    // let min = updated_weights
-    //     .iter()
-    //     .filter_map(|w| w.iter().min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Greater)))
-    //     .min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Greater));
-
-    // println!("max in backward weights gradient: {:?}", max);
-    // println!("min in backward weights gradient: {:?}", min);
+    // let max = updated_weights.iter().flat_map(|w| w.iter()).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
+    // println!("max in adamW updated weights: {:?}", max);
 
     updated_weights
 }
@@ -66,7 +56,8 @@ pub fn calculate_adam_w(weights: &[Vec<Complex<f64>>], gradient: &[Vec<Complex<f
 pub fn calculate_adam_w_bias(bias: &[Complex<f64>], gradient: &[Complex<f64>], prev_m: &mut Vec<Complex<f64>>, prev_v: &mut Vec<Complex<f64>>, learning_rate: f64, time_step: usize) -> Vec<Complex<f64>> {
     let time_step = time_step.max(1);
 
-    bias.iter()
+    let updated_bias: Vec<Complex<f64>> = bias
+        .iter()
         .enumerate()
         .map(|(i, &b)| {
             let mut g_t = gradient[i];
@@ -95,5 +86,10 @@ pub fn calculate_adam_w_bias(bias: &[Complex<f64>], gradient: &[Complex<f64>], p
 
             bias_update
         })
-        .collect()
+        .collect();
+
+    // let max = updated_bias.iter().max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
+    // println!("max in adamW updated bias: {:?}", max);
+
+    updated_bias
 }

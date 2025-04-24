@@ -6,7 +6,8 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 // Use smaller base instead of the original 10000
-pub static INITIAL_BASE: f64 = 50.0;
+// maintaining the proportion 10000/512 = 1250/64
+pub static INITIAL_BASE: f64 = 1250.0;
 
 pub static SCALING_FAKTOR: f64 = 1.0;
 
@@ -16,17 +17,11 @@ pub struct PositionalEncodingLayer {
     pub base: f64,
     #[serde(skip)]
     pub gradient: Option<Gradient>,
-    pub log_scaling_factor: f64,
 }
 
 impl PositionalEncodingLayer {
     pub fn new(embedding_dim: usize) -> Self {
-        Self {
-            embedding_dim,
-            base: INITIAL_BASE,
-            gradient: None,
-            log_scaling_factor: -4.5,
-        }
+        Self { embedding_dim, base: INITIAL_BASE, gradient: None }
     }
 
     /// Apply positional encoding to a batch of embeddings
@@ -97,24 +92,21 @@ impl PositionalEncodingLayer {
     /// Adds wavelet-based positional encoding to token embeddings
     fn add_positional_encoding(&self, token_embeddings: &Vec<Complex<f64>>, positional_encoding: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
         let len = positional_encoding.len();
-        let half_len = len >> 1; 
-        
-        (0..half_len).map(|i| {
-            let trend_encoding = &positional_encoding[i];
-            let detail_encoding = &positional_encoding[i + half_len];
-    
-            let trend_applied = Complex::new(
-                token_embeddings[i].re + trend_encoding.re,
-                token_embeddings[i].im + trend_encoding.im
-            );
-    
-            let detail_applied = Complex::new(
-                token_embeddings[i + half_len].re + detail_encoding.re,
-                token_embeddings[i + half_len].im + detail_encoding.im
-            );
-    
-            vec![trend_applied, detail_applied]
-        }).flatten().collect()
+        let half_len = len >> 1;
+
+        (0..half_len)
+            .map(|i| {
+                let trend_encoding = &positional_encoding[i];
+                let detail_encoding = &positional_encoding[i + half_len];
+
+                let trend_applied = Complex::new(token_embeddings[i].re + trend_encoding.re, token_embeddings[i].im + trend_encoding.im);
+
+                let detail_applied = Complex::new(token_embeddings[i + half_len].re + detail_encoding.re, token_embeddings[i + half_len].im + detail_encoding.im);
+
+                vec![trend_applied, detail_applied]
+            })
+            .flatten()
+            .collect()
     }
 
     /// Applies rotary positional encoding to a single token embedding

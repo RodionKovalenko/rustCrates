@@ -29,19 +29,21 @@ mod test_norm_layer {
 
         let mut norm_layer = NormalNormLayer::new(input_batch[0][0].len(), 1e-8, learning_rate);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING);
-      
+
         let mut layer_input = LayerInput::new_default();
         layer_input.set_input_batch_before(input_batch_before.clone());
         layer_input.set_input_batch(input_batch.clone());
 
         let norm_output = norm_layer.forward(&layer_input);
         let norm_output_batch: Vec<Vec<Vec<Complex<f64>>>> = norm_output.get_output_batch();
-        let _softmax_batch_output = softmax_layer.forward(&norm_output_batch,None);
+        let _softmax_batch_output = softmax_layer.forward(&norm_output_batch, None);
 
         let gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
 
         println!("input batch :{:?}", &input_batch);
         println!("\ninput batch before :{:?}", &input_batch_before);
+
+        norm_layer.previous_gradient_input_batch = Some(vec![vec![vec![Complex::new(1.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()]);
 
         let gradient_norm = norm_layer.backward(&gradient.get_gradient_input_batch());
         let analytical_gradient_input_norm = gradient_norm.get_gradient_input_batch();
@@ -53,7 +55,7 @@ mod test_norm_layer {
             let norm_output = norm_layer.forward(&layer_input);
             let norm_output_batch = norm_output.get_output_batch();
 
-            let softmax_batch_output = softmax_layer.forward(&norm_output_batch,None);
+            let softmax_batch_output = softmax_layer.forward(&norm_output_batch, None);
 
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
 
@@ -65,21 +67,30 @@ mod test_norm_layer {
         println!("\nnumerical gradient norm: {:?}", &numerical_grad_input_norm);
         println!("\nanalytical gradient norm: {:?}", &analytical_gradient_input_norm);
 
+        // for b in 0..analytical_gradient_input_norm.len() {
+        //     for s in 0..analytical_gradient_input_norm[b].len() {
+        //         let analytical_row_sum: Complex<f64> = analytical_gradient_input_norm[b][s].iter().sum();
+        //         let numerical_row_sum: Complex<f64> = numerical_grad_input_norm[b][s].iter().sum();
+
+        //         println!("analytical row sum: {:?}", analytical_row_sum);
+        //         println!("numerical row sum: {:?}", numerical_row_sum);
+        //     }
+        // }
+
         let global_error = global_relative_error_l2(&numerical_grad_input_norm, &analytical_gradient_input_norm);
 
         println!("\n\nglobal relative gradient error: {:?}", &global_error);
 
         test_gradient_batch_error(&numerical_grad_input_norm, &analytical_gradient_input_norm, 1e-5);
 
-
-         //TEST 2: input batch itself
-         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
+        //TEST 2: input batch itself
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             layer_input.set_input_batch(input.clone());
             layer_input.set_input_batch_before(input_batch_before.clone());
             let norm_output = norm_layer.forward(&layer_input);
             let norm_output_batch = norm_output.get_output_batch();
 
-            let softmax_batch_output = softmax_layer.forward(&norm_output_batch,None);
+            let softmax_batch_output = softmax_layer.forward(&norm_output_batch, None);
 
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
 

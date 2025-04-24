@@ -172,14 +172,14 @@ pub mod test_ffn_layer {
             loss
         };
 
-        let epsilon = 1e-5;
+        let epsilon = 1e-8;
         let numerical_grad_linear: Vec<Vec<Complex<f64>>> = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &weights_linear, epsilon);
 
         // Check if gradient batch dimensions match expected shapes
         println!("\nanalytical grad weights linear: {:?}", grouped_linear_gradient_weights);
         println!("\nnumerical grad weights linear: {:?}", numerical_grad_linear);
 
-        test_gradient_error_2d(&grouped_linear_gradient_weights, &numerical_grad_linear, epsilon);
+        test_gradient_error_2d(&grouped_linear_gradient_weights, &numerical_grad_linear, 1e-6);
 
         let global_error = global_relative_error_2d_l2(&grouped_linear_gradient_weights, &numerical_grad_linear);
         println!("global relative gradient error gradient_weights_batch: {:?}", &global_error);
@@ -211,7 +211,7 @@ pub mod test_ffn_layer {
         println!("\nanalytical grad bias linear: {:?}", _analytical_gradient_bias_linear);
         println!("\nnumerical grad bias linear: {:?}", numerical_grad_linear_bias);
 
-        test_gradient_error_1d(&_analytical_gradient_bias_linear, &numerical_grad_linear_bias, epsilon);
+        test_gradient_error_1d(&_analytical_gradient_bias_linear, &numerical_grad_linear_bias, 1e-6);
     }
 
     #[test]
