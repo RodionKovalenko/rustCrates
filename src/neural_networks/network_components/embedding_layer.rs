@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use crate::database::sled_db::{get_db_embedding, get_storage_path_embedding_db};
 use crate::neural_networks::network_types::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
-use crate::neural_networks::utils::matrix::is_nan_or_inf;
+use crate::neural_networks::utils::matrix::{clip_gradients, is_nan_or_inf};
 use crate::utils::normalization::normalize;
 
 use super::gradient_struct::Gradient;
@@ -177,17 +177,18 @@ impl EmbeddingLayer {
     pub fn update_parameters(&mut self, token_id_batches: &[Vec<u32>], learning_rate: f64) {
         let db: &Db = get_db_embedding();
         let gradient: &Gradient = self.gradient.as_ref().expect("Output batch is missing in dense layer");
-        let previous_gradients: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_input_batch();
+        let mut previous_gradients: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_input_batch();
 
         let batch_size = (previous_gradients.len() * self.vocab_size) as f64;
 
         let max = previous_gradients.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
-        let min = previous_gradients.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Greater));
 
         println!("max in backward embedding layer gradient batch: {:?}", max);
-        println!("min in backward embedding layer gradient batch: {:?}", min);
+        // println!("min in backward embedding layer gradient batch: {:?}", min);
 
         for (batch_idx, token_ids) in token_id_batches.iter().enumerate() {
+            clip_gradients(&mut previous_gradients[batch_idx], 1.0);
+            
             for (i, &token_id) in token_ids.iter().enumerate() {
                 let mut token_embedding: Vec<Complex<f64>> = Self::get_embedding(&db, token_id).unwrap();
 

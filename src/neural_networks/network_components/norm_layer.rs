@@ -21,7 +21,7 @@ pub struct NormalNormLayer {
     #[serde(skip)]
     input_batch_before: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
-    previous_gradient_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub previous_gradient_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     normalized_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
