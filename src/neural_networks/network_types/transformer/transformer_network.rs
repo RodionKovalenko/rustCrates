@@ -22,7 +22,7 @@ use crate::{
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize) {
     'outer: for epoch in 0..num_epochs {
-        for batch_dataset in dataset.split_into_batches(4) {
+        for batch_dataset in dataset.split_into_batches(8) {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
 
             let input_batch_extended = batch_dataset.extend_input_with_target(input_batch, target_batch);
@@ -226,6 +226,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
     // Backward pass
 
     let mut gradient: Option<Gradient> = None;
+    let mut epoch = 1;
 
     for layer in transformer_network.layers.iter_mut().rev() {
         match layer {
@@ -284,6 +285,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                 }
             }
             LayerEnum::FeedForward(dense_layer) => {
+                epoch = dense_layer.time_step;
                 if let Some(previous_gradient) = gradient {
                     let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
                     //println!("backward dense start");
@@ -336,6 +338,8 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             _ => {}
         }
     }
+
+    transformer_network.update_step_lr_scheduler(epoch, 50, 0.9);
 
     gradient
 }

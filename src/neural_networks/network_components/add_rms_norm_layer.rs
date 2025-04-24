@@ -146,7 +146,7 @@ impl RMSNormLayer {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("No gradient found in rms norm layer");
         let mut gradient_gamma: Vec<Vec<Complex<f64>>> = gradient.get_gradient_gamma_batch();
 
-        let threshold = 0.5;
+        let threshold = 1.0;
         clip_gradients(&mut gradient_gamma, threshold);
         check_nan_or_inf(&mut gradient_gamma, "check weight gradients in linear layer");
 

@@ -82,12 +82,7 @@ impl LinearLayer {
 
         // For each input sample in the batch
         for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_batch).enumerate() {
-            // Multiply the transposed input sample with previous gradients (for weight gradients)
             weight_gradients[batch_ind] = multiply_complex(&transpose(input_sample), previous_gradient);
-
-            // println!("\nprevious gradient: {:?}", &previous_gradient);
-            // println!("\n weights linear: {:?}", &self.weights);
-
             //Accumulate gradients for biases
             for grad_row in previous_gradient.iter() {
                 for (k, grad_val) in grad_row.iter().enumerate() {
@@ -119,7 +114,7 @@ impl LinearLayer {
         let input_batch = gradient.get_gradient_input_batch();
         let batch_size = input_batch.len() as f64;
 
-        let threshold = 0.5;
+        let threshold = 1.0;
         clip_gradients(&mut weight_gradients, threshold);
         clip_gradient_1d(&mut bias_gradients, threshold);
 

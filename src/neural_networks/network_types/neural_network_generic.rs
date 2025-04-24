@@ -4,7 +4,7 @@ use std::{fmt::Debug, path::Path};
 use crate::{
     database::sled_db::get_storage_path_transformer_db,
     neural_networks::{
-        network_components::layer::LayerEnum,
+        network_components::layer::{ActivationType, LayerEnum},
         utils::file::{derialize_bin, serialize_bin},
     },
 };
@@ -54,6 +54,14 @@ impl NeuralNetwork {
             println!("Layer index {} is out of bounds", index);
         }
     }
+    pub fn update_step_lr_scheduler(&mut self, epoch: usize, step_size: usize, gamma: f64) {
+        let factor = (epoch / step_size) as f64;
+        let new_learning_rate= self.learning_rate * gamma.powf(factor);
+
+        update_learning_rate(self, new_learning_rate);
+        println!("initial learning rate is: {:?}", self.learning_rate);
+        println!("new learning rate is: {:?}", new_learning_rate);
+    }
 }
 
 pub fn create(number_inputs: usize, number_outputs: usize, number_of_hidden_layers: usize, number_of_hidden_neurons: usize, minibatch_size: usize, learning_rate: f64) -> NeuralNetwork {
@@ -96,6 +104,7 @@ pub fn get_from_db(filename: &str) -> Result<NeuralNetwork, String> {
 }
 
 pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64) {
+    // transformer.learning_rate = learning_rate;
     for layer in transformer.layers.iter_mut() {
         match layer {
             LayerEnum::Embedding(embedding_layer) => {
@@ -126,10 +135,22 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
                     }
                 }
             }
-            LayerEnum::FeedForward(dense_layer) => {
-                dense_layer.learning_rate = learning_rate;
+            LayerEnum::FeedForward(ffn_layer) => {
+                ffn_layer.learning_rate = learning_rate;
 
-                if let Some(norm_layer) = dense_layer.norm_layer.as_mut() {
+                for layer in ffn_layer.layers.iter_mut() {
+                    match layer {
+                        LayerEnum::Dense(dense_layer) => {
+                            dense_layer.learning_rate = learning_rate;
+                            dense_layer.activation_type = ActivationType::GELU;
+                        }
+                        LayerEnum::Linear(linear_layer) => {
+                            linear_layer.learning_rate = learning_rate;
+                        }
+                        _ => {}
+                    }
+                }
+                if let Some(norm_layer) = ffn_layer.norm_layer.as_mut() {
                     match norm_layer {
                         LayerEnum::RMSNorm(rms_norm_layer) => {
                             rms_norm_layer.learning_rate = learning_rate;
