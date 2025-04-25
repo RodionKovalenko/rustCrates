@@ -18,8 +18,8 @@ mod test_softmax_layer {
         // Define some small batch size and input dimensions for simplicity
         let batch_size = 2;
         let _seq_len: usize = 1; // Update to match the input structure
-        let input_dim = 10; // Match the input dimension with your input batch
-        let output_dim = 10; // Match output_dim to your layer's output
+        let input_dim = 5; // Match the input dimension with your input batch
+        let output_dim = 5; // Match output_dim to your layer's output
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
         let epsilon = 1e-5;
@@ -56,8 +56,8 @@ mod test_softmax_layer {
         let numerical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch(&mut loss_fn, linear_output.get_output_batch(), epsilon);
 
         //Check if gradient batch dimensions match expected shapes
-        // println!("\nanalytical grad: {:?}", analytical_grad);
-        // println!("\nnumerical grad: {:?}", numerical_grad);
+        println!("\nanalytical grad: {:?}", analytical_grad);
+        println!("\nnumerical grad: {:?}", numerical_grad);
 
         test_gradient_error_2d(&numerical_grad, &analytical_grad, epsilon);
 

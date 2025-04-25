@@ -364,26 +364,18 @@ pub fn softmax_complex_padding(input: &Vec<Vec<Complex<f64>>>, padding_mask: &Ve
                 return vec![Complex::new(0.0, 0.0); row.len()];
             }
 
-            let max_real = row
-                .iter()
-                .map(|val| val.re)
-                .fold(f64::NEG_INFINITY, f64::max);
-
-            // Compute exponentials with stabilization
-            let exps: Vec<Complex<f64>> = row
-                .iter()
-                .map(|&val| (val - Complex::new(max_real, 0.0)).exp()) // Shift by max_val
-                .collect();
-
-            // Sum of exponentials
-            let sum: Complex<f64> = exps.iter().sum();
-
-            if sum.norm() == 0.0 || sum.norm().is_nan() || sum.norm().is_infinite() {
+            let max_real = row.iter().map(|c| c.re).fold(f64::NEG_INFINITY, f64::max);
+            let exps_real: Vec<f64> = row.iter().map(|c| (c.re - max_real).exp()).collect();
+            let sum_real: f64 = exps_real.iter().sum();
+        
+            if sum_real == 0.0 ||sum_real.is_nan() || sum_real.is_infinite() {
                 return vec![Complex::new(1.0 / row.len() as f64, 0.0); row.len()];
             }
 
             // Compute softmax values
-            exps.iter().map(|&exp_val| exp_val / sum).collect()
+            exps_real.iter()
+            .map(|&r| Complex::new(r / sum_real, 0.0))
+            .collect()
         })
         .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
 }
