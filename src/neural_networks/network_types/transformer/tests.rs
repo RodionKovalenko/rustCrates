@@ -40,7 +40,7 @@ mod tests {
             }
         };
 
-        let learning_rate = 0.01;
+        let learning_rate = 0.001;
         transformer.learning_rate = learning_rate;
         //update_learning_rate(&mut transformer, learning_rate);
 
@@ -57,7 +57,7 @@ mod tests {
         // let input_str7: &str = "Was macht 2+6?";
         // let input_str8: &str = "Was macht 2+7?";
 
-        let target1: &str = "Mir geht es gut. Und wie geht es dir?";
+        let target1: &str = " Mir geht es gut.";
         // let target1: &str = "geht";
         // let target2: &str = "Berlin ist die Hauptstadt von Deutschland";
         //let target2: &str = "Berlin";
