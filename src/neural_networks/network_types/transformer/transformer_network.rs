@@ -17,7 +17,7 @@ use crate::{
             tokenizer::{detokenize, tokenize, tokenize_batch},
         },
     },
-    utils::sampling_methods::{greedy_decoding, top_p_temperature_sampling},
+    utils::sampling_methods::top_p_temperature_sampling,
 };
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize) {
@@ -75,13 +75,8 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
                 let sampled_tokens = top_p_temperature_sampling(&predicted_softmax_targets, p, temperature);
                 println!("Top-p + Temperature Sampling: {:?}", sampled_tokens);
-                
                 let predicted_token_batch: Vec<String> = sampled_tokens.iter().map(|token_indices| detokenize(token_indices).unwrap()).collect();
-                println!("predicted token tempareture sampling: {:?}", predicted_token_batch);
-
-                let sampled_greedy_tokens = greedy_decoding(&predicted_softmax_targets);
-                let predicted_token_batch: Vec<String> = sampled_greedy_tokens.iter().map(|token_indices| detokenize(token_indices).unwrap()).collect();
-                println!("predicted token highest index: {:?}", predicted_token_batch);
+                println!("predicted tokens: {:?}", predicted_token_batch);
 
                 if loss.norm() <= 0.01 {
                     println!("loss is smaller than 0.05. Break the training: {:?}", &loss);
@@ -373,7 +368,7 @@ fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, target_tokens: &Vec<
 
         let seq_ind = seq_ind_start + s;
         loss += -(predictions[seq_ind][target_idx as usize] + 1e-15).ln();
-        count +=1.0;
+        count += 1.0;
     }
 
     loss / count
