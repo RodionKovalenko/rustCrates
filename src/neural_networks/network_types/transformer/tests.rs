@@ -58,9 +58,7 @@ mod tests {
         // let input_str8: &str = "Was macht 2+7?";
 
         let target1: &str = " Mir geht es gut.";
-        // let target1: &str = "geht";
-        // let target2: &str = "Berlin ist die Hauptstadt von Deutschland";
-        //let target2: &str = "Berlin";
+        //let target2: &str = "Berlin ist die Hauptstadt von Deutschland";
         // let target3: &str = "Nach Donnerstag kommt Freitag.";
         // let target4: &str = "2 +3 macht 5";
 

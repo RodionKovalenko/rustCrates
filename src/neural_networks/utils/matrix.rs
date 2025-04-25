@@ -92,7 +92,7 @@ where
             for j in 0..num_columns {
                 row[j] = (0..matrix_b_clone.len())
                     .map(|k| {
-                        let product = matrix_a_clone[i][k] * matrix_b_clone[k][j];
+                        let product = Complex::new(matrix_a_clone[i][k].re * matrix_b_clone[k][j].re, matrix_a_clone[i][k].im * matrix_b_clone[k][j].im);
 
                         if is_nan_or_inf(&product) {
                             //product = Complex::new(rand::rng().random_range(-0.5..0.5), rand::rng().random_range(-0.5..0.5));
@@ -164,7 +164,7 @@ pub fn hadamard_product_2d_c(input_1: &Vec<Vec<Complex<f64>>>, input_2: &Vec<Vec
     // Use parallel iterators to compute the Hadamard product
     result.par_iter_mut().enumerate().for_each(|(i, row)| {
         for (j, value) in row.iter_mut().enumerate() {
-            *value = input_1[i][j] * input_2[i][j];
+            *value = Complex::new(input_1[i][j].re * input_2[i][j].re, 0.0);
         }
     });
 
@@ -310,13 +310,29 @@ pub fn add_matrix_3d<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<Vec<Vec<
     for i in 0..matrix_a.len() {
         for j in 0..matrix_a[i].len() {
             for k in 0..matrix_a[i][j].len() {
-                matrix_result[i][j][k] = matrix_result[i][j][k].clone() + matrix_b[i % matrix_b.len()][j % matrix_b[0].len()][k % matrix_b[0][0].len()].clone();
+                matrix_result[i][j][k] =  matrix_result[i][j][k].clone() + matrix_b[i % matrix_b.len()][j % matrix_b[0].len()][k % matrix_b[0][0].len()].clone();
             }
         }
     }
 
     matrix_result
 }
+
+pub fn add_matrix_3d_c(matrix_a: &Vec<Vec<Vec<Complex<f64>>>>, matrix_b: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+    let mut matrix_result: Vec<Vec<Vec<Complex<f64>>>> = matrix_a.clone();
+
+    for i in 0..matrix_a.len() {
+        for j in 0..matrix_a[i].len() {
+            for k in 0..matrix_a[i][j].len() {
+                let val =  matrix_result[i][j][k].clone() + matrix_b[i % matrix_b.len()][j % matrix_b[0].len()][k % matrix_b[0][0].len()].clone();
+                matrix_result[i][j][k] = Complex::new(val.re, 0.0);
+            }
+        }
+    }
+
+    matrix_result
+}
+
 
 pub fn add_vector<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<T>) -> Vec<Vec<T>> {
     let mut matrix_result: Vec<Vec<T>> = matrix_a.clone();

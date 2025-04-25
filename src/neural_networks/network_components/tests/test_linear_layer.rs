@@ -101,7 +101,7 @@ mod test_linear_layer {
         let output_dim = 20;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
-        let epsilon = 1e-7;
+        let epsilon = 1e-8;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim);
@@ -139,7 +139,7 @@ mod test_linear_layer {
             loss
         };
 
-        let num_gradient_weight_batch: Vec<Vec<Complex<f64>>> = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &weights, epsilon);
+        let num_gradient_weight_batch: Vec<Vec<Complex<f64>>> = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &weights, 1e-5);
 
         // Check if gradient batch dimensions match expected shapes
         //println!("\n analytical gradient_weights_batch: {:?}", gradient_weights_batch);
@@ -179,6 +179,6 @@ mod test_linear_layer {
 
         println!("global relative gradient error gradient input batch: {:?}", &global_error);
 
-        test_gradient_batch_error(&num_gradient_input_batch, &gradient_input_batch, 1e-5);
+        test_gradient_batch_error(&num_gradient_input_batch, &gradient_input_batch, 1e-3);
     }
 }

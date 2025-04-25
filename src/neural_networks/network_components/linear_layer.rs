@@ -86,7 +86,7 @@ impl LinearLayer {
             //Accumulate gradients for biases
             for grad_row in previous_gradient.iter() {
                 for (k, grad_val) in grad_row.iter().enumerate() {
-                    bias_gradients[batch_ind][k] += grad_val.clone(); // Sum the gradients for biases
+                    bias_gradients[batch_ind][k] += Complex::new(grad_val.clone().re, 0.0); // Sum the gradients for biases
                 }
             }
 
