@@ -22,7 +22,7 @@ use crate::{
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize) {
     'outer: for epoch in 0..num_epochs {
-        for batch_dataset in dataset.split_into_batches(8) {
+        for batch_dataset in dataset.split_into_batches(1) {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
 
             let input_batch_extended = batch_dataset.extend_input_with_target(input_batch, target_batch);
@@ -348,14 +348,14 @@ pub fn cross_entropy_loss_batch(
 
     // println!("softmax batch inside function cross entropy batch: {:?}", &predicted_softmax_batch);
     for (batch_ind, prediction) in predicted_softmax_batch.iter().enumerate() {
-        total_loss += cross_entropy_loss(prediction, &targets[batch_ind]);
+        total_loss += Complex::new(cross_entropy_loss(prediction, &targets[batch_ind]), 0.0);
     }
 
-    total_loss / batch_len
+    Complex::new(total_loss.re / batch_len, 0.0)
 }
 
-fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, target_tokens: &Vec<u32>) -> Complex<f64> {
-    let mut loss: Complex<f64> = Complex::new(0.0, 0.0);
+fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, target_tokens: &Vec<u32>) -> f64 {
+    let mut loss: f64 = 0.0;
     let seq_len = predictions.len();
     let target_len = target_tokens.len();
     let seq_ind_start = seq_len - target_len;
@@ -367,7 +367,10 @@ fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, target_tokens: &Vec<
         }
 
         let seq_ind = seq_ind_start + s;
-        loss += -(predictions[seq_ind][target_idx as usize] + 1e-15).ln();
+
+        let prob = predictions[seq_ind][target_idx as usize];
+        let re_loss = -(prob.re + 1e-15).ln();
+        loss += re_loss;
         count += 1.0;
     }
 

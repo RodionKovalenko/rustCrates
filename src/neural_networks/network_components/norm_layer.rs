@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
     adam_w::calculate_adam_w_bias,
-    matrix::{add_matrix_3d, clip_gradient_1d, is_nan_or_inf},
+    matrix::{add_matrix_3d_c, clip_gradient_1d, is_nan_or_inf},
 };
 
 use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
@@ -65,7 +65,14 @@ impl NormalNormLayer {
 
         let stddev: Complex<f64> = (variance + Complex::new(self.epsilon, 0.0)).sqrt();
 
-        let normalized: Vec<Complex<f64>> = input.iter().enumerate().map(|(i, x)| ((*x - mean) / stddev) * self.gamma[i] + self.beta[i]).collect();
+        let normalized: Vec<Complex<f64>> = input
+            .iter()
+            .enumerate()
+            .map(|(i, x)| {
+                let val = ((*x - mean) / stddev) * self.gamma[i] + self.beta[i];
+                Complex::new(val.re, 0.0)
+            })
+            .collect();
 
         (normalized, mean, variance)
     }
@@ -78,7 +85,7 @@ impl NormalNormLayer {
         let mut mean_batch: Vec<Vec<Complex<f64>>> = Vec::new();
         let mut var_batch: Vec<Vec<Complex<f64>>> = Vec::new();
 
-        let input_batch = add_matrix_3d(&input_batch, &input_batch_before);
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = add_matrix_3d_c(&input_batch, &input_batch_before);
 
         for input in input_batch.iter() {
             let mut norm_seq = Vec::new();
@@ -175,10 +182,10 @@ impl NormalNormLayer {
                     let dmu = dmu_sum * self.gamma[f] + dvar_sum * dx_minus_mu_sum;
 
                     let gradient: Complex<f64> = (dxhat * std_inv) + (dvar_sum * (2.0 * (x - mu) / n)) + dmu / n;
-                   
+
                     for j in 0..feature_dim {
                         let _identity: f64 = if j == f { 1.0 } else { 0.0 };
-                        input_grads[b][s][j] += gradient * _identity + gradient * previous_gradient_input_batch[b][s][j];
+                        input_grads[b][s][j] += Complex::new((gradient * _identity + gradient * previous_gradient_input_batch[b][s][j]).re, 0.0);
                     }
                 }
             }

@@ -98,7 +98,7 @@ impl SoftmaxLayer {
 
                 for (c, softmax_prob) in softmax_output[seq_ind].iter().enumerate() {
                     if target_class == c as u32 {
-                        gradient_batch[batch_index][seq_ind][c] += (softmax_prob - Complex::new(1.0, 0.0)) / normalizer;
+                        gradient_batch[batch_index][seq_ind][c] += (Complex::new(softmax_prob.re - 1.0, 0.0)) / normalizer;
                     } else {
                         gradient_batch[batch_index][seq_ind][c] += softmax_prob / normalizer;
                     };
