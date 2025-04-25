@@ -1,4 +1,10 @@
-use crate::wavelet_transform::{dwt::transform_1_d, dwt_types::DiscreteWaletetType, modes::WaveletMode};
+use crate::{
+    utils::data_converter::convert_to_c_array_f64_2d,
+    wavelet_transform::{
+        cwt_complex::{cwt_complex, CWTComplex},
+        cwt_types::ContinuousWaletetType,
+    },
+};
 
 use super::gradient_struct::Gradient;
 use num::Complex;
@@ -33,26 +39,39 @@ impl PositionalEncodingLayer {
             .map(|input| {
                 let mut output = Vec::with_capacity(input.len());
 
+                let mut wavelet = CWTComplex {
+                    scales: vec![1.0],
+                    cw_type: ContinuousWaletetType::CGAU1,
+                    sampling_period: 1.0,
+                    fc: 1.0,
+                    fb: 1.0,
+                    m: 1.0,
+                    frequencies: vec![],
+                };
+
                 for (position, token_embeddings) in input.iter().enumerate() {
                     // Ensure correct embedding size
                     assert_eq!(token_embeddings.len(), self.embedding_dim, "All token embeddings must match the specified dimension.");
 
                     //Step 1: Convert complex embeddings into real & imaginary parts
-                    let real_part: Vec<f64> = token_embeddings.iter().map(|c| c.re).collect();
-                    let imag_part: Vec<f64> = token_embeddings.iter().map(|c| c.im).collect();
+                    // let real_part: Vec<f64> = token_embeddings.iter().map(|c| c.re).collect();
+                    // let imag_part: Vec<f64> = token_embeddings.iter().map(|c| c.im).collect();
 
-                    // Step 2: Apply wavelet transform separately to real & imaginary parts
-                    let transformed_real: Vec<f64> = transform_1_d(&real_part, &DiscreteWaletetType::DB2, &WaveletMode::SYMMETRIC);
-                    let transformed_imag: Vec<f64> = transform_1_d(&imag_part, &DiscreteWaletetType::DB2, &WaveletMode::SYMMETRIC);
+                    // // Step 2: Apply wavelet transform separately to real & imaginary parts
+                    // let transformed_real: Vec<f64> = transform_1_d(&real_part, &DiscreteWaletetType::DB2, &WaveletMode::SYMMETRIC);
+                    // let transformed_imag: Vec<f64> = transform_1_d(&imag_part, &DiscreteWaletetType::DB2, &WaveletMode::SYMMETRIC);
 
                     // Step 3: Ensure wavelet-transformed outputs have correct dimensions
-                    let positional_encoding = self.pad_or_trim_wavelet_output(&transformed_real, &transformed_imag);
+                    //let positional_encoding = self.pad_or_trim_wavelet_output(&transformed_real, &transformed_imag);
+
+                    let (transform_cwt, _frequencies) = cwt_complex(&token_embeddings.to_vec(), &mut wavelet).unwrap();
+                    let positional_encoding: Vec<Vec<Complex<f64>>> = convert_to_c_array_f64_2d(transform_cwt);
 
                     //Step 4: Add wavelet-based positional encoding
-                    let token_with_pos_encoding = self.add_positional_encoding(token_embeddings, &positional_encoding);
+                    let _token_with_pos_encoding = self.add_positional_encoding(token_embeddings, &positional_encoding[0]);
 
-                    // Step 5: Apply rotary positional encoding
-                    let rotated_embeddings = self.apply_rotary_positional_encoding(&token_with_pos_encoding, position, scaling_factor);
+                    // Step 5: Apply rotary positional encodings
+                    let rotated_embeddings = self.apply_rotary_positional_encoding(&token_embeddings, position, scaling_factor);
                     output.push(rotated_embeddings);
                 }
 
@@ -77,7 +96,7 @@ impl PositionalEncodingLayer {
     }
 
     /// Ensures wavelet output matches `embedding_dim`
-    fn pad_or_trim_wavelet_output(&self, real: &[f64], imag: &[f64]) -> Vec<Complex<f64>> {
+    pub fn pad_or_trim_wavelet_output(&self, real: &[f64], imag: &[f64]) -> Vec<Complex<f64>> {
         let mut wavelet_output = Vec::with_capacity(self.embedding_dim);
 
         for i in 0..self.embedding_dim {
@@ -90,22 +109,28 @@ impl PositionalEncodingLayer {
     }
 
     /// Adds wavelet-based positional encoding to token embeddings
-    fn add_positional_encoding(&self, token_embeddings: &Vec<Complex<f64>>, positional_encoding: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
-        let len = positional_encoding.len();
-        let half_len = len >> 1;
+    pub fn add_positional_encoding(&self, token_embeddings: &Vec<Complex<f64>>, positional_encoding: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
+        // let len = positional_encoding.len();
+        // let half_len = len >> 1;
 
-        (0..half_len)
+        // (0..half_len)
+        //     .map(|i| {
+        //         let trend_encoding = &positional_encoding[i];
+        //         let detail_encoding = &positional_encoding[i + half_len];
+
+        //         let trend_applied = Complex::new(token_embeddings[i].re + trend_encoding.re, token_embeddings[i].im + trend_encoding.im);
+
+        //         let detail_applied = Complex::new(token_embeddings[i + half_len].re + detail_encoding.re, token_embeddings[i + half_len].im + detail_encoding.im);
+
+        //         vec![trend_applied, detail_applied]
+        //     })
+        //     .flatten()
+        //     .collect()
+
+        (0..token_embeddings.len())
             .map(|i| {
-                let trend_encoding = &positional_encoding[i];
-                let detail_encoding = &positional_encoding[i + half_len];
-
-                let trend_applied = Complex::new(token_embeddings[i].re + trend_encoding.re, token_embeddings[i].im + trend_encoding.im);
-
-                let detail_applied = Complex::new(token_embeddings[i + half_len].re + detail_encoding.re, token_embeddings[i + half_len].im + detail_encoding.im);
-
-                vec![trend_applied, detail_applied]
+                token_embeddings[i] + positional_encoding[i]
             })
-            .flatten()
             .collect()
     }
 

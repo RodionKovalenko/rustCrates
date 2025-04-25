@@ -1,6 +1,5 @@
 use bincode;
 use core::fmt::Debug;
-use std::cmp::Ordering;
 use num::Complex;
 use rand::Rng;
 use rayon::prelude::*;
@@ -181,14 +180,13 @@ impl EmbeddingLayer {
 
         let batch_size = (previous_gradients.len() * self.vocab_size) as f64;
 
-        let max = previous_gradients.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
-
-        println!("max in backward embedding layer gradient batch: {:?}", max);
+        // let max = previous_gradients.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
+        // println!("max in backward embedding layer gradient batch: {:?}", max);
         // println!("min in backward embedding layer gradient batch: {:?}", min);
 
         for (batch_idx, token_ids) in token_id_batches.iter().enumerate() {
             clip_gradients(&mut previous_gradients[batch_idx], 1.0);
-            
+
             for (i, &token_id) in token_ids.iter().enumerate() {
                 let mut token_embedding: Vec<Complex<f64>> = Self::get_embedding(&db, token_id).unwrap();
 
@@ -215,7 +213,20 @@ impl EmbeddingLayer {
     /// Update an embedding for a given token ID
     pub fn update_embedding(db: &Db, token_id: &u32, embedding: &Vec<Complex<f64>>) {
         let embedding_normalized = normalize(embedding);
-        
+
+        // let mut wavelet = CWTComplex {
+        //     scales: vec![1.0],
+        //     cw_type: ContinuousWaletetType::CGAU1,
+        //     sampling_period: 1.0,
+        //     fc: 1.0,
+        //     fb: 1.0,
+        //     m: 1.0,
+        //     frequencies: vec![],
+        // };
+
+        // let (transform_cwt, _frequencies) = cwt_complex(&embedding_normalized.to_vec(), &mut wavelet).unwrap();
+        // let embedding_wavelet_normalized: Vec<Vec<Complex<f64>>> = convert_to_c_array_f64_2d(transform_cwt);
+
         let key = token_id.to_string();
         let serialized_embedding = bincode::serialize(&embedding_normalized).expect("Failed to serialize embedding");
         db.insert(key, serialized_embedding).expect("Failed to save or update embedding in Sled");
