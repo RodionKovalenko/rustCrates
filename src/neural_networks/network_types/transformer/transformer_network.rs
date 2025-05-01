@@ -135,18 +135,18 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                     println!("No previous output for Attention layer");
                 }
             }
-            // LayerEnum::Norm(norm_layer) => {
-            //     if let Some(previous_output) = &output {
-            //         layer_input.set_input_batch(previous_output.clone());
+            LayerEnum::Norm(norm_layer) => {
+                if let Some(previous_output) = &output {
+                    layer_input.set_input_batch(previous_output.clone());
 
-            //         // println!("forward norm");
-            //         let norm_output = norm_layer.forward(&layer_input);
+                    // println!("forward norm");
+                    let norm_output = norm_layer.forward(&layer_input);
 
-            //         output = Some(norm_output.get_output_batch());
-            //     } else {
-            //         println!("No previous output for Attention layer");
-            //     }
-            // }
+                    output = Some(norm_output.get_output_batch());
+                } else {
+                    println!("No previous output for Attention layer");
+                }
+            }
             LayerEnum::SelfAttention(attention) => {
                 // Ensure there's an output from the previous layer before forwarding
                 if let (Some(previous_output), Some(padding_m)) = (&output, &padding_mask) {
@@ -242,16 +242,16 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     println!("No previous gradient in Positional Encoding Layer");
                 }
             }
-            // LayerEnum::Norm(norm_layer) => {
-            //     if let Some(previous_gradient) = gradient {
-            //         // println!("backward norm start");
-            //         let gradient_batch: Gradient = norm_layer.backward(&previous_gradient.get_gradient_input_batch());
-            //         gradient = Some(gradient_batch);
-            //         //  println!("backward norm end");
-            //     } else {
-            //         println!("No previous gradient for norm layer");
-            //     }
-            // }
+            LayerEnum::Norm(norm_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    // println!("backward norm start");
+                    let gradient_batch: Gradient = norm_layer.backward(&previous_gradient);
+                    gradient = Some(gradient_batch);
+                    //  println!("backward norm end");
+                } else {
+                    println!("No previous gradient for norm layer");
+                }
+            }
             LayerEnum::SelfAttention(attention_layer) => {
                 if let Some(previous_gradient) = gradient {
                     // println!("backward attention layer start");
