@@ -124,6 +124,7 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
             }
             LayerEnum::SelfAttention(self_attention_layer) => {
                 for attention_head in self_attention_layer.attention_heads.iter_mut() {
+                    println!("self attention head weigths: {} {}", attention_head.weights_k.len(), attention_head.weights_k[0].len());
                     attention_head.learning_rate = learning_rate;
                 }
                 if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
@@ -144,10 +145,12 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
                 for layer in ffn_layer.layers.iter_mut() {
                     match layer {
                         LayerEnum::Dense(dense_layer) => {
+                            println!("ffn dense layer weigths: {} {}", dense_layer.weights.len(), dense_layer.weights[0].len());
                             dense_layer.learning_rate = learning_rate;
                             dense_layer.activation_type = ActivationType::GELU;
                         }
                         LayerEnum::Linear(linear_layer) => {
+                            println!("ffn linear layer weigths: {} {}", linear_layer.weights.len(), linear_layer.weights[0].len());
                             linear_layer.learning_rate = learning_rate;
                         }
                         _ => {}
@@ -166,6 +169,7 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
                 }
             }
             LayerEnum::Linear(linear_layer) => {
+                println!("linear layer weigths: {} {}", linear_layer.weights.len(), linear_layer.weights[0].len());
                 linear_layer.learning_rate = learning_rate;
             }
             LayerEnum::Softmax(_softmax_layer) => {}

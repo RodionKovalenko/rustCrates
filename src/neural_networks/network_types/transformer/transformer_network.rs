@@ -152,11 +152,8 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                     layer_input.set_input_batch(previous_output.clone());
                     layer_input.set_padding_mask_batch(padding_m.clone());
 
-                    // println!("forward self-attention");
+                    // println!("forward self-attention start");
                     let output_attention = attention.forward(&layer_input);
-
-                    check_nan_or_inf_3d(&mut output_attention.get_output_batch(), "output attention layer in forward");
-
                     output = Some(output_attention.get_output_batch());
                 } else {
                     println!("No previous output for Attention layer");
@@ -165,10 +162,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
             LayerEnum::FeedForward(dense) => {
                 let dense_layer = Some(dense).unwrap();
                 if let Some(previous_output) = &output {
-                    //println!("Previous output in dense ffn layer: {:?}, {:?}, {}", &previous_output.len(), &previous_output[0].len(), &previous_output[0][0].len());
-
                     dense_layer.padding_mask_batch = padding_mask.clone();
-                    // println!("forward ffn");
 
                     layer_input.set_input_batch(previous_output.to_vec());
                     let layer_output = dense_layer.forward(&layer_input);
@@ -187,8 +181,6 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                     layer_input.set_input_batch(previous_output.clone());
                     let output_linear = linear_layer.forward(&layer_input);
 
-                    check_nan_or_inf_3d(&mut output_linear.get_output_batch(), "output linear layer");
-
                     output = Some(output_linear.get_output_batch());
                 } else {
                     println!("No previous output for Dense layer");
@@ -197,11 +189,9 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
             LayerEnum::Softmax(softmax_layer) => {
                 let softmax_layer_clone = Some(softmax_layer).unwrap();
                 if let Some(previous_output) = &output {
-                    let mut output_softmax: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer_clone.forward(&previous_output, padding_mask.clone());
+                    let output_softmax: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer_clone.forward(&previous_output, padding_mask.clone());
 
                     // println!("forward softmax start");
-                    //println!("Output Softmax: {:?}, {:?}, {}", &output_softmax.len(), &output_softmax[0].len(), &output_softmax[0][0].len());
-                    check_nan_or_inf_3d(&mut output_softmax, "output softmax");
                     output = Some(output_softmax);
                     // println!("forward softmax end");
                 } else {

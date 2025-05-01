@@ -26,7 +26,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let base_2: i32 = 2;
     // embedding_dim_compressed  = 16
     let embedding_dim_compressed = (embedding_dim_original as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize;
-    let vocab_size: usize = 50254;
+    let vocab_size: usize = 50276;
     // let epsilon = 1e-10;
 
     let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
@@ -48,8 +48,8 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let num_self_attention_layer: usize = 4;
     for _i in 0..num_self_attention_layer {
         let num_attention_heads: usize = 4;
-        let rows: usize = 64;
-        let cols: usize = embedding_dim_compressed;
+        let rows: usize = embedding_dim_compressed;
+        let cols: usize = 64;
 
         let attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
         layers.push(LayerEnum::SelfAttention(Box::new(attention_layer)));

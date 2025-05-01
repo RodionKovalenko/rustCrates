@@ -35,18 +35,12 @@ pub const FILE_NAME: &str = "embedding_layer.json";
 
 impl EmbeddingLayer {
     pub fn new(vocab_size: usize, embedding_dim: usize) -> Self {
-        let mut rng = rand::rng();
+        let mut rng: rand::prelude::ThreadRng = rand::rng();
         let db: &Db = get_db_embedding();
 
         // Generate random embeddings and store them in the Sled database
         for token_id in 0..vocab_size {
-            let embedding: Vec<f64> = (0..embedding_dim).map(|_| rng.random_range(-0.4..0.5)).collect();
-
-            let embedding_wavelet = &decompose_in_wavelet_2d_default(&embedding)[0][0];
-            //println!("embedding: {:?}", &embedding_wavelet_1d);
-
-            let token_u32: u32 = token_id as u32;
-            Self::update_embedding(db, &token_u32, embedding_wavelet);
+            Self::create_embedding(db, embedding_dim, &mut rng, token_id as u32);
         }
 
         let base_2: i32 = 2;
@@ -60,6 +54,19 @@ impl EmbeddingLayer {
             previous_gradient: None,
             time_step: 0,
         }
+    }
+
+    pub fn create_embedding(db: &Db, embedding_dim: usize, rng: &mut rand::prelude::ThreadRng, token_id: u32) -> Vec<Complex<f64>> {
+        let embedding: Vec<f64> = (0..embedding_dim).map(|_| rng.random_range(-0.4..0.5)).collect();
+
+        // println!("\n\n\nembedding dimension in create: {:?} \n\n\n", embedding_dim);
+        let embedding_wavelet: Vec<Complex<f64>> = decompose_in_wavelet_2d_default(&embedding)[0][0].clone();
+        //println!("embedding: {:?}", &embedding_wavelet_1d);
+
+        let token_u32: u32 = token_id as u32;
+        Self::update_embedding(db, &token_u32, &embedding_wavelet);
+
+        embedding_wavelet
     }
 
     /// Load an existing embedding layer (metadata only, embeddings are stored in Sled)
@@ -150,15 +157,27 @@ impl EmbeddingLayer {
                     if id == 1 {
                         vec![Complex::new(0.0, 0.0); embedding_dim]
                     } else {
-                        Self::get_embedding(db, id).unwrap_or_else(|err| {
+                        let mut token_embedding = Self::get_embedding(db, id, self.embedding_dim).unwrap_or_else(|err| {
                             panic!("Error retrieving embedding for token {}: {}", id, err);
-                        })
+                        });
+
+                        if token_embedding.len() != self.embedding_dim {
+                            let mut rng: rand::prelude::ThreadRng = rand::rng();
+                            let base_2: i32 = 2;
+
+                            token_embedding = Self::create_embedding(db, embedding_dim * base_2.pow(DECOMPOSITION_LEVELS) as usize, &mut rng, id);
+                        }
+
+                        assert_eq!(token_embedding.len(), self.embedding_dim);
+                        token_embedding
                     }
                 })
                 .collect();
 
             token_ids_output.push(token_output_id);
         }
+
+        println!("token embedding len: {:?}, {}, {}", token_ids_output.len(), token_ids_output[0].len(), token_ids_output[0][0].len());
 
         (token_ids_output, padding_mask)
     }
@@ -188,7 +207,7 @@ impl EmbeddingLayer {
             clip_gradients(&mut previous_gradients[batch_idx], 1.0);
 
             for (i, &token_id) in token_ids.iter().enumerate() {
-                let mut token_embedding: Vec<Complex<f64>> = Self::get_embedding(&db, token_id).unwrap();
+                let mut token_embedding: Vec<Complex<f64>> = Self::get_embedding(&db, token_id, self.embedding_dim).unwrap();
 
                 // Assuming previous_gradients[batch_idx][i] contains a single gradient
                 let gradient = &previous_gradients[batch_idx][i];
@@ -256,11 +275,27 @@ impl EmbeddingLayer {
         bincode::deserialize(&data).expect("Failed to deserialize")
     }
 
-    pub fn get_embedding(db: &Db, token_id: impl ToString) -> Result<Vec<Complex<f64>>, String> {
+    pub fn get_embedding(db: &Db, token_id: impl ToString, embedding_dim: usize) -> Result<Vec<Complex<f64>>, String> {
         let key = token_id.to_string();
+        let token_id_u32: u32 = key.parse().unwrap();
+
+        // if token_id_u32 > 50254 {
+        //     let db: &Db = get_db_embedding();
+        //     let mut rng: rand::prelude::ThreadRng = rand::rng();
+        //     let token_id_u32: u32 = key.parse().unwrap();
+
+        //     return Ok(Self::create_embedding(&db, 512, &mut rng, token_id_u32));
+        // }
+
         match db.get(&key) {
             Ok(Some(ivec)) => bincode::deserialize(&ivec).map_err(|_| "Failed to deserialize embedding".to_string()), // Directly return Vec<f64>
-            Ok(None) => Err("Token ID not found in DB".to_string()),                                                  // Return an error for missing keys
+            Ok(None) => {
+                let db: &Db = get_db_embedding();
+                let mut rng: rand::prelude::ThreadRng = rand::rng();
+                let base_2: i32 = 2;
+
+                Ok(Self::create_embedding(&db, embedding_dim * base_2.pow(DECOMPOSITION_LEVELS) as usize, &mut rng, token_id_u32))
+            } // Return an error for missing keys
             Err(_) => Err("Failed to fetch embedding from Sled".to_string()),                                         // Handle Sled errors
         }
     }

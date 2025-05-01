@@ -22,6 +22,8 @@ pub struct FeedForwardLayer {
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
+    pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
     pub padding_mask_batch: Option<Vec<Vec<u32>>>,
     pub time_step: usize,
 }
@@ -45,6 +47,7 @@ impl FeedForwardLayer {
             norm_layer: None,
             learning_rate,
             input_batch: None,
+            output_batch: None,
             padding_mask_batch: None,
             time_step: 0,
         }
@@ -93,6 +96,8 @@ impl FeedForwardLayer {
             }
         }
 
+        self.output_batch = Some(output.clone());
+
         let previous_gradient_input_batch = self.calculate_input_gradient_batch();
 
         // Apply the RMS normalization layer
@@ -126,7 +131,8 @@ impl FeedForwardLayer {
         }
 
         let mut layer_output = LayerOutput::new_default();
-        layer_output.set_output_batch(output);
+        layer_output.set_output_batch(output.clone());
+        self.output_batch = Some(output);
 
         layer_output
     }
