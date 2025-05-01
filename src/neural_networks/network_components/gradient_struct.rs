@@ -2,10 +2,17 @@ use core::fmt::Debug;
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone)]
+pub enum GradientBatch {
+    Complex(Vec<Vec<Vec<Complex<f64>>>>),
+    Real(Vec<Vec<Vec<f64>>>),
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Gradient {
     gradient_weights_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     gradient_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    gradient_input_batch_softmax: Option<Vec<Vec<Vec<f64>>>>,
     gradient_bias_batch: Option<Vec<Vec<Complex<f64>>>>,
     gradient_gamma_batch: Option<Vec<Vec<Complex<f64>>>>,
     gradient_beta_batch: Option<Vec<Vec<Complex<f64>>>>,
@@ -52,6 +59,7 @@ impl Gradient {
         Gradient {
             gradient_weights_batch: None,
             gradient_input_batch: None,
+            gradient_input_batch_softmax: None,
             gradient_bias_batch: None,
             gradient_gamma_batch: None,
             gradient_beta_batch: None,
@@ -92,6 +100,9 @@ impl Gradient {
     }
     pub fn set_gradient_input_batch(&mut self, gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>>) {
         self.gradient_input_batch = Some(gradient_input_batch);
+    }
+    pub fn set_gradient_input_batch_softmax(&mut self, gradient_input_batch: Vec<Vec<Vec<f64>>>) {
+        self.gradient_input_batch_softmax = Some(gradient_input_batch);
     }
     pub fn set_gradient_weight_batch(&mut self, gradient_weight_batch: Vec<Vec<Vec<Complex<f64>>>>) {
         self.gradient_weights_batch = Some(gradient_weight_batch);
@@ -196,6 +207,9 @@ impl Gradient {
 
     pub fn get_gradient_input_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
         self.gradient_input_batch.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_gradient_input_batch_softmax(&self) -> Vec<Vec<Vec<f64>>> {
+        self.gradient_input_batch_softmax.clone().unwrap_or_else(|| vec![])
     }
     pub fn get_gradient_weight_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
         self.gradient_weights_batch.clone().unwrap_or_else(|| vec![])

@@ -193,7 +193,7 @@ mod test_self_attention_layer {
         let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
-        let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax.get_gradient_input_batch());
+        let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
         let gradient_ffn: Gradient = ffn_layer.backward(&gradient_linear.get_gradient_input_batch());
         let gradient_attention_layer: Gradient = attention_layer.backward(&gradient_ffn.get_gradient_input_batch());
 

@@ -37,11 +37,9 @@ mod test_linear_layer {
         let linear_output = linear_layer.forward(&layer_input);
         let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
-        let gradient_linear: Gradient = softmax_layer.backward(&target_token_id_batch);
-        let analytical_grad_batch_softmax: Vec<Vec<Vec<Complex<f64>>>> = gradient_linear.get_gradient_input_batch();
-
-        let gradient_softmax: Gradient = linear_layer.backward(&analytical_grad_batch_softmax);
-        let (grouped_linear_gradient, analytical_gradient_bias) = (gradient_softmax.get_gradient_weights(), gradient_softmax.get_gradient_bias());
+        let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
+        let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
+        let (grouped_linear_gradient, analytical_gradient_bias) = (gradient_linear.get_gradient_weights(), gradient_linear.get_gradient_bias());
 
         let linear_weights = linear_layer.weights.clone();
 
@@ -115,10 +113,10 @@ mod test_linear_layer {
         layer_input.set_input_batch(input_batch.clone());
 
         let linear_output = linear_layer.forward(&layer_input);
-        let _softmax_batch_output: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.forward(&linear_output.get_output_batch(), None);
+        let _softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
-        let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax.get_gradient_input_batch());
+        let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
 
         let gradient_weights_batch: Vec<Vec<Complex<f64>>> = gradient_linear.get_gradient_weights();
         let gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient_linear.get_gradient_input_batch();
@@ -132,7 +130,7 @@ mod test_linear_layer {
             linear_layer.weights = weights.clone();
 
             let linear_output = linear_layer.forward(&layer_input);
-            let softmax_batch_output: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.forward(&linear_output.get_output_batch(), None);
+            let softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
 
@@ -159,7 +157,7 @@ mod test_linear_layer {
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             layer_input.set_input_batch(input.clone());
             let linear_output = linear_layer.forward(&layer_input);
-            let softmax_batch_output: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.forward(&linear_output.get_output_batch(), None);
+            let softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
 

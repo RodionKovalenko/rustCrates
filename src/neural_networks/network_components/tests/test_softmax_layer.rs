@@ -6,8 +6,10 @@ mod test_softmax_layer {
         utils::{
             activation::{gelu_complex, sigmoid_complex, softmax_complex, softsign_complex},
             derivative::{
-                gelu_derivative_complex, global_relative_error_2d_l2, numerical_gradient_check, numerical_gradient_input, numerical_gradient_input_batch, sigmoid_derivative_complex, softmax_derivative_complex_matrix, softsign_derivative_complex, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d
-            }, random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
+                gelu_derivative_complex, global_relative_error_2d_l2, numerical_gradient_check_f64, numerical_gradient_input, numerical_gradient_input_batch, sigmoid_derivative_complex, softmax_derivative_complex_matrix, softsign_derivative_complex, test_gradient_batch_error,
+                test_gradient_error_1d, test_gradient_error_2d, test_gradient_error_2d_f64,
+            },
+            random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
         },
     };
 
@@ -168,16 +170,16 @@ mod test_softmax_layer {
     fn test_softmax_gradient() {
         let z = vec![vec![Complex::new(0.0, 1.0), Complex::new(1.0, 5.0), Complex::new(-2.0, -3.0)], vec![Complex::new(-5.0, 2.0), Complex::new(3.0, -7.0), Complex::new(8.0, 4.0)]];
 
-        let softmax_values = softmax_complex(&z);
-        let analytical_gradient = softmax_derivative_complex_matrix(&softmax_values);
+        let softmax_values: Vec<Vec<f64>> = softmax_complex(&z);
+        let analytical_gradient: Vec<Vec<f64>> = softmax_derivative_complex_matrix(&softmax_values);
 
         let epsilon = 1e-6;
-        let numerical_gradient = numerical_gradient_check(softmax_complex, &z, epsilon);
+        let numerical_gradient = numerical_gradient_check_f64(softmax_complex, &z, epsilon);
 
         println!("\n dim analytical gradient {:?}", analytical_gradient);
         println!("\n dim numerical gradient {:?}", numerical_gradient);
 
-        test_gradient_error_2d(&numerical_gradient, &analytical_gradient, epsilon);
+        test_gradient_error_2d_f64(&numerical_gradient, &analytical_gradient, epsilon);
 
         println!("Gradient check passed!");
     }

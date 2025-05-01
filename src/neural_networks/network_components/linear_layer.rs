@@ -5,11 +5,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
     adam_w::{calculate_adam_w, calculate_adam_w_bias},
-    matrix::{add_vector, check_nan_or_inf, clip_gradient_1d, clip_gradients, is_nan_or_inf, multiply_complex, transpose},
+    matrix::{add_vector, clip_gradient_1d, clip_gradients, is_nan_or_inf, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
     weights_initializer::initialize_weights_complex,
 };
 
-use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
+use super::{
+    gradient_struct::{Gradient, GradientBatch},
+    layer_input_struct::LayerInput,
+    layer_output_struct::LayerOutput,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinearLayer {
@@ -60,8 +64,7 @@ impl LinearLayer {
 
                 // Add the bias vector
                 output = add_vector(&output, &self.bias);
-
-                output // Return the processed output for this input
+                output
             })
             .collect();
 
@@ -71,33 +74,50 @@ impl LinearLayer {
         layer_output
     }
 
-    pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
+    pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
         let input_batch = self.input_batch.as_ref().expect("Input batch is missing in linear layer");
-        let mut gradient_input_batch = previous_gradient_batch.clone();
         let mut gradient = Gradient::new_default();
+
+        let previous_gradient_batch = if !previous_gradient.get_gradient_input_batch().is_empty() {
+            GradientBatch::Complex(previous_gradient.get_gradient_input_batch())
+        } else {
+            GradientBatch::Real(previous_gradient.get_gradient_input_batch_softmax())
+        };
 
         // Initialize gradients for weights and biases
         let mut weight_gradients: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()]; input_batch.len()];
         let mut bias_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.bias.len()]; input_batch.len()];
+        let mut gradient_input_batch = vec![vec![vec![Complex::new(0.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
 
-        // For each input sample in the batch
-        for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_batch).enumerate() {
-            weight_gradients[batch_ind] = multiply_complex(&transpose(input_sample), previous_gradient);
-            //Accumulate gradients for biases
-            for grad_row in previous_gradient.iter() {
-                for (k, grad_val) in grad_row.iter().enumerate() {
-                    bias_gradients[batch_ind][k] += Complex::new(grad_val.clone().re, 0.0); // Sum the gradients for biases
+        match previous_gradient_batch {
+            GradientBatch::Complex(previous_gradient_input_batch) => {
+                for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_input_batch).enumerate() {
+                    weight_gradients[batch_ind] = multiply_complex(&transpose(input_sample), &previous_gradient);
+                    //Accumulate gradients for biases
+                    for grad_row in previous_gradient.iter() {
+                        for (k, grad_val) in grad_row.iter().enumerate() {
+                            bias_gradients[batch_ind][k] += grad_val;
+                        }
+                    }
+
+                    gradient_input_batch[batch_ind] = multiply_complex(&previous_gradient, &transpose(&self.weights));
                 }
             }
+            GradientBatch::Real(previous_gradient_input_batch) => {
+                // For each input sample in the batch
+                for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_input_batch).enumerate() {
+                    weight_gradients[batch_ind] = multiply_complex_with_f64(&transpose(input_sample), &previous_gradient);
+                    //Accumulate gradients for biases
+                    for grad_row in previous_gradient.iter() {
+                        for (k, grad_val) in grad_row.iter().enumerate() {
+                            bias_gradients[batch_ind][k] += grad_val;
+                        }
+                    }
 
-            gradient_input_batch[batch_ind] = multiply_complex(&previous_gradient, &transpose(&self.weights));
+                    gradient_input_batch[batch_ind] = multiply_f64_complex(&previous_gradient, &transpose(&self.weights));
+                }
+            }
         }
-
-        // let max = gradient_input_batch.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
-        // let min = gradient_input_batch.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Greater));
-
-        // println!("max in backward linear gradient batch: {:?}", max);
-        // println!("min in backward linear gradient batch: {:?}", min);
 
         gradient.set_gradient_input_batch(gradient_input_batch.clone());
         gradient.set_gradient_weight_batch(weight_gradients);
@@ -117,8 +137,6 @@ impl LinearLayer {
         let threshold = 1.0;
         clip_gradients(&mut weight_gradients, threshold);
         clip_gradient_1d(&mut bias_gradients, threshold);
-
-        check_nan_or_inf(&mut weight_gradients, "check weight gradients in linear layer");
 
         let mut prev_m_bias: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); self.bias.len()];
         let mut prev_v_bias: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); self.bias.len()];

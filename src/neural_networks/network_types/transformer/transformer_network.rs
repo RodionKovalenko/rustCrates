@@ -28,7 +28,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             let input_batch_extended = batch_dataset.extend_input_with_target(input_batch, target_batch);
 
             // println!("input batch extended: {:?}", &input_batch_extended);
-            let predicted_softmax_batch: Vec<Vec<Vec<Complex<f64>>>> = predict(transformer_network, &input_batch_extended, epoch);
+            let predicted_softmax_batch: Vec<Vec<Vec<f64>>> = predict(transformer_network, &input_batch_extended, epoch);
             let (_tokens, target_ids) = tokenize_batch(target_batch, true).unwrap();
             let loss = cross_entropy_loss_batch(&predicted_softmax_batch, &target_ids);
 
@@ -48,7 +48,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                 let target_len = target_ids[0].len();
                 let p = 0.9; // Top-p (Nucleus) threshold
                 let temperature = 0.7; // Temperature for controlling randomness
-                let predicted_softmax_targets: Vec<Vec<Vec<Complex<f64>>>> = predicted_softmax_batch
+                let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = predicted_softmax_batch
                     .iter()
                     .enumerate()
                     .filter_map(|(_batch_ind, input_seq)| {
@@ -57,10 +57,10 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                         // Slide backwards to find a valid window of length `target_len`
                         for offset in (0..=input_seq.len() - target_len).rev() {
                             let window = &input_seq[offset..offset + target_len];
-                            let max = window.iter().flat_map(|w| w.iter()).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
+                            let max = window.iter().flat_map(|w| w.iter()).max_by(|a, b| a.partial_cmp(&b).unwrap_or(Ordering::Less));
 
-                            if let Some(max) = max {
-                                if max.norm() > 0.0 {
+                            if let Some(max_num) = max {
+                                if max_num > &0.0 {
                                     valid_seq_opt = Some(window.to_vec());
                                     break;
                                 }
@@ -90,7 +90,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
     }
 }
 
-pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String>, time_step: usize) -> Vec<Vec<Vec<Complex<f64>>>> {
+pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String>, time_step: usize) -> Vec<Vec<Vec<f64>>> {
     // Forward pass
     let mut batch_ids: Vec<Vec<u32>> = vec![];
     for input in input_batch {
@@ -104,6 +104,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
     // println!("forward pass start ----------------------------------------------------------------------");
 
     let mut output = None;
+    let mut output_softmax = None;
     let mut padding_mask = None;
 
     let mut layer_input = LayerInput::new_default();
@@ -134,18 +135,18 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                     println!("No previous output for Attention layer");
                 }
             }
-            LayerEnum::Norm(norm_layer) => {
-                if let Some(previous_output) = &output {
-                    layer_input.set_input_batch(previous_output.clone());
+            // LayerEnum::Norm(norm_layer) => {
+            //     if let Some(previous_output) = &output {
+            //         layer_input.set_input_batch(previous_output.clone());
 
-                    // println!("forward norm");
-                    let norm_output = norm_layer.forward(&layer_input);
+            //         // println!("forward norm");
+            //         let norm_output = norm_layer.forward(&layer_input);
 
-                    output = Some(norm_output.get_output_batch());
-                } else {
-                    println!("No previous output for Attention layer");
-                }
-            }
+            //         output = Some(norm_output.get_output_batch());
+            //     } else {
+            //         println!("No previous output for Attention layer");
+            //     }
+            // }
             LayerEnum::SelfAttention(attention) => {
                 // Ensure there's an output from the previous layer before forwarding
                 if let (Some(previous_output), Some(padding_m)) = (&output, &padding_mask) {
@@ -189,10 +190,10 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
             LayerEnum::Softmax(softmax_layer) => {
                 let softmax_layer_clone = Some(softmax_layer).unwrap();
                 if let Some(previous_output) = &output {
-                    let output_softmax: Vec<Vec<Vec<Complex<f64>>>> = softmax_layer_clone.forward(&previous_output, padding_mask.clone());
+                    let softmax_result: Vec<Vec<Vec<f64>>> = softmax_layer_clone.forward(&previous_output, padding_mask.clone());
 
                     // println!("forward softmax start");
-                    output = Some(output_softmax);
+                    output_softmax = Some(softmax_result);
                     // println!("forward softmax end");
                 } else {
                     println!("No previous output for Dense layer");
@@ -203,8 +204,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
     }
 
     //println!("forward pass end ----------------------------------------------------------------------");
-
-    output.unwrap()
+    output_softmax.unwrap()
 }
 
 pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<Vec<u32>>, update_params: bool) -> Option<Gradient> {
@@ -242,16 +242,16 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     println!("No previous gradient in Positional Encoding Layer");
                 }
             }
-            LayerEnum::Norm(norm_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    // println!("backward norm start");
-                    let gradient_batch: Gradient = norm_layer.backward(&previous_gradient.get_gradient_input_batch());
-                    gradient = Some(gradient_batch);
-                    //  println!("backward norm end");
-                } else {
-                    println!("No previous gradient for norm layer");
-                }
-            }
+            // LayerEnum::Norm(norm_layer) => {
+            //     if let Some(previous_gradient) = gradient {
+            //         // println!("backward norm start");
+            //         let gradient_batch: Gradient = norm_layer.backward(&previous_gradient.get_gradient_input_batch());
+            //         gradient = Some(gradient_batch);
+            //         //  println!("backward norm end");
+            //     } else {
+            //         println!("No previous gradient for norm layer");
+            //     }
+            // }
             LayerEnum::SelfAttention(attention_layer) => {
                 if let Some(previous_gradient) = gradient {
                     // println!("backward attention layer start");
@@ -292,10 +292,8 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             }
             LayerEnum::Linear(linear_layer) => {
                 if let Some(previous_gradient) = gradient {
-                    let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
-
                     //println!("backward linear start");
-                    let gradient_batch: Gradient = linear_layer.backward(&previous_gradient_batch);
+                    let gradient_batch: Gradient = linear_layer.backward(&previous_gradient);
                     // Update weights and biases
                     if update_params {
                         linear_layer.update_parameters();
@@ -330,7 +328,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
 }
 
 pub fn cross_entropy_loss_batch(
-    predicted_softmax_batch: &Vec<Vec<Vec<Complex<f64>>>>, // Complex-valued softmax output
+    predicted_softmax_batch: &Vec<Vec<Vec<f64>>>, // Complex-valued softmax output
     targets: &Vec<Vec<u32>>,
 ) -> Complex<f64> {
     let batch_len = predicted_softmax_batch.len() as f64;
@@ -338,13 +336,13 @@ pub fn cross_entropy_loss_batch(
 
     // println!("softmax batch inside function cross entropy batch: {:?}", &predicted_softmax_batch);
     for (batch_ind, prediction) in predicted_softmax_batch.iter().enumerate() {
-        total_loss += Complex::new(cross_entropy_loss(prediction, &targets[batch_ind]), 0.0);
+        total_loss += cross_entropy_loss(prediction, &targets[batch_ind]);
     }
 
-    Complex::new(total_loss.re / batch_len, 0.0)
+    total_loss / batch_len
 }
 
-fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, target_tokens: &Vec<u32>) -> f64 {
+fn cross_entropy_loss(predictions: &Vec<Vec<f64>>, target_tokens: &Vec<u32>) -> f64 {
     let mut loss: f64 = 0.0;
     let seq_len = predictions.len();
     let target_len = target_tokens.len();
@@ -359,7 +357,7 @@ fn cross_entropy_loss(predictions: &Vec<Vec<Complex<f64>>>, target_tokens: &Vec<
         let seq_ind = seq_ind_start + s;
 
         let prob = predictions[seq_ind][target_idx as usize];
-        let re_loss = -(prob.re + 1e-15).ln();
+        let re_loss = -(prob + 1e-15).ln();
         loss += re_loss;
         count += 1.0;
     }
