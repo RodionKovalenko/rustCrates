@@ -21,6 +21,8 @@ pub struct SelfAttentionLayer {
     pub norm_layer: Option<LayerEnum>,
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
+    pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     pub time_step: usize,
 }
 
@@ -44,6 +46,7 @@ impl SelfAttentionLayer {
             activated_output: vec![],
             norm_layer: _norm_layer,
             input_batch: None,
+            output_batch: None,
             time_step: 0,
         }
     }
@@ -92,16 +95,16 @@ impl SelfAttentionLayer {
 
         layer_input.set_input_batch(batch_output.clone());
         layer_input.set_input_batch_before(input_batch.clone());
-        layer_input.set_previous_gradient_input_batch(self.calculate_input_gradient_batch());
 
+        self.output_batch = Some(batch_output.clone());
+        layer_input.set_previous_gradient_input_batch(self.calculate_input_gradient_batch());
+        
         // Process the dense layers
         if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
             match norm_layer_enum {
                 LayerEnum::RMSNorm(rms_norm_layer) => {
                     let output = rms_norm_layer.forward(&layer_input);
                     batch_output = output.get_output_batch();
-
-                    check_nan_or_inf_3d(&mut batch_output, "check rms norm in self attention layer");
                 }
                 LayerEnum::Norm(norm_layer) => {
                     let output = norm_layer.forward(&layer_input);
@@ -113,7 +116,10 @@ impl SelfAttentionLayer {
         }
 
         let mut layer_output = LayerOutput::new_default();
-        layer_output.set_output_batch(batch_output);
+        layer_output.set_output_batch(batch_output.clone());
+        self.output_batch = Some(batch_output.clone());
+
+        // println!("input dim in norm after self attention: {} {}, {}", batch_output.len(), batch_output[0].len(), batch_output[0][0].len());
 
         layer_output
     }
@@ -130,11 +136,11 @@ impl SelfAttentionLayer {
         if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
             match norm_layer_enum {
                 LayerEnum::RMSNorm(rms_norm_layer) => {
-                    let norm_gradient  = rms_norm_layer.backward(&gradient_input_batch);
+                    let norm_gradient = rms_norm_layer.backward(&gradient_input_batch);
                     gradient_input_batch = norm_gradient.get_gradient_input_batch();
                 }
                 LayerEnum::Norm(norm_layer) => {
-                    let norm_gradient  = norm_layer.backward(&gradient_input_batch);
+                    let norm_gradient = norm_layer.backward(&gradient_input_batch);
                     gradient_input_batch = norm_gradient.get_gradient_input_batch();
                 }
                 _ => {}
@@ -186,23 +192,19 @@ impl SelfAttentionLayer {
     }
 
     pub fn calculate_input_gradient_batch(&mut self) -> Vec<Vec<Vec<Complex<f64>>>> {
-        let input_batch = self.input_batch.as_ref().expect("No input batch found");
+        let output_batch = self.output_batch.as_ref().expect("No output batch found");
         let num_heads = self.attention_heads.len();
         assert!(num_heads > 0, "No attention heads found in self-attention layer!");
 
-        let gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(1.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
+        let gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(1.0, 0.0); output_batch[0][0].len()]; output_batch[0].len()]; output_batch.len()];
 
         let previous_gradient_head_splitted = self.split_gradient_into_heads(&gradient_input_batch);
         let mut gradient_input_batches: Vec<Vec<Vec<Vec<Complex<f64>>>>> = Vec::new();
 
         // Backpropagate gradients through each attention head
         for (head_ind, attention_head) in self.attention_heads.iter_mut().enumerate() {
-            let mut previous_head_gradient_batch = previous_gradient_head_splitted[head_ind].clone();
-
-            check_nan_or_inf_3d(&mut previous_head_gradient_batch, "previous_head_gradient_batch NaN values in selft attention layer backward attention head");
-
-            // println!("backward previous head gradient batch: {} {} {}", &previous_head_gradient_batch.len(), previous_head_gradient_batch[0].len(), previous_head_gradient_batch[0][0].len());
-             let gradient = attention_head.backward(&previous_head_gradient_batch);
+            let previous_head_gradient_batch = previous_gradient_head_splitted[head_ind].clone();
+            let gradient = attention_head.backward(&previous_head_gradient_batch);
 
             gradient_input_batches.push(gradient.get_gradient_input_batch());
             // println!("gradient input head {:?}", &gradient.get_gradient_input_batch());
