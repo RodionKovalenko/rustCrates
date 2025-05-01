@@ -42,9 +42,8 @@ pub mod test_ffn_layer {
         let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
-        let analytical_grad_batch_softmax: Vec<Vec<Vec<Complex<f64>>>> = gradient_softmax.get_gradient_input_batch();
 
-        let gradient_linear: Gradient = linear_layer.backward(&analytical_grad_batch_softmax);
+        let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
         let (grouped_linear_gradient_weights, _analytical_gradient_bias_linear) = (gradient_linear.get_gradient_weights(), gradient_linear.get_gradient_bias());
 
         let weights_linear = linear_layer.weights.clone();
@@ -142,7 +141,7 @@ pub mod test_ffn_layer {
         let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
-        let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax.get_gradient_input_batch());
+        let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
         let gradient_ffn: Gradient = ffn_layer.backward(&gradient_linear.get_gradient_input_batch());
 
         let (grouped_ffn_gradient_weights, analytical_gradient_ffn_bias) = (gradient_ffn.get_gradient_weights(), gradient_ffn.get_gradient_bias());

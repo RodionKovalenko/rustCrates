@@ -260,7 +260,7 @@ pub fn activate_output_complex(data: &Vec<Vec<Complex<f64>>>, activation: Activa
         ActivationType::SOFTPLUS => data.iter().map(|row| row.iter().map(|&x| softplus_complex(x)).collect()).collect(),
         ActivationType::PROBIT => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Just return the value as is
         ActivationType::RANDOM => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Just return the value as is
-        ActivationType::SOFTMAX => softmax_complex(data),                                            // Handle separately if needed
+        _ => vec![]                                  
     }
 }
 
@@ -279,7 +279,7 @@ pub fn activate_output_complex_padding(data: &Vec<Vec<Complex<f64>>>, activation
         ActivationType::SOFTPLUS => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { softplus_complex(x) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
         ActivationType::PROBIT => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { x } else { Complex::new(0.0, 0.0) }).collect()).collect(),
         ActivationType::RANDOM => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { x } else { Complex::new(0.0, 0.0) }).collect()).collect(),
-        ActivationType::SOFTMAX => softmax_complex_padding(data, padding_mask),
+        _ => vec![],
     }
 }
 
@@ -331,24 +331,24 @@ where
 
     result
 }
-pub fn softmax_complex(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+pub fn softmax_complex(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<f64>> {
     input
         .par_iter() // Parallel iterator over rows of the input
         .map(|row| {
-            let mut sum = Complex::new(0.0, 0.0);
+            let mut sum: f64 = 0.0;
 
             // Calculate the sum of exponentials for the row
             for &val in row {
-                sum = sum + val.exp();
+                sum += val.re.exp();
             }
 
             // Calculate the softmax values for the row
-            row.iter().map(|&val| val.exp() / (sum + EPSILON)).collect::<Vec<Complex<f64>>>()
+            row.iter().map(|&val| val.re.exp() / (sum + EPSILON)).collect::<Vec<f64>>()
         })
-        .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
+        .collect()
 }
 
-pub fn softmax_complex_padding(input: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<Complex<f64>>> {
+pub fn softmax_complex_padding(input: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<f64>> {
     // println!("softmax input len {}, {}", input.len(), input[0].len());
     // println!("padding_mask len {}", padding_mask.len());
     // println!("padding mask: {:?}", &padding_mask);
@@ -361,28 +361,22 @@ pub fn softmax_complex_padding(input: &Vec<Vec<Complex<f64>>>, padding_mask: &Ve
                 panic!("Row mask is smaller than the index: {}, {}", padding_mask.len(), row_ind);
             }
             if padding_mask[row_ind] == 0 {
-                return vec![Complex::new(0.0, 0.0); row.len()];
+                return vec![0.0; row.len()];
             }
 
             let max_real = row.iter().map(|c| c.re).fold(f64::NEG_INFINITY, f64::max);
             let exps_real: Vec<f64> = row.iter().map(|c| (c.re - max_real).exp()).collect();
             let sum_real: f64 = exps_real.iter().sum();
-        
-            if sum_real == 0.0 ||sum_real.is_nan() || sum_real.is_infinite() {
-                return vec![Complex::new(1.0 / row.len() as f64, 0.0); row.len()];
-            }
 
             // Compute softmax values
-            exps_real.iter()
-            .map(|&r| Complex::new(r / sum_real, 0.0))
-            .collect()
+            exps_real.iter().map(|&r| r / sum_real).collect()
         })
         .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
 }
 
-pub fn softmax_last_row(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+pub fn softmax_last_row(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<f64>> {
     // Softmax function to scale attention scores to probability values
-    let mut result = input.clone();
+    let mut result: Vec<Vec<f64>> = vec![vec![0.0; input[0].len()]; input.len()];
 
     // Get the last row from the input
     let last_row = &input[input.len() - 1];
@@ -392,7 +386,7 @@ pub fn softmax_last_row(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>
     result
 }
 
-pub fn softmax_row(input: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
-    let exp_sum: Complex<f64> = input.iter().map(|x| x.exp()).sum();
-    input.iter().map(|x| x.exp().norm() / exp_sum).collect()
+pub fn softmax_row(input: &Vec<Complex<f64>>) -> Vec<f64> {
+    let exp_sum: f64 = input.iter().map(|x| x.re.exp()).sum();
+    input.iter().map(|x| x.re.exp() / exp_sum).collect()
 }

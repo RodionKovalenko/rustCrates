@@ -53,14 +53,61 @@ where
     result_matrix
 }
 
-pub fn multiply_complex<T, V>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<V>>) -> Vec<Vec<Complex<f64>>>
-where
-    T: Into<Complex<f64>> + Clone + Debug,
-    V: Into<Complex<f64>> + Clone + Debug,
-{
+pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
     // Convert matrices to Complex<f64>
-    let mut matrix_a_clone = convert_to_complex(matrix_a);
-    let mut matrix_b_clone = convert_to_complex(matrix_b);
+    let mut matrix_a_clone: Vec<Vec<Complex<f64>>> = matrix_a.clone();
+    let mut matrix_b_clone: Vec<Vec<Complex<f64>>> = matrix_b.clone();
+
+    let mut num_rows: usize = matrix_a_clone.len();
+    let mut num_columns: usize = matrix_b_clone[0].len();
+
+    // Handle mismatched dimensions for matrix multiplication
+    if matrix_a_clone[0].len() != matrix_b_clone.len() {
+        if matrix_a_clone[0].len() == matrix_b_clone[0].len() {
+            matrix_b_clone = transpose(&matrix_b_clone);
+            num_columns = matrix_b_clone[0].len();
+        } else if matrix_a_clone.len() == matrix_b_clone.len() {
+            matrix_a_clone = transpose(&matrix_a_clone);
+            num_rows = matrix_a_clone.len();
+        }
+    }
+
+    if matrix_a_clone[0].len() != matrix_b_clone.len() && matrix_a_clone.len() != matrix_b_clone.len() {
+        panic!("Matrix A does not have the same number of columns as Matrix B rows.");
+    }
+
+    let mut result_matrix: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
+
+    // Create a custom thread pool with exactly 8 threads
+    let pool = ThreadPoolBuilder::new().num_threads(8).build().unwrap();
+
+    // Run the multiplication within this custom thread pool
+    pool.install(|| {
+        // Parallelize the rows of the result matrix using Rayon
+        result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
+            for j in 0..num_columns {
+                row[j] = (0..matrix_b_clone.len())
+                    .map(|k| {
+                        //let product: Complex<f64> = Complex::new(matrix_a_clone[i][k].re * matrix_b_clone[k][j].re, matrix_a_clone[i][k].im * matrix_b_clone[k][j].im);
+                        let product: Complex<f64> = matrix_a_clone[i][k] * matrix_b_clone[k][j];
+
+                        if is_nan_or_inf(&product) {
+                            panic!("matrix multiply complex has invalid values: result: {:?}, a: {:?}, b: {:?}", &product, &matrix_a_clone[i][k], &matrix_b_clone[k][j]);
+                        }
+                        product
+                    })
+                    .sum();
+            }
+        });
+    });
+
+    result_matrix
+}
+
+pub fn multiply_complex_with_f64(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<f64>>) -> Vec<Vec<Complex<f64>>> {
+    // Convert matrices to Complex<f64>
+    let mut matrix_a_clone: Vec<Vec<Complex<f64>>> = matrix_a.clone();
+    let mut matrix_b_clone: Vec<Vec<f64>> = matrix_b.clone();
 
     let mut num_rows = matrix_a_clone.len();
     let mut num_columns = matrix_b_clone[0].len();
@@ -92,10 +139,9 @@ where
             for j in 0..num_columns {
                 row[j] = (0..matrix_b_clone.len())
                     .map(|k| {
-                        let product = Complex::new(matrix_a_clone[i][k].re * matrix_b_clone[k][j].re, matrix_a_clone[i][k].im * matrix_b_clone[k][j].im);
+                        let product: Complex<f64> = matrix_a_clone[i][k] * matrix_b_clone[k][j];
 
                         if is_nan_or_inf(&product) {
-                            //product = Complex::new(rand::rng().random_range(-0.5..0.5), rand::rng().random_range(-0.5..0.5));
                             panic!("matrix multiply complex has invalid values: result: {:?}, a: {:?}, b: {:?}", &product, &matrix_a_clone[i][k], &matrix_b_clone[k][j]);
                         }
                         product
@@ -108,19 +154,54 @@ where
     result_matrix
 }
 
-// A helper function to convert matrix elements to Complex<f64>
-fn convert_to_complex<T: Into<Complex<f64>> + Clone + Debug>(matrix: &Vec<Vec<T>>) -> Vec<Vec<Complex<f64>>> {
-    matrix
-        .iter()
-        .map(|row| {
-            row.iter()
-                .map(|v| {
-                    // Convert the element to Complex<f64>
-                    v.clone().into() // This uses the Into trait to convert any type to Complex<f64>
-                })
-                .collect()
-        })
-        .collect()
+pub fn multiply_f64_complex(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    // Convert matrices to Complex<f64>
+    let mut matrix_a_clone: Vec<Vec<f64>> = matrix_a.clone();
+    let mut matrix_b_clone: Vec<Vec<Complex<f64>>> = matrix_b.clone();
+
+    let mut num_rows = matrix_a_clone.len();
+    let mut num_columns = matrix_b_clone[0].len();
+
+    // Handle mismatched dimensions for matrix multiplication
+    if matrix_a_clone[0].len() != matrix_b_clone.len() {
+        if matrix_a_clone[0].len() == matrix_b_clone[0].len() {
+            matrix_b_clone = transpose(&matrix_b_clone);
+            num_columns = matrix_b_clone[0].len();
+        } else if matrix_a_clone.len() == matrix_b_clone.len() {
+            matrix_a_clone = transpose(&matrix_a_clone);
+            num_rows = matrix_a_clone.len();
+        }
+    }
+
+    if matrix_a_clone[0].len() != matrix_b_clone.len() && matrix_a_clone.len() != matrix_b_clone.len() {
+        panic!("Matrix A does not have the same number of columns as Matrix B rows.");
+    }
+
+    let mut result_matrix: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
+
+    // Create a custom thread pool with exactly 8 threads
+    let pool = ThreadPoolBuilder::new().num_threads(8).build().unwrap();
+
+    // Run the multiplication within this custom thread pool
+    pool.install(|| {
+        // Parallelize the rows of the result matrix using Rayon
+        result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
+            for j in 0..num_columns {
+                row[j] = (0..matrix_b_clone.len())
+                    .map(|k| {
+                        let product: Complex<f64> = matrix_a_clone[i][k] * matrix_b_clone[k][j];
+
+                        if is_nan_or_inf(&product) {
+                            panic!("matrix multiply complex has invalid values: result: {:?}, a: {:?}, b: {:?}", &product, &matrix_a_clone[i][k], &matrix_b_clone[k][j]);
+                        }
+                        product
+                    })
+                    .sum();
+            }
+        });
+    });
+
+    result_matrix
 }
 
 pub fn transpose<T: Debug + Clone + Sync + Send>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
@@ -310,7 +391,7 @@ pub fn add_matrix_3d<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<Vec<Vec<
     for i in 0..matrix_a.len() {
         for j in 0..matrix_a[i].len() {
             for k in 0..matrix_a[i][j].len() {
-                matrix_result[i][j][k] =  matrix_result[i][j][k].clone() + matrix_b[i % matrix_b.len()][j % matrix_b[0].len()][k % matrix_b[0][0].len()].clone();
+                matrix_result[i][j][k] = matrix_result[i][j][k].clone() + matrix_b[i % matrix_b.len()][j % matrix_b[0].len()][k % matrix_b[0][0].len()].clone();
             }
         }
     }
@@ -324,7 +405,7 @@ pub fn add_matrix_3d_c(matrix_a: &Vec<Vec<Vec<Complex<f64>>>>, matrix_b: &Vec<Ve
     for i in 0..matrix_a.len() {
         for j in 0..matrix_a[i].len() {
             for k in 0..matrix_a[i][j].len() {
-                let val =  matrix_result[i][j][k].clone() + matrix_b[i % matrix_b.len()][j % matrix_b[0].len()][k % matrix_b[0][0].len()].clone();
+                let val = matrix_result[i][j][k].clone() + matrix_b[i % matrix_b.len()][j % matrix_b[0].len()][k % matrix_b[0][0].len()].clone();
                 matrix_result[i][j][k] = Complex::new(val.re, 0.0);
             }
         }
@@ -332,7 +413,6 @@ pub fn add_matrix_3d_c(matrix_a: &Vec<Vec<Vec<Complex<f64>>>>, matrix_b: &Vec<Ve
 
     matrix_result
 }
-
 
 pub fn add_vector<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<T>) -> Vec<Vec<T>> {
     let mut matrix_result: Vec<Vec<T>> = matrix_a.clone();

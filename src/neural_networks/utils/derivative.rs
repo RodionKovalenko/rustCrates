@@ -73,8 +73,7 @@ pub fn gelu_derivative_complex(inactivated_input: Complex<f64>) -> Complex<f64> 
     let f_prime_x = sqrt_2_over_pi * (Complex::new(1.0, 0.0) + Complex::new(0.134145, 0.0) * inactivated_input.powi(2));
 
     // GELU'(x) = 0.5 * (1 + tanh(f(x))) + 0.5 * x * sech^2(f(x)) * f'(x)
-    let gelu_derivative = Complex::new(0.5, 0.0) * (Complex::new(1.0, 0.0) + tanh_f_x)
-        + Complex::new(0.5, 0.0) * inactivated_input * sech_f_x_squared * f_prime_x;
+    let gelu_derivative = Complex::new(0.5, 0.0) * (Complex::new(1.0, 0.0) + tanh_f_x) + Complex::new(0.5, 0.0) * inactivated_input * sech_f_x_squared * f_prime_x;
 
     // Smoothly clamp extreme values instead of hard zeroing
     if gelu_derivative.norm() > 1e6 {
@@ -99,8 +98,8 @@ fn softplus_derivative_complex(z: Complex<f64>) -> Complex<f64> {
 }
 
 // Function to compute the derivative (Jacobian) of softmax for a matrix of complex numbers
-fn softmax_derivative_complex(data: &Vec<Complex<f64>>) -> Vec<Vec<Complex<f64>>> {
-    let mut jacobian: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); data.len()]; data.len()];
+fn softmax_derivative_complex(data: &Vec<f64>) -> Vec<Vec<f64>> {
+    let mut jacobian: Vec<Vec<f64>> = vec![vec![0.0; data.len()]; data.len()];
 
     // Loop through each pair of indices (i, j)
     for i in 0..data.len() {
@@ -118,19 +117,19 @@ fn softmax_derivative_complex(data: &Vec<Complex<f64>>) -> Vec<Vec<Complex<f64>>
     jacobian
 }
 
-pub fn softmax_derivative_complex_matrix(softmax_values: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+pub fn softmax_derivative_complex_matrix(softmax_values: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
     let num_rows = softmax_values.len();
     let num_cols = softmax_values[0].len();
 
     // 3D tensor to hold Jacobian matrices for each row
-    let mut derivative: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); num_cols]; num_cols]; num_rows];
+    let mut derivative: Vec<Vec<Vec<f64>>> = vec![vec![vec![0.0; num_cols]; num_cols]; num_rows];
 
     for i in 0..num_rows {
         derivative[i] = softmax_derivative_complex(&softmax_values[i]);
     }
 
-    println!("original softmax derivative 3d: {:?} ", &derivative);
-    let mut grouped_derivated = vec![vec![Complex::new(0.0, 0.0); num_cols]; num_rows];
+    // println!("original softmax derivative 3d: {:?} ", &derivative);
+    let mut grouped_derivated: Vec<Vec<f64>> = vec![vec![0.0; num_cols]; num_rows];
 
     for i in 0..num_rows {
         for j in 0..num_cols {
@@ -145,12 +144,12 @@ pub fn softmax_derivative_complex_matrix(softmax_values: &Vec<Vec<Complex<f64>>>
     grouped_derivated
 }
 
-pub fn softmax_derivative_complex_jacobian(softmax_values: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+pub fn softmax_derivative_complex_jacobian(softmax_values: &Vec<Vec<f64>>) -> Vec<Vec<Vec<f64>>> {
     let num_rows = softmax_values.len();
     let num_cols = softmax_values[0].len();
 
     // 3D tensor to hold Jacobian matrices for each row
-    let mut derivative: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); num_cols]; num_cols]; num_rows];
+    let mut derivative: Vec<Vec<Vec<f64>>> = vec![vec![vec![0.0; num_cols]; num_cols]; num_rows];
 
     for i in 0..num_rows {
         derivative[i] = softmax_derivative_complex(&softmax_values[i]);
@@ -198,7 +197,7 @@ pub fn backpropagate_softmax(softmax_jacobian: &Vec<Vec<Vec<Complex<f64>>>>, dl_
     dl_dz
 }
 
-pub fn backpropagate_softmax_masked(softmax_jacobian: &Vec<Vec<Vec<Complex<f64>>>>, dl_ds: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<Complex<f64>>> {
+pub fn backpropagate_softmax_masked(softmax_jacobian: &Vec<Vec<Vec<f64>>>, dl_ds: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<Complex<f64>>> {
     let num_rows = dl_ds.len();
     let num_cols = dl_ds[0].len();
 
@@ -294,7 +293,7 @@ pub fn get_gradient_complex(activated_data: &Vec<Vec<Complex<f64>>>, input_data:
         ActivationType::SOFTPLUS => activated_data.iter().map(|row| row.iter().map(|&x| softplus_derivative_complex(x)).collect()).collect(),
         ActivationType::PROBIT => activated_data.iter().map(|row| row.iter().map(|_| Complex::new(1.0, 0.0)).collect()).collect(), // Just return the value as is
         ActivationType::RANDOM => activated_data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(),                     // Just return the value as is
-        ActivationType::SOFTMAX => softmax_derivative_complex_matrix(&activated_data),
+        _ => vec![],
     }
 }
 
@@ -450,7 +449,7 @@ pub fn global_relative_error_l2(numerical_grad: &Vec<Vec<Vec<Complex<f64>>>>, an
     }
 
     println!("\nabsolute error: {:?}", &diff_norm_sq);
-    
+
     let diff_norm = diff_norm_sq.sqrt();
     let total_norm = numerical_norm_sq.sqrt() + analytical_norm_sq.sqrt();
 
@@ -480,7 +479,7 @@ pub fn global_relative_error_2d_l2(numerical_grad: &Vec<Vec<Complex<f64>>>, anal
     }
 
     println!("absolute error: {:?}", &diff_norm_sq);
-    
+
     let diff_norm = diff_norm_sq.sqrt();
     let total_norm = numerical_norm_sq.sqrt() + analytical_norm_sq.sqrt();
 
@@ -751,6 +750,35 @@ where
     numerical_gradient
 }
 
+pub fn numerical_gradient_check_f64<F>(f: F, z: &Vec<Vec<Complex<f64>>>, epsilon: f64) -> Vec<Vec<f64>>
+where
+    F: Fn(&Vec<Vec<Complex<f64>>>) -> Vec<Vec<f64>>,
+{
+    let num_rows = z.len();
+    let num_cols = z[0].len();
+    let mut numerical_gradient = vec![vec![0.0; num_cols]; num_rows];
+
+    for i in 0..num_rows {
+        for j in 0..num_cols {
+            let mut z_plus = z.clone();
+            let mut z_minus = z.clone();
+
+            // Perturb z[i][j] by +epsilon
+            z_plus[i][j] += Complex::new(epsilon, 0.0);
+            let f_plus = f(&z_plus);
+
+            // Perturb z[i][j] by -epsilon
+            z_minus[i][j] -= Complex::new(epsilon, 0.0);
+            let f_minus = f(&z_minus);
+
+            // Compute the numerical gradient
+            numerical_gradient[i][j] = (f_plus[i][j] - f_minus[i][j]) / (2.0 * epsilon);
+        }
+    }
+
+    numerical_gradient
+}
+
 pub fn compute_relative_errors(numerical: &Vec<Vec<Vec<Complex<f64>>>>, analytical: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<f64>>> {
     let epsilon_tol = 1e-8;
     let mut rel_errors = vec![vec![vec![0.0; numerical[0][0].len()]; numerical[0].len()]; numerical.len()];
@@ -790,6 +818,27 @@ pub fn test_gradient_batch_error(numerical_grad_batch: &Vec<Vec<Vec<Complex<f64>
 pub fn test_gradient_error_2d(numerical_grad: &Vec<Vec<Complex<f64>>>, analytical_grad: &Vec<Vec<Complex<f64>>>, epsilon: f64) {
     for (row_numerical, row_analytical) in numerical_grad.iter().zip(analytical_grad) {
         test_gradient_error_1d(row_numerical, row_analytical, epsilon);
+    }
+}
+
+pub fn test_gradient_error_2d_f64(numerical_grad: &Vec<Vec<f64>>, analytical_grad: &Vec<Vec<f64>>, epsilon: f64) {
+    for (row_numerical, row_analytical) in numerical_grad.iter().zip(analytical_grad) {
+        test_gradient_error_1d_f64(row_numerical, row_analytical, epsilon);
+    }
+}
+
+pub fn test_gradient_error_1d_f64(numerical_grad: &Vec<f64>, analytical_grad: &Vec<f64>, epsilon: f64) {
+    for (val_numerical, val_analytical) in numerical_grad.iter().zip(analytical_grad) {
+        let abs_diff = (val_numerical - val_analytical).abs();
+        // take the largest value out of (val_numerical, val_analytical, epsilon)
+        let max_val = val_numerical.abs().max(val_analytical.abs()).max(epsilon);
+        let rel_diff = abs_diff / max_val;
+
+        if rel_diff > epsilon {
+            println!("Gradient mismatch: numerical = {:.12}, analytical = {:.12}, abs_diff = {:.12}, rel_diff = {:.12}", val_numerical, val_analytical, abs_diff, rel_diff);
+        }
+
+        assert!(rel_diff < epsilon);
     }
 }
 

@@ -4,7 +4,7 @@ use crate::neural_networks::{
         activation::activate_output_complex_padding,
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         derivative::get_gradient_complex,
-        matrix::{add_vector, apply_padding_mask_batch, check_nan_or_inf, check_nan_or_inf_3d, clip_gradient_1d, clip_gradients, hadamard_product_2d_c, is_nan_or_inf, multiply_complex, transpose},
+        matrix::{add_vector, apply_padding_mask_batch, clip_gradient_1d, clip_gradients, hadamard_product_2d_c, is_nan_or_inf, multiply_complex, transpose},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -12,7 +12,6 @@ use core::fmt::Debug;
 use num::Complex;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
 
 use super::{
     add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput, linear_layer::LinearLayer, norm_layer::NormalNormLayer, positional_encoding_layer::PositionalEncodingLayer,
@@ -134,55 +133,25 @@ impl Layer {
 
         self.input_batch = Some(input_batch.clone());
 
-        let mut inactivated_batch_output: Vec<Vec<Vec<Complex<f64>>>> = input_batch
+        let inactivated_batch_output: Vec<Vec<Vec<Complex<f64>>>> = input_batch
             .par_iter()
             .map(|input| {
-                let mut output: Vec<Vec<Complex<f64>>> = multiply_complex(input, &self.weights);
-
-                check_nan_or_inf(&mut output, "check dense inactivated_batch_output without bias");
+                let output: Vec<Vec<Complex<f64>>> = multiply_complex(input, &self.weights);
 
                 // Add bias to the result
-                let mut raw_output: Vec<Vec<Complex<f64>>> = add_vector(&output, &self.bias);
-
-                if check_nan_or_inf(&mut raw_output, "check dense inactivated_batch_output with bias") {
-                    let max = &self.weights.iter().flatten().max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
-                    let min = &self.weights.iter().flatten().min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
-
-                    println!("max value in weights dense: {:?}", max);
-                    println!("max value in weights dense: {:?}", min);
-
-                    let max = input.iter().flatten().max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
-                    let min = input.iter().flatten().min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
-
-                    println!("max value in input dense: {:?}", max);
-                    println!("max value in input dense: {:?}", min);
-
-                    let max = raw_output.iter().flatten().max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
-                    let min = raw_output.iter().flatten().min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
-                    println!("max value in raw output with bias dense: {:?}", max);
-                    println!("max value in raw output with bias dense: {:?}", min);
-
-                    let max = &self.bias.iter().max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
-                    let min = &self.bias.iter().min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
-                    println!("max value in bias dense: {:?}", max);
-                    println!("max value in bias dense: {:?}", min);
-                }
+                let raw_output: Vec<Vec<Complex<f64>>> = add_vector(&output, &self.bias);
                 raw_output
             })
             .collect();
 
-        check_nan_or_inf_3d(&mut inactivated_batch_output, "check dense inactivated_batch_output");
-
-        let mut batch_output: Vec<Vec<Vec<Complex<f64>>>> = inactivated_batch_output
-            .par_iter() // Process the input batch in parallel
+        let batch_output: Vec<Vec<Vec<Complex<f64>>>> = inactivated_batch_output
+            .par_iter()
             .zip(padding_mask_batch.par_iter())
             .map(|(input, padding_mask)| {
                 // Apply activation if the layer type is DenseLayer
                 activate_output_complex_padding(&input, self.activation_type.clone(), padding_mask)
             })
-            .collect(); // Collect the results back into a Vec
-
-        check_nan_or_inf_3d(&mut batch_output, "check dense batch_output");
+            .collect();
 
         self.output_batch = Some(batch_output.clone());
         self.inactivated_input_batch = Some(inactivated_batch_output);
@@ -216,18 +185,13 @@ impl Layer {
         for (batch_ind, (input, previous_gradient)) in input_batch.iter().zip(&previous_gradient_batch_padded).enumerate() {
             let gradient_output = get_gradient_complex(&output_batch[batch_ind], &raw_output_batch[batch_ind], self.activation_type.clone());
 
-            check_nan_or_inf(&mut previous_gradient.clone(), "previous gradient in dense layer backward is not valid");
-            check_nan_or_inf(&mut gradient_output.clone(), "gradient output in dense layer backward is not valid");
-
             input_gradient_batch[batch_ind] = hadamard_product_2d_c(&previous_gradient, &gradient_output);
-            check_nan_or_inf(&mut input_gradient_batch[batch_ind], "previous gradient in dense layer backward is not valid");
-
             weight_gradients[batch_ind] = multiply_complex(&transpose(&input), &input_gradient_batch[batch_ind]);
 
             //Accumulate gradients for biases
             for grad_row in input_gradient_batch[batch_ind].iter() {
                 for (k, grad_val) in grad_row.iter().enumerate() {
-                    bias_gradients[batch_ind][k] += Complex::new(grad_val.clone().re, 0.0); // Sum the gradients for biases
+                    bias_gradients[batch_ind][k] += grad_val;
                 }
             }
 

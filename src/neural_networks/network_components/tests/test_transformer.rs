@@ -2,22 +2,25 @@
 mod test_transformer {
     use num::Complex;
 
-    use crate::neural_networks::{
-        network_components::{embedding_layer::EmbeddingLayer, gradient_struct::Gradient, layer::LayerEnum, layer_input_struct::LayerInput, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
-        network_types::{
-            feedforward_layer::FeedForwardLayer,
-            neural_network_generic::{create, NeuralNetwork, OperationMode},
-            transformer::{
-                masked_attention_head::MaskedAttentionHead,
-                self_attention_layer::SelfAttentionLayer,
-                transformer_network::{backward, cross_entropy_loss_batch, predict},
+    use crate::{
+        neural_networks::{
+            network_components::{embedding_layer::EmbeddingLayer, gradient_struct::Gradient, layer::LayerEnum, layer_input_struct::LayerInput, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
+            network_types::{
+                feedforward_layer::FeedForwardLayer,
+                neural_network_generic::{create, NeuralNetwork, OperationMode},
+                transformer::{
+                    masked_attention_head::MaskedAttentionHead,
+                    self_attention_layer::SelfAttentionLayer,
+                    transformer_network::{backward, cross_entropy_loss_batch, predict},
+                },
+                wavelet_network::DECOMPOSITION_LEVELS,
             },
-            wavelet_network::DECOMPOSITION_LEVELS,
+            utils::{
+                derivative::{global_relative_error_2d_l2, numerical_gradient_weights, test_gradient_error_2d},
+                tokenizer::tokenize_batch,
+            },
         },
-        utils::{
-            derivative::{global_relative_error_2d_l2, numerical_gradient_weights, test_gradient_error_2d},
-            tokenizer::tokenize_batch,
-        },
+        utils::data_converter::convert_to_c_f64_3d,
     };
 
     #[test]
@@ -79,6 +82,7 @@ mod test_transformer {
         let target_batch_str: Vec<String> = vec![target_str1.to_string()];
 
         let output_batch = predict(&mut transformer_network, &input_batch_str, 0);
+        let output_batch: Vec<Vec<Vec<Complex<f64>>>> = convert_to_c_f64_3d::<Vec<Vec<Vec<f64>>>>(&output_batch);
         let (_tokens, target_ids) = tokenize_batch(&target_batch_str, true).unwrap();
         backward(&mut transformer_network, &target_ids, false);
 
@@ -221,7 +225,7 @@ mod test_transformer {
 
         // backward
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
-        let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax.get_gradient_input_batch());
+        let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
         let gradient_ffn: Gradient = ffn_layer.backward(&gradient_linear.get_gradient_input_batch());
         let gradient_attention_layer_1: Gradient = attention_layer_1.backward(&gradient_ffn.get_gradient_input_batch());
         let _gradient_attention_layer_2: Gradient = attention_layer_2.backward(&gradient_attention_layer_1.get_gradient_input_batch());
