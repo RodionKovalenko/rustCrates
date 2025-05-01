@@ -177,7 +177,7 @@ impl EmbeddingLayer {
             token_ids_output.push(token_output_id);
         }
 
-        println!("token embedding len: {:?}, {}, {}", token_ids_output.len(), token_ids_output[0].len(), token_ids_output[0][0].len());
+        //println!("token embedding len: {:?}, {}, {}", token_ids_output.len(), token_ids_output[0].len(), token_ids_output[0][0].len());
 
         (token_ids_output, padding_mask)
     }
@@ -233,19 +233,6 @@ impl EmbeddingLayer {
     pub fn update_embedding(db: &Db, token_id: &u32, embedding: &Vec<Complex<f64>>) {
         let embedding_normalized = normalize(embedding);
 
-        // let mut wavelet = CWTComplex {
-        //     scales: vec![1.0],
-        //     cw_type: ContinuousWaletetType::CGAU1,
-        //     sampling_period: 1.0,
-        //     fc: 1.0,
-        //     fb: 1.0,
-        //     m: 1.0,
-        //     frequencies: vec![],
-        // };
-
-        // let (transform_cwt, _frequencies) = cwt_complex(&embedding_normalized.to_vec(), &mut wavelet).unwrap();
-        // let embedding_wavelet_normalized: Vec<Vec<Complex<f64>>> = convert_to_c_array_f64_2d(transform_cwt);
-
         let key = token_id.to_string();
         let serialized_embedding = bincode::serialize(&embedding_normalized).expect("Failed to serialize embedding");
         db.insert(key, serialized_embedding).expect("Failed to save or update embedding in Sled");
@@ -279,16 +266,8 @@ impl EmbeddingLayer {
         let key = token_id.to_string();
         let token_id_u32: u32 = key.parse().unwrap();
 
-        // if token_id_u32 > 50254 {
-        //     let db: &Db = get_db_embedding();
-        //     let mut rng: rand::prelude::ThreadRng = rand::rng();
-        //     let token_id_u32: u32 = key.parse().unwrap();
-
-        //     return Ok(Self::create_embedding(&db, 512, &mut rng, token_id_u32));
-        // }
-
         match db.get(&key) {
-            Ok(Some(ivec)) => bincode::deserialize(&ivec).map_err(|_| "Failed to deserialize embedding".to_string()), // Directly return Vec<f64>
+            Ok(Some(ivec)) => bincode::deserialize(&ivec).map_err(|_| "Failed to deserialize embedding".to_string()),
             Ok(None) => {
                 let db: &Db = get_db_embedding();
                 let mut rng: rand::prelude::ThreadRng = rand::rng();
@@ -296,7 +275,7 @@ impl EmbeddingLayer {
 
                 Ok(Self::create_embedding(&db, embedding_dim * base_2.pow(DECOMPOSITION_LEVELS) as usize, &mut rng, token_id_u32))
             } // Return an error for missing keys
-            Err(_) => Err("Failed to fetch embedding from Sled".to_string()),                                         // Handle Sled errors
+            Err(_) => Err("Failed to fetch embedding from Sled".to_string()),
         }
     }
 }
