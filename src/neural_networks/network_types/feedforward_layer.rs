@@ -1,14 +1,11 @@
-use crate::neural_networks::{
-    network_components::{
-        add_rms_norm_layer::RMSNormLayer,
-        gradient_struct::Gradient,
-        layer::{ActivationType, Layer, LayerEnum, LayerType},
-        layer_input_struct::LayerInput,
-        layer_output_struct::LayerOutput,
-        linear_layer::LinearLayer,
-        norm_layer::NormalNormLayer,
-    },
-    utils::matrix::check_nan_or_inf_3d,
+use crate::neural_networks::network_components::{
+    add_rms_norm_layer::RMSNormLayer,
+    gradient_struct::Gradient,
+    layer::{ActivationType, Layer, LayerEnum, LayerType},
+    layer_input_struct::LayerInput,
+    layer_output_struct::LayerOutput,
+    linear_layer::LinearLayer,
+    norm_layer::NormalNormLayer,
 };
 use num::Complex;
 use serde::{Deserialize, Serialize};
@@ -141,6 +138,7 @@ impl FeedForwardLayer {
         let mut output_gradients = prev_gradients.clone();
 
         let mut gradient = Gradient::new_default();
+        gradient.set_gradient_input_batch(prev_gradients.clone());
 
         //Apply RMSNorm backpropagation if it's present
         if let Some(norm_layer) = &mut self.norm_layer {
@@ -151,7 +149,7 @@ impl FeedForwardLayer {
                     // println!("FFN, gradient from RMS Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
                 }
                 LayerEnum::Norm(norm_layer) => {
-                    gradient = norm_layer.backward(&output_gradients);
+                    gradient = norm_layer.backward(&gradient);
                     output_gradients = gradient.get_gradient_input_batch();
                     //println!("FFN, gradient from Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
                 }
@@ -164,18 +162,14 @@ impl FeedForwardLayer {
         for layer in self.layers.iter_mut().rev() {
             match layer {
                 LayerEnum::Dense(dense_layer) => {
-                    check_nan_or_inf_3d(&mut output_gradients, "previous gradients in ffn dense layer has None values");
                     gradient = dense_layer.backward(&output_gradients);
                     output_gradients = gradient.get_gradient_input_batch();
 
                     //println!("Gradient input batch FFN Dense Layer: {:?}, {:?},  {:?}", &output_gradients.len(), &output_gradients[0].len(), &output_gradients[0][0].len());
-                    check_nan_or_inf_3d(&mut output_gradients, "output gradients in ffn dense layer has None values");
                 }
                 LayerEnum::Linear(linear_layer) => {
-                    gradient = linear_layer.backward(&output_gradients);
+                    gradient = linear_layer.backward(&gradient);
                     output_gradients = gradient.get_gradient_input_batch();
-
-                    check_nan_or_inf_3d(&mut output_gradients, "output gradients in linear layer has None values:");
                     //println!("Gradient input batch FFN Linear Layer: {:?}, {:?},  {:?}", &output_gradients.len(), &output_gradients[0].len(), &output_gradients[0][0].len());
                 }
                 _ => {}
@@ -197,6 +191,9 @@ impl FeedForwardLayer {
 
         let mut output_gradients = vec![vec![vec![Complex::new(1.0, 0.0); linear_layer.weights[0].len()]; input_batch[0].len()]; input_batch.len()];
 
+        let mut gradient = Gradient::new_default();
+        gradient.set_gradient_input_batch(output_gradients.clone());
+
         // forward -> Dense, Linear
         // backward -> Linear, Dense
         for layer in self.layers.iter_mut().rev() {
@@ -206,7 +203,7 @@ impl FeedForwardLayer {
                     output_gradients = gradient.get_gradient_input_batch();
                 }
                 LayerEnum::Linear(linear_layer) => {
-                    let gradient = linear_layer.backward(&output_gradients);
+                    let gradient = linear_layer.backward(&gradient);
                     output_gradients = gradient.get_gradient_input_batch();
                 }
                 _ => {}

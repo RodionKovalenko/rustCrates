@@ -7,7 +7,11 @@ use crate::neural_networks::utils::{
     matrix::{add_matrix_3d_c, clip_gradient_1d, is_nan_or_inf},
 };
 
-use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
+use super::{
+    gradient_struct::{Gradient, GradientBatch},
+    layer_input_struct::LayerInput,
+    layer_output_struct::LayerOutput,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NormalNormLayer {
@@ -120,13 +124,19 @@ impl NormalNormLayer {
         layer_output
     }
 
-    pub fn backward(&mut self, grad_output: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
+    pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
         let input_batch = self.input_batch.as_ref().expect("Input batch not found");
         let _input_batch_before = self.input_batch_before.as_ref().expect("Input batch before not found");
         let previous_gradient_input_batch = self.previous_gradient_input_batch.as_mut().expect("Previous gradient input batch not found");
         let normalized_batch = self.normalized_batch.as_ref().expect("Normalized batch not found");
         let mean_batch = self.mean_batch.as_ref().expect("Mean not found");
         let var_batch = self.var_batch.as_ref().expect("Variance not found");
+
+        let previous_gradient_batch = if !previous_gradient.get_gradient_input_batch().is_empty() {
+            GradientBatch::Complex(previous_gradient.get_gradient_input_batch())
+        } else {
+            GradientBatch::Real(previous_gradient.get_gradient_input_batch_softmax())
+        };
 
         let batch_size = input_batch.len();
         let seq_len = input_batch[0].len();
@@ -140,52 +150,102 @@ impl NormalNormLayer {
         let n = feature_dim as f64;
         let eps = 1e-8;
 
-        // println!("\n GRADIENT INPUT:  : {}, {}, {}", input_grads.len(), input_grads[0].len(), input_grads[0][0].len());
-        // println!("previous gradient input batch: {:?}, {}, {}", &previous_gradient_input_batch.len(), previous_gradient_input_batch[0].len(), previous_gradient_input_batch[0][0].len());
+        match previous_gradient_batch {
+            GradientBatch::Complex(grad_output) => {
+                for b in 0..batch_size {
+                    //previous_gradient_input_batch[b] = transpose(&previous_gradient_input_batch[b]);
+                    for s in 0..seq_len {
+                        let mu: Complex<f64> = mean_batch[b][s];
+                        let var: Complex<f64> = var_batch[b][s] + eps;
+                        let std_inv: Complex<f64> = 1.0 / var.sqrt();
+                        let var_pow_minus_3_2: Complex<f64> = 1.0 / var.powf(1.5);
 
-        for b in 0..batch_size {
-            //previous_gradient_input_batch[b] = transpose(&previous_gradient_input_batch[b]);
-            for s in 0..seq_len {
-                let mu: Complex<f64> = mean_batch[b][s];
-                let var: Complex<f64> = var_batch[b][s] + eps;
-                let std_inv: Complex<f64> = 1.0 / var.sqrt();
-                let var_pow_minus_3_2: Complex<f64> = 1.0 / var.powf(1.5);
+                        // Precompute useful terms for mean/var gradients
+                        for f in 0..feature_dim {
+                            let mut dvar_sum = Complex::new(0.0, 0.0);
+                            let mut dmu_sum = Complex::new(0.0, 0.0);
+                            let mut dx_minus_mu_sum = Complex::new(0.0, 0.0);
+                            for d in 0..feature_dim {
+                                let x: Complex<f64> = input_batch[b][s][d];
+                                let x_hat: Complex<f64> = normalized_batch[b][s][d];
+                                let dout: Complex<f64> = grad_output[b][s][d];
 
-                // Precompute useful terms for mean/var gradients
-                for f in 0..feature_dim {
-                    let mut dvar_sum = Complex::new(0.0, 0.0);
-                    let mut dmu_sum = Complex::new(0.0, 0.0);
-                    let mut dx_minus_mu_sum = Complex::new(0.0, 0.0);
-                    for d in 0..feature_dim {
-                        let x: Complex<f64> = input_batch[b][s][d];
-                        let x_hat: Complex<f64> = normalized_batch[b][s][d];
-                        let dout: Complex<f64> = grad_output[b][s][d];
+                                // ∂L/∂gamma and ∂L/∂beta
+                                gamma_grad[d] += dout * x_hat;
+                                beta_grad[d] += dout;
 
-                        // ∂L/∂gamma and ∂L/∂beta
-                        gamma_grad[d] += dout * x_hat;
-                        beta_grad[d] += dout;
+                                let dxhat: Complex<f64> = dout * self.gamma[f];
+                                dvar_sum += dxhat * (x - mu) * (-0.5) * var_pow_minus_3_2;
+                                dx_minus_mu_sum += -2.0 * (x - mu) / n;
+                            }
+                            for d in 0..feature_dim {
+                                let dout: Complex<f64> = grad_output[b][s][d];
+                                dmu_sum += dout * (-std_inv);
+                            }
 
-                        let dxhat: Complex<f64> = dout * self.gamma[f];
-                        dvar_sum += dxhat * (x - mu) * (-0.5) * var_pow_minus_3_2;
-                        dx_minus_mu_sum += -2.0 * (x - mu) / n;
+                            let dxhat: Complex<f64> = grad_output[b][s][f] * self.gamma[f];
+                            let x: Complex<f64> = input_batch[b][s][f];
+                            let _x_orig: Complex<f64> = _input_batch_before[b][s][f];
+                            let _x_input = x - _x_orig;
+
+                            let dmu = dmu_sum * self.gamma[f] + dvar_sum * dx_minus_mu_sum;
+
+                            let gradient: Complex<f64> = (dxhat * std_inv) + (dvar_sum * (2.0 * (x - mu) / n)) + dmu / n;
+
+                            for j in 0..feature_dim {
+                                let _identity: f64 = if j == f { 1.0 } else { 0.0 };
+                                input_grads[b][s][j] += Complex::new((gradient * _identity + gradient * previous_gradient_input_batch[b][s][j]).re, 0.0);
+                            }
+                        }
                     }
-                    for d in 0..feature_dim {
-                        let dout: Complex<f64> = grad_output[b][s][d];
-                        dmu_sum += dout * (-std_inv);
-                    }
+                }
+            }
+            GradientBatch::Real(grad_output) => {
+                for b in 0..batch_size {
+                    //previous_gradient_input_batch[b] = transpose(&previous_gradient_input_batch[b]);
+                    for s in 0..seq_len {
+                        let mu: Complex<f64> = mean_batch[b][s];
+                        let var: Complex<f64> = var_batch[b][s] + eps;
+                        let std_inv: Complex<f64> = 1.0 / var.sqrt();
+                        let var_pow_minus_3_2: Complex<f64> = 1.0 / var.powf(1.5);
 
-                    let dxhat: Complex<f64> = grad_output[b][s][f] * self.gamma[f];
-                    let x: Complex<f64> = input_batch[b][s][f];
-                    let _x_orig: Complex<f64> = _input_batch_before[b][s][f];
-                    let _x_input = x - _x_orig;
+                        // Precompute useful terms for mean/var gradients
+                        for f in 0..feature_dim {
+                            let mut dvar_sum = Complex::new(0.0, 0.0);
+                            let mut dmu_sum = Complex::new(0.0, 0.0);
+                            let mut dx_minus_mu_sum = Complex::new(0.0, 0.0);
+                            for d in 0..feature_dim {
+                                let x: Complex<f64> = input_batch[b][s][d];
+                                let x_hat: Complex<f64> = normalized_batch[b][s][d];
+                                let dout: f64 = grad_output[b][s][d];
 
-                    let dmu = dmu_sum * self.gamma[f] + dvar_sum * dx_minus_mu_sum;
+                                // ∂L/∂gamma and ∂L/∂beta
+                                gamma_grad[d] += dout * x_hat;
+                                beta_grad[d] += dout;
 
-                    let gradient: Complex<f64> = (dxhat * std_inv) + (dvar_sum * (2.0 * (x - mu) / n)) + dmu / n;
+                                let dxhat: Complex<f64> = dout * self.gamma[f];
+                                dvar_sum += dxhat * (x - mu) * (-0.5) * var_pow_minus_3_2;
+                                dx_minus_mu_sum += -2.0 * (x - mu) / n;
+                            }
+                            for d in 0..feature_dim {
+                                let dout: f64 = grad_output[b][s][d];
+                                dmu_sum += dout * (-std_inv);
+                            }
 
-                    for j in 0..feature_dim {
-                        let _identity: f64 = if j == f { 1.0 } else { 0.0 };
-                        input_grads[b][s][j] += Complex::new((gradient * _identity + gradient * previous_gradient_input_batch[b][s][j]).re, 0.0);
+                            let dxhat: Complex<f64> = grad_output[b][s][f] * self.gamma[f];
+                            let x: Complex<f64> = input_batch[b][s][f];
+                            let _x_orig: Complex<f64> = _input_batch_before[b][s][f];
+                            let _x_input = x - _x_orig;
+
+                            let dmu = dmu_sum * self.gamma[f] + dvar_sum * dx_minus_mu_sum;
+
+                            let gradient: Complex<f64> = (dxhat * std_inv) + (dvar_sum * (2.0 * (x - mu) / n)) + dmu / n;
+
+                            for j in 0..feature_dim {
+                                let _identity: f64 = if j == f { 1.0 } else { 0.0 };
+                                input_grads[b][s][j] += Complex::new((gradient * _identity + gradient * previous_gradient_input_batch[b][s][j]).re, 0.0);
+                            }
+                        }
                     }
                 }
             }

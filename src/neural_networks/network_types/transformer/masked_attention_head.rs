@@ -8,7 +8,7 @@ use crate::neural_networks::{
         activation::softmax_complex_padding,
         adam_w::calculate_adam_w,
         derivative::{backpropagate_softmax_masked, softmax_derivative_complex_jacobian},
-        matrix::{add_matrix, check_nan_or_inf, clip_gradients, is_nan_or_inf, multiply_complex, transpose},
+        matrix::{add_matrix, clip_gradients, is_nan_or_inf, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -35,7 +35,7 @@ pub struct MaskedAttentionHead {
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
-    pub attention_weights_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub attention_weights_batch: Option<Vec<Vec<Vec<f64>>>>,
     #[serde(skip)]
     pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
@@ -108,7 +108,7 @@ impl MaskedAttentionHead {
         self.padding_mask_batch = Some(padding_mask_batch.clone());
         self.time_step = layer_input.get_time_step();
 
-        let (attention_weights_batch, v_batch): (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<Vec<Complex<f64>>>>) = input_batch
+        let (attention_weights_batch, v_batch): (Vec<Vec<Vec<f64>>>, Vec<Vec<Vec<Complex<f64>>>>) = input_batch
             .par_iter()
             .zip(padding_mask_batch)
             .map(|(input, padding_mask)| {
@@ -116,14 +116,13 @@ impl MaskedAttentionHead {
                 let k = multiply_complex(input, &self.weights_k);
                 let v = multiply_complex(input, &self.weights_v);
 
-                //[[1, 0], [1, 1]]
                 let mask: Vec<Vec<u8>> = create_causal_mask(input.len());
                 let attention_scores = multiply_complex(&q, &transpose(&k));
                 let mut attention_scores_scales = scale_attention_scores(&attention_scores, k[0].len() as f64);
 
                 apply_attention_mask_inplace(&mut attention_scores_scales, &mask);
 
-                let attention_weights = softmax_complex_padding(&attention_scores_scales, &padding_mask);
+                let attention_weights: Vec<Vec<f64>> = softmax_complex_padding(&attention_scores_scales, &padding_mask);
 
                 (attention_weights, v)
             })
@@ -133,7 +132,7 @@ impl MaskedAttentionHead {
             .par_iter()
             .zip(v_batch)
             .map(|(attention_weights, v)| {
-                let output = multiply_complex(&attention_weights, &v);
+                let output: Vec<Vec<Complex<f64>>> = multiply_f64_complex(&attention_weights, &v);
                 output
             })
             .collect();
@@ -154,7 +153,7 @@ impl MaskedAttentionHead {
         let padding_mask_batch = self.padding_mask_batch.as_ref().expect("Padding mask batch is missing in attention head ");
 
         // dimensions [seq_len][seq_len] -> A
-        let attention_weights_batch = self.attention_weights_batch.as_ref().expect("Attention weights batch is missing in attention head");
+        let attention_weights_batch: &Vec<Vec<Vec<f64>>> = self.attention_weights_batch.as_ref().expect("Attention weights batch is missing in attention head");
 
         let batch_size = output_batch.len();
 
@@ -196,7 +195,7 @@ impl MaskedAttentionHead {
 
             // Compute gradient of Wv
             // 2, 4 * 2, 2 = 4, 2
-            let grad_wv = multiply_complex(&transpose(&previous_gradient), &attention_weights_batch[batch_ind]);
+            let grad_wv = multiply_complex_with_f64(&transpose(&previous_gradient), &attention_weights_batch[batch_ind]);
             // 5,2 * 4, 2 = 5, 2 * 2, 4 = 5, 4
             gradient_v_batch[batch_ind] = multiply_complex(&transpose(&input_batch[batch_ind]), &transpose(&grad_wv));
 
@@ -206,7 +205,7 @@ impl MaskedAttentionHead {
             let q_scaled: Vec<Vec<Complex<f64>>> = scale_attention_scores(&q, d_k);
 
             // Compute activation derivative softmax
-            let softmax_derivative: Vec<Vec<Vec<Complex<f64>>>> = softmax_derivative_complex_jacobian(&attention_weights_batch[batch_ind]);
+            let softmax_derivative: Vec<Vec<Vec<f64>>> = softmax_derivative_complex_jacobian(&attention_weights_batch[batch_ind]);
 
             // println!("softmax_derivative dim: {}, {}, {}", &softmax_derivative.len(), &softmax_derivative[0].len(),  &softmax_derivative[0][0].len());
 
@@ -249,12 +248,6 @@ impl MaskedAttentionHead {
             gradient_input_batch[batch_ind] = add_matrix(&gradient_input_batch[batch_ind], &dl_dvx);
         }
 
-        // let max = gradient_input_batch.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
-        // let min = gradient_input_batch.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Greater));
-
-        // println!("max in backward attention head gradient batch: {:?}", max);
-        // println!("min in backward attention head gradient batch: {:?}", min);
-
         // Compute the gradients for the parameters and store them
         let mut gradient = Gradient::new_default();
         gradient.set_gradient_weights_v_batch(gradient_v_batch);
@@ -277,10 +270,6 @@ impl MaskedAttentionHead {
         clip_gradients(&mut grad_w_q, threshold);
         clip_gradients(&mut grad_w_v, threshold);
         clip_gradients(&mut grad_w_k, threshold);
-
-        check_nan_or_inf(&mut grad_w_q, "check weight gradients q in attention head");
-        check_nan_or_inf(&mut grad_w_v, "check weight gradients v in attention head");
-        check_nan_or_inf(&mut grad_w_k, "check weight gradients k in attention head");
 
         let mut prev_m_weights_q: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()];
         let mut prev_v_weights_q: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()];

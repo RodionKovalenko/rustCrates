@@ -45,7 +45,7 @@ mod test_norm_layer {
 
         norm_layer.previous_gradient_input_batch = Some(vec![vec![vec![Complex::new(1.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()]);
 
-        let gradient_norm = norm_layer.backward(&gradient.get_gradient_input_batch());
+        let gradient_norm = norm_layer.backward(&gradient);
         let analytical_gradient_input_norm = gradient_norm.get_gradient_input_batch();
 
         //TEST 1: gradient of input batch before
