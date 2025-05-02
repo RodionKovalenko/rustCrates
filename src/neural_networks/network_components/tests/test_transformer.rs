@@ -81,7 +81,7 @@ mod test_transformer {
         let target_str1: &str = "Mir geht es gut";
         let target_batch_str: Vec<String> = vec![target_str1.to_string()];
 
-        let output_batch = predict(&mut transformer_network, &input_batch_str, 0);
+        let (output_batch, _padding_mask_batch) = predict(&mut transformer_network, &input_batch_str, 0);
         let output_batch: Vec<Vec<Vec<Complex<f64>>>> = convert_to_c_f64_3d::<Vec<Vec<Vec<f64>>>>(&output_batch);
         let (_tokens, target_ids) = tokenize_batch(&target_batch_str, true).unwrap();
         backward(&mut transformer_network, &target_ids, false);
@@ -130,9 +130,9 @@ mod test_transformer {
             first_attention_head.weights_q = weights.clone();
 
             //println!("\n\n weights_q in loss fn {:?}", weights);
-            let softmax_batch_output = predict(&mut transformer_network, &input_batch_str, 0);
+            let (softmax_batch_output, padding_mask_batch) = predict(&mut transformer_network, &input_batch_str, 0);
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_ids);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_ids, &padding_mask_batch);
 
             loss
         };
@@ -276,7 +276,7 @@ mod test_transformer {
             layer_input.set_input_batch(output_ffn.get_output_batch());
             let output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()));
 
-            let loss = cross_entropy_loss_batch(&output_softmax, &target_token_id_batch);
+            let loss = cross_entropy_loss_batch(&output_softmax, &target_token_id_batch, &padding_mask_batch);
 
             loss
         };

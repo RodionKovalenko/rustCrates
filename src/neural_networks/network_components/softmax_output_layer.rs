@@ -62,6 +62,7 @@ impl SoftmaxLayer {
 
     pub fn backward(&mut self, target_token_ids: &Vec<Vec<u32>>) -> Gradient {
         let softmax_output_batch: &Vec<Vec<Vec<f64>>> = self.softmax_output_batch.as_ref().expect("Input batch is missing in softmax layer");
+        let padding_mask_batch = self.padding_mask_batch.as_ref().expect("Input batch is missing in softmax layer");
 
         let batch_size = softmax_output_batch.len();
         let seq_len = softmax_output_batch[0].len();
@@ -70,17 +71,19 @@ impl SoftmaxLayer {
         let mut gradient_batch: Vec<Vec<Vec<f64>>> = vec![vec![vec![0.0; vocab_dim]; seq_len]; batch_size];
 
         for (batch_index, (softmax_output, target_tokens)) in softmax_output_batch.iter().zip(target_token_ids.iter()).enumerate() {
-            let target_len = target_tokens.len();
-            let seq_ind_start = seq_len - target_len;
-            let mut target_count = 0.0;
+            let padding_mask = &padding_mask_batch[batch_index];
 
-            for &target_class in target_tokens.iter() {
-                if target_class != 1 {
-                    target_count += 1.0;
+            let mut sequence_len_unpadded: usize = 0;
+            for &padding in padding_mask {
+                if padding != 0 {
+                    sequence_len_unpadded +=1;
                 }
             }
 
-            let normalizer = batch_size as f64 * target_count;
+            let target_len = target_tokens.len();
+            let seq_ind_start = sequence_len_unpadded - target_len;
+
+            let normalizer = (batch_size * target_len) as f64;
 
             for (t, &target_class) in target_tokens.iter().enumerate() {
                 if target_class as usize >= vocab_dim {

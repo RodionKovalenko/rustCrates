@@ -29,6 +29,7 @@ pub mod test_ffn_layer {
         // Define a small input batch, [2][3][4]
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
         let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim, 2);
+        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];
 
         let mut layer_input = LayerInput::new_default();
 
@@ -61,7 +62,7 @@ pub mod test_ffn_layer {
 
             let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
 
             loss
         };
@@ -94,7 +95,7 @@ pub mod test_ffn_layer {
             let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
 
             loss
         };
@@ -127,6 +128,7 @@ pub mod test_ffn_layer {
         // Define a small input batch, [2][3][4]
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, 5, input_dim);
         let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, 5, (5 - 1) as u32);
+        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];
 
         println!("input batch dim: {}, {}, {}", input_batch.len(), input_batch[0].len(), input_batch[0][0].len());
 
@@ -156,7 +158,7 @@ pub mod test_ffn_layer {
 
             let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
 
             loss
         };
@@ -213,7 +215,7 @@ pub mod test_ffn_layer {
 
             let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
 
             loss
         };
@@ -253,7 +255,7 @@ pub mod test_ffn_layer {
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
             let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
 
             loss
         };
