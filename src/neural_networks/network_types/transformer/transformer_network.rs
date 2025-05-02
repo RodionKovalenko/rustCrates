@@ -22,19 +22,19 @@ use crate::{
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize) {
     'outer: for epoch in 0..num_epochs {
-        for batch_dataset in dataset.split_into_batches(1) {
+        for batch_dataset in dataset.split_into_batches(4) {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
 
             let input_batch_extended = batch_dataset.extend_input_with_target(input_batch, target_batch);
 
             // println!("input batch extended: {:?}", &input_batch_extended);
-            let predicted_softmax_batch: Vec<Vec<Vec<f64>>> = predict(transformer_network, &input_batch_extended, epoch);
+            let (predicted_softmax_batch, padding_mask_batch)= predict(transformer_network, &input_batch_extended, epoch);
             let (_tokens, target_ids) = tokenize_batch(target_batch, true).unwrap();
-            let loss = cross_entropy_loss_batch(&predicted_softmax_batch, &target_ids);
+            let loss = cross_entropy_loss_batch(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
 
-            // let (_tokens, input_ids) = tokenize_batch(input_batch).unwrap();
-            // println!("input Ids: {:?}", &input_ids);
-            // println!("target ids: {:?},", &target_ids);
+            let (_tokens, input_ids) = tokenize_batch(input_batch, true).unwrap();
+            println!("input Ids: {:?}", &input_ids);
+            println!("target ids: {:?},", &target_ids);
 
             //println!("predicted softmax batch: {}, {}, {}", predicted_softmax_batch.len(), predicted_softmax_batch[0].len(), predicted_softmax_batch[0][0].len());
 
@@ -53,9 +53,17 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                     .enumerate()
                     .filter_map(|(_batch_ind, input_seq)| {
                         let mut valid_seq_opt = None;
+                        let padding_mask = &padding_mask_batch[_batch_ind];
+
+                        let mut sequence_len_unpadded: usize = 0;
+                        for &padding in padding_mask {
+                            if padding != 0 {
+                                sequence_len_unpadded +=1;
+                            }
+                        }
 
                         // Slide backwards to find a valid window of length `target_len`
-                        for offset in (0..=input_seq.len() - target_len).rev() {
+                        for offset in (0..=sequence_len_unpadded - target_len).rev() {
                             let window = &input_seq[offset..offset + target_len];
                             let max = window.iter().flat_map(|w| w.iter()).max_by(|a, b| a.partial_cmp(&b).unwrap_or(Ordering::Less));
 
@@ -90,7 +98,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
     }
 }
 
-pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String>, time_step: usize) -> Vec<Vec<Vec<f64>>> {
+pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String>, time_step: usize) -> (Vec<Vec<Vec<f64>>>, Vec<Vec<u32>>) {
     // Forward pass
     let mut batch_ids: Vec<Vec<u32>> = vec![];
     for input in input_batch {
@@ -114,9 +122,9 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
         match layer {
             LayerEnum::Embedding(embedding_layer) => {
                 layer_input.set_batch_ids(batch_ids.clone());
-                let (mut embeddings, padding_m) = embedding_layer.forward(&layer_input);
+                let (embeddings, padding_m) = embedding_layer.forward(&layer_input);
+                println!("padding mask batch in embedding layer: {:?}", &padding_m);
 
-                check_nan_or_inf_3d(&mut embeddings, "embedding output in forward");
                 output = Some(embeddings);
                 padding_mask = Some(padding_m);
 
@@ -127,9 +135,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                     let positional_encoding_l = Some(positional_encoding_layer).unwrap();
 
                     // println!("forward pos encoding");
-                    let mut positional_encodings: Vec<Vec<Vec<Complex<f64>>>> = positional_encoding_l.forward(&previous_output);
-
-                    check_nan_or_inf_3d(&mut positional_encodings, "positional encodings output in forward");
+                    let positional_encodings: Vec<Vec<Vec<Complex<f64>>>> = positional_encoding_l.forward(&previous_output);
                     output = Some(positional_encodings);
                 } else {
                     println!("No previous output for Attention layer");
@@ -204,7 +210,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
     }
 
     //println!("forward pass end ----------------------------------------------------------------------");
-    output_softmax.unwrap()
+    (output_softmax.unwrap(), padding_mask.unwrap())
 }
 
 pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<Vec<u32>>, update_params: bool) -> Option<Gradient> {
@@ -330,24 +336,32 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
 pub fn cross_entropy_loss_batch(
     predicted_softmax_batch: &Vec<Vec<Vec<f64>>>, // Complex-valued softmax output
     targets: &Vec<Vec<u32>>,
+    padding_mask: &Vec<Vec<u32>>
 ) -> Complex<f64> {
     let batch_len = predicted_softmax_batch.len() as f64;
     let mut total_loss: Complex<f64> = Complex::new(0.0, 0.0);
 
     // println!("softmax batch inside function cross entropy batch: {:?}", &predicted_softmax_batch);
     for (batch_ind, prediction) in predicted_softmax_batch.iter().enumerate() {
-        total_loss += cross_entropy_loss(prediction, &targets[batch_ind]);
+        total_loss += cross_entropy_loss(prediction, &targets[batch_ind], &padding_mask[batch_ind]);
     }
 
     total_loss / batch_len
 }
 
-fn cross_entropy_loss(predictions: &Vec<Vec<f64>>, target_tokens: &Vec<u32>) -> f64 {
+fn cross_entropy_loss(predictions: &Vec<Vec<f64>>, target_tokens: &Vec<u32>, padding_mask: &Vec<u32>) -> f64 {
     let mut loss: f64 = 0.0;
-    let seq_len = predictions.len();
     let target_len = target_tokens.len();
-    let seq_ind_start = seq_len - target_len;
     let mut count = 0.0;
+
+    let mut sequence_len_unpadded: usize = 0;
+    for &padding in padding_mask {
+        if padding != 0 {
+            sequence_len_unpadded +=1;
+        }
+    }
+
+    let seq_ind_start = sequence_len_unpadded - target_len;
 
     for (s, &target_idx) in target_tokens.iter().enumerate() {
         if target_idx == 1 {

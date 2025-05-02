@@ -26,6 +26,7 @@ mod test_norm_layer {
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(_batch_size, _output_dim, _input_dim);
         let input_batch_before: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(_batch_size, _output_dim, _input_dim);
         let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(_batch_size, _output_dim, 2);
+        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];
 
         let mut norm_layer = NormalNormLayer::new(input_batch[0][0].len(), 1e-8, learning_rate);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING);
@@ -57,7 +58,7 @@ mod test_norm_layer {
 
             let softmax_batch_output = softmax_layer.forward(&norm_output_batch, None);
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
 
             loss
         };
@@ -92,7 +93,7 @@ mod test_norm_layer {
 
             let softmax_batch_output = softmax_layer.forward(&norm_output_batch, None);
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
 
             loss
         };
