@@ -179,16 +179,16 @@ pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
     for layer in transformer.layers.iter_mut() {
         match layer {
             LayerEnum::Embedding(embedding_layer) => {
-                println!("embedding layer: {:?}", &embedding_layer);
+                println!("embedding layer: {:?}", &embedding_layer.learning_rate);
             }
             LayerEnum::Norm(norm_layer) => {
-                println!("norm layer: {:?}", &norm_layer);
+                println!("norm layer: {:?}", &norm_layer.learning_rate);
             }
             LayerEnum::RMSNorm(norm_layer) => {
-                println!("rms norm layer: {:?}", &norm_layer);
+                println!("rms norm layer: {:?}", &norm_layer.learning_rate);
             }
             LayerEnum::Dense(dense_layer) => {
-                println!("dense_layer layer: {:?}", &dense_layer);
+                println!("dense_layer layer: {:?}", &dense_layer.learning_rate);
             }
             LayerEnum::SelfAttention(self_attention_layer) => {
                 for attention_head in self_attention_layer.attention_heads.iter_mut() {
@@ -197,10 +197,10 @@ pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
                 if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
                     match norm_layer {
                         LayerEnum::RMSNorm(rms_norm_layer) => {
-                            println!("rms_norm_layer in ffn layer: {:?}", &rms_norm_layer);
+                            println!("rms_norm_layer in ffn layer: {:?}", &rms_norm_layer.learning_rate);
                         }
                         LayerEnum::Norm(norm_layer) => {
-                            println!("norm_layer in ffn layer: {:?}", &norm_layer);
+                            println!("norm_layer in ffn layer: {:?}", &norm_layer.learning_rate);
                         }
                         _ => {}
                     }
@@ -222,10 +222,10 @@ pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
                 if let Some(norm_layer) = ffn_layer.norm_layer.as_mut() {
                     match norm_layer {
                         LayerEnum::RMSNorm(rms_norm_layer) => {
-                            println!("rms norm_layer in ffn layer: {:?}", &rms_norm_layer);
+                            println!("rms norm_layer in ffn layer: {:?}", &rms_norm_layer.learning_rate);
                         }
                         LayerEnum::Norm(norm_layer) => {
-                            println!("norm_layer in ffn layer: {:?}", &norm_layer);
+                            println!("norm_layer in ffn layer: {:?}", &norm_layer.learning_rate);
                         }
                         _ => {}
                     }
