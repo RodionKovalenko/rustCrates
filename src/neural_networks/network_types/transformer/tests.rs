@@ -39,7 +39,7 @@ mod tests {
             }
         };
 
-        let learning_rate = 0.01;
+        let learning_rate = 0.001;
         transformer.learning_rate = learning_rate;
         update_learning_rate(&mut transformer, learning_rate);
         print_networt_structure(&mut transformer);
@@ -47,8 +47,8 @@ mod tests {
         let seconds_elapsed = now.elapsed();
         println!("time elapsed in seconds: {:?}", &seconds_elapsed);
 
-        let input_str1: &str = "Wie geht es dir?";
-        //let input_str2: &str = "Was ist die Hauptstadt von Deutschland? Ich möchte es wissen";
+        //let input_str1: &str = "Wie geht es dir?";
+        let input_str2: &str = "Was ist die Hauptstadt von Deutschland? Ich möchte es wissen";
         // let input_str3: &str = "Was kommt nach Donnerstag?";
         // let input_str4: &str = "Was macht 2+3 aus?";
 
@@ -57,8 +57,9 @@ mod tests {
         // let input_str7: &str = "Was macht 2+6?";
         // let input_str8: &str = "Was macht 2+7?";
 
-        let target1: &str = " Mir geht es gut. Und wie geht es dir?";
-        // let target2: &str = "Berlin ist die Hauptstadt und ein Land der Bundesrepublik Deutschland.
+        //let target1: &str = " Mir geht es gut.";
+        //let target2: &str = "Berlin ist die Hauptstadt und ein Land der Bundesrepublik Deutschland.";
+        //let target2: &str = "Berlin ist die Hauptstadt und ein Land der Bundesrepublik Deutschland.
         //  Die Großstadt ist mit rund 3,7 Millionen Einwohnern die bevölkerungsreichste und mit 891 Quadratkilometern die flächengrößte
         //  Gemeinde Deutschlands sowie die bevölkerungsreichste Stadt der Europäischen Union.
         //  Berlin zählt zu den ökonomischen Zentren in Europa. Unter den wichtigen Zweigen der städtischen Wirtschaft sind der Tourismus,
@@ -69,9 +70,7 @@ mod tests {
         //      Berlin ist ein internationaler Standort für innovative Unternehmensgründer und verzeichnet seit 2010 hohe Zuwachsraten bei der
         //       Zahl der Erwerbstätigen
         //  ";
-        //  let target2: &str = "Berlin ist die Hauptstadt und ein Land der Bundesrepublik Deutschland.
-        //  Die Großstadt ist mit rund 3,7 Millionen Einwohnern die bevölkerungsreichste und mit 891 Quadratkilometern die flächengrößte
-        //  Gemeinde Deutschlands.";
+        let target2: &str = "Berlin ist die Hauptstadt und ein Land der Bundesrepublik Deutschland.";
         // let target3: &str = "Nach Donnerstag kommt Freitag.";
         // let target4: &str = "2 +3 macht 5";
 
@@ -81,8 +80,8 @@ mod tests {
         // let target8: &str = "2 + 7 macht 9";
 
         let mut input: Vec<String> = Vec::new();
-        input.push(input_str1.to_string());
-        //input.push(input_str2.to_string());
+        //input.push(input_str1.to_string());
+        input.push(input_str2.to_string());
         // input.push(input_str3.to_string());
         // input.push(input_str4.to_string());
         // input.push(input_str5.to_string());
@@ -91,8 +90,8 @@ mod tests {
         // input.push(input_str8.to_string());
 
         let mut target: Vec<String> = Vec::new();
-        target.push(target1.to_string());
-        //target.push(target2.to_string());
+        //target.push(target1.to_string());
+        target.push(target2.to_string());
         // target.push(target3.to_string());
         // target.push(target4.to_string());
         // target.push(target5.to_string());
@@ -129,7 +128,7 @@ mod tests {
             }
         };
 
-        let learning_rate = 0.001;
+        let learning_rate = 0.0001;
         print_networt_structure(&mut transformer);
         update_learning_rate(&mut transformer, learning_rate);
 
