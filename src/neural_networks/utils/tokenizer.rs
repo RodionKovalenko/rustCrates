@@ -1,4 +1,4 @@
-use tokenizers::Tokenizer;
+use tokenizers::{AddedToken, Tokenizer};
 use std::{error::Error, path::Path};
 
 // https://huggingface.co/togethercomputer/GPT-NeoXT-Chat-Base-20B/tree/main
@@ -11,7 +11,7 @@ pub fn tokenize_batch(text_batch: &Vec<String>, with_eos: bool) -> Result<(Vec<V
     let mut encoded_ids_batch = Vec::new();
 
     for text in text_batch {
-        let (mut encoded_tokens, mut encoded_ids) = tokenize(&text).unwrap();
+        let (mut encoded_tokens, mut encoded_ids) = tokenize(text).unwrap();
 
         if with_eos {
             encoded_ids.push(0); // EOS token ID
@@ -44,7 +44,34 @@ pub fn detokenize(ids: &Vec<u32>) -> Result<String, Box<dyn Error + Send + Sync>
     let tokenizer = Tokenizer::from_file(path).expect("Fehler bei Tokenizer");
 
     // Tokenize the text
-    let decoded_text = tokenizer.decode(ids, true)?;
+    let decoded_text = tokenizer.decode(ids, false)?;
 
     Ok(decoded_text)
+}
+
+pub fn create_custom_tokenizer() -> Result<Tokenizer, Box<dyn Error + Send + Sync>> {
+    let path = Path::new(TOKENIZER_GTP_NEOXT_PATH).to_path_buf();
+    // Load the pretrained tokenizer from the `tokenizer.json` file
+    let mut tokenizer = Tokenizer::from_file(&path).expect("Fehler bei Tokenizer");
+
+    // Add special tokens
+    tokenizer.add_special_tokens(&[
+        // begin of sentence
+        AddedToken::from("<bos>", true),
+        // separator
+        AddedToken::from("<sep>", true),
+        AddedToken::from("<eos>", true),
+        AddedToken::from("<context>", true),
+        AddedToken::from("</context>", true),
+    ]);
+
+    println!("Special tokens:");
+    println!("<bos>: {:?}", tokenizer.token_to_id("<bos>"));
+    println!("eos: {:?}", tokenizer.token_to_id("<eos>")); 
+    println!("<|padding|>: {:?}", tokenizer.token_to_id("<|padding|>"));
+    println!("sep: {:?}", tokenizer.token_to_id("<sep>"));
+
+    tokenizer.save(&path, true)?;
+
+    Ok(tokenizer)
 }

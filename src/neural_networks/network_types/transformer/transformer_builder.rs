@@ -26,7 +26,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let base_2: i32 = 2;
     // embedding_dim_compressed  = 16
     let embedding_dim_compressed = (embedding_dim_original as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize;
-    let vocab_size: usize = 50276;
+    let vocab_size: usize = 50280;
     // let epsilon = 1e-10;
 
     let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);

@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::time::Instant;
 
 use num::Complex;
 
@@ -7,83 +7,62 @@ use crate::{
     neural_networks::{
         network_components::{
             gradient_struct::Gradient,
-            input::{DataTrait, Dataset},
+            input::{extend_input_with_bos, DataTrait, Dataset},
             layer::LayerEnum,
             layer_input_struct::LayerInput,
         },
         network_types::neural_network_generic::{save_to_sled, NeuralNetwork},
         utils::{
+            array_splitting::sliding_window_chunks_matrix,
             matrix::check_nan_or_inf_3d,
-            tokenizer::{detokenize, tokenize, tokenize_batch},
+            tokenizer::{detokenize, tokenize_batch},
         },
     },
-    utils::sampling_methods::top_p_temperature_sampling,
+    utils::sampling_methods::{get_target_predictions, top_p_temperature_sampling},
 };
+
+pub const MAX_CONTEXT_WINDOW_SIZE: usize = 40;
+pub const CONTEXT_OVERLAPPING: usize = 25;
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize) {
     let mut total_loss: Complex<f64>;
+    let p = 0.9; // Top-p (Nucleus) threshold
+    let temperature: f64 = 0.7; // Temperature for controlling randomness
+    let loss_threshold: f64 = 0.5;
+
     'outer: for epoch in 0..num_epochs {
         total_loss = Complex::new(0.0, 0.0);
         for batch_dataset in dataset.split_into_batches(1) {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
 
             let input_batch_extended = batch_dataset.extend_input_with_target(input_batch, target_batch);
+            let target_batch_extended = batch_dataset.extend_target(target_batch);
 
-            // println!("input batch extended: {:?}", &input_batch_extended);
-            let (predicted_softmax_batch, padding_mask_batch) = predict(transformer_network, &input_batch_extended, epoch);
-            let (_tokens, target_ids) = tokenize_batch(target_batch, true).unwrap();
+            let (_tokens, mut batch_ids) = tokenize_batch(&input_batch_extended, false).unwrap();
+            let (_tokens, mut target_ids) = tokenize_batch(&target_batch_extended, false).unwrap();
+
+            println!("input tokens len in predict: {:?}", &batch_ids.len() * batch_ids[0].len());
+
+            let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap();
+
+            if max_seq_len > MAX_CONTEXT_WINDOW_SIZE {
+                let (input_batch_ids, target_batch_ids) = sliding_window_chunks_matrix(&batch_ids, MAX_CONTEXT_WINDOW_SIZE, CONTEXT_OVERLAPPING);
+                batch_ids = input_batch_ids;
+                target_ids = target_batch_ids;
+            }
+
+            let (predicted_softmax_batch, padding_mask_batch) = predict(transformer_network, &batch_ids, epoch, false);
             let loss = cross_entropy_loss_batch(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
             total_loss += loss;
 
-            // let (_tokens, input_ids) = tokenize_batch(input_batch, true).unwrap();
-            // println!("input Ids: {:?}", &input_ids);
-            // println!("target ids: {:?},", &target_ids);
-
-            //println!("predicted softmax batch: {}, {}, {}", predicted_softmax_batch.len(), predicted_softmax_batch[0].len(), predicted_softmax_batch[0][0].len());
-
-            if epoch % 5 == 0 || loss.norm() <= 0.08 {
+            if epoch % 5 == 0 || loss.norm() <= loss_threshold {
                 println!("Epoch: {:?}, Loss: {:?}", epoch, loss);
-
-                let p = 0.9; // Top-p (Nucleus) threshold
-                let temperature = 0.7; // Temperature for controlling randomness
-                let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = predicted_softmax_batch
-                    .iter()
-                    .zip(target_ids.clone())
-                    .enumerate()
-                    .filter_map(|(_batch_ind, (input_seq, target_seq))| {
-                        let target_len = target_seq.len();
-                        let mut valid_seq_opt = None;
-                        let padding_mask = &padding_mask_batch[_batch_ind];
-
-                        let mut sequence_len_unpadded: usize = 0;
-                        for &padding in padding_mask {
-                            if padding != 0 {
-                                sequence_len_unpadded += 1;
-                            }
-                        }
-
-                        // Slide backwards to find a valid window of length `target_len`
-                        for offset in (0..=sequence_len_unpadded - target_len).rev() {
-                            let window = &input_seq[offset..offset + target_len];
-                            let max = window.iter().flat_map(|w| w.iter()).max_by(|a, b| a.partial_cmp(&b).unwrap_or(Ordering::Less));
-
-                            if let Some(max_num) = max {
-                                if max_num > &0.0 {
-                                    valid_seq_opt = Some(window.to_vec());
-                                    break;
-                                }
-                            }
-                        }
-
-                        valid_seq_opt
-                    })
-                    .collect();
-
-                //println!("predicted softmax targets at 0: {:?}", &predicted_softmax_targets[0][0][0..100]);
-
+                let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = get_target_predictions(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
                 let sampled_tokens = top_p_temperature_sampling(&predicted_softmax_targets, p, temperature);
-                println!("Top-p + Temperature Sampling: {:?}", sampled_tokens);
+
+                println!("Top-p + Temperature Sampling: {:?}", sampled_tokens.len());
                 let predicted_token_batch: Vec<String> = sampled_tokens.iter().map(|token_indices| detokenize(token_indices).unwrap()).collect();
+                println!("predicted tokens len: {:?}", predicted_token_batch[0].len());
                 println!("predicted tokens: {:?}", predicted_token_batch);
             }
 
@@ -93,10 +72,10 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
         if epoch % 10 == 0 {
             save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
         }
-        if epoch % 5 == 0 || total_loss.norm() <= 0.08 {
+        if epoch % 5 == 0 || total_loss.norm() <= loss_threshold {
             println!("Epoch: {:?}, TOTAL LOSS: {:?}", epoch, total_loss);
         }
-        if total_loss.norm() <= 0.08 {
+        if total_loss.norm() <= loss_threshold {
             println!("loss is smaller than 0.08. Break the training: {:?}", &total_loss);
             save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
             break 'outer;
@@ -104,24 +83,107 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
     }
 }
 
-pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String>, time_step: usize) -> (Vec<Vec<Vec<f64>>>, Vec<Vec<u32>>) {
-    // Forward pass
-    let mut batch_ids: Vec<Vec<u32>> = vec![];
-    for input in input_batch {
-        let (_tokens, input_ids) = tokenize(input).unwrap();
-        // println!("input: {:?}", &input);
-        // println!("input Ids: {:?}", &input_ids);
-        batch_ids.push(input_ids);
+pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String>) -> (Vec<Vec<Vec<f64>>>, Vec<String>) {
+    let mut all_predictions: Vec<Vec<Vec<f64>>> = Vec::new();
+    let time_step: usize = 0;
+    let mut _padding_mask_batch: Vec<Vec<u32>> = Vec::new();
+    let p = 0.9; // Top-p (Nucleus) threshold
+    let temperature = 0.7; // Temperature for controlling randomness
+
+    let mut current_input_batch: Vec<String> = extend_input_with_bos(input_batch);
+    let mut count_tokens_prediction = 0;
+    let now = Instant::now();
+
+    // Continue predicting until EOS token is predicted
+    loop {
+        println!("current input batch: {:?}", &current_input_batch);
+
+        let seconds_elapsed = now.elapsed();
+        println!("time elapsed before predict in seconds: {:?}", &seconds_elapsed);
+
+        let (_tokens, mut batch_ids) = tokenize_batch(&current_input_batch, false).unwrap();
+        let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap();
+
+        if max_seq_len > MAX_CONTEXT_WINDOW_SIZE {
+            batch_ids = batch_ids
+                .into_iter()
+                .map(|mut seq| {
+                    if seq.len() > MAX_CONTEXT_WINDOW_SIZE {
+                        seq.split_off(seq.len() - MAX_CONTEXT_WINDOW_SIZE) // keeps only the last CONTEXT_WINDOW_SIZE
+                    } else {
+                        seq
+                    }
+                })
+                .collect();
+        }
+
+        let (current_predictions, _padding_mask_batch) = predict(transformer_network, &batch_ids, time_step, true);
+
+        let seconds_elapsed_end = now.elapsed();
+        let duration = seconds_elapsed_end - seconds_elapsed;
+        let seconds = duration.as_secs_f64();
+        println!("time elapsed in seconds: {:?}", seconds);
+
+        // If no more predictions are available, break out
+        if current_predictions.is_empty() {
+            break;
+        }
+
+        // Store the last predicted token's softmax probabilities
+        all_predictions.push(current_predictions[current_predictions.len() - 1].clone());
+
+        let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = current_predictions
+            .iter()
+            .enumerate()
+            .filter_map(|(_batch_ind, input_seq)| {
+                let sequence_len: usize = input_seq.len();
+
+                // Slide backwards to the last sequence
+                let window = &input_seq[(sequence_len - 1)..sequence_len];
+                let valid_seq_opt = Some(window.to_vec());
+
+                valid_seq_opt
+            })
+            .collect();
+
+        println!("predicted softmax targets: {}, {}, {}", predicted_softmax_targets.len(), predicted_softmax_targets[0].len(), predicted_softmax_targets[0][0].len());
+        let sampled_tokens = top_p_temperature_sampling(&predicted_softmax_targets, p, temperature);
+        let predicted_token_batch: Vec<String> = sampled_tokens.iter().map(|token_indices| detokenize(token_indices).unwrap()).collect();
+        println!("predicted token batch: {:?}", predicted_token_batch);
+        // Check if the last predicted token is the EOS token
+        let predicted_token = predicted_token_batch[predicted_token_batch.len() - 1].clone();
+
+        // If EOS token is predicted, break the loop
+        if predicted_token == "<eos>" {
+            break;
+        }
+
+        // Add the predicted token to the current input batch
+
+        println!("predicted token: {:?}", predicted_token);
+        current_input_batch[0] = format!("{}{}", current_input_batch[0], predicted_token);
+        println!("combined input: {:?}", current_input_batch);
+
+        count_tokens_prediction += 1;
+
+        if count_tokens_prediction > 20 {
+            break;
+        }
     }
 
-    //println!("tokens: {:?}", &batch_ids);
-    // println!("forward pass start ----------------------------------------------------------------------");
+    (all_predictions, current_input_batch)
+}
 
+pub fn predict(transformer_network: &mut NeuralNetwork, batch_ids: &Vec<Vec<u32>>, time_step: usize, forward_only: bool) -> (Vec<Vec<Vec<f64>>>, Vec<Vec<u32>>) {
+    // Forward pass
+
+    // println!("forward pass start ----------------------------------------------------------------------");
     let mut output = None;
     let mut output_softmax = None;
     let mut padding_mask = None;
 
     let mut layer_input = LayerInput::new_default();
+    layer_input.set_forward_only(forward_only);
     layer_input.set_time_step(time_step);
 
     for layer in transformer_network.layers.iter_mut() {
@@ -205,7 +267,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                 if let Some(previous_output) = &output {
                     let softmax_result: Vec<Vec<Vec<f64>>> = softmax_layer_clone.forward(&previous_output, padding_mask.clone());
 
-                    // println!("forward softmax start");
+                    //println!("forward softmax start");
                     output_softmax = Some(softmax_result);
                     // println!("forward softmax end");
                 } else {

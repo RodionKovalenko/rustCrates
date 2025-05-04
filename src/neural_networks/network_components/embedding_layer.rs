@@ -8,6 +8,7 @@ use sled::Db;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::database::sled_db::{get_db_embedding, get_storage_path_embedding_db};
 use crate::neural_networks::network_types::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
@@ -143,43 +144,44 @@ impl EmbeddingLayer {
         let db: &Db = get_db_embedding();
 
         self.time_step = layer_input.get_time_step();
-
-        let mut token_ids_output: Vec<Vec<Vec<Complex<f64>>>> = vec![];
         let (token_input_batch_padded, padding_mask) = EmbeddingLayer::apply_padding_to_batch(&token_input_ids);
-
         let embedding_dim = self.embedding_dim.clone();
 
-        //println!("embdding dim: {}", &embedding_dim);
+        // Using Arc and Mutex for safe mutable access across threads if needed
+        let db = Arc::new(db);
 
-        for token_ids in token_input_batch_padded {
-            let token_output_id = token_ids
-                .par_iter()
-                .map(|&id| {
-                    if id == 1 {
-                        vec![Complex::new(0.0, 0.0); embedding_dim]
-                    } else {
-                        let mut token_embedding = Self::get_embedding(db, id, self.embedding_dim).unwrap_or_else(|err| {
-                            panic!("Error retrieving embedding for token {}: {}", id, err);
-                        });
+        // Parallelize the processing of the token_ids
+        let token_ids_output = token_input_batch_padded
+            .par_iter()
+            .map(|token_ids| {
+                token_ids
+                    .par_iter()
+                    .map(|&id| {
+                        if id == 1 {
+                            vec![Complex::new(0.0, 0.0); embedding_dim]
+                        } else {
+                            // Embedding retrieval, wrapped in a Mutex for shared access if needed
+                            let db = Arc::clone(&db);
+                            let mut token_embedding = Self::get_embedding(&db, id, self.embedding_dim).unwrap_or_else(|err| {
+                                panic!("Error retrieving embedding for token {}: {}", id, err);
+                            });
 
-                        if token_embedding.len() != self.embedding_dim {
-                            let mut rng: rand::prelude::ThreadRng = rand::rng();
-                            let base_2: i32 = 2;
+                            if token_embedding.len() != self.embedding_dim {
+                                let mut rng: rand::prelude::ThreadRng = rand::rng();
+                                let base_2: i32 = 2;
 
-                            token_embedding = Self::create_embedding(db, embedding_dim * base_2.pow(DECOMPOSITION_LEVELS) as usize, &mut rng, id);
+                                token_embedding = Self::create_embedding(&db, embedding_dim * base_2.pow(DECOMPOSITION_LEVELS) as usize, &mut rng, id);
+                            }
+
+                            assert_eq!(token_embedding.len(), self.embedding_dim);
+                            token_embedding
                         }
+                    })
+                    .collect::<Vec<Vec<Complex<f64>>>>() // Collect the result for each token
+            })
+            .collect::<Vec<Vec<Vec<Complex<f64>>>>>(); // Collect the result for the entire batch
 
-                        assert_eq!(token_embedding.len(), self.embedding_dim);
-                        token_embedding
-                    }
-                })
-                .collect();
-
-            token_ids_output.push(token_output_id);
-        }
-
-        //println!("token embedding len: {:?}, {}, {}", token_ids_output.len(), token_ids_output[0].len(), token_ids_output[0][0].len());
-
+        // Return the token embeddings and padding mask
         (token_ids_output, padding_mask)
     }
 

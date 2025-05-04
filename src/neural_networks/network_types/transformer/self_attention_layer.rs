@@ -8,6 +8,7 @@ use crate::neural_networks::network_components::{
     norm_layer::NormalNormLayer,
 };
 use num::Complex;
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 // Layer struct
@@ -63,18 +64,20 @@ impl SelfAttentionLayer {
 
         let mut batch_output: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![]; sequence_size]; batch_size];
         // Apply the attention mechanism for each head
-        let mut attention_head_outputs: Vec<Vec<Vec<Vec<Complex<f64>>>>> = vec![];
-
         let mut layer_input = LayerInput::new_default();
         layer_input.set_time_step(self.time_step);
         layer_input.set_input_batch(input_batch.clone());
         layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
         //println!("padding mask batch: {:?}", &padding_mask_batch);
-        for attention_head in self.attention_heads.iter_mut() {
-            let attention_output = attention_head.forward(&layer_input);
-            attention_head_outputs.push(attention_output.get_output_batch());
-        }
+        let attention_head_outputs: Vec<_> = self
+            .attention_heads
+            .par_iter_mut() // Use rayon's parallel iterator
+            .map(|attention_head| {
+                let attention_output = attention_head.forward(&layer_input);
+                attention_output.get_output_batch()
+            })
+            .collect(); // Collect the results into a vector
 
         // println!("input batch outputs: {:?}", &input_batch);
         // println!("attention head outputs: {:?}", &attention_head_outputs);
@@ -94,7 +97,10 @@ impl SelfAttentionLayer {
         layer_input.set_input_batch_before(input_batch.clone());
 
         self.output_batch = Some(batch_output.clone());
-        layer_input.set_previous_gradient_input_batch(self.calculate_input_gradient_batch());
+
+        if !layer_input.get_forward_only() {
+            layer_input.set_previous_gradient_input_batch(self.calculate_input_gradient_batch());
+        }
 
         // Process the dense layers
         if let Some(norm_layer_enum) = self.norm_layer.as_mut() {

@@ -1,5 +1,3 @@
-use crate::wavelet_transform::{cwt_complex::CWTComplex, cwt_types::ContinuousWaletetType};
-
 use super::gradient_struct::Gradient;
 use num::Complex;
 use rayon::prelude::*;
@@ -33,15 +31,15 @@ impl PositionalEncodingLayer {
             .map(|input| {
                 let mut output = Vec::with_capacity(input.len());
 
-                let _wavelet = CWTComplex {
-                    scales: vec![1.0],
-                    cw_type: ContinuousWaletetType::CGAU1,
-                    sampling_period: 1.0,
-                    fc: 1.0,
-                    fb: 1.0,
-                    m: 1.0,
-                    frequencies: vec![],
-                };
+                // let _wavelet = CWTComplex {
+                //     scales: vec![1.0],
+                //     cw_type: ContinuousWaletetType::CGAU1,
+                //     sampling_period: 1.0,
+                //     fc: 1.0,
+                //     fb: 1.0,
+                //     m: 1.0,
+                //     frequencies: vec![],
+                // };
 
                 for (position, token_embeddings) in input.iter().enumerate() {
                     // Ensure correct embedding size
