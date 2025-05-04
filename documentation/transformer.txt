@@ -4,15 +4,15 @@ Transformer Layers:
 
 1. Tokenization layer. Tokens and tokenization process is fixed.
  https://huggingface.co/togethercomputer/GPT-NeoXT-Chat-Base-20B/tree/main
-"vocab_size": 50254 defined in https://huggingface.co/togethercomputer/GPT-NeoXT-Chat-Base-20B/blob/main/config.json
+"vocab_size": 50276 defined in https://huggingface.co/togethercomputer/GPT-NeoXT-Chat-Base-20B/blob/main/config.json
 
 2. Embedding layer.
- Embedding is created by randomly generated real numbers of size 256.
- Then the numbers are compressed using haar wavelet to the size of 16.
+ Embedding is created by randomly generated real numbers of size 512.
+ Then the numbers are compressed using haar wavelet to the size of 64.
  Then cmor wavelet is applied to transform the weights once again. 
- The result is complex numbers of size 16 for each embedding. 
- Vocabulary size 50254.
- Embedding dimension: 16.
+ The result is complex numbers of size 64 for each embedding. 
+ Vocabulary size 50276.
+ Embedding dimension: 64.
  Embedding type: Vec<Complex<f64>>
 
 3. Positional encoding layer.
@@ -23,20 +23,22 @@ Rotary Positional Encoding is used as positional encoding algrorithms.
  Then, the position of the token 500 is 0, for token 12 is 1, for token 34 is 3 etc. 
  i - is the index in the token embedding itself. 
  In other word, the position is the position of embedding in the sentence and the index i is the index in the embedding itself. 
- d - is the dimension of embedding. In our case is 16. 
+ d - is the dimension of embedding. In our case is 64. 
  
-3. Masked Self-Attention-Layer consists of 4 masked attention heads.
- If input has a size [30][16], after passing the self-attenion layer it will still have the same size [30][16];
+3. Four Masked Self-Attention-Layers, each self-attention layer consists of 4 masked attention heads.
+ If input has a size [30][64], after passing the self-attenion layer it will still have the same size [30][64];
 
 4. Add and Norm: RMS Norm is applied here.
 
-5. FeedForward network with weight matrices for hidden layer [16][64], output [64][16]; 
+5. FeedForward network with weight matrices for hidden layer [64][1024] for dense layer and [1024][64] for linear layer, ->  output [30][64]; 
+[30][64] * [64][1024] = [30][1024]
+[30][1024] * [1024][64] = [30][64]
 
 6. Add and Norm: RMS Norm is applied here.
 
-7. Linear layer. Just matrix multiplication of weights and bias adding. output[30][50254]
+7. Linear layer. Just matrix multiplication of weights and bias adding. output[30][50276]
 
-8. Softmax layer. The output is [30][50254] for the input of 30 token ids. 
+8. Softmax layer. The output is [30][50276] for the input of 30 token ids. 
 
 
 ----------------------------------------------------------------------------------

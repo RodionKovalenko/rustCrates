@@ -21,44 +21,44 @@ use crate::{
 };
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize) {
+    let mut total_loss: Complex<f64>;
     'outer: for epoch in 0..num_epochs {
-        for batch_dataset in dataset.split_into_batches(4) {
+        total_loss = Complex::new(0.0, 0.0);
+        for batch_dataset in dataset.split_into_batches(1) {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
 
             let input_batch_extended = batch_dataset.extend_input_with_target(input_batch, target_batch);
 
             // println!("input batch extended: {:?}", &input_batch_extended);
-            let (predicted_softmax_batch, padding_mask_batch)= predict(transformer_network, &input_batch_extended, epoch);
+            let (predicted_softmax_batch, padding_mask_batch) = predict(transformer_network, &input_batch_extended, epoch);
             let (_tokens, target_ids) = tokenize_batch(target_batch, true).unwrap();
             let loss = cross_entropy_loss_batch(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
+            total_loss += loss;
 
-            let (_tokens, input_ids) = tokenize_batch(input_batch, true).unwrap();
-            println!("input Ids: {:?}", &input_ids);
-            println!("target ids: {:?},", &target_ids);
+            // let (_tokens, input_ids) = tokenize_batch(input_batch, true).unwrap();
+            // println!("input Ids: {:?}", &input_ids);
+            // println!("target ids: {:?},", &target_ids);
 
             //println!("predicted softmax batch: {}, {}, {}", predicted_softmax_batch.len(), predicted_softmax_batch[0].len(), predicted_softmax_batch[0][0].len());
 
-            if epoch % 10 == 0 {
-                save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
-            }
-
-            if epoch % 5 == 0 || loss.norm() <= 0.01 {
+            if epoch % 5 == 0 || loss.norm() <= 0.08 {
                 println!("Epoch: {:?}, Loss: {:?}", epoch, loss);
 
-                let target_len = target_ids[0].len();
                 let p = 0.9; // Top-p (Nucleus) threshold
                 let temperature = 0.7; // Temperature for controlling randomness
                 let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = predicted_softmax_batch
                     .iter()
+                    .zip(target_ids.clone())
                     .enumerate()
-                    .filter_map(|(_batch_ind, input_seq)| {
+                    .filter_map(|(_batch_ind, (input_seq, target_seq))| {
+                        let target_len = target_seq.len();
                         let mut valid_seq_opt = None;
                         let padding_mask = &padding_mask_batch[_batch_ind];
 
                         let mut sequence_len_unpadded: usize = 0;
                         for &padding in padding_mask {
                             if padding != 0 {
-                                sequence_len_unpadded +=1;
+                                sequence_len_unpadded += 1;
                             }
                         }
 
@@ -85,15 +85,21 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                 println!("Top-p + Temperature Sampling: {:?}", sampled_tokens);
                 let predicted_token_batch: Vec<String> = sampled_tokens.iter().map(|token_indices| detokenize(token_indices).unwrap()).collect();
                 println!("predicted tokens: {:?}", predicted_token_batch);
-
-                if loss.norm() <= 0.01 {
-                    println!("loss is smaller than 0.05. Break the training: {:?}", &loss);
-                    save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
-                    break 'outer;
-                }
             }
 
             backward(transformer_network, &target_ids, true);
+        }
+
+        if epoch % 10 == 0 {
+            save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
+        }
+        if epoch % 5 == 0 || total_loss.norm() <= 0.08 {
+            println!("Epoch: {:?}, TOTAL LOSS: {:?}", epoch, total_loss);
+        }
+        if total_loss.norm() <= 0.08 {
+            println!("loss is smaller than 0.08. Break the training: {:?}", &total_loss);
+            save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
+            break 'outer;
         }
     }
 }
@@ -123,7 +129,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
             LayerEnum::Embedding(embedding_layer) => {
                 layer_input.set_batch_ids(batch_ids.clone());
                 let (embeddings, padding_m) = embedding_layer.forward(&layer_input);
-                println!("padding mask batch in embedding layer: {:?}", &padding_m);
+                // println!("padding mask batch in embedding layer: {:?}", &padding_m);
 
                 output = Some(embeddings);
                 padding_mask = Some(padding_m);
@@ -134,7 +140,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                 if let Some(previous_output) = &output {
                     let positional_encoding_l = Some(positional_encoding_layer).unwrap();
 
-                    // println!("forward pos encoding");
+                    //println!("forward pos encoding");
                     let positional_encodings: Vec<Vec<Vec<Complex<f64>>>> = positional_encoding_l.forward(&previous_output);
                     output = Some(positional_encodings);
                 } else {
@@ -145,7 +151,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                 if let Some(previous_output) = &output {
                     layer_input.set_input_batch(previous_output.clone());
 
-                    // println!("forward norm");
+                    //println!("forward norm");
                     let norm_output = norm_layer.forward(&layer_input);
 
                     output = Some(norm_output.get_output_batch());
@@ -159,7 +165,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                     layer_input.set_input_batch(previous_output.clone());
                     layer_input.set_padding_mask_batch(padding_m.clone());
 
-                    // println!("forward self-attention start");
+                    //println!("forward self-attention start");
                     let output_attention = attention.forward(&layer_input);
                     output = Some(output_attention.get_output_batch());
                 } else {
@@ -171,6 +177,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
                 if let Some(previous_output) = &output {
                     dense_layer.padding_mask_batch = padding_mask.clone();
 
+                    //println!("forward ffn start");
                     layer_input.set_input_batch(previous_output.to_vec());
                     let layer_output = dense_layer.forward(&layer_input);
 
@@ -184,7 +191,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String
             LayerEnum::Linear(linear_layer) => {
                 let linear_layer = Some(linear_layer).unwrap();
                 if let Some(previous_output) = &output {
-                    // println!("forward linear");
+                    //println!("forward linear start");
                     layer_input.set_input_batch(previous_output.clone());
                     let output_linear = linear_layer.forward(&layer_input);
 
@@ -328,7 +335,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
         }
     }
 
-    transformer_network.update_step_lr_scheduler(epoch, 50, 0.9);
+    transformer_network.update_step_lr_scheduler(epoch, 100, 0.9);
 
     gradient
 }
@@ -336,7 +343,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
 pub fn cross_entropy_loss_batch(
     predicted_softmax_batch: &Vec<Vec<Vec<f64>>>, // Complex-valued softmax output
     targets: &Vec<Vec<u32>>,
-    padding_mask: &Vec<Vec<u32>>
+    padding_mask: &Vec<Vec<u32>>,
 ) -> Complex<f64> {
     let batch_len = predicted_softmax_batch.len() as f64;
     let mut total_loss: Complex<f64> = Complex::new(0.0, 0.0);
@@ -357,7 +364,7 @@ fn cross_entropy_loss(predictions: &Vec<Vec<f64>>, target_tokens: &Vec<u32>, pad
     let mut sequence_len_unpadded: usize = 0;
     for &padding in padding_mask {
         if padding != 0 {
-            sequence_len_unpadded +=1;
+            sequence_len_unpadded += 1;
         }
     }
 

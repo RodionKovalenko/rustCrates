@@ -131,6 +131,7 @@ impl EmbeddingLayer {
         }
 
         // println!("token input after padding: {:?}", &token_input_ids_padded);
+        // println!("max sequence length: {:?}", max_token_len);
         // println!("padding mask after padding: {:?}", &padding_mask_batch);
 
         (token_input_ids_padded, padding_mask_batch)

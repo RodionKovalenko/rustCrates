@@ -18,3 +18,7 @@ pub fn normalize(input: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
 
     input.iter().map(|x| (*x - mean) / stddev).collect()
 }
+
+pub fn normalize_matrix(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    input.iter().map(|x| normalize(x)).collect()
+}
