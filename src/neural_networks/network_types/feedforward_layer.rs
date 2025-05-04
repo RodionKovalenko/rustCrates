@@ -94,8 +94,11 @@ impl FeedForwardLayer {
         }
 
         self.output_batch = Some(output.clone());
+        let mut previous_gradient_input_batch = vec![];
 
-        let previous_gradient_input_batch = self.calculate_input_gradient_batch();
+        if !input.get_forward_only() {
+            previous_gradient_input_batch = self.calculate_input_gradient_batch();
+        }
 
         // Apply the RMS normalization layer
         if let Some(norm_layer_enum) = self.norm_layer.as_mut() {

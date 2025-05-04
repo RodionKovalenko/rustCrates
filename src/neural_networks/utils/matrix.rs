@@ -1,3 +1,4 @@
+use ndarray::Array2;
 use num::Complex;
 use num_traits::NumCast;
 use rayon::prelude::*;
@@ -58,17 +59,12 @@ pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Co
     let mut matrix_a_clone: Vec<Vec<Complex<f64>>> = matrix_a.clone();
     let mut matrix_b_clone: Vec<Vec<Complex<f64>>> = matrix_b.clone();
 
-    let mut num_rows: usize = matrix_a_clone.len();
-    let mut num_columns: usize = matrix_b_clone[0].len();
-
     // Handle mismatched dimensions for matrix multiplication
     if matrix_a_clone[0].len() != matrix_b_clone.len() {
         if matrix_a_clone[0].len() == matrix_b_clone[0].len() {
             matrix_b_clone = transpose(&matrix_b_clone);
-            num_columns = matrix_b_clone[0].len();
         } else if matrix_a_clone.len() == matrix_b_clone.len() {
             matrix_a_clone = transpose(&matrix_a_clone);
-            num_rows = matrix_a_clone.len();
         }
     }
 
@@ -76,32 +72,33 @@ pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Co
         panic!("Matrix A does not have the same number of columns as Matrix B rows.");
     }
 
-    let mut result_matrix: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
+    let a_array = vecvec_to_array2(&matrix_a_clone);
+    let b_array = vecvec_to_array2(&matrix_b_clone);
 
-    // Create a custom thread pool with exactly 8 threads
-    let pool = ThreadPoolBuilder::new().num_threads(8).build().unwrap();
+    let (m, k) = a_array.dim();
+    let (_, n) = b_array.dim();
 
-    // Run the multiplication within this custom thread pool
-    pool.install(|| {
-        // Parallelize the rows of the result matrix using Rayon
-        result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
-            for j in 0..num_columns {
-                row[j] = (0..matrix_b_clone.len())
-                    .map(|k| {
-                        //let product: Complex<f64> = Complex::new(matrix_a_clone[i][k].re * matrix_b_clone[k][j].re, matrix_a_clone[i][k].im * matrix_b_clone[k][j].im);
-                        let product: Complex<f64> = matrix_a_clone[i][k] * matrix_b_clone[k][j];
+    let mut result = vec![vec![Complex::new(0.0, 0.0); n]; m];
 
-                        if is_nan_or_inf(&product) {
-                            panic!("matrix multiply complex has invalid values: result: {:?}, a: {:?}, b: {:?}", &product, &matrix_a_clone[i][k], &matrix_b_clone[k][j]);
-                        }
-                        product
-                    })
-                    .sum();
+    // Parallel row-wise multiplication
+    result.par_iter_mut().enumerate().for_each(|(i, row_result)| {
+        for j in 0..n {
+            let mut sum = Complex::new(0.0, 0.0);
+            for kk in 0..k {
+                let a_val = a_array[(i, kk)];
+                let b_val = b_array[(kk, j)];
+                let product = a_val * b_val;
+
+                if product.re.is_nan() || product.im.is_nan() {
+                    panic!("NaN in product: a={}, b={}", a_val, b_val);
+                }
+                sum += product;
             }
-        });
+            row_result[j] = sum;
+        }
     });
 
-    result_matrix
+    result
 }
 
 pub fn multiply_complex_with_f64(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<f64>>) -> Vec<Vec<Complex<f64>>> {
@@ -109,17 +106,12 @@ pub fn multiply_complex_with_f64(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &V
     let mut matrix_a_clone: Vec<Vec<Complex<f64>>> = matrix_a.clone();
     let mut matrix_b_clone: Vec<Vec<f64>> = matrix_b.clone();
 
-    let mut num_rows = matrix_a_clone.len();
-    let mut num_columns = matrix_b_clone[0].len();
-
     // Handle mismatched dimensions for matrix multiplication
     if matrix_a_clone[0].len() != matrix_b_clone.len() {
         if matrix_a_clone[0].len() == matrix_b_clone[0].len() {
             matrix_b_clone = transpose(&matrix_b_clone);
-            num_columns = matrix_b_clone[0].len();
         } else if matrix_a_clone.len() == matrix_b_clone.len() {
             matrix_a_clone = transpose(&matrix_a_clone);
-            num_rows = matrix_a_clone.len();
         }
     }
 
@@ -127,31 +119,35 @@ pub fn multiply_complex_with_f64(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &V
         panic!("Matrix A does not have the same number of columns as Matrix B rows.");
     }
 
-    let mut result_matrix: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
+    let a_array = vecvec_to_array2(&matrix_a_clone);
+    let b_array = vecvec_to_array2(&matrix_b_clone);
 
-    // Create a custom thread pool with exactly 8 threads
-    let pool = ThreadPoolBuilder::new().num_threads(8).build().unwrap();
+    let (m, k_a) = a_array.dim();
+    let (k_b, n) = b_array.dim();
 
-    // Run the multiplication within this custom thread pool
-    pool.install(|| {
-        // Parallelize the rows of the result matrix using Rayon
-        result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
-            for j in 0..num_columns {
-                row[j] = (0..matrix_b_clone.len())
-                    .map(|k| {
-                        let product: Complex<f64> = matrix_a_clone[i][k] * matrix_b_clone[k][j];
+    assert_eq!(k_a, k_b, "Matrix A columns must match Matrix B rows");
 
-                        if is_nan_or_inf(&product) {
-                            panic!("matrix multiply complex has invalid values: result: {:?}, a: {:?}, b: {:?}", &product, &matrix_a_clone[i][k], &matrix_b_clone[k][j]);
-                        }
-                        product
-                    })
-                    .sum();
+    let mut result = vec![vec![Complex::new(0.0, 0.0); n]; m];
+
+    result.par_iter_mut().enumerate().for_each(|(i, row_result)| {
+        for j in 0..n {
+            let mut sum = Complex::new(0.0, 0.0);
+            for k in 0..k_a {
+                let a_val = a_array[(i, k)];
+                let b_val = b_array[(k, j)];
+                let product = a_val * b_val;
+
+                if product.re.is_nan() || product.im.is_nan() {
+                    panic!("NaN in product: a={}, b={}", a_val, b_val);
+                }
+
+                sum += product;
             }
-        });
+            row_result[j] = sum;
+        }
     });
 
-    result_matrix
+    result
 }
 
 pub fn multiply_f64_complex(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
@@ -159,17 +155,12 @@ pub fn multiply_f64_complex(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<Complex
     let mut matrix_a_clone: Vec<Vec<f64>> = matrix_a.clone();
     let mut matrix_b_clone: Vec<Vec<Complex<f64>>> = matrix_b.clone();
 
-    let mut num_rows = matrix_a_clone.len();
-    let mut num_columns = matrix_b_clone[0].len();
-
     // Handle mismatched dimensions for matrix multiplication
     if matrix_a_clone[0].len() != matrix_b_clone.len() {
         if matrix_a_clone[0].len() == matrix_b_clone[0].len() {
             matrix_b_clone = transpose(&matrix_b_clone);
-            num_columns = matrix_b_clone[0].len();
         } else if matrix_a_clone.len() == matrix_b_clone.len() {
             matrix_a_clone = transpose(&matrix_a_clone);
-            num_rows = matrix_a_clone.len();
         }
     }
 
@@ -177,31 +168,49 @@ pub fn multiply_f64_complex(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<Complex
         panic!("Matrix A does not have the same number of columns as Matrix B rows.");
     }
 
-    let mut result_matrix: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
+    let a_array = vecvec_to_array2(&matrix_a_clone);
+    let b_array = vecvec_to_array2(&matrix_b_clone);
 
-    // Create a custom thread pool with exactly 8 threads
-    let pool = ThreadPoolBuilder::new().num_threads(8).build().unwrap();
+    let (m, k_a) = a_array.dim();
+    let (_k_b, n) = b_array.dim();
 
-    // Run the multiplication within this custom thread pool
-    pool.install(|| {
-        // Parallelize the rows of the result matrix using Rayon
-        result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
-            for j in 0..num_columns {
-                row[j] = (0..matrix_b_clone.len())
-                    .map(|k| {
-                        let product: Complex<f64> = matrix_a_clone[i][k] * matrix_b_clone[k][j];
+    assert_eq!(k_a, _k_b, "Matrix A columns must match Matrix B rows");
 
-                        if is_nan_or_inf(&product) {
-                            panic!("matrix multiply complex has invalid values: result: {:?}, a: {:?}, b: {:?}", &product, &matrix_a_clone[i][k], &matrix_b_clone[k][j]);
-                        }
-                        product
-                    })
-                    .sum();
+    let mut result = vec![vec![Complex::new(0.0, 0.0); n]; m];
+
+    result.par_iter_mut().enumerate().for_each(|(i, row_result)| {
+        for j in 0..n {
+            let mut sum = Complex::new(0.0, 0.0);
+            for k in 0..k_a {
+                let a_val = a_array[(i, k)];
+                let b_val = b_array[(k, j)];
+                let product = a_val * b_val;
+
+                if product.re.is_nan() || product.im.is_nan() {
+                    panic!("NaN in product: a={}, b={}", a_val, b_val);
+                }
+
+                sum += product;
             }
-        });
+            row_result[j] = sum;
+        }
     });
 
-    result_matrix
+    result
+}
+
+pub fn vecvec_to_array2<T>(matrix: &Vec<Vec<T>>) -> Array2<T>
+where
+    T: Clone,
+{
+    let rows = matrix.len();
+    assert!(rows > 0, "Matrix must have at least one row");
+    let cols = matrix[0].len();
+    assert!(matrix.iter().all(|row| row.len() == cols), "All rows must have the same number of columns");
+
+    let flat_data: Vec<T> = matrix.iter().flat_map(|row| row.iter().cloned()).collect();
+
+    Array2::from_shape_vec((rows, cols), flat_data).expect("Failed to convert Vec<Vec<_>> to Array2")
 }
 
 pub fn transpose<T: Debug + Clone + Sync + Send>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {

@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::neural_networks::training::xquad_structs::load_data_xquad_de;
+use crate::neural_networks::training::xquad_structs::{load_data_xquad_de, XQuADDataset};
 
 // Define a generic trait for the Data structure
 pub trait DataTrait<T: Debug + Clone, O: Debug + Clone> {
@@ -58,14 +58,17 @@ impl<T: Debug + Clone, O: Debug + Clone> Dataset<T, O> {
 
         batches
     }
-
     pub fn extend_input_with_target(&self, input_batch: &Vec<String>, target_batch: &Vec<String>) -> Vec<String> {
-       input_batch.clone()
-        .iter()
-        .zip(target_batch.iter())
-        .map(|(input, target)| format!("{}{}", input, target))
-        .collect()
+        input_batch.clone().iter().zip(target_batch.iter()).map(|(input, target)| format!("<bos> {} <sep> {} <eos>", input, target)).collect()
     }
+
+    pub fn extend_target(&self, target_batch: &Vec<String>) -> Vec<String> {
+        target_batch.clone().iter().map(|target: &String| format!("{} <eos>", target)).collect()
+    }
+}
+
+pub fn extend_input_with_bos(input_batch: &Vec<String>) -> Vec<String> {
+    input_batch.clone().iter().map(|input: &String| format!("<bos> {}", input)).collect()
 }
 
 // Implement the DataTrait for the Dataset struct
@@ -102,26 +105,27 @@ impl<T: Debug + Clone, O: Debug + Clone> DataTrait<T, O> for Dataset<T, O> {
 }
 
 pub fn load_data_xquad_de_as_dataset() -> Result<Dataset<String, String>, Box<dyn std::error::Error>> {
-    let dataset = load_data_xquad_de()?; // Load and parse the JSON file
+    println!("Dataset is being loaded...");
+    let dataset: XQuADDataset = load_data_xquad_de()?; // Returns nested structure
 
     let mut inputs = Vec::new();
     let mut targets = Vec::new();
 
-    for instance in dataset.data {
-        // Compose the input string from context and question
-        let input = format!("Context: {}\nQuestion: {}", instance.context, instance.question);
+    // Traverse nested structure to extract context, question, and answers
+    for article in dataset.data {
+        for paragraph in article.paragraphs {
+            let context = paragraph.context;
+            for qa in paragraph.qas {
+                let input = format!("Context: {} \n <sep> Question: {}", context, qa.question);
+                let target = qa.answers.get(0).map(|a| a.text.clone()).unwrap_or_else(|| "N/A".to_string());
 
-        // For simplicity, just use the first answer as the target
-        let target = instance
-            .answers
-            .text
-            .get(0)
-            .cloned()
-            .unwrap_or_else(|| "N/A".to_string());
-
-        inputs.push(input);
-        targets.push(target);
+                inputs.push(input);
+                targets.push(target);
+            }
+        }
     }
+
+    println!("Dataset is loaded: {} instances", inputs.len());
 
     Ok(Dataset::new(inputs, targets))
 }

@@ -11,6 +11,7 @@ pub struct LayerInput {
     padding_mask_batch: Option<Vec<Vec<u32>>>,
     input_record: Option<Vec<Vec<Complex<f64>>>>,
     time_step: usize,
+    forward_only: bool,
 }
 
 impl LayerInput {
@@ -23,10 +24,14 @@ impl LayerInput {
             input_record: None,
             previous_gradient_input_batch: None,
             time_step: 0,
+            forward_only: false,
         }
     }
     pub fn set_input_batch(&mut self, input_batch: Vec<Vec<Vec<Complex<f64>>>>) {
         self.input_batch = Some(input_batch);
+    }
+    pub fn set_forward_only(&mut self, forward_only: bool) {
+        self.forward_only = forward_only;
     }
     pub fn set_input_batch_before(&mut self, input_batch_before: Vec<Vec<Vec<Complex<f64>>>>) {
         self.input_batch_before = Some(input_batch_before);
@@ -64,6 +69,9 @@ impl LayerInput {
     }
     pub fn get_batch_ids(&self) -> Vec<Vec<u32>> {
         self.batch_ids.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_forward_only(&self) -> bool {
+        self.forward_only
     }
     pub fn get_time_step(&self) -> usize {
         self.time_step

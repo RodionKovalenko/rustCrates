@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use rand::seq::IndexedRandom;
 use rand::Rng;
 
@@ -98,6 +100,41 @@ fn sample_from_distribution(probs: &Vec<f64>) -> u32 {
     }
 
     probs.len() as u32 - 1
+}
+
+pub fn get_target_predictions(predicted_softmax_batch: &Vec<Vec<Vec<f64>>>, target_ids: &Vec<Vec<u32>>, padding_mask_batch: &Vec<Vec<u32>>) -> Vec<Vec<Vec<f64>>> {
+    predicted_softmax_batch
+        .iter()
+        .zip(target_ids.clone())
+        .enumerate()
+        .filter_map(|(batch_ind, (input_seq, target_seq))| {
+            let target_len = target_seq.len();
+            let mut valid_seq_opt = None;
+            let padding_mask = &padding_mask_batch[batch_ind];
+
+            let mut sequence_len_unpadded: usize = 0;
+            for &padding in padding_mask {
+                if padding != 0 {
+                    sequence_len_unpadded += 1;
+                }
+            }
+
+            // Slide backwards to find a valid window of length `target_len`
+            for offset in (0..=sequence_len_unpadded - target_len).rev() {
+                let window = &input_seq[offset..offset + target_len];
+                let max = window.iter().flat_map(|w| w.iter()).max_by(|a, b| a.partial_cmp(&b).unwrap_or(Ordering::Less));
+
+                if let Some(max_num) = max {
+                    if max_num > &0.0 {
+                        valid_seq_opt = Some(window.to_vec());
+                        break;
+                    }
+                }
+            }
+
+            valid_seq_opt
+        })
+        .collect()
 }
 
 pub fn top_p_temperature_sampling(predicted_softmax_batch: &Vec<Vec<Vec<f64>>>, p: f64, temperature: f64) -> Vec<Vec<u32>> {

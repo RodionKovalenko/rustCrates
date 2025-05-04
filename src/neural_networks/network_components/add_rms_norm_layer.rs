@@ -2,7 +2,7 @@ use core::fmt::Debug;
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::utils::{adam_w::calculate_adam_w_bias, matrix::{add_matrix, check_nan_or_inf, check_nan_or_inf_3d, clip_gradients, is_nan_or_inf}};
+use crate::neural_networks::utils::{adam_w::calculate_adam_w_bias, matrix::{add_matrix, clip_gradients, is_nan_or_inf}};
 
 use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
 
@@ -123,18 +123,7 @@ impl RMSNormLayer {
                     gradient_gamma_batch[b][d_i] += input_batch[b][s][d_i] / rms;
                 }
             }
-
-            // let scaling_factor = Complex::new(1.0 / 50254.0, 1.0 / 50254.0);
-            // input_batch_gradients[b] = multiply_scalar_with_matrix::<Complex<f64>>(scaling_factor, &input_batch_gradients[b]);
         }
-
-        check_nan_or_inf_3d(&mut input_batch_gradients, "output gradients in rms norm layer has None values");
-
-        // let max = input_batch_gradients.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
-        // let min = input_batch_gradients.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Greater));
-
-        // println!("max in backward rms norm layer gradient batch: {:?}", max);
-        // println!("min in backward rms norm layer gradient batch: {:?}", min);
 
         gradient.set_gradient_input_batch(input_batch_gradients);
         gradient.set_gradient_gamma_batch(gradient_gamma_batch);
@@ -148,7 +137,6 @@ impl RMSNormLayer {
 
         let threshold = 1.0;
         clip_gradients(&mut gradient_gamma, threshold);
-        check_nan_or_inf(&mut gradient_gamma, "check weight gradients in linear layer");
 
         let batch_size = gradient_gamma.len() as f64;
 
