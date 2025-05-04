@@ -223,7 +223,7 @@ impl MaskedAttentionHead {
 
             // Gradient Wk
             // 2,4 * 2,2 = 4,2 * 2,2 = 4,2
-            let dl_dk: Vec<Vec<Complex<f64>>> = multiply_complex(&transpose(&q_scaled),&dl_da);
+            let dl_dk: Vec<Vec<Complex<f64>>> = multiply_complex(&transpose(&q_scaled), &dl_da);
             // println!("dl_dk dim: {}, {}", &dl_dk.len(), &dl_dk[0].len());
             // 2,5 * 4,2 = 5, 4
             let dl_dwk: Vec<Vec<Complex<f64>>> = multiply_complex(&transpose(&input_batch[batch_ind]), &transpose(&dl_dk));
@@ -239,7 +239,7 @@ impl MaskedAttentionHead {
             let dl_dqx = multiply_complex(&transpose(&dl_dq), &transpose(&self.weights_q));
             // 4,2 * 5, 4 = 2, 4 * 4, 5 = 2,5
             let dl_dkx = multiply_complex(&transpose(&dl_dk), &transpose(&self.weights_k));
-             // 4,2 * 5, 4 = 2, 4 * 4, 5 = 2,5
+            // 4,2 * 5, 4 = 2, 4 * 4, 5 = 2,5
             let dl_dvx = multiply_complex(&transpose(&grad_wv), &transpose(&self.weights_v));
 
             gradient_input_batch[batch_ind] = add_matrix(&dl_dqx, &dl_dkx);

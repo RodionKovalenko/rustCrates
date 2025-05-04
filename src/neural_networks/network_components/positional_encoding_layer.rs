@@ -1,10 +1,4 @@
-use crate::{
-    utils::data_converter::convert_to_c_array_f64_2d,
-    wavelet_transform::{
-        cwt_complex::{cwt_complex, CWTComplex},
-        cwt_types::ContinuousWaletetType,
-    },
-};
+use crate::wavelet_transform::{cwt_complex::CWTComplex, cwt_types::ContinuousWaletetType};
 
 use super::gradient_struct::Gradient;
 use num::Complex;
@@ -39,7 +33,7 @@ impl PositionalEncodingLayer {
             .map(|input| {
                 let mut output = Vec::with_capacity(input.len());
 
-                let mut wavelet = CWTComplex {
+                let _wavelet = CWTComplex {
                     scales: vec![1.0],
                     cw_type: ContinuousWaletetType::CGAU1,
                     sampling_period: 1.0,
@@ -64,14 +58,18 @@ impl PositionalEncodingLayer {
                     // Step 3: Ensure wavelet-transformed outputs have correct dimensions
                     //let positional_encoding = self.pad_or_trim_wavelet_output(&transformed_real, &transformed_imag);
 
-                    let (transform_cwt, _frequencies) = cwt_complex(&token_embeddings.to_vec(), &mut wavelet).unwrap();
-                    let positional_encoding: Vec<Vec<Complex<f64>>> = convert_to_c_array_f64_2d(transform_cwt);
+                    // let (transform_cwt, _frequencies) = cwt_complex(&token_embeddings.to_vec(), &mut wavelet).unwrap();
+                    // let positional_encoding: Vec<Vec<Complex<f64>>> = convert_to_c_array_f64_2d(transform_cwt);
 
                     //Step 4: Add wavelet-based positional encoding
-                    let _token_with_pos_encoding = self.add_positional_encoding(token_embeddings, &positional_encoding[0]);
+                    //let _token_with_pos_encoding = self.add_positional_encoding(token_embeddings, &positional_encoding[0]);
 
                     // Step 5: Apply rotary positional encodings
                     let rotated_embeddings = self.apply_rotary_positional_encoding(&token_embeddings, position, scaling_factor);
+
+                    // let (transform_cwt, _frequencies) = cwt_complex(&rotated_embeddings.to_vec(), &mut wavelet).unwrap();
+                    // let positional_encoding: Vec<Vec<Complex<f64>>> = convert_to_c_array_f64_2d(transform_cwt);
+
                     output.push(rotated_embeddings);
                 }
 
@@ -127,11 +125,7 @@ impl PositionalEncodingLayer {
         //     .flatten()
         //     .collect()
 
-        (0..token_embeddings.len())
-            .map(|i| {
-                token_embeddings[i] + positional_encoding[i]
-            })
-            .collect()
+        (0..token_embeddings.len()).map(|i| token_embeddings[i] + positional_encoding[i]).collect()
     }
 
     /// Applies rotary positional encoding to a single token embedding
