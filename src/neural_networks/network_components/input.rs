@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use crate::neural_networks::training::xquad_structs::load_data_xquad_de;
+
 // Define a generic trait for the Data structure
 pub trait DataTrait<T: Debug + Clone, O: Debug + Clone> {
     fn new(input: Vec<T>, target: Vec<O>) -> Self;
@@ -97,4 +99,29 @@ impl<T: Debug + Clone, O: Debug + Clone> DataTrait<T, O> for Dataset<T, O> {
     fn get_batch(&self, batch_idx: usize, batch_size: usize) -> Option<(Vec<T>, Vec<O>)> {
         self.get_batch(batch_idx, batch_size)
     }
+}
+
+pub fn load_data_xquad_de_as_dataset() -> Result<Dataset<String, String>, Box<dyn std::error::Error>> {
+    let dataset = load_data_xquad_de()?; // Load and parse the JSON file
+
+    let mut inputs = Vec::new();
+    let mut targets = Vec::new();
+
+    for instance in dataset.data {
+        // Compose the input string from context and question
+        let input = format!("Context: {}\nQuestion: {}", instance.context, instance.question);
+
+        // For simplicity, just use the first answer as the target
+        let target = instance
+            .answers
+            .text
+            .get(0)
+            .cloned()
+            .unwrap_or_else(|| "N/A".to_string());
+
+        inputs.push(input);
+        targets.push(target);
+    }
+
+    Ok(Dataset::new(inputs, targets))
 }

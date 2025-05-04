@@ -50,6 +50,10 @@ pub fn calculate_adam_w(weights: &[Vec<Complex<f64>>], gradient: &[Vec<Complex<f
     // let max = updated_weights.iter().flat_map(|w| w.iter()).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
     // println!("max in adamW updated weights: {:?}", max);
 
+    // if time_step % 10 == 0 {
+    //     updated_weights = normalize_matrix(&updated_weights);
+    // }
+
     updated_weights
 }
 
@@ -90,6 +94,10 @@ pub fn calculate_adam_w_bias(bias: &[Complex<f64>], gradient: &[Complex<f64>], p
 
     // let max = updated_bias.iter().max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
     // println!("max in adamW updated bias: {:?}", max);
+
+    // if time_step % 10 == 0 {
+    //     updated_bias = normalize(&updated_bias);
+    // }
 
     updated_bias
 }

@@ -1,1 +1,1 @@
-pub mod network_train_ffn;
+pub mod xquad_structs;
