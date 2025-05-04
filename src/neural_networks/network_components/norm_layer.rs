@@ -116,7 +116,10 @@ impl NormalNormLayer {
         self.var_batch = Some(var_batch);
         self.time_step = layer_input.get_time_step();
         self.output_batch = Some(output_batch.clone());
-        self.previous_gradient_input_batch = Some(layer_input.get_previous_gradient_input_batch());
+
+        if !layer_input.get_forward_only() {
+            self.previous_gradient_input_batch = Some(layer_input.get_previous_gradient_input_batch());
+        }
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(output_batch);

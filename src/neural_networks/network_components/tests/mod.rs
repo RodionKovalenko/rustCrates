@@ -6,3 +6,4 @@ pub mod test_self_attention_layer;
 pub mod test_transformer;
 pub mod test_norm_layer;
 pub mod test_serialization;
+pub mod test_sliding_window;

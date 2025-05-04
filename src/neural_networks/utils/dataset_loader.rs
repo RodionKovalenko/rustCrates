@@ -4,9 +4,11 @@ use std::{fs::File, io::Write, path::Path};
 pub async fn load_dataset_xquad() -> Result<(), Box<dyn std::error::Error>> {
     // URLs for the XQuAD dataset in different languages
     let urls = vec![
-        ("https://raw.githubusercontent.com/deepmind/xquad/master/xquad.en.json", "xquad.en.json"),
-        ("https://raw.githubusercontent.com/deepmind/xquad/master/xquad.de.json", "xquad.de.json"),
-        ("https://raw.githubusercontent.com/deepmind/xquad/master/xquad.ru.json", "xquad.ru.json"),
+        // ("https://raw.githubusercontent.com/deepmind/xquad/master/xquad.en.json", "xquad.en.json"),
+        // ("https://raw.githubusercontent.com/deepmind/xquad/master/xquad.de.json", "xquad.de.json"),
+        // ("https://raw.githubusercontent.com/deepmind/xquad/master/xquad.ru.json", "xquad.ru.json"),
+        ("https://rajpurkar.github.io/SQuAD-explorer/dataset/train-v2.0.json", "xquad_en_train.json"),
+        ("https://rajpurkar.github.io/SQuAD-explorer/dataset/dev-v2.0.json", "xquad_en_validation.json"),
     ];
 
     let dataset_dir = Path::new("datasets");
