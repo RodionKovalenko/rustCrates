@@ -1,6 +1,7 @@
 use std::env;
-use faer::mat;
-use num::Complex;
+use std::io::{self, Write};
+
+use neural_networks::neural_networks::{network_types::transformer::transformer_network::predict_by_text, training::train_transformer::train_transformer_from_dataset};
 
 pub enum ARGUMENTS {
     UPHOLD,
@@ -16,35 +17,29 @@ tcp::test_connection();
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Test beginns");
 
-    let _args: Vec<String> = env::args().collect();
-    //println!("{:?}", args[1]);
+    let args: Vec<String> = env::args().collect();
+    println!("Args: {:?}", args);
 
-    // if args.len() > 1 {
-    //     let arg1: &str = &*args[1].clone();
-    //
-    //     match arg1 {
-    //         "uphold" => collect_data_task::update_json_data_from_uphold_api(),
-    //         "network" => train_ffn(),
-    //         _ => println!(" no argument recognized"),
-    //     }
-    // }
-    // Hugging Face API token (replace with your token)
-    // URL to the raw JSON file in the GitHub repository
-
-    let a = mat![
-        [Complex::new(1.0, 0.0), Complex::new(2.0, 3.0)],
-        [Complex::new(1.0, 0.0), Complex::new(2.0, 3.0)]
-    ];
-    
-    let b = mat![
-        [Complex::new(1.0, 0.0), Complex::new(2.0, 3.0)],
-        [Complex::new(1.0, 0.0), Complex::new(2.0, 3.0)]
-    ];
-    
-    // Multiply matrices
-    let c = &a * &b;
-
-    println!("c: {:?}", c);
+    if let Some(arg1) = args.get(1) {
+        match arg1.as_str() {
+            "train" => train_transformer_from_dataset(),
+            "predict" => {
+                let input = read_input("Enter input text for prediction: ")?;
+                predict_by_text(&vec![input]);
+            }
+            _ => println!("Unrecognized argument: {}", arg1),
+        }
+    } else {
+        println!("No arguments provided.");
+    }
 
     Ok(())
+}
+
+fn read_input(prompt: &str) -> Result<String, io::Error> {
+    print!("{}", prompt);
+    io::stdout().flush()?; // Make sure the prompt is displayed before input
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    Ok(input.trim().to_string()) // Remove trailing newline
 }
