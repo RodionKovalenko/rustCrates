@@ -23,13 +23,13 @@ use crate::{
 };
 
 pub const MAX_CONTEXT_WINDOW_SIZE: usize = 40;
-pub const CONTEXT_OVERLAPPING: usize = 25;
+pub const CONTEXT_OVERLAPPING: usize = 15;
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize) {
     let mut total_loss: Complex<f64>;
     let p = 0.9; // Top-p (Nucleus) threshold
     let temperature: f64 = 0.7; // Temperature for controlling randomness
-    let loss_threshold: f64 = 0.5;
+    let loss_threshold: f64 = 0.1;
     let now = Instant::now();
 
     'outer: for epoch in 0..num_epochs {
