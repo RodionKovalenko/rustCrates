@@ -3,7 +3,7 @@ use std::time::Instant;
 use crate::{
     database::sled_db::SLED_DB_TRANSFORMER_V1,
     neural_networks::{
-        network_components::input::{load_data_xquad_de_as_dataset, DataTrait, Dataset},
+        network_components::input::{load_data_xquad_de_as_dataset, Dataset},
         network_types::{
             neural_network_generic::{get_from_db, print_networt_structure, update_learning_rate, NeuralNetwork, OperationMode},
             transformer::{transformer_builder::create_transformer, transformer_network::train},
@@ -38,16 +38,16 @@ pub fn train_transformer_from_dataset() {
     let seconds_elapsed = now.elapsed();
     println!("time elapsed in seconds: {:?}", &seconds_elapsed);
 
-    let dataset = load_data_xquad_de_as_dataset().unwrap();
-    let data_batches: Vec<Dataset<String, String>> = dataset.split_into_batches(1);
+    let dataset: Dataset<String, String> = load_data_xquad_de_as_dataset().unwrap();
+    // let data_batches: Vec<Dataset<String, String>> = dataset.split_into_batches(1);
 
-    let (input_batch, target_batch) = (data_batches[0].get_input(), data_batches[0].get_target());
+    // let (input_batch, target_batch) = (data_batches[0].get_input(), data_batches[0].get_target());
 
-    println!("input batch: {:?}", input_batch);
-    println!("target batch: {:?}", target_batch);
-    let dataset_small = Dataset::new(input_batch.clone(), target_batch.clone());
+    // println!("input batch: {:?}", input_batch);
+    // println!("target batch: {:?}", target_batch);
+    // let dataset_small = Dataset::new(input_batch.clone(), target_batch.clone());
 
-    train(&mut transformer, dataset_small, num_epochs);
+    train(&mut transformer, dataset, num_epochs);
     let seconds_elapsed_end = now.elapsed();
 
     println!("time elapsed in seconds: {:?}", seconds_elapsed_end - seconds_elapsed);
