@@ -59,14 +59,14 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             let loss = cross_entropy_loss_batch(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
             total_loss += loss;
 
-            if epoch % 5 == 0 || loss.norm() <= loss_threshold {
+            if epoch > 0 && epoch % 5 == 100 || loss.norm() <= loss_threshold {
                 println!("Epoch: {:?}, Loss: {:?}", epoch, loss);
                 let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = get_target_predictions(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
                 let sampled_tokens = top_p_temperature_sampling(&predicted_softmax_targets, p, temperature);
 
                 let predicted_token_batch: Vec<String> = sampled_tokens.par_iter().map(|token_indices| detokenize(token_indices).unwrap()).collect();
                 println!("Top-p + Temperature Sampling: {:?}", sampled_tokens.len());
-                println!("predicted tokens: {:?}", predicted_token_batch);
+                println!("predicted tokens: {:?}", predicted_token_batch.len());
             }
 
             let seconds_elapsed_end = now.elapsed();
