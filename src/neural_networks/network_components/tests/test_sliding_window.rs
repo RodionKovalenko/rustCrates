@@ -7,7 +7,7 @@ pub mod test_sliding_window {
         // Example usage:
         let tokens: Vec<u32> = (0..450).collect(); // Dummy token IDs (0..449)
         let window_size = 40;
-        let stride = window_size - 15; // Overlap = 15 tokens
+        let stride = 15; // Overlap = 15 tokens
         let (input_chunks, target_chunks) = sliding_window_chunks(&tokens, window_size, stride);
 
         println!("Number of chunks: {}", input_chunks.len());
