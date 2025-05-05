@@ -45,9 +45,9 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let hidden_dim = 2048;
     let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
 
-    let num_self_attention_layer: usize = 4;
+    let num_self_attention_layer: usize = 1;
     for _i in 0..num_self_attention_layer {
-        let num_attention_heads: usize = 4;
+        let num_attention_heads: usize = 8;
         let rows: usize = embedding_dim_compressed;
         let cols: usize = 64;
 
