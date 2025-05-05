@@ -1,6 +1,6 @@
 use std::env;
-
-use neural_networks::neural_networks::utils::dataset_loader::load_dataset_xquad;
+use faer::mat;
+use num::Complex;
 
 pub enum ARGUMENTS {
     UPHOLD,
@@ -31,7 +31,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Hugging Face API token (replace with your token)
     // URL to the raw JSON file in the GitHub repository
 
-    load_dataset_xquad()?; 
+    let a = mat![
+        [Complex::new(1.0, 0.0), Complex::new(2.0, 3.0)],
+        [Complex::new(1.0, 0.0), Complex::new(2.0, 3.0)]
+    ];
+    
+    let b = mat![
+        [Complex::new(1.0, 0.0), Complex::new(2.0, 3.0)],
+        [Complex::new(1.0, 0.0), Complex::new(2.0, 3.0)]
+    ];
+    
+    // Multiply matrices
+    let c = &a * &b;
+
+    println!("c: {:?}", c);
 
     Ok(())
 }

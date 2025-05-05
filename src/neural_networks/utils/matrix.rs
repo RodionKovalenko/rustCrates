@@ -1,4 +1,4 @@
-use ndarray::Array2;
+use faer::Mat;
 use num::Complex;
 use num_traits::NumCast;
 use rayon::prelude::*;
@@ -14,7 +14,6 @@ where
 {
     // Convert matrix_a and matrix_b to Vec<Vec<f64>> for thread safety
     let mut matrix_a_clone: Vec<Vec<f64>> = matrix_a.iter().map(|row| row.iter().map(|x| x.clone().into()).collect()).collect();
-
     let mut matrix_b_clone: Vec<Vec<f64>> = matrix_b.iter().map(|row| row.iter().map(|x| x.clone().into()).collect()).collect();
 
     let mut num_rows = matrix_a_clone.len();
@@ -53,164 +52,96 @@ where
 
     result_matrix
 }
-
 pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-    // Convert matrices to Complex<f64>
-    let mut matrix_a_clone: Vec<Vec<Complex<f64>>> = matrix_a.clone();
-    let mut matrix_b_clone: Vec<Vec<Complex<f64>>> = matrix_b.clone();
+    let a_rows = matrix_a.len();
+    let a_cols = matrix_a[0].len();
+    let b_rows = matrix_b.len();
+    let b_cols = matrix_b[0].len();
 
-    // Handle mismatched dimensions for matrix multiplication
-    if matrix_a_clone[0].len() != matrix_b_clone.len() {
-        if matrix_a_clone[0].len() == matrix_b_clone[0].len() {
-            matrix_b_clone = transpose(&matrix_b_clone);
-        } else if matrix_a_clone.len() == matrix_b_clone.len() {
-            matrix_a_clone = transpose(&matrix_a_clone);
-        }
+    // Validate dimensions for matrix multiplication
+    if a_cols != b_rows {
+        panic!("Invalid matrix dimensions: A is {}x{}, B is {}x{}", a_rows, a_cols, b_rows, b_cols);
     }
 
-    if matrix_a_clone[0].len() != matrix_b_clone.len() && matrix_a_clone.len() != matrix_b_clone.len() {
-        panic!("Matrix A does not have the same number of columns as Matrix B rows.");
-    }
+    // Convert matrix_a and matrix_b to faer::Mat<Complex<f64>>
+    let mat_a = Mat::from_fn(a_rows, a_cols, |i, j| matrix_a[i][j]);
+    let mat_b = Mat::from_fn(b_rows, b_cols, |i, j| matrix_b[i][j]);
 
-    let a_array = vecvec_to_array2(&matrix_a_clone);
-    let b_array = vecvec_to_array2(&matrix_b_clone);
+    // Perform matrix multiplication using faer
+    let mat_c = &mat_a * &mat_b;
 
-    let (m, k) = a_array.dim();
-    let (_, n) = b_array.dim();
-
-    let mut result = vec![vec![Complex::new(0.0, 0.0); n]; m];
-
-    // Parallel row-wise multiplication
-    result.par_iter_mut().enumerate().for_each(|(i, row_result)| {
-        for j in 0..n {
-            let mut sum = Complex::new(0.0, 0.0);
-            for kk in 0..k {
-                let a_val = a_array[(i, kk)];
-                let b_val = b_array[(kk, j)];
-                let product = a_val * b_val;
-
-                if product.re.is_nan() || product.im.is_nan() {
-                    panic!("NaN in product: a={}, b={}", a_val, b_val);
-                }
-                sum += product;
-            }
-            row_result[j] = sum;
+    // Convert the result matrix back to Vec<Vec<Complex<f64>>>
+    // Convert result back to Vec<Vec<Complex<f64>>>
+    let mut result = vec![vec![Complex::new(0.0, 0.0); mat_c.ncols()]; mat_c.nrows()];
+    for i in 0..mat_c.nrows() {
+        for j in 0..mat_c.ncols() {
+            result[i][j] = mat_c[(i, j)];
         }
-    });
+    }
 
     result
 }
 
 pub fn multiply_complex_with_f64(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<f64>>) -> Vec<Vec<Complex<f64>>> {
-    // Convert matrices to Complex<f64>
-    let mut matrix_a_clone: Vec<Vec<Complex<f64>>> = matrix_a.clone();
-    let mut matrix_b_clone: Vec<Vec<f64>> = matrix_b.clone();
+    let a_rows = matrix_a.len();
+    let a_cols = matrix_a[0].len();
+    let b_rows = matrix_b.len();
+    let b_cols = matrix_b[0].len();
 
-    // Handle mismatched dimensions for matrix multiplication
-    if matrix_a_clone[0].len() != matrix_b_clone.len() {
-        if matrix_a_clone[0].len() == matrix_b_clone[0].len() {
-            matrix_b_clone = transpose(&matrix_b_clone);
-        } else if matrix_a_clone.len() == matrix_b_clone.len() {
-            matrix_a_clone = transpose(&matrix_a_clone);
-        }
+    // Validate dimensions: A (a_rows x a_cols) * B (b_rows x b_cols) → valid only if a_cols == b_rows
+    if a_cols != b_rows {
+        panic!("Invalid matrix dimensions: A is {}x{}, B is {}x{}", a_rows, a_cols, b_rows, b_cols);
     }
 
-    if matrix_a_clone[0].len() != matrix_b_clone.len() && matrix_a_clone.len() != matrix_b_clone.len() {
-        panic!("Matrix A does not have the same number of columns as Matrix B rows.");
-    }
+    // Convert A to faer::Mat<Complex<f64>>
+    let mat_a = Mat::from_fn(a_rows, a_cols, |i, j| matrix_a[i][j]);
 
-    let a_array = vecvec_to_array2(&matrix_a_clone);
-    let b_array = vecvec_to_array2(&matrix_b_clone);
+    // Convert B to Complex<f64> and store in faer::Mat<Complex<f64>>
+    let mat_b = Mat::from_fn(b_rows, b_cols, |i, j| Complex::new(matrix_b[i][j], 0.0));
 
-    let (m, k_a) = a_array.dim();
-    let (k_b, n) = b_array.dim();
+    // Multiply using faer
+    let mat_c = &mat_a * &mat_b;
 
-    assert_eq!(k_a, k_b, "Matrix A columns must match Matrix B rows");
-
-    let mut result = vec![vec![Complex::new(0.0, 0.0); n]; m];
-
-    result.par_iter_mut().enumerate().for_each(|(i, row_result)| {
-        for j in 0..n {
-            let mut sum = Complex::new(0.0, 0.0);
-            for k in 0..k_a {
-                let a_val = a_array[(i, k)];
-                let b_val = b_array[(k, j)];
-                let product = a_val * b_val;
-
-                if product.re.is_nan() || product.im.is_nan() {
-                    panic!("NaN in product: a={}, b={}", a_val, b_val);
-                }
-
-                sum += product;
-            }
-            row_result[j] = sum;
+    // Convert result back to Vec<Vec<Complex<f64>>>
+    let mut result = vec![vec![Complex::new(0.0, 0.0); mat_c.ncols()]; mat_c.nrows()];
+    for i in 0..mat_c.nrows() {
+        for j in 0..mat_c.ncols() {
+            result[i][j] = mat_c[(i, j)];
         }
-    });
+    }
 
     result
 }
 
 pub fn multiply_f64_complex(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-    // Convert matrices to Complex<f64>
-    let mut matrix_a_clone: Vec<Vec<f64>> = matrix_a.clone();
-    let mut matrix_b_clone: Vec<Vec<Complex<f64>>> = matrix_b.clone();
+    let a_rows = matrix_a.len();
+    let a_cols = matrix_a[0].len();
+    let b_rows = matrix_b.len();
+    let b_cols = matrix_b[0].len();
 
-    // Handle mismatched dimensions for matrix multiplication
-    if matrix_a_clone[0].len() != matrix_b_clone.len() {
-        if matrix_a_clone[0].len() == matrix_b_clone[0].len() {
-            matrix_b_clone = transpose(&matrix_b_clone);
-        } else if matrix_a_clone.len() == matrix_b_clone.len() {
-            matrix_a_clone = transpose(&matrix_a_clone);
-        }
+    // Check if dimensions match for multiplication: A(a_rows x a_cols) * B(b_rows x b_cols)
+    if a_cols != b_rows {
+        panic!("Matrix dimensions do not align: A is {}x{}, B is {}x{}", a_rows, a_cols, b_rows, b_cols);
     }
 
-    if matrix_a_clone[0].len() != matrix_b_clone.len() && matrix_a_clone.len() != matrix_b_clone.len() {
-        panic!("Matrix A does not have the same number of columns as Matrix B rows.");
-    }
+    // Convert A (f64) to faer::Mat<Complex<f64>> with imaginary parts 0.0
+    let mat_a: Mat<Complex<f64>> = Mat::from_fn(a_rows, a_cols, |i, j| Complex::new(matrix_a[i][j], 0.0));
 
-    let a_array = vecvec_to_array2(&matrix_a_clone);
-    let b_array = vecvec_to_array2(&matrix_b_clone);
+    // Convert B to faer::Mat<Complex<f64>>
+    let mat_b: Mat<Complex<f64>> = Mat::from_fn(b_rows, b_cols, |i, j| matrix_b[i][j]);
 
-    let (m, k_a) = a_array.dim();
-    let (_k_b, n) = b_array.dim();
+    // Perform matrix multiplication
+    let mat_c = &mat_a * &mat_b;
 
-    assert_eq!(k_a, _k_b, "Matrix A columns must match Matrix B rows");
-
-    let mut result = vec![vec![Complex::new(0.0, 0.0); n]; m];
-
-    result.par_iter_mut().enumerate().for_each(|(i, row_result)| {
-        for j in 0..n {
-            let mut sum = Complex::new(0.0, 0.0);
-            for k in 0..k_a {
-                let a_val = a_array[(i, k)];
-                let b_val = b_array[(k, j)];
-                let product = a_val * b_val;
-
-                if product.re.is_nan() || product.im.is_nan() {
-                    panic!("NaN in product: a={}, b={}", a_val, b_val);
-                }
-
-                sum += product;
-            }
-            row_result[j] = sum;
+    // Convert faer::Mat<Complex<f64>> back to Vec<Vec<Complex<f64>>>
+    let mut result = vec![vec![Complex::new(0.0, 0.0); mat_c.ncols()]; mat_c.nrows()];
+    for i in 0..mat_c.nrows() {
+        for j in 0..mat_c.ncols() {
+            result[i][j] = mat_c[(i, j)];
         }
-    });
+    }
 
     result
-}
-
-pub fn vecvec_to_array2<T>(matrix: &Vec<Vec<T>>) -> Array2<T>
-where
-    T: Clone,
-{
-    let rows = matrix.len();
-    assert!(rows > 0, "Matrix must have at least one row");
-    let cols = matrix[0].len();
-    assert!(matrix.iter().all(|row| row.len() == cols), "All rows must have the same number of columns");
-
-    let flat_data: Vec<T> = matrix.iter().flat_map(|row| row.iter().cloned()).collect();
-
-    Array2::from_shape_vec((rows, cols), flat_data).expect("Failed to convert Vec<Vec<_>> to Array2")
 }
 
 pub fn transpose<T: Debug + Clone + Sync + Send>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
@@ -243,20 +174,32 @@ pub fn transpose<T: Debug + Clone + Sync + Send>(matrix_a: &Vec<Vec<T>>) -> Vec<
 }
 
 pub fn hadamard_product_2d_c(input_1: &Vec<Vec<Complex<f64>>>, input_2: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-    // Check if the input matrices have the same dimensions
-    if input_1.len() != input_2.len() || input_1[0].len() != input_2[0].len() {
-        panic!("The arrays must be of the same size in Hadamard product {} {} - {} {}", input_1.len(), input_1[0].len(), input_2.len(), input_2[0].len());
+    let rows = input_1.len();
+    let cols = input_1[0].len();
+
+    // Validate dimensions
+    if rows != input_2.len() || cols != input_2[0].len() {
+        panic!("Hadamard input size mismatch: input_1 is {}x{}, input_2 is {}x{}", rows, cols, input_2.len(), input_2[0].len());
     }
 
-    // Initialize the result matrix with zeros
-    let mut result = vec![vec![Complex::new(0.0, 0.0); input_1[0].len()]; input_1.len()];
+    // Convert to faer matrices
+    let mat_1 = Mat::from_fn(rows, cols, |i, j| input_1[i][j]);
+    let mat_2 = Mat::from_fn(rows, cols, |i, j| input_2[i][j]);
 
-    // Use parallel iterators to compute the Hadamard product
-    result.par_iter_mut().enumerate().for_each(|(i, row)| {
-        for (j, value) in row.iter_mut().enumerate() {
-            *value = Complex::new(input_1[i][j].re * input_2[i][j].re, 0.0);
-        }
+    // Compute Hadamard product of the real parts only
+    let mat_result = Mat::from_fn(rows, cols, |i, j| {
+        let r1 = mat_1[(i, j)].re;
+        let r2 = mat_2[(i, j)].re;
+        Complex::new(r1 * r2, 0.0)
     });
+
+    // Convert result to Vec<Vec<Complex<f64>>>
+    let mut result = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
+    for i in 0..rows {
+        for j in 0..cols {
+            result[i][j] = mat_result[(i, j)];
+        }
+    }
 
     result
 }

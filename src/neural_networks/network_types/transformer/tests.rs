@@ -147,7 +147,7 @@ mod tests {
 
     #[test]
     #[ignore]
-    fn test_train_transformer_from_dataset() {
+    fn test_train_from_dataset() {
         let now = Instant::now();
 
         let mut transformer = match get_from_db(SLED_DB_TRANSFORMER_V1) {
