@@ -56,6 +56,11 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             total_loss += loss;
 
             if epoch % 5 == 0 || loss.norm() <= loss_threshold {
+                println!("start ======================================================");
+                println!("batch ids: {:?}", batch_ids);
+                println!("targets batch ids: {:?}", target_ids);
+                println!("end ======================================================");
+
                 println!("Epoch: {:?}, Loss: {:?}", epoch, loss);
                 let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = get_target_predictions(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
                 let sampled_tokens = top_p_temperature_sampling(&predicted_softmax_targets, p, temperature);
