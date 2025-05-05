@@ -12,7 +12,7 @@ use crate::{
             layer::LayerEnum,
             layer_input_struct::LayerInput,
         },
-        network_types::neural_network_generic::{save_to_sled, NeuralNetwork},
+        network_types::{neural_network_generic::{get_from_db, save_to_sled, NeuralNetwork, OperationMode}, transformer::transformer_builder::create_transformer},
         utils::{
             array_splitting::sliding_window_chunks_matrix,
             matrix::check_nan_or_inf_3d,
@@ -37,7 +37,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
         for batch_dataset in dataset.split_into_batches(1) {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
 
-            let seconds_elapsed  = now.elapsed();
+            let seconds_elapsed = now.elapsed();
             let input_batch_extended = batch_dataset.extend_input_with_target(input_batch, target_batch);
             let target_batch_extended = batch_dataset.extend_target(target_batch);
 
@@ -112,12 +112,12 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
     let mut count_tokens_prediction = 0;
     let now = Instant::now();
 
+    print!("Antwort: ");
     // Continue predicting until EOS token is predicted
     loop {
-        println!("current input batch: {:?}", &current_input_batch);
+        // println!("current input batch: {:?}", &current_input_batch);
 
-        let seconds_elapsed = now.elapsed();
-        println!("time elapsed before predict in seconds: {:?}", &seconds_elapsed);
+        let _seconds_elapsed = now.elapsed();
 
         let (_tokens, mut batch_ids) = tokenize_batch(&current_input_batch, false).unwrap();
         let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap();
@@ -137,10 +137,10 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
 
         let (current_predictions, _padding_mask_batch) = predict(transformer_network, &batch_ids, time_step, true);
 
-        let seconds_elapsed_end = now.elapsed();
-        let duration = seconds_elapsed_end - seconds_elapsed;
-        let seconds = duration.as_secs_f64();
-        println!("time elapsed in seconds: {:?}", seconds);
+        // let seconds_elapsed_end = now.elapsed();
+        // let duration = seconds_elapsed_end - _seconds_elapsed;
+        // let seconds = duration.as_secs_f64();
+        // println!("time elapsed in seconds: {:?}", seconds);
 
         // If no more predictions are available, break out
         if current_predictions.is_empty() {
@@ -164,10 +164,8 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
             })
             .collect();
 
-        println!("predicted softmax targets: {}, {}, {}", predicted_softmax_targets.len(), predicted_softmax_targets[0].len(), predicted_softmax_targets[0][0].len());
         let sampled_tokens = top_p_temperature_sampling(&predicted_softmax_targets, p, temperature);
         let predicted_token_batch: Vec<String> = sampled_tokens.par_iter().map(|token_indices| detokenize(token_indices).unwrap()).collect();
-        println!("predicted token batch: {:?}", predicted_token_batch);
         // Check if the last predicted token is the EOS token
         let predicted_token = predicted_token_batch[predicted_token_batch.len() - 1].clone();
 
@@ -176,11 +174,10 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
             break;
         }
 
+        print!("{:?}", predicted_token);
         // Add the predicted token to the current input batch
-
-        println!("predicted token: {:?}", predicted_token);
         current_input_batch[0] = format!("{}{}", current_input_batch[0], predicted_token);
-        println!("combined input: {:?}", current_input_batch);
+        // println!("combined input: {:?}", current_input_batch);
 
         count_tokens_prediction += 1;
 
@@ -418,6 +415,27 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
     transformer_network.update_step_lr_scheduler(epoch, 100, 0.9);
 
     gradient
+}
+
+pub fn predict_by_text(input: &Vec<String>) -> Vec<String> {
+    let mut transformer = match get_from_db(SLED_DB_TRANSFORMER_V1) {
+        Ok(transformer) => {
+            // Successfully loaded transformer from the database
+            println!("Loaded transformer from the database!");
+            transformer
+        }
+        Err(e) => {
+            println!("error: {:?}", e);
+            // Create a new transformer since the database didn't have one
+            let transformer: NeuralNetwork = create_transformer(OperationMode::TRAINING);
+            println!("Created a new transformer for training.");
+            transformer
+        }
+    };
+
+    let (_predicted_softmax_targets, all_predicted_tokens) = predict_token_by_token(&mut transformer, &input);
+
+    all_predicted_tokens
 }
 
 pub fn cross_entropy_loss_batch(
