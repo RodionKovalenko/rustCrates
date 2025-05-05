@@ -12,7 +12,10 @@ use crate::{
             layer::LayerEnum,
             layer_input_struct::LayerInput,
         },
-        network_types::{neural_network_generic::{get_from_db, save_to_sled, NeuralNetwork, OperationMode}, transformer::transformer_builder::create_transformer},
+        network_types::{
+            neural_network_generic::{get_from_db, save_to_sled, NeuralNetwork, OperationMode},
+            transformer::transformer_builder::create_transformer,
+        },
         utils::{
             array_splitting::sliding_window_chunks_matrix,
             matrix::check_nan_or_inf_3d,
@@ -34,7 +37,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
     'outer: for epoch in 0..num_epochs {
         total_loss = Complex::new(0.0, 0.0);
-        for batch_dataset in dataset.split_into_batches(1) {
+        for batch_dataset in dataset.split_into_batches(4) {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
 
             let seconds_elapsed = now.elapsed();
@@ -43,8 +46,6 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
             let (_tokens, mut batch_ids) = tokenize_batch(&input_batch_extended, false).unwrap();
             let (_tokens, mut target_ids) = tokenize_batch(&target_batch_extended, false).unwrap();
-
-            println!("input tokens len in predict: {:?}", &batch_ids.len() * batch_ids[0].len());
 
             let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap();
 
@@ -59,18 +60,12 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             total_loss += loss;
 
             if epoch % 5 == 0 || loss.norm() <= loss_threshold {
-                println!("start ======================================================");
-                println!("batch ids: {:?}", batch_ids);
-                println!("targets batch ids: {:?}", target_ids);
-                println!("end ======================================================");
-
                 println!("Epoch: {:?}, Loss: {:?}", epoch, loss);
                 let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = get_target_predictions(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
                 let sampled_tokens = top_p_temperature_sampling(&predicted_softmax_targets, p, temperature);
 
-                println!("Top-p + Temperature Sampling: {:?}", sampled_tokens.len());
                 let predicted_token_batch: Vec<String> = sampled_tokens.par_iter().map(|token_indices| detokenize(token_indices).unwrap()).collect();
-                println!("predicted tokens len: {:?}", predicted_token_batch[0].len());
+                println!("Top-p + Temperature Sampling: {:?}", sampled_tokens.len());
                 println!("predicted tokens: {:?}", predicted_token_batch);
             }
 
@@ -94,7 +89,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             println!("Epoch: {:?}, TOTAL LOSS: {:?}", epoch, total_loss);
         }
         if total_loss.norm() <= loss_threshold {
-            println!("loss is smaller than 0.08. Break the training: {:?}", &total_loss);
+            println!("loss is smaller than {loss_threshold} Break the training: {:?}", &total_loss);
             save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
             break 'outer;
         }
