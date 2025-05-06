@@ -22,7 +22,7 @@ use crate::{
             tokenizer::{detokenize, tokenize_batch},
         },
     },
-    utils::sampling_methods::{get_target_predictions, top_p_temperature_sampling},
+    utils::sampling_methods::{get_target_predictions, top_p_sampling_from_softmax},
 };
 
 pub const MAX_CONTEXT_WINDOW_SIZE: usize = 40;
@@ -31,8 +31,7 @@ pub const CONTEXT_OVERLAPPING: usize = 30;
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize) {
     let mut total_loss: Complex<f64>;
     let p = 0.9; // Top-p (Nucleus) threshold
-    let temperature: f64 = 0.7; // Temperature for controlling randomness
-    let loss_threshold: f64 = 0.1;
+    let loss_threshold: f64 = 0.05;
     let now = Instant::now();
 
     'outer: for epoch in 0..num_epochs {
@@ -59,27 +58,29 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             let loss = cross_entropy_loss_batch(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
             total_loss += loss;
 
-            if epoch > 0 && epoch % 5 == 100 || loss.norm() <= loss_threshold {
+            if epoch > 0 && epoch % 10 == 0 || loss.norm() <= loss_threshold {
                 println!("Epoch: {:?}, Loss: {:?}", epoch, loss);
                 let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = get_target_predictions(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
-                let sampled_tokens = top_p_temperature_sampling(&predicted_softmax_targets, p, temperature);
+                let sampled_tokens = top_p_sampling_from_softmax(&predicted_softmax_targets, p);
 
                 let predicted_token_batch: Vec<String> = sampled_tokens.par_iter().map(|token_indices| detokenize(token_indices).unwrap()).collect();
                 println!("Top-p + Temperature Sampling: {:?}", sampled_tokens.len());
-                println!("predicted tokens: {:?}", predicted_token_batch.len());
-            }
+                println!("predicted tokens: {:?}", predicted_token_batch);
 
-            let seconds_elapsed_end = now.elapsed();
-            let duration = seconds_elapsed_end - seconds_elapsed;
-            let seconds = duration.as_secs_f64();
-            println!("time elapsed for forward pass in seconds: {:?}", seconds);
+                let seconds_elapsed_end = now.elapsed();
+                let duration = seconds_elapsed_end - seconds_elapsed;
+                let seconds = duration.as_secs_f64();
+                println!("time elapsed for forward pass in seconds: {:?}", seconds);
+            }
 
             backward(transformer_network, &target_ids, true);
 
-            let seconds_elapsed_end = now.elapsed();
-            let duration = seconds_elapsed_end - seconds_elapsed;
-            let seconds = duration.as_secs_f64();
-            println!("time elapsed for forward and backward pass in seconds: {:?}", seconds);
+            if epoch > 0 && epoch % 10 == 0 {
+                let seconds_elapsed_end = now.elapsed();
+                let duration = seconds_elapsed_end - seconds_elapsed;
+                let seconds = duration.as_secs_f64();
+                println!("time elapsed for forward and backward pass in seconds: {:?}", seconds);
+            }
         }
 
         if epoch % 10 == 0 {
@@ -101,7 +102,6 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
     let time_step: usize = 0;
     let mut _padding_mask_batch: Vec<Vec<u32>> = Vec::new();
     let p = 0.9; // Top-p (Nucleus) threshold
-    let temperature = 0.7; // Temperature for controlling randomness
 
     let mut current_input_batch: Vec<String> = extend_input_with_bos(input_batch);
     let mut count_tokens_prediction = 0;
@@ -159,7 +159,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
             })
             .collect();
 
-        let sampled_tokens = top_p_temperature_sampling(&predicted_softmax_targets, p, temperature);
+        let sampled_tokens = top_p_sampling_from_softmax(&predicted_softmax_targets, p);
         let predicted_token_batch: Vec<String> = sampled_tokens.par_iter().map(|token_indices| detokenize(token_indices).unwrap()).collect();
         // Check if the last predicted token is the EOS token
         let predicted_token = predicted_token_batch[predicted_token_batch.len() - 1].clone();

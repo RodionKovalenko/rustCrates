@@ -97,7 +97,11 @@ impl EmbeddingLayer {
             embedding_layer
         } else {
             println!("File exists. Deserializing the file");
-            Self::deserialize(embedding_file_path)
+            let embedding_layer = Self::deserialize(embedding_file_path);
+
+            // embedding_layer.embedding_dim = 16;
+            // Self::serialize(&embedding_layer, &embedding_file_path);
+            embedding_layer
         }
     }
 
@@ -170,7 +174,11 @@ impl EmbeddingLayer {
                                 let mut rng: rand::prelude::ThreadRng = rand::rng();
                                 let base_2: i32 = 2;
 
+                                println!("token dimensions mismatch...");
+
                                 token_embedding = Self::create_embedding(&db, embedding_dim * base_2.pow(DECOMPOSITION_LEVELS) as usize, &mut rng, id);
+                                println!("new token: dim: {}", token_embedding.len());
+                                println!("token embedding: {:?}", token_embedding);
                             }
 
                             assert_eq!(token_embedding.len(), self.embedding_dim);
