@@ -166,7 +166,7 @@ impl EmbeddingLayer {
                         } else {
                             // Embedding retrieval, wrapped in a Mutex for shared access if needed
                             let db = Arc::clone(&db);
-                            let mut token_embedding = Self::get_embedding(&db, id, self.embedding_dim).unwrap_or_else(|err| {
+                            let mut token_embedding = Self::get_embedding(&db, id).unwrap_or_else(|err| {
                                 panic!("Error retrieving embedding for token {}: {}", id, err);
                             });
 
@@ -218,7 +218,7 @@ impl EmbeddingLayer {
             clip_gradients(&mut previous_gradients[batch_idx], 1.0);
 
             for (i, &token_id) in token_ids.iter().enumerate() {
-                let mut token_embedding: Vec<Complex<f64>> = Self::get_embedding(&db, token_id, self.embedding_dim).unwrap();
+                let mut token_embedding: Vec<Complex<f64>> = Self::get_embedding(&db, token_id).unwrap();
 
                 // Assuming previous_gradients[batch_idx][i] contains a single gradient
                 let gradient = &previous_gradients[batch_idx][i];
@@ -273,19 +273,13 @@ impl EmbeddingLayer {
         bincode::deserialize(&data).expect("Failed to deserialize")
     }
 
-    pub fn get_embedding(db: &Db, token_id: impl ToString, embedding_dim: usize) -> Result<Vec<Complex<f64>>, String> {
+    pub fn get_embedding(db: &Db, token_id: impl ToString) -> Result<Vec<Complex<f64>>, String> {
         let key = token_id.to_string();
         let token_id_u32: u32 = key.parse().unwrap();
 
         match db.get(&key) {
             Ok(Some(ivec)) => bincode::deserialize(&ivec).map_err(|_| "Failed to deserialize embedding".to_string()),
-            Ok(None) => {
-                let db: &Db = get_db_embedding();
-                let mut rng: rand::prelude::ThreadRng = rand::rng();
-                let base_2: i32 = 2;
-
-                Ok(Self::create_embedding(&db, embedding_dim * base_2.pow(DECOMPOSITION_LEVELS) as usize, &mut rng, token_id_u32))
-            } // Return an error for missing keys
+            Ok(None) => panic!("No token embedding found: {}", token_id_u32), // Return an error for missing keys
             Err(_) => Err("Failed to fetch embedding from Sled".to_string()),
         }
     }
