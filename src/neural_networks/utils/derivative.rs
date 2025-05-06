@@ -1,7 +1,6 @@
 use crate::neural_networks::network_components::layer::ActivationType;
-use nalgebra::ComplexField;
 use num::abs;
-use num_complex::Complex;
+use num_complex::{Complex, ComplexFloat};
 
 use super::activation::{ALPHA, LAMBDA};
 

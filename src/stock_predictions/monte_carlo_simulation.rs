@@ -1,15 +1,15 @@
 use chrono::NaiveDate;
-use ndarray::{Array1, Array2};
-use ndarray_rand::rand::rngs::StdRng;
-use ndarray_rand::rand::seq::SliceRandom;
-use ndarray_rand::rand::SeedableRng;
 use plotters::prelude::*;
+use rand::seq::IndexedRandom;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::f64;
 use std::io::Result;
 use std::path::Path;
+
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 
 use crate::uphold_api::cryptocurrency_dto::CryptocurrencyDto;
 use crate::uphold_api::cryptocurrency_dto::DatePriceDto;
@@ -87,10 +87,7 @@ pub fn interpolate_missing_dates(data: Vec<CryptocurrencyDto>) -> Vec<DatePriceD
     while current_date <= max_date {
         if let Some(&price) = data_map.get(&current_date) {
             // If the price is already available, just add it
-            result.push(DatePriceDto {
-                full_date: current_date,
-                price,
-            });
+            result.push(DatePriceDto { full_date: current_date, price });
             previous_price = price;
         } else {
             // Interpolate the missing value (linear interpolation)
@@ -102,16 +99,12 @@ pub fn interpolate_missing_dates(data: Vec<CryptocurrencyDto>) -> Vec<DatePriceD
             if let Some(&next_price) = data_map.get(&next_date) {
                 // Perform linear interpolation
                 let days_gap = (next_date - current_date).num_days() as f64;
-                let interpolated_price =
-                    previous_price + (next_price - previous_price) / (days_gap + 1.0) * (1.0);
+                let interpolated_price = previous_price + (next_price - previous_price) / (days_gap + 1.0) * (1.0);
 
                 data_map.insert(next_date, interpolated_price);
 
                 // Add the interpolated date and price
-                result.push(DatePriceDto {
-                    full_date: current_date,
-                    price: interpolated_price,
-                });
+                result.push(DatePriceDto { full_date: current_date, price: interpolated_price });
             }
         }
 
@@ -123,6 +116,16 @@ pub fn interpolate_missing_dates(data: Vec<CryptocurrencyDto>) -> Vec<DatePriceD
     result
 }
 
+fn mean(data: &[f64]) -> f64 {
+    data.iter().copied().sum::<f64>() / data.len() as f64
+}
+
+fn std_dev(data: &[f64]) -> f64 {
+    let data_mean = mean(data);
+    let variance = data.iter().map(|v| (v - data_mean).powi(2)).sum::<f64>() / data.len() as f64;
+    variance.sqrt()
+}
+
 pub fn simulate(monte_carlo_params: MonteCarloParams, crypto_name: &str) {
     let (_dates, historical_prices) = match load_historical_data(crypto_name) {
         Ok((dates, prices)) => (dates, prices),
@@ -132,83 +135,42 @@ pub fn simulate(monte_carlo_params: MonteCarloParams, crypto_name: &str) {
         }
     };
 
-    println!("historical prices len: {}", historical_prices.len());
+    let years_to_predict = monte_carlo_params.year_to_predict as usize;
+    let n: usize = years_to_predict * 365; // crypto runs 365 days
+    let m = monte_carlo_params.num_simulations as usize;
+    let dt = 1.0 / 365.0;
 
-    let years_to_predict = monte_carlo_params.year_to_predict as usize; // Simulating for n years
-    let n: usize = (years_to_predict * 252) as usize; // 252 trading days per year or 365 days for cryptos
-    let m = monte_carlo_params.num_simulations as usize; // Number of simulations (Monte Carlo paths)
-    let dt = 1.0 / 365.0 as f64; // Daily time increment
+    let historical_returns: Vec<f64> = historical_prices.windows(2).map(|pair| if pair[0] > 0.0 { (pair[1] / pair[0]).ln() } else { 0.0 }).collect();
 
-    // Step 1: Calculate daily log returns
-    let historical_returns: Vec<f64> = historical_prices
-        .windows(2)
-        .map(|pair| {
-            if pair[0] > 0.0 {
-                (pair[1] / pair[0]).ln()
-            } else {
-                0.0 // Avoid division by zero if price is zero (though unlikely in real data)
-            }
-        })
-        .collect();
+    let s0 = *historical_prices.last().unwrap();
+    let mu = mean(&historical_returns);
+    let sigma = std_dev(&historical_returns);
 
-    println!("historical prices : {:?}", &historical_prices.len());
-
-    // Monte Carlo Simulation Parameters
-    let s0 = *historical_prices.last().unwrap(); // Last known price
-
-    // Step 2: Simulate future paths
-    let mut simulated_paths = Array2::<f64>::zeros((m, n));
-    simulated_paths.column_mut(0).fill(s0);
-
-    let seed = [0; 32]; // You can use any seed here
+    let seed = [0; 32];
     let mut rng = StdRng::from_seed(seed);
-    let historical_data_nd = Array1::from(historical_returns.clone());
-    let mu = historical_data_nd.mean().unwrap();
-    let sigma = historical_data_nd.std(1.0);
 
-    println!("mu : {}", &mu);
-    println!("var: {}", &sigma);
-    println!("dt: {}", &dt);
-
-    assert!(
-        historical_returns.iter().all(|&x| x > -1.0),
-        "Log returns have invalid values."
-    );
+    let mut simulated_paths = vec![vec![0.0; n]; m];
+    for path in simulated_paths.iter_mut() {
+        path[0] = s0;
+    }
 
     for i in 1..n {
-        let sampled_returns: Vec<f64> = (0..m)
-            .map(|_| *historical_returns.choose(&mut rng).unwrap())
-            .collect();
+        let sampled_returns: Vec<f64> = (0..m).map(|_| *historical_returns.choose(&mut rng).unwrap()).collect();
 
         for j in 0..m {
-            let prev_price = simulated_paths[[j, i - 1]];
+            let prev_price = simulated_paths[j][i - 1];
             let z = sampled_returns[j];
-            let sampled_price = prev_price * ((mu - 0.5 * sigma.powf(2.0)) * dt + sigma * dt.sqrt() * z).exp();
-
-            if sampled_price <= 0.0 {
-                panic!("simulated prices cannot be null {}", sampled_price);
-            }
-            simulated_paths[[j, i]] = sampled_price;
+            let next_price = prev_price * ((mu - 0.5 * sigma.powi(2)) * dt + sigma * dt.sqrt() * z).exp();
+            simulated_paths[j][i] = next_price.max(0.0);
         }
     }
 
-    // println!("simulated paths: {:?}", &simulated_paths);
-
-    // Step 3: Plot the simulated paths
+    // Plotting using plotters as in your original code...
     let root = BitMapBackend::new("simulated_paths.png", (1024, 768)).into_drawing_area();
     root.fill(&WHITE).unwrap();
 
-    let min_value = simulated_paths
-        .iter()
-        .cloned()
-        .fold(f64::INFINITY, f64::min);
-    let max_value = simulated_paths
-        .iter()
-        .cloned()
-        .fold(f64::NEG_INFINITY, f64::max);
-
-    println!("min value {}", &min_value);
-    println!("max_value {}", &max_value);
+    let min_value = simulated_paths.iter().flatten().copied().fold(f64::INFINITY, f64::min);
+    let max_value = simulated_paths.iter().flatten().copied().fold(f64::NEG_INFINITY, f64::max);
 
     let mut chart = ChartBuilder::on(&root)
         .caption("Monte Carlo Simulation of Stock Prices", ("sans-serif", 20))
@@ -217,45 +179,27 @@ pub fn simulate(monte_carlo_params: MonteCarloParams, crypto_name: &str) {
         .build_cartesian_2d(0..n as u32, min_value..max_value)
         .unwrap();
 
-    chart
-        .configure_mesh()
-        .x_desc("Time (days)")
-        .y_desc("Stock Price")
-        .draw()
-        .unwrap();
+    chart.configure_mesh().x_desc("Time (days)").y_desc("Price").draw().unwrap();
 
-    for i in 0..m {
-        let path: Vec<(u32, f64)> = (0..n)
-            .map(|j| (j as u32, simulated_paths[[i, j]]))
-            .collect();
-        chart
-            .draw_series(LineSeries::new(path, &BLUE.mix(0.5)))
-            .unwrap();
+    for path in &simulated_paths {
+        let series: Vec<(u32, f64)> = path.iter().enumerate().map(|(i, &v)| (i as u32, v)).collect();
+        chart.draw_series(LineSeries::new(series, &BLUE.mix(0.5))).unwrap();
     }
 
-    // Step 4: Analyze the final prices
-
+    // Analyze the final prices
     for i in 28..30 {
         let day_n = n - i;
-        let final_prices: Array1<f64> = simulated_paths.column(day_n).to_owned();
+        let final_prices: Vec<f64> = simulated_paths.iter().map(|p| p[day_n]).collect();
 
-        println!("day {}", &day_n);
+        let mean_price = mean(&final_prices);
+        let std_dev_price = std_dev(&final_prices);
 
-        let mean_price = final_prices.mean().unwrap();
-        let std_dev_price = final_prices.std(1.0);
-        let mut final_prices_vec = final_prices.to_vec();
-        final_prices_vec.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let p5_price = final_prices_vec[(0.05 * final_prices_vec.len() as f64) as usize];
-        let p95_price = final_prices_vec[(0.95 * final_prices_vec.len() as f64) as usize];
+        let mut sorted_prices = final_prices.clone();
+        sorted_prices.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-        println!(
-            "Predicted stock price after 1 year (mean): ${:.2}",
-            mean_price
-        );
-        println!("Standard deviation of predictions: ${:.2}", std_dev_price);
-        println!(
-            "95% confidence interval: (${:.2}, ${:.2})",
-            p5_price, p95_price
-        );
+        let p5_price = sorted_prices[(0.05 * sorted_prices.len() as f64) as usize];
+        let p95_price = sorted_prices[(0.95 * sorted_prices.len() as f64) as usize];
+
+        println!("Day {}: Mean = {:.2}, Std Dev = {:.2}, 95% CI = ({:.2}, {:.2})", day_n, mean_price, std_dev_price, p5_price, p95_price);
     }
 }

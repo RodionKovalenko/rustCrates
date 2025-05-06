@@ -27,35 +27,34 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     // embedding_dim_compressed  = 16
     let embedding_dim_compressed = (embedding_dim_original as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize;
     let vocab_size: usize = 50280;
-    // let epsilon = 1e-10;
 
     let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
     let positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
-    // let norm_layer = NormalNormLayer::new(embedding_layer.embedding_dim, epsilon, learning_rate);
-
-    let rows: usize = 64;
-    let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
-    let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode);
 
     layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
     layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
-    // layers.push(LayerEnum::Norm(Box::new(norm_layer)));
 
-    let rows: usize = 64;
-    let hidden_dim = 512;
-    let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
-
+    // Transformer block start
     let num_self_attention_layer: usize = 1;
     for _i in 0..num_self_attention_layer {
         let num_attention_heads: usize = 4;
         let rows: usize = embedding_dim_compressed;
-        let cols: usize = 64;
+
+        // Colums are divided into number of heads
+        let cols: usize = embedding_dim_compressed;
 
         let attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
         layers.push(LayerEnum::SelfAttention(Box::new(attention_layer)));
     }
 
+    let rows: usize = embedding_dim_compressed;
+    let hidden_dim = 512;
+    let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
     layers.push(LayerEnum::FeedForward(Box::new(ffn_layer)));
+    // Transformer block end
+
+    let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
+    let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode);
     layers.push(LayerEnum::Linear(Box::new(linear_layer)));
     layers.push(LayerEnum::Softmax(Box::new(softmax_layer)));
 

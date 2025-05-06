@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
-
-use rand::seq::IndexedRandom;
-use rand::Rng;
+use rand::prelude::*;
+use rand_distr::weighted::WeightedIndex;
 
 pub fn greedy_decoding(predictions: &Vec<Vec<Vec<f64>>>) -> Vec<Vec<u32>> {
     predictions
@@ -137,31 +136,39 @@ pub fn get_target_predictions(predicted_softmax_batch: &Vec<Vec<Vec<f64>>>, targ
         .collect()
 }
 
-pub fn top_p_temperature_sampling(predicted_softmax_batch: &Vec<Vec<Vec<f64>>>, p: f64, temperature: f64) -> Vec<Vec<u32>> {
-    predicted_softmax_batch
+pub fn top_p_sampling_from_softmax(probs_batch: &Vec<Vec<Vec<f64>>>, p: f64) -> Vec<Vec<u32>> {
+    let mut rng = rand::rng(); // ✅ This is correct and compatible
+
+    probs_batch
         .iter()
         .map(|batch| {
             batch
                 .iter()
-                .map(|seq| {
-                    let scaled_probs: Vec<f64> = seq.iter().map(|&val| ((val / temperature).max(-10.0).min(10.0)).exp()).collect();
-
-                    let mut token_probs: Vec<(usize, f64)> = scaled_probs.iter().enumerate().map(|(idx, &prob)| (idx, prob)).collect();
+                .map(|probs| {
+                    // Sort probabilities in descending order with their indices
+                    let mut token_probs: Vec<(usize, f64)> = probs.iter().cloned().enumerate().collect();
                     token_probs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 
-                    let mut cumulative_prob = 0.0;
-                    let mut selected_tokens = Vec::new();
-                    for &(idx, prob) in token_probs.iter() {
-                        cumulative_prob += prob;
-                        selected_tokens.push(idx);
-                        if cumulative_prob >= p {
+                    // Select top-p tokens
+                    let mut cumulative = 0.0;
+                    let mut top_p_tokens = Vec::new();
+                    for (idx, prob) in token_probs {
+                        cumulative += prob;
+                        top_p_tokens.push((idx, prob));
+                        if cumulative >= p {
                             break;
                         }
                     }
 
-                    let mut rng = rand::rng();
-                    let selected_token = selected_tokens.choose(&mut rng).unwrap();
-                    *selected_token as u32
+                    // Normalize the selected top-p probabilities
+                    let prob_sum: f64 = top_p_tokens.iter().map(|&(_, p)| p).sum();
+                    let normalized = top_p_tokens.iter().map(|&(idx, prob)| (idx as u32, prob / prob_sum)).collect::<Vec<_>>();
+
+                    // Sample using weighted distribution
+                    let weights = normalized.iter().map(|&(_, p)| p);
+                    let dist = WeightedIndex::new(weights).unwrap();
+                    let sampled_idx = dist.sample(&mut rng);
+                    normalized[sampled_idx].0
                 })
                 .collect()
         })

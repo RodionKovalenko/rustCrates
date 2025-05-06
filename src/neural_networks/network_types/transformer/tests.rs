@@ -37,7 +37,7 @@ mod tests {
             }
         };
 
-        let learning_rate = 0.001;
+        let learning_rate = 0.01;
         transformer.learning_rate = learning_rate;
         update_learning_rate(&mut transformer, learning_rate);
         print_networt_structure(&mut transformer);
