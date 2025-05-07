@@ -65,6 +65,12 @@ impl NeuralNetwork {
             println!("new learning rate is: {:?}", new_learning_rate);
         }
     }
+
+    pub fn decay_learning_rate(&mut self, decay_factor: f64) {
+        self.learning_rate *= decay_factor;
+        update_learning_rate(self, self.learning_rate);
+        println!("Manual decay applied. New LR: {:?}", self.learning_rate);
+    }
 }
 
 pub fn create(number_inputs: usize, number_outputs: usize, number_of_hidden_layers: usize, number_of_hidden_neurons: usize, minibatch_size: usize, learning_rate: f64) -> NeuralNetwork {

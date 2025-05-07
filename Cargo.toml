@@ -48,6 +48,7 @@ statrs = "0.18"
 thiserror = "2.0.12"
 hf-hub = { version = "0.4.2", features = ["tokio"] }
 anyhow = "1.0.98"
+num_cpus = "1.13"
 
 [profile.release]
 opt-level = 3 # Optimize for size "z", for speeed 3
