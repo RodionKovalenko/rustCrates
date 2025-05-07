@@ -36,8 +36,8 @@ pub mod test_sliding_window {
             println!("input tokens len: {:?}", input_chunk.len());
             println!("target tokens len: {:?}", target_chunks[i].len());
 
-            let input_tokens: String = detokenize(input_chunk).unwrap();
-            let target_tokens: String = detokenize(&target_chunks[i]).unwrap();
+            let input_tokens: String = detokenize(input_chunk, false).unwrap();
+            let target_tokens: String = detokenize(&target_chunks[i], false).unwrap();
 
             println!("input tokens chunk: {:?}", input_tokens);
             println!("target tokens chunk: {:?}", target_tokens);

@@ -34,24 +34,23 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
     layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
 
+    let rows: usize = embedding_dim_compressed;
+
     // Transformer block start
-    let num_self_attention_layer: usize = 1;
+    let num_self_attention_layer: usize = 2;
     for _i in 0..num_self_attention_layer {
         let num_attention_heads: usize = 4;
-        let rows: usize = embedding_dim_compressed;
-
         // Colums are divided into number of heads
         let cols: usize = embedding_dim_compressed;
 
         let attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
         layers.push(LayerEnum::SelfAttention(Box::new(attention_layer)));
-    }
 
-    let rows: usize = embedding_dim_compressed;
-    let hidden_dim = 512;
-    let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
-    layers.push(LayerEnum::FeedForward(Box::new(ffn_layer)));
-    // Transformer block end
+        let hidden_dim = 512;
+        let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
+        layers.push(LayerEnum::FeedForward(Box::new(ffn_layer)));
+    }
+    // Transformer block end 
 
     let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
     let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode);

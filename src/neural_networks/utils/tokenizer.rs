@@ -38,13 +38,13 @@ pub fn tokenize(text: &str) -> Result<(Vec<String>, Vec<u32>), Box<dyn Error + S
     Ok((encoded_tokens, encoded_ids))
 }
 
-pub fn detokenize(ids: &Vec<u32>) -> Result<String, Box<dyn Error + Send + Sync>> {
+pub fn detokenize(ids: &Vec<u32>, skip_speical_tokens: bool) -> Result<String, Box<dyn Error + Send + Sync>> {
     let path = Path::new(TOKENIZER_GTP_NEOXT_PATH).to_path_buf();
     // Load the pretrained tokenizer from the `tokenizer.json` file
     let tokenizer = Tokenizer::from_file(path).expect("Fehler bei Tokenizer");
 
     // Tokenize the text
-    let decoded_text = tokenizer.decode(ids, false)?;
+    let decoded_text = tokenizer.decode(ids, skip_speical_tokens)?;
 
     Ok(decoded_text)
 }

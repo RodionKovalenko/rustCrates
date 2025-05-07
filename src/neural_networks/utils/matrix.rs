@@ -83,65 +83,79 @@ pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Co
 }
 
 pub fn multiply_complex_with_f64(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<f64>>) -> Vec<Vec<Complex<f64>>> {
-    let a_rows = matrix_a.len();
-    let a_cols = matrix_a[0].len();
-    let b_rows = matrix_b.len();
-    let b_cols = matrix_b[0].len();
+    let mut num_rows = matrix_a.len();
+    let mut num_columns = matrix_b[0].len();
+    let mut matrix_a_clone = matrix_a.clone();
+    let mut matrix_b_clone = matrix_b.clone();
 
-    // Validate dimensions: A (a_rows x a_cols) * B (b_rows x b_cols) → valid only if a_cols == b_rows
-    if a_cols != b_rows {
-        panic!("Invalid matrix dimensions: A is {}x{}, B is {}x{}", a_rows, a_cols, b_rows, b_cols);
-    }
-
-    // Convert A to faer::Mat<Complex<f64>>
-    let mat_a = Mat::from_fn(a_rows, a_cols, |i, j| matrix_a[i][j]);
-
-    // Convert B to Complex<f64> and store in faer::Mat<Complex<f64>>
-    let mat_b = Mat::from_fn(b_rows, b_cols, |i, j| Complex::new(matrix_b[i][j], 0.0));
-
-    // Multiply using faer
-    let mat_c = &mat_a * &mat_b;
-
-    // Convert result back to Vec<Vec<Complex<f64>>>
-    let mut result = vec![vec![Complex::new(0.0, 0.0); mat_c.ncols()]; mat_c.nrows()];
-    for i in 0..mat_c.nrows() {
-        for j in 0..mat_c.ncols() {
-            result[i][j] = mat_c[(i, j)];
+    if matrix_a[0].len() != matrix_b.len() {
+        if matrix_a[0].len() == matrix_b[0].len() {
+            matrix_b_clone = transpose(matrix_b);
+            num_columns = matrix_b_clone[0].len();
+        } else if matrix_a.len() == matrix_b.len() {
+            matrix_a_clone = transpose(&matrix_a);
+            num_rows = matrix_a_clone.len();
         }
     }
 
-    result
+    // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
+    if matrix_a[0].len() != matrix_b.len() && matrix_a.len() != matrix_b.len() {
+        panic!("Matrix A does not have the same number of columns as Matrix B rows.");
+    }
+
+    // Initialize result matrix with 0.0 values
+    let mut result_matrix: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
+
+    // println!("anzahl cput {}", num_cpus::get());
+
+    let pool = ThreadPoolBuilder::new().num_threads(num_cpus::get()).build().unwrap();
+
+    pool.install(|| {
+        result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
+            for j in 0..num_columns {
+                row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
+            }
+        });
+    });
+
+    result_matrix
 }
 
 pub fn multiply_f64_complex(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-    let a_rows = matrix_a.len();
-    let a_cols = matrix_a[0].len();
-    let b_rows = matrix_b.len();
-    let b_cols = matrix_b[0].len();
+    let mut num_rows = matrix_a.len();
+    let mut num_columns = matrix_b[0].len();
+    let mut matrix_a_clone = matrix_a.clone();
+    let mut matrix_b_clone = matrix_b.clone();
 
-    // Check if dimensions match for multiplication: A(a_rows x a_cols) * B(b_rows x b_cols)
-    if a_cols != b_rows {
-        panic!("Matrix dimensions do not align: A is {}x{}, B is {}x{}", a_rows, a_cols, b_rows, b_cols);
-    }
-
-    // Convert A (f64) to faer::Mat<Complex<f64>> with imaginary parts 0.0
-    let mat_a: Mat<Complex<f64>> = Mat::from_fn(a_rows, a_cols, |i, j| Complex::new(matrix_a[i][j], 0.0));
-
-    // Convert B to faer::Mat<Complex<f64>>
-    let mat_b: Mat<Complex<f64>> = Mat::from_fn(b_rows, b_cols, |i, j| matrix_b[i][j]);
-
-    // Perform matrix multiplication
-    let mat_c = &mat_a * &mat_b;
-
-    // Convert faer::Mat<Complex<f64>> back to Vec<Vec<Complex<f64>>>
-    let mut result = vec![vec![Complex::new(0.0, 0.0); mat_c.ncols()]; mat_c.nrows()];
-    for i in 0..mat_c.nrows() {
-        for j in 0..mat_c.ncols() {
-            result[i][j] = mat_c[(i, j)];
+    if matrix_a[0].len() != matrix_b.len() {
+        if matrix_a[0].len() == matrix_b[0].len() {
+            matrix_b_clone = transpose(matrix_b);
+            num_columns = matrix_b_clone[0].len();
+        } else if matrix_a.len() == matrix_b.len() {
+            matrix_a_clone = transpose(&matrix_a);
+            num_rows = matrix_a_clone.len();
         }
     }
 
-    result
+    // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
+    if matrix_a[0].len() != matrix_b.len() && matrix_a.len() != matrix_b.len() {
+        panic!("Matrix A does not have the same number of columns as Matrix B rows.");
+    }
+
+    // Initialize result matrix with 0.0 values
+    let mut result_matrix: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
+
+    let pool = ThreadPoolBuilder::new().num_threads(num_cpus::get()).build().unwrap();
+
+    pool.install(|| {
+        result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
+            for j in 0..num_columns {
+                row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
+            }
+        });
+    });
+
+    result_matrix
 }
 
 pub fn transpose<T: Debug + Clone + Sync + Send>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
