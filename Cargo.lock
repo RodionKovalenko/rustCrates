@@ -3417,6 +3417,7 @@ dependencies = [
  "num",
  "num-complex",
  "num-traits",
+ "num_cpus",
  "plotters",
  "rand 0.9.1",
  "rand_distr 0.5.1",

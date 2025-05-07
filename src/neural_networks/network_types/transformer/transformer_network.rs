@@ -25,14 +25,15 @@ use crate::{
     utils::sampling_methods::{get_target_predictions, top_p_sampling_from_softmax},
 };
 
-pub const MAX_CONTEXT_WINDOW_SIZE: usize = 40;
-pub const CONTEXT_OVERLAPPING: usize = 30;
+pub const MAX_CONTEXT_WINDOW_SIZE: usize = 512;
+pub const CONTEXT_OVERLAPPING: usize = 450;
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize) {
     let mut total_loss: Complex<f64>;
     let p = 0.9; // Top-p (Nucleus) threshold
     let loss_threshold: f64 = 0.05;
     let now = Instant::now();
+    let mut previous_last_losses: Vec<f64> = Vec::new();
 
     'outer: for epoch in 0..num_epochs {
         total_loss = Complex::new(0.0, 0.0);
@@ -58,13 +59,19 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             let loss = cross_entropy_loss_batch(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
             total_loss += loss;
 
+            if previous_last_losses.len() <= 30 {
+                previous_last_losses.push(loss.re);
+            }
+            let len = previous_last_losses.len();
+            previous_last_losses[epoch % len] = loss.re;
+
             if epoch > 0 && epoch % 10 == 0 || loss.norm() <= loss_threshold {
                 println!("Epoch: {:?}, Loss: {:?}", epoch, loss);
                 let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = get_target_predictions(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
                 let sampled_tokens = top_p_sampling_from_softmax(&predicted_softmax_targets, p);
 
-                let predicted_token_batch: Vec<String> = sampled_tokens.par_iter().map(|token_indices| detokenize(token_indices).unwrap()).collect();
-                println!("Top-p + Temperature Sampling: {:?}", sampled_tokens.len());
+                let predicted_token_batch: Vec<String> = sampled_tokens.par_iter().map(|token_indices| detokenize(token_indices, false).unwrap()).collect();
+                println!("Top-p tokens dim: {:?}", sampled_tokens[0].len() * sampled_tokens.len());
                 println!("predicted tokens: {:?}", predicted_token_batch);
 
                 let seconds_elapsed_end = now.elapsed();
@@ -81,6 +88,29 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                 let seconds = duration.as_secs_f64();
                 println!("time elapsed for forward and backward pass in seconds: {:?}", seconds);
             }
+
+            if previous_last_losses.len() >= 30 {
+                let end_ind = epoch % previous_last_losses.len();
+
+                // Only continue if we have enough range to compute a start index safely
+                if end_ind >= 4 {
+                    let start_ind = end_ind - 4;
+                    let mut loss_increasing_count = 0;
+
+                    for i in start_ind..end_ind - 1 {
+                        if previous_last_losses[i] < previous_last_losses[i + 1] {
+                            loss_increasing_count += 1;
+                        }
+                    }
+
+                    if loss_increasing_count >= 2 {
+                        println!("loss is increasing too much, reducing learning rate");
+                        transformer_network.decay_learning_rate(0.5);  // e.g., reduce LR by half
+                    }
+                }
+            }
+
+            transformer_network.update_step_lr_scheduler(epoch, 100, 0.9);
         }
 
         if epoch % 10 == 0 {
@@ -160,7 +190,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
             .collect();
 
         let sampled_tokens = top_p_sampling_from_softmax(&predicted_softmax_targets, p);
-        let predicted_token_batch: Vec<String> = sampled_tokens.par_iter().map(|token_indices| detokenize(token_indices).unwrap()).collect();
+        let predicted_token_batch: Vec<String> = sampled_tokens.par_iter().map(|token_indices| detokenize(token_indices, false).unwrap()).collect();
         // Check if the last predicted token is the EOS token
         let predicted_token = predicted_token_batch[predicted_token_batch.len() - 1].clone();
 
@@ -169,7 +199,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
             break;
         }
 
-        print!("{:?}", predicted_token);
+        print!("{}", predicted_token);
         // Add the predicted token to the current input batch
         current_input_batch[0] = format!("{}{}", current_input_batch[0], predicted_token);
         // println!("combined input: {:?}", current_input_batch);
@@ -296,7 +326,6 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
     // Backward pass
 
     let mut gradient: Option<Gradient> = None;
-    let mut epoch = 1;
 
     for layer in transformer_network.layers.iter_mut().rev() {
         match layer {
@@ -355,7 +384,6 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                 }
             }
             LayerEnum::FeedForward(dense_layer) => {
-                epoch = dense_layer.time_step;
                 if let Some(previous_gradient) = gradient {
                     let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
                     //println!("backward dense start");
@@ -406,8 +434,6 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             _ => {}
         }
     }
-
-    transformer_network.update_step_lr_scheduler(epoch, 100, 0.9);
 
     gradient
 }

@@ -174,7 +174,9 @@ impl EmbeddingLayer {
                                 let mut rng: rand::prelude::ThreadRng = rand::rng();
                                 let base_2: i32 = 2;
 
+                                println!("token embedding dim {}, self embedding len: {}", token_embedding.len(), self.embedding_dim);
                                 println!("token dimensions mismatch...");
+                                println!("token Id: {}", id);
 
                                 token_embedding = Self::create_embedding(&db, embedding_dim * base_2.pow(DECOMPOSITION_LEVELS) as usize, &mut rng, id);
                                 println!("new token: dim: {}", token_embedding.len());
