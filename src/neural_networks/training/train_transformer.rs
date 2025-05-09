@@ -39,10 +39,11 @@ pub fn train_transformer_from_dataset() {
     println!("time elapsed in seconds: {:?}", &seconds_elapsed);
 
     let dataset: Dataset<String, String> = load_data_xquad_de_as_dataset().unwrap();
-    let data_batches: Vec<Dataset<String, String>> = dataset.split_into_batches(1);
+    let data_batches: Vec<Dataset<String, String>> = dataset.split_into_batches(10);
+    
+   let dataset_batch = data_batches[0].get_batch(0, 10).unwrap();
 
-    let (input_batch, target_batch) = (data_batches[125].get_input(), data_batches[125].get_target());
-
+    let (input_batch, target_batch) = (dataset_batch.0, dataset_batch.1);
     println!("input batch: {:?}", input_batch);
     println!("target batch: {:?}", target_batch);
     let dataset_small = Dataset::new(input_batch.clone(), target_batch.clone());
