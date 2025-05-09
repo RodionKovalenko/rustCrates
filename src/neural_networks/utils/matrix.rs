@@ -52,6 +52,19 @@ where
 
     result_matrix
 }
+
+// Converts Vec<Vec<Complex<f64>>> into faer::Mat<Complex<f64>> (flattened)
+pub unsafe fn convert_to_faer_mat_unchecked(matrix: &[Vec<Complex<f64>>]) -> Mat<Complex<f64>> {
+    let rows = matrix.len();
+    if rows == 0 {
+        return Mat::from_fn(0, 0, |_, _| unreachable!());
+    }
+    let cols = matrix[0].len();
+
+    // Now build faer::Mat from slice
+    Mat::from_fn(rows, cols, |i, j| matrix[i][j])
+}
+
 pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
     let a_rows = matrix_a.len();
     let a_cols = matrix_a[0].len();
@@ -62,10 +75,8 @@ pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Co
     if a_cols != b_rows {
         panic!("Invalid matrix dimensions: A is {}x{}, B is {}x{}", a_rows, a_cols, b_rows, b_cols);
     }
-
-    // Convert matrix_a and matrix_b to faer::Mat<Complex<f64>>
-    let mat_a = Mat::from_fn(a_rows, a_cols, |i, j| matrix_a[i][j]);
-    let mat_b = Mat::from_fn(b_rows, b_cols, |i, j| matrix_b[i][j]);
+    let mat_a = unsafe { convert_to_faer_mat_unchecked(matrix_a) };
+    let mat_b = unsafe { convert_to_faer_mat_unchecked(matrix_b) };
 
     // Perform matrix multiplication using faer
     let mat_c = &mat_a * &mat_b;
@@ -80,6 +91,43 @@ pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Co
     }
 
     result
+
+    // let mut num_rows = matrix_a.len();
+    // let mut num_columns = matrix_b[0].len();
+    // let mut matrix_a_clone = matrix_a.clone();
+    // let mut matrix_b_clone = matrix_b.clone();
+
+    // if matrix_a[0].len() != matrix_b.len() {
+    //     if matrix_a[0].len() == matrix_b[0].len() {
+    //         matrix_b_clone = transpose(matrix_b);
+    //         num_columns = matrix_b_clone[0].len();
+    //     } else if matrix_a.len() == matrix_b.len() {
+    //         matrix_a_clone = transpose(&matrix_a);
+    //         num_rows = matrix_a_clone.len();
+    //     }
+    // }
+
+    // // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
+    // if matrix_a[0].len() != matrix_b.len() && matrix_a.len() != matrix_b.len() {
+    //     panic!("Matrix A does not have the same number of columns as Matrix B rows.");
+    // }
+
+    // // Initialize result matrix with 0.0 values
+    // let mut result_matrix: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
+
+    // // println!("anzahl cput {}", num_cpus::get());
+
+    // let pool = ThreadPoolBuilder::new().num_threads(num_cpus::get()).build().unwrap();
+
+    // pool.install(|| {
+    //     result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
+    //         for j in 0..num_columns {
+    //             row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
+    //         }
+    //     });
+    // });
+
+    // result_matrix
 }
 
 pub fn multiply_complex_with_f64(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<f64>>) -> Vec<Vec<Complex<f64>>> {

@@ -5,6 +5,7 @@ use rand::Rng;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sled::Db;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -17,6 +18,7 @@ use crate::utils::normalization::normalize;
 
 use super::gradient_struct::Gradient;
 use super::layer_input_struct::LayerInput;
+use std::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingLayer {
@@ -29,6 +31,8 @@ pub struct EmbeddingLayer {
     #[serde(skip)]
     pub previous_gradient: Option<Gradient>,
     pub time_step: usize,
+    #[serde(skip)] // Skip during serialization
+    pub cache: Arc<RwLock<HashMap<u32, Vec<Complex<f64>>>>>,
 }
 
 pub const EMBEDDING_PATH: &str = "embedding";
@@ -54,6 +58,7 @@ impl EmbeddingLayer {
             gradient: None,
             previous_gradient: None,
             time_step: 0,
+            cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -79,6 +84,7 @@ impl EmbeddingLayer {
             previous_gradient: None,
             learning_rate: 0.001,
             time_step: 0,
+            cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -98,9 +104,7 @@ impl EmbeddingLayer {
         } else {
             println!("File exists. Deserializing the file");
             let embedding_layer = Self::deserialize(embedding_file_path);
-
-            // embedding_layer.embedding_dim = 16;
-            // Self::serialize(&embedding_layer, &embedding_file_path);
+            
             embedding_layer
         }
     }
@@ -146,55 +150,56 @@ impl EmbeddingLayer {
     pub fn forward(&mut self, layer_input: &LayerInput) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<u32>>) {
         let token_input_ids: Vec<Vec<u32>> = layer_input.get_batch_ids();
         let db: &Db = get_db_embedding();
-
         self.time_step = layer_input.get_time_step();
         let (token_input_batch_padded, padding_mask) = EmbeddingLayer::apply_padding_to_batch(&token_input_ids);
-        let embedding_dim = self.embedding_dim.clone();
+        let embedding_dim = self.embedding_dim;
 
-        // Using Arc and Mutex for safe mutable access across threads if needed
-        let db = Arc::new(db);
+        // Get a reference to the cache
+        let cache_ref = &self.cache;
 
         // Parallelize the processing of the token_ids
         let token_ids_output = token_input_batch_padded
             .par_iter()
             .map(|token_ids| {
                 token_ids
-                    .par_iter()
+                    .iter()
                     .map(|&id| {
-                        if id == 1 {
+                        if let Ok(cache) = cache_ref.read() {
+                            if let Some(embedding) = cache.get(&id) {
+                                return embedding.clone();
+                            }
+                        }
+                        // Embedding retrieval if it's not in the cache
+                        let token_embedding = if id == 1 {
                             vec![Complex::new(0.0, 0.0); embedding_dim]
                         } else {
-                            // Embedding retrieval, wrapped in a Mutex for shared access if needed
-                            let db = Arc::clone(&db);
                             let mut token_embedding = Self::get_embedding(&db, id).unwrap_or_else(|err| {
                                 panic!("Error retrieving embedding for token {}: {}", id, err);
                             });
 
                             if token_embedding.len() != self.embedding_dim {
-                                let mut rng: rand::prelude::ThreadRng = rand::rng();
+                                let mut rng = rand::rngs::ThreadRng::default();
                                 let base_2: i32 = 2;
-
-                                println!("token embedding dim {}, self embedding len: {}", token_embedding.len(), self.embedding_dim);
-                                println!("token dimensions mismatch...");
-                                println!("token Id: {}", id);
-
                                 token_embedding = Self::create_embedding(&db, embedding_dim * base_2.pow(DECOMPOSITION_LEVELS) as usize, &mut rng, id);
-                                println!("new token: dim: {}", token_embedding.len());
-                                println!("token embedding: {:?}", token_embedding);
                             }
 
                             assert_eq!(token_embedding.len(), self.embedding_dim);
+
+                            if let Ok(mut cache) = cache_ref.write() {
+                                cache.insert(id, token_embedding.clone());
+                            }
                             token_embedding
-                        }
+                        };
+
+                        // Return the embedding for this token
+                        token_embedding
                     })
                     .collect::<Vec<Vec<Complex<f64>>>>() // Collect the result for each token
             })
             .collect::<Vec<Vec<Vec<Complex<f64>>>>>(); // Collect the result for the entire batch
 
-        // Return the token embeddings and padding mask
         (token_ids_output, padding_mask)
     }
-
     // Update embeddings using gradients
     pub fn backward(&mut self, previous_gradients: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
         let mut gradient = Gradient::new_default();
@@ -237,18 +242,24 @@ impl EmbeddingLayer {
                     }
                 }
 
-                Self::update_embedding(db, &token_id, &token_embedding);
+                let embedding_normalized = normalize(&token_embedding);
+                
+                if let Ok(mut cache) = self.cache.write() {
+                    cache.insert(token_id, embedding_normalized.clone());
+                }
+                
+                Self::update_embedding(db, &token_id, &embedding_normalized);
                 // println!("new token embedding: {:?}", token_embedding);
             }
         }
     }
     /// Update an embedding for a given token ID
     pub fn update_embedding(db: &Db, token_id: &u32, embedding: &Vec<Complex<f64>>) {
-        let embedding_normalized = normalize(embedding);
-
         let key = token_id.to_string();
-        let serialized_embedding = bincode::serialize(&embedding_normalized).expect("Failed to serialize embedding");
+
+        let serialized_embedding = bincode::serialize(embedding).expect("Failed to serialize embedding");
         db.insert(key, serialized_embedding).expect("Failed to save or update embedding in Sled");
+
     }
 
     pub fn serialize(embedding_layer: &EmbeddingLayer, embedding_file_path: &Path) {
@@ -260,6 +271,7 @@ impl EmbeddingLayer {
             previous_gradient: None,
             learning_rate: 0.001,
             time_step: 0,
+            cache: Arc::new(RwLock::new(HashMap::new())),
         };
         let serialized: Vec<u8> = bincode::serialize(&embedding_layer_meta).expect("Failed to serialize");
         let mut file = File::create(embedding_file_path).expect("Failed to create file");

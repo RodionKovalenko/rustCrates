@@ -22,7 +22,7 @@ use crate::{
             tokenizer::{detokenize, tokenize_batch},
         },
     },
-    utils::sampling_methods::{get_target_predictions, top_p_sampling_from_softmax},
+    utils::sampling_methods::{get_target_predictions, greedy_decoding},
 };
 
 pub const MAX_CONTEXT_WINDOW_SIZE: usize = 512;
@@ -30,14 +30,17 @@ pub const CONTEXT_OVERLAPPING: usize = 450;
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize) {
     let mut total_loss: Complex<f64>;
-    let p = 0.9; // Top-p (Nucleus) threshold
     let loss_threshold: f64 = 0.05;
     let now = Instant::now();
     let mut previous_last_losses: Vec<f64> = Vec::new();
+    let mut total_loss_exp_ma = 0.0;
+    let alpha = 0.2;
+
+    let mut epoch_processed = 0;
 
     'outer: for epoch in 0..num_epochs {
         total_loss = Complex::new(0.0, 0.0);
-        for batch_dataset in dataset.split_into_batches(4) {
+        for batch_dataset in dataset.split_into_batches(5) {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
 
             let seconds_elapsed = now.elapsed();
@@ -59,16 +62,10 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             let loss = cross_entropy_loss_batch(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
             total_loss += loss;
 
-            if previous_last_losses.len() <= 30 {
-                previous_last_losses.push(loss.re);
-            }
-            let len = previous_last_losses.len();
-            previous_last_losses[epoch % len] = loss.re;
-
             if epoch > 0 && epoch % 10 == 0 || loss.norm() <= loss_threshold {
                 println!("Epoch: {:?}, Loss: {:?}", epoch, loss);
                 let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = get_target_predictions(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
-                let sampled_tokens = top_p_sampling_from_softmax(&predicted_softmax_targets, p);
+                let sampled_tokens = greedy_decoding(&predicted_softmax_targets);
 
                 let predicted_token_batch: Vec<String> = sampled_tokens.par_iter().map(|token_indices| detokenize(token_indices, false).unwrap()).collect();
                 println!("Top-p tokens dim: {:?}", sampled_tokens[0].len() * sampled_tokens.len());
@@ -89,36 +86,53 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                 println!("time elapsed for forward and backward pass in seconds: {:?}", seconds);
             }
 
-            if previous_last_losses.len() >= 30 {
-                let end_ind = epoch % previous_last_losses.len();
-
-                // Only continue if we have enough range to compute a start index safely
-                if end_ind >= 4 {
-                    let start_ind = end_ind - 4;
-                    let mut loss_increasing_count = 0;
-
-                    for i in start_ind..end_ind - 1 {
-                        if previous_last_losses[i] < previous_last_losses[i + 1] {
-                            loss_increasing_count += 1;
-                        }
-                    }
-
-                    if loss_increasing_count >= 2 {
-                        println!("loss is increasing too much, reducing learning rate");
-                        transformer_network.decay_learning_rate(0.5);  // e.g., reduce LR by half
-                    }
-                }
-            }
-
             transformer_network.update_step_lr_scheduler(epoch, 100, 0.9);
         }
 
         if epoch % 10 == 0 {
             save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
         }
+     
+        if total_loss_exp_ma == 0.0 && epoch ==0 {
+            total_loss_exp_ma = total_loss.re;
+        }
+
+        total_loss_exp_ma = alpha * total_loss.re + (1.0 - alpha) * total_loss_exp_ma;
+
         if epoch % 5 == 0 || total_loss.norm() <= loss_threshold {
             println!("Epoch: {:?}, TOTAL LOSS: {:?}", epoch, total_loss);
+            println!("Epoch: {:?}, EXPONENTIAL MOVING AVARAGE LOSS: {:?}", epoch, total_loss_exp_ma);
         }
+
+        if previous_last_losses.len() <= 4 {
+            previous_last_losses.push(total_loss.re);
+        }
+        let len = previous_last_losses.len();
+        previous_last_losses[epoch % len] = total_loss.re;
+
+        if previous_last_losses.len() >= 4 {
+            let end_ind = epoch % previous_last_losses.len();
+
+            // Only continue if we have enough range to compute a start index safely
+            if end_ind >= 4 {
+                let start_ind = end_ind - 4;
+                let mut loss_increasing_count = 0;
+
+                for i in start_ind..end_ind - 1 {
+                    if previous_last_losses[i] < previous_last_losses[i + 1] {
+                        loss_increasing_count += 1;
+                    }
+                }
+
+                if loss_increasing_count > 2 && epoch_processed != epoch {
+                    println!("loss is increasing too much, reducing learning rate");
+                    transformer_network.decay_learning_rate(0.5); // e.g., reduce LR by half
+
+                    epoch_processed = epoch;
+                }
+            }
+        }
+
         if total_loss.norm() <= loss_threshold {
             println!("loss is smaller than {loss_threshold} Break the training: {:?}", &total_loss);
             save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
@@ -131,7 +145,6 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
     let mut all_predictions: Vec<Vec<Vec<f64>>> = Vec::new();
     let time_step: usize = 0;
     let mut _padding_mask_batch: Vec<Vec<u32>> = Vec::new();
-    let p = 0.9; // Top-p (Nucleus) threshold
 
     let mut current_input_batch: Vec<String> = extend_input_with_bos(input_batch);
     let mut count_tokens_prediction = 0;
@@ -189,7 +202,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
             })
             .collect();
 
-        let sampled_tokens = top_p_sampling_from_softmax(&predicted_softmax_targets, p);
+        let sampled_tokens = greedy_decoding(&predicted_softmax_targets);
         let predicted_token_batch: Vec<String> = sampled_tokens.par_iter().map(|token_indices| detokenize(token_indices, false).unwrap()).collect();
         // Check if the last predicted token is the EOS token
         let predicted_token = predicted_token_batch[predicted_token_batch.len() - 1].clone();

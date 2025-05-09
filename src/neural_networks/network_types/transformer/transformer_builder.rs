@@ -24,7 +24,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
 
     let embedding_dim_original: usize = 512;
     let base_2: i32 = 2;
-    // embedding_dim_compressed  = 16
+    // embedding_dim_compressed  = 64
     let embedding_dim_compressed = (embedding_dim_original as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize;
     let vocab_size: usize = 50280;
 
@@ -38,19 +38,22 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
 
     // Transformer block start
     let num_self_attention_layer: usize = 2;
-    for _i in 0..num_self_attention_layer {
-        let num_attention_heads: usize = 4;
+    for i in 0..num_self_attention_layer {
+        let num_attention_heads: usize = 2;
         // Colums are divided into number of heads
         let cols: usize = embedding_dim_compressed;
 
         let attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
         layers.push(LayerEnum::SelfAttention(Box::new(attention_layer)));
 
-        let hidden_dim = 512;
+        let mut hidden_dim = 1024;
+        if i > 0 {
+            hidden_dim = 512;
+        }
         let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
         layers.push(LayerEnum::FeedForward(Box::new(ffn_layer)));
     }
-    // Transformer block end 
+    // Transformer block end
 
     let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
     let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode);
