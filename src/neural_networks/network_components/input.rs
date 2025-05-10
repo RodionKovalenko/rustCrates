@@ -68,7 +68,7 @@ impl<T: Debug + Clone, O: Debug + Clone> Dataset<T, O> {
 }
 
 pub fn extend_input_with_bos(input_batch: &Vec<String>) -> Vec<String> {
-    input_batch.clone().iter().map(|input: &String| format!("<bos> {} <sep> ", input)).collect()
+    input_batch.clone().iter().map(|input: &String| format!("<bos> {} ", input)).collect()
 }
 
 // Implement the DataTrait for the Dataset struct
