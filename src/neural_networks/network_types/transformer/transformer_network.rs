@@ -94,8 +94,8 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
         if epoch % 10 == 0 {
             save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
         }
-     
-        if total_loss_exp_ma == 0.0 && epoch ==0 {
+
+        if total_loss_exp_ma == 0.0 && epoch == 0 {
             total_loss_exp_ma = total_loss.re;
         }
 
@@ -153,14 +153,26 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
     let now = Instant::now();
 
     print!("Antwort: ");
+    // transformer.learning_rate = learning_rate;
+    let last_layer_index = transformer_network.layers.len() - 1;
+
+    let layer = &mut transformer_network.layers[last_layer_index];
+    match layer {
+        LayerEnum::Softmax(_softmax_layer) => _softmax_layer.operation_mode = OperationMode::PRODUCTION,
+        _ => {}
+    }
+
+    let (_tokens, mut batch_ids) = tokenize_batch(&current_input_batch, false).unwrap();
+
     // Continue predicting until EOS token is predicted
     loop {
         // println!("current input batch: {:?}", &current_input_batch);
 
         let _seconds_elapsed = now.elapsed();
 
-        let (_tokens, mut batch_ids) = tokenize_batch(&current_input_batch, false).unwrap();
         let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap();
+
+        println!("input tokens length in inference: {} {}", batch_ids.len(), batch_ids[0].len());
 
         if max_seq_len > MAX_CONTEXT_WINDOW_SIZE {
             batch_ids = batch_ids
@@ -205,6 +217,8 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
             .collect();
 
         let sampled_tokens = greedy_decoding(&predicted_softmax_targets);
+        batch_ids[0].push(sampled_tokens[0][0].clone());
+
         let predicted_token_batch: Vec<String> = sampled_tokens.par_iter().map(|token_indices| detokenize(token_indices, false).unwrap()).collect();
         // Check if the last predicted token is the EOS token
         let predicted_token = predicted_token_batch[predicted_token_batch.len() - 1].clone();
@@ -218,7 +232,6 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         print!("{}", predicted_token);
         // Add the predicted token to the current input batch
         current_input_batch[0] = format!("{}{}", current_input_batch[0], predicted_token);
-        // println!("combined input: {:?}", current_input_batch);
 
         count_tokens_prediction += 1;
 
@@ -321,11 +334,11 @@ pub fn predict(transformer_network: &mut NeuralNetwork, batch_ids: &Vec<Vec<u32>
             LayerEnum::Softmax(softmax_layer) => {
                 let softmax_layer_clone = Some(softmax_layer).unwrap();
                 if let Some(previous_output) = &output {
-                    let softmax_result: Vec<Vec<Vec<f64>>> = softmax_layer_clone.forward(&previous_output, padding_mask.clone());
 
                     //println!("forward softmax start");
+                    let softmax_result: Vec<Vec<Vec<f64>>> = softmax_layer_clone.forward(&previous_output, padding_mask.clone());
                     output_softmax = Some(softmax_result);
-                    // println!("forward softmax end");
+                    println!("forward softmax end");
                 } else {
                     println!("No previous output for Dense layer");
                 }

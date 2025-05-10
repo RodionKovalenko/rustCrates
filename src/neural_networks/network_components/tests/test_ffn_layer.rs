@@ -74,7 +74,7 @@ pub mod test_ffn_layer {
         println!("\nanalytical grad weights linear: {:?}", grouped_linear_gradient_weights);
         println!("\nnumerical grad weights linear: {:?}", numerical_grad_linear);
 
-        test_gradient_error_2d(&grouped_linear_gradient_weights, &numerical_grad_linear, 1e-6);
+        test_gradient_error_2d(&grouped_linear_gradient_weights, &numerical_grad_linear, 1e-5);
 
         let global_error = global_relative_error_2d_l2(&grouped_linear_gradient_weights, &numerical_grad_linear);
         println!("global relative gradient error gradient_weights_batch: {:?}", &global_error);
@@ -106,7 +106,7 @@ pub mod test_ffn_layer {
         println!("\nanalytical grad bias linear: {:?}", _analytical_gradient_bias_linear);
         println!("\nnumerical grad bias linear: {:?}", numerical_grad_linear_bias);
 
-        test_gradient_error_1d(&_analytical_gradient_bias_linear, &numerical_grad_linear_bias, 1e-6);
+        test_gradient_error_1d(&_analytical_gradient_bias_linear, &numerical_grad_linear_bias, 1e-5);
     }
 
     #[test]

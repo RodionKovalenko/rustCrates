@@ -14,7 +14,7 @@ use super::gradient_struct::Gradient;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SoftmaxLayer {
     learning_rate: f64,
-    operation_mode: OperationMode,
+    pub operation_mode: OperationMode,
 
     #[serde(skip)]
     softmax_output_batch: Option<Vec<Vec<Vec<f64>>>>,
@@ -83,7 +83,14 @@ impl SoftmaxLayer {
             let target_len = target_tokens.len();
             let seq_ind_start = sequence_len_unpadded - target_len;
 
-            let normalizer = (batch_size * target_len) as f64;
+            let mut target_len_unpadded = 0.0;
+            for (_t, &target_class) in target_tokens.iter().enumerate() {
+                if target_class != 1 {
+                    target_len_unpadded +=1.0;
+                }
+            }
+
+            let normalizer: f64= batch_size as f64 *  target_len_unpadded;
 
             for (t, &target_class) in target_tokens.iter().enumerate() {
                 if target_class as usize >= vocab_dim {
