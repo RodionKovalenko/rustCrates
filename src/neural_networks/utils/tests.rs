@@ -2,7 +2,7 @@
 mod tests {
     use num::Complex;
 
-    use crate::neural_networks::utils::matrix::{multiply, multiply_complex};
+    use crate::neural_networks::utils::matrix::{multiply, multiply_complex, transpose};
 
     #[test]
     fn test_multiply_arrays() {
@@ -52,7 +52,7 @@ mod tests {
         let m1: Vec<Vec<i32>> = vec![vec![1, 2, 3], vec![4, 5, 6], vec![4, 5, 6], vec![4, 5, 6]];
         let m2: Vec<Vec<i32>> = vec![vec![5, 6], vec![7, 8], vec![9, 5], vec![9, 5]];
 
-        let product = multiply(&m1, &m2);
+        let product = multiply(&transpose(&m1), &m2);
 
         assert_eq!(product, [[105.0, 78.0], [135.0, 102.0], [165.0, 126.0]]);
 
@@ -70,7 +70,7 @@ mod tests {
             vec![Complex::new(9.0, 0.0), Complex::new(5.0, 0.0)],
         ];
 
-        let product: Vec<Vec<Complex<f64>>> = multiply_complex(&m1, &m2);
+        let product: Vec<Vec<Complex<f64>>> = multiply_complex(&transpose(&m1), &m2);
 
         assert_eq!(
             product,

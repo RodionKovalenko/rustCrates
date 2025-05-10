@@ -45,7 +45,6 @@ pub fn detokenize(ids: &Vec<u32>, skip_speical_tokens: bool) -> Result<String, B
 
     // Tokenize the text
     let decoded_text = tokenizer.decode(ids, skip_speical_tokens)?;
-
     Ok(decoded_text)
 }
 

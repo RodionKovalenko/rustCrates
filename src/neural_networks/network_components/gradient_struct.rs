@@ -211,6 +211,13 @@ impl Gradient {
     pub fn get_gradient_input_batch_softmax(&self) -> Vec<Vec<Vec<f64>>> {
         self.gradient_input_batch_softmax.clone().unwrap_or_else(|| vec![])
     }
+    pub fn get_gradient_input_softmax(&self) -> Vec<Vec<f64>> {
+        if let Some(gradient_input_batch_softmax) = self.gradient_input_batch_softmax.clone() {
+            self.group_gradient_batch_f64(&gradient_input_batch_softmax)
+        } else {
+           vec![]
+        }
+    }
     pub fn get_gradient_weight_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
         self.gradient_weights_batch.clone().unwrap_or_else(|| vec![])
     }
@@ -352,6 +359,19 @@ impl Gradient {
 
     pub fn group_gradient_batch(&self, weight_gradients_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Complex<f64>>> {
         let mut weight_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); weight_gradients_batch[0][0].len()]; weight_gradients_batch[0].len()];
+
+        for weight_gradient_batch in weight_gradients_batch {
+            for (row, w_gradient) in weight_gradient_batch.iter().enumerate() {
+                for (col, gradient_value) in w_gradient.iter().enumerate() {
+                    weight_gradients[row][col] += gradient_value;
+                }
+            }
+        }
+
+        weight_gradients
+    }
+    pub fn group_gradient_batch_f64(&self, weight_gradients_batch: &Vec<Vec<Vec<f64>>>) -> Vec<Vec<f64>> {
+        let mut weight_gradients: Vec<Vec<f64>> = vec![vec![0.0; weight_gradients_batch[0][0].len()]; weight_gradients_batch[0].len()];
 
         for weight_gradient_batch in weight_gradients_batch {
             for (row, w_gradient) in weight_gradient_batch.iter().enumerate() {
