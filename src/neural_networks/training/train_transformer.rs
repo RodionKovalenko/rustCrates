@@ -39,7 +39,7 @@ pub fn train_transformer_from_dataset() {
     println!("time elapsed in seconds: {:?}", &seconds_elapsed);
 
     let dataset: Dataset<String, String> = load_data_xquad_de_as_dataset().unwrap();
-    let batch_size = 1;
+    let batch_size = 4;
     let data_batches: Vec<Dataset<String, String>> = dataset.split_into_batches(batch_size);
     
    let dataset_batch = data_batches[0].get_batch(0, batch_size).unwrap();

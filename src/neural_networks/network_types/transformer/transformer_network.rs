@@ -30,7 +30,7 @@ pub const CONTEXT_OVERLAPPING: usize = 450;
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize) {
     let mut total_loss: Complex<f64>;
-    let loss_threshold: f64 = 0.05;
+    let loss_threshold: f64 = 0.04;
     let now = Instant::now();
     let mut previous_last_losses: Vec<f64> = Vec::new();
     let mut total_loss_exp_ma = 0.0;
@@ -46,6 +46,8 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             let seconds_elapsed = now.elapsed();
             let input_batch_extended = batch_dataset.extend_input_with_target(input_batch, target_batch);
             let target_batch_extended = batch_dataset.extend_target(target_batch);
+
+            // println!("extended input batch: {:?}", &input_batch_extended);
 
             let (_tokens, mut batch_ids) = tokenize_batch(&input_batch_extended, false).unwrap();
             let (_tokens, mut target_ids) = tokenize_batch(&target_batch_extended, false).unwrap();
@@ -209,6 +211,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
 
         // If EOS token is predicted, break the loop
         if predicted_token == "<eos>" {
+            println!("\n\n <eos> predicted. Breaking ....");
             break;
         }
 
