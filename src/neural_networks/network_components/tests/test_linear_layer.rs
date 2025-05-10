@@ -58,11 +58,11 @@ mod test_linear_layer {
         };
 
         let epsilon = 1e-7;
-        let numerical_grad_linear: Vec<Vec<Complex<f64>>> = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &linear_weights, epsilon);
+        let numerical_grad_linear: Vec<Vec<Complex<f64>>> = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &linear_weights.clone(), epsilon);
 
         // Check if gradient batch dimensions match expected shapes
-        println!("\nanalytical grad: {:?}", grouped_linear_gradient);
-        println!("\nnumerical grad: {:?}", numerical_grad_linear);
+        println!("\nanalytical grad weights: {:?}", grouped_linear_gradient);
+        println!("\nnumerical grad weights: {:?}", numerical_grad_linear);
 
         test_gradient_error_2d(&grouped_linear_gradient, &numerical_grad_linear, 1e-5);
 

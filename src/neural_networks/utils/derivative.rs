@@ -324,6 +324,34 @@ where
     grad_batch
 }
 
+pub fn numerical_gradient_input_f64<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) -> Vec<Vec<f64>>
+where
+    F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>) -> Complex<f64>,
+{
+    let mut grad_batch = vec![vec![0.0; input[0][0].len()]; input[0].len()];
+
+    for batch in 0..input.len() {
+        for seq in 0..input[batch].len() {
+            for dim in 0..input[batch][seq].len() {
+                // Perturb input by epsilon
+                let mut input_plus = input.clone();
+                input_plus[batch][seq][dim] += epsilon;
+
+                let mut input_minus = input.clone();
+                input_minus[batch][seq][dim] -= epsilon;
+
+                // Compute numerical gradient
+                let loss_plus = f(&input_plus);
+                let loss_minus = f(&input_minus);
+
+                grad_batch[seq][dim] += (loss_plus.re - loss_minus.re) / (2.0 * epsilon);
+            }
+        }
+    }
+
+    grad_batch
+}
+
 pub fn numerical_gradient_weights<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>, epsilon: f64) -> Vec<Vec<Complex<f64>>>
 where
     F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>, &Vec<Vec<Complex<f64>>>) -> Complex<f64>,
@@ -430,6 +458,35 @@ where
     grad_batch
 }
 
+pub fn numerical_gradient_input_batch_softmax<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) -> Vec<Vec<Vec<f64>>>
+where
+    F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>) -> Complex<f64>,
+{
+    let mut grad_batch = vec![vec![vec![0.0; input[0][0].len()]; input[0].len()]; input.len()];
+
+    for batch in 0..input.len() {
+        for seq in 0..input[batch].len() {
+            for dim in 0..input[batch][seq].len() {
+                // Perturb input by epsilon
+                let mut input_plus = input.clone();
+                input_plus[batch][seq][dim] += epsilon;
+
+                let mut input_minus = input.clone();
+                input_minus[batch][seq][dim] -= epsilon;
+
+                // Compute numerical gradient
+                let loss_plus = f(&input_plus);
+                let loss_minus = f(&input_minus);
+
+                grad_batch[batch][seq][dim] = (loss_plus.re - loss_minus.re) / (2.0 * epsilon);
+            }
+        }
+    }
+
+    grad_batch
+}
+
+
 // should be < 1e-7
 pub fn global_relative_error_l2(numerical_grad: &Vec<Vec<Vec<Complex<f64>>>>, analytical_grad: &Vec<Vec<Vec<Complex<f64>>>>) -> f64 {
     let mut diff_norm_sq = 0.0;
@@ -492,6 +549,37 @@ pub fn global_relative_error_2d_l2(numerical_grad: &Vec<Vec<Complex<f64>>>, anal
 
     global_rel_error
 }
+
+pub fn global_relative_error_2d_l2_f64(numerical_grad: &Vec<Vec<f64>>, analytical_grad: &Vec<Vec<f64>>) -> f64 {
+    let mut diff_norm_sq = 0.0;
+    let mut numerical_norm_sq = 0.0;
+    let mut analytical_norm_sq = 0.0;
+
+    for (seq_n, seq_a) in numerical_grad.iter().zip(analytical_grad.iter()) {
+        for (dim_n, dim_a) in seq_n.iter().zip(seq_a.iter()) {
+            let diff = dim_n - dim_a;
+            diff_norm_sq += diff.powf(2.0); // Equivalent to |diff|^2
+            numerical_norm_sq += dim_n.powf(2.0);
+            analytical_norm_sq += dim_a.powf(2.0);
+        }
+    }
+
+    println!("absolute error: {:?}", &diff_norm_sq);
+
+    let diff_norm = diff_norm_sq.sqrt();
+    let total_norm = numerical_norm_sq.sqrt() + analytical_norm_sq.sqrt();
+
+    if total_norm == 0.0 {
+        return 0.0; // or f64::INFINITY depending on your use case
+    }
+
+    let global_rel_error = diff_norm / total_norm;
+
+    //assert!(global_rel_error < 1e-7);
+
+    global_rel_error
+}
+
 
 pub fn numerical_gradient_weights_without_loss<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
 where
@@ -817,6 +905,12 @@ pub fn test_gradient_batch_error(numerical_grad_batch: &Vec<Vec<Vec<Complex<f64>
 pub fn test_gradient_error_2d(numerical_grad: &Vec<Vec<Complex<f64>>>, analytical_grad: &Vec<Vec<Complex<f64>>>, epsilon: f64) {
     for (row_numerical, row_analytical) in numerical_grad.iter().zip(analytical_grad) {
         test_gradient_error_1d(row_numerical, row_analytical, epsilon);
+    }
+}
+
+pub fn test_gradient_batch_error_f64(numerical_grad_batch: &Vec<Vec<Vec<f64>>>, analytical_grad_batch: &Vec<Vec<Vec<f64>>>, epsilon: f64) {
+    for (gradient_numerical, gradient_analytical) in numerical_grad_batch.iter().zip(analytical_grad_batch) {
+        test_gradient_error_2d_f64(gradient_numerical, gradient_analytical, epsilon);
     }
 }
 

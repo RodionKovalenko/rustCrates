@@ -6,8 +6,8 @@ mod test_softmax_layer {
         utils::{
             activation::{gelu_complex, sigmoid_complex, softmax_complex, softsign_complex},
             derivative::{
-                gelu_derivative_complex, global_relative_error_2d_l2, numerical_gradient_check_f64, numerical_gradient_input, numerical_gradient_input_batch, sigmoid_derivative_complex, softmax_derivative_complex_matrix, softsign_derivative_complex, test_gradient_batch_error,
-                test_gradient_error_1d, test_gradient_error_2d, test_gradient_error_2d_f64,
+                gelu_derivative_complex, global_relative_error_2d_l2_f64, numerical_gradient_check_f64, numerical_gradient_input_batch_softmax, numerical_gradient_input_f64, sigmoid_derivative_complex, softmax_derivative_complex_matrix, softsign_derivative_complex, test_gradient_batch_error_f64,
+                test_gradient_error_1d, test_gradient_error_2d_f64,
             },
             random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
         },
@@ -40,10 +40,10 @@ mod test_softmax_layer {
 
         // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
         let linear_output = linear_layer.forward(&layer_input);
-        let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
+        let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
 
         let gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
-        let (analytical_grad_batch, analytical_grad) = (gradient.get_gradient_input_batch(), gradient.get_gradient_input());
+        let (analytical_grad_batch, analytical_grad) = (gradient.get_gradient_input_batch_softmax(), gradient.get_gradient_input_softmax());
 
         // Define the loss function
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
@@ -55,20 +55,20 @@ mod test_softmax_layer {
             loss
         };
 
-        let numerical_grad: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, linear_output.get_output_batch(), epsilon);
-        let numerical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch(&mut loss_fn, linear_output.get_output_batch(), epsilon);
+        let numerical_grad: Vec<Vec<f64>> = numerical_gradient_input_f64(&mut loss_fn, linear_output.get_output_batch(), epsilon);
+        let numerical_grad_batch: Vec<Vec<Vec<f64>>> = numerical_gradient_input_batch_softmax(&mut loss_fn, linear_output.get_output_batch(), epsilon);
 
         //Check if gradient batch dimensions match expected shapes
         println!("\nanalytical grad: {:?}", analytical_grad);
         println!("\nnumerical grad: {:?}", numerical_grad);
 
-        test_gradient_error_2d(&numerical_grad, &analytical_grad, epsilon);
+        test_gradient_error_2d_f64(&numerical_grad, &analytical_grad, epsilon);
 
         // println!("\nanalytical grad batch: {:?}", analytical_grad_batch);
         // println!("\nnumerical grad batch: {:?}", numerical_grad_batch);
-        test_gradient_batch_error(&numerical_grad_batch, &analytical_grad_batch, epsilon);
+        test_gradient_batch_error_f64(&numerical_grad_batch, &analytical_grad_batch, epsilon);
 
-        let global_error = global_relative_error_2d_l2(&numerical_grad, &analytical_grad);
+        let global_error = global_relative_error_2d_l2_f64(&numerical_grad, &analytical_grad);
         println!("\n\n global relative error input gradient: {:?}", &global_error);
     }
 

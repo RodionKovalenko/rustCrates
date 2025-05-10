@@ -55,6 +55,7 @@ impl SelfAttentionLayer {
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
         let input_batch = layer_input.get_input_batch();
         let padding_mask_batch = layer_input.get_padding_mask_batch();
+        let forward_only = layer_input.get_forward_only();
 
         self.input_batch = Some(input_batch.clone());
         self.time_step = layer_input.get_time_step();
@@ -65,6 +66,7 @@ impl SelfAttentionLayer {
         let mut batch_output: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![]; sequence_size]; batch_size];
         // Apply the attention mechanism for each head
         let mut layer_input = LayerInput::new_default();
+        layer_input.set_forward_only(forward_only);
         layer_input.set_time_step(self.time_step);
         layer_input.set_input_batch(input_batch.clone());
         layer_input.set_padding_mask_batch(padding_mask_batch.clone());
@@ -79,7 +81,6 @@ impl SelfAttentionLayer {
             })
             .collect(); // Collect the results into a vector
 
-        // println!("input batch outputs: {:?}", &input_batch);
         // println!("attention head outputs: {:?}", &attention_head_outputs);
 
         // Combine the outputs of the attention heads (e.g., concatenating horizontally)

@@ -66,68 +66,69 @@ pub unsafe fn convert_to_faer_mat_unchecked(matrix: &[Vec<Complex<f64>>]) -> Mat
 }
 
 pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-    let a_rows = matrix_a.len();
-    let a_cols = matrix_a[0].len();
-    let b_rows = matrix_b.len();
-    let b_cols = matrix_b[0].len();
+    // let a_rows = matrix_a.len();
+    // let a_cols = matrix_a[0].len();
+    // let b_rows = matrix_b.len();
+    // let b_cols = matrix_b[0].len();
 
-    // Validate dimensions for matrix multiplication
-    if a_cols != b_rows {
-        panic!("Invalid matrix dimensions: A is {}x{}, B is {}x{}", a_rows, a_cols, b_rows, b_cols);
-    }
-    let mat_a = unsafe { convert_to_faer_mat_unchecked(matrix_a) };
-    let mat_b = unsafe { convert_to_faer_mat_unchecked(matrix_b) };
+    // // Validate dimensions for matrix multiplication
+    // if a_cols != b_rows {
+    //     panic!("Invalid matrix dimensions: A is {}x{}, B is {}x{}", a_rows, a_cols, b_rows, b_cols);
+    // }
+    // let mat_a = unsafe { convert_to_faer_mat_unchecked(matrix_a) };
+    // let mat_b = unsafe { convert_to_faer_mat_unchecked(matrix_b) };
 
-    // Perform matrix multiplication using faer
-    let mat_c = &mat_a * &mat_b;
+    // // Perform matrix multiplication using faer
+    // let mat_c = &mat_a * &mat_b;
 
-    // Convert the result matrix back to Vec<Vec<Complex<f64>>>
-    // Convert result back to Vec<Vec<Complex<f64>>>
-    let mut result = vec![vec![Complex::new(0.0, 0.0); mat_c.ncols()]; mat_c.nrows()];
-    for i in 0..mat_c.nrows() {
-        for j in 0..mat_c.ncols() {
-            result[i][j] = mat_c[(i, j)];
-        }
-    }
-
-    result
-
-    // let mut num_rows = matrix_a.len();
-    // let mut num_columns = matrix_b[0].len();
-    // let mut matrix_a_clone = matrix_a.clone();
-    // let mut matrix_b_clone = matrix_b.clone();
-
-    // if matrix_a[0].len() != matrix_b.len() {
-    //     if matrix_a[0].len() == matrix_b[0].len() {
-    //         matrix_b_clone = transpose(matrix_b);
-    //         num_columns = matrix_b_clone[0].len();
-    //     } else if matrix_a.len() == matrix_b.len() {
-    //         matrix_a_clone = transpose(&matrix_a);
-    //         num_rows = matrix_a_clone.len();
+    // // Convert the result matrix back to Vec<Vec<Complex<f64>>>
+    // // Convert result back to Vec<Vec<Complex<f64>>>
+    // let mut result = vec![vec![Complex::new(0.0, 0.0); mat_c.ncols()]; mat_c.nrows()];
+    // for i in 0..mat_c.nrows() {
+    //     for j in 0..mat_c.ncols() {
+    //         result[i][j] = mat_c[(i, j)];
     //     }
     // }
 
-    // // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
-    // if matrix_a[0].len() != matrix_b.len() && matrix_a.len() != matrix_b.len() {
-    //     panic!("Matrix A does not have the same number of columns as Matrix B rows.");
-    // }
+    // result
 
-    // // Initialize result matrix with 0.0 values
-    // let mut result_matrix: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
+    let mut num_rows = matrix_a.len();
+    let mut num_columns = matrix_b[0].len();
+    let mut matrix_a_clone = matrix_a.clone();
+    let mut matrix_b_clone = matrix_b.clone();
 
-    // // println!("anzahl cput {}", num_cpus::get());
+    if matrix_a[0].len() != matrix_b.len() {
+        if matrix_a[0].len() == matrix_b[0].len() {
+            matrix_b_clone = transpose(matrix_b);
+            num_columns = matrix_b_clone[0].len();
+        } else if matrix_a.len() == matrix_b.len() {
+            matrix_a_clone = transpose(&matrix_a);
+            num_rows = matrix_a_clone.len();
+        }
+    }
 
-    // let pool = ThreadPoolBuilder::new().num_threads(num_cpus::get()).build().unwrap();
+    // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
+    if matrix_a[0].len() != matrix_b.len() && matrix_a.len() != matrix_b.len() {
+        panic!("Matrix A does not have the same number of columns as Matrix B rows.");
+    }
 
-    // pool.install(|| {
-    //     result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
-    //         for j in 0..num_columns {
-    //             row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
-    //         }
-    //     });
-    // });
+    // Initialize result matrix with 0.0 values
+    let mut result_matrix: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
 
-    // result_matrix
+    // println!("anzahl cput {}", num_cpus::get());
+
+    let pool = ThreadPoolBuilder::new().num_threads(num_cpus::get()).build().unwrap();
+
+    pool.install(|| {
+        result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
+            for j in 0..num_columns {
+                //row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
+                row[j] = (0..matrix_b_clone.len()).map(|k| Complex::new(matrix_a_clone[i][k].re * matrix_b_clone[k][j].re, 0.0)).sum();
+            }
+        });
+    });
+
+    result_matrix
 }
 
 pub fn multiply_complex_with_f64(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<f64>>) -> Vec<Vec<Complex<f64>>> {
@@ -161,7 +162,7 @@ pub fn multiply_complex_with_f64(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &V
     pool.install(|| {
         result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
             for j in 0..num_columns {
-                row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
+                row[j] = (0..matrix_b_clone.len()).map(|k| Complex::new(matrix_a_clone[i][k].re * matrix_b_clone[k][j], 0.0)).sum();
             }
         });
     });
@@ -198,7 +199,7 @@ pub fn multiply_f64_complex(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<Complex
     pool.install(|| {
         result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
             for j in 0..num_columns {
-                row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
+                row[j] = (0..matrix_b_clone.len()).map(|k| Complex::new(matrix_a_clone[i][k] * matrix_b_clone[k][j].re, 0.0)).sum();
             }
         });
     });

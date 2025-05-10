@@ -41,6 +41,12 @@ pub struct MaskedAttentionHead {
     #[serde(skip)]
     pub padding_mask_batch: Option<Vec<Vec<u32>>>,
 
+    #[serde(skip)]
+    pub k_cache: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+
+    #[serde(skip)]
+    pub v_cache: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+
     pub m1: Vec<Vec<Complex<f64>>>,
     pub v1: Vec<Vec<Complex<f64>>>,
 }
@@ -76,6 +82,8 @@ impl MaskedAttentionHead {
             output_batch: None,
             padding_mask_batch: None,
             attention_weights_batch: None,
+            k_cache: None,
+            v_cache: None,
             m1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
             v1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
             time_step: 0,
@@ -96,48 +104,85 @@ impl MaskedAttentionHead {
 
 // Implement BaseLayer for Layer struct
 impl MaskedAttentionHead {
-    // Input shape e.g. [2][5] and out shape of weights [5][4] => we get final output [2][4]
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
         let input_batch = layer_input.get_input_batch();
         let padding_mask_batch = layer_input.get_padding_mask_batch();
-
-        // println!("input len in masked_attention : {:?}, {:?}, {}", &input_batch.len(), &input_batch[0].len(), &input_batch[0][0].len());
-        // println!("weights_q : {:?}, {:?}", &self.weights_q.len(), &self.weights_q[0].len());
 
         self.input_batch = Some(input_batch.clone());
         self.padding_mask_batch = Some(padding_mask_batch.clone());
         self.time_step = layer_input.get_time_step();
 
-        let (attention_weights_batch, v_batch): (Vec<Vec<Vec<f64>>>, Vec<Vec<Vec<Complex<f64>>>>) = input_batch
+        // Step 1: Compute Q for the entire sequence (all tokens up to current step)
+        let q_batch: Vec<_> = input_batch.par_iter().map(|input| multiply_complex(input, &self.weights_q)).collect();
+
+        // Step 2: Check if it's the first input or an extended input
+        let (k_new_batch, v_new_batch): (Vec<_>, Vec<_>) = if self.k_cache.is_none() || !layer_input.get_forward_only() {
+            // First input (compute for all tokens)
+            let k_new_batch: Vec<_> = input_batch.par_iter().map(|input| multiply_complex(input, &self.weights_k)).collect();
+            let v_new_batch: Vec<_> = input_batch.par_iter().map(|input| multiply_complex(input, &self.weights_v)).collect();
+            (k_new_batch, v_new_batch)
+        } else {
+            let k_new_batch: Vec<_> = input_batch.last().map_or(vec![], |input| {
+                input.last().map_or(vec![], |last_token: &Vec<Complex<f64>>| {
+                    // Only compute K for the last token
+                    vec![multiply_complex(&vec![last_token.clone()], &self.weights_k)]
+                })
+            });
+
+            let v_new_batch: Vec<_> = input_batch.last().map_or(vec![], |input| {
+                input.last().map_or(vec![], |last_token| {
+                    // Only compute V for the last token
+                    vec![multiply_complex(&vec![last_token.clone()], &self.weights_v)]
+                })
+            });
+
+            (k_new_batch, v_new_batch)
+        };
+
+      
+        // Step 3: Update the K/V cache (only if inference mode)
+        let (k_cache, v_cache): (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<Vec<Complex<f64>>>>) = if layer_input.get_forward_only() {
+            // Update K and V cache with new token's values if inference mode
+            if self.k_cache.is_none() {
+                self.k_cache = Some(k_new_batch.clone());
+                self.v_cache = Some(v_new_batch.clone());
+            } else {
+                let k_cache = self.k_cache.as_mut().unwrap();
+                let v_cache = self.v_cache.as_mut().unwrap();
+                for (cache_k, new_k) in k_cache.iter_mut().zip(&k_new_batch) {
+                    cache_k.extend_from_slice(&new_k); // Only extend with new K values
+                }
+                for (cache_v, new_v) in v_cache.iter_mut().zip(&v_new_batch) {
+                    cache_v.extend_from_slice(new_v); // Only extend with new V values
+                }
+            }
+            (self.k_cache.as_ref().unwrap().clone(), self.v_cache.as_ref().unwrap().clone())
+        } else {
+            // If it's training mode, we don't use the cache
+            (k_new_batch, v_new_batch)
+        };
+
+        // Step 4: Compute attention weights in parallel using the entire Q batch and cached K/V
+        let attention_weights_batch: Vec<_> = q_batch
             .par_iter()
             .zip(padding_mask_batch)
-            .map(|(input, padding_mask)| {
-                let q = multiply_complex(input, &self.weights_q);
-                let k = multiply_complex(input, &self.weights_k);
-                let v = multiply_complex(input, &self.weights_v);
+            .enumerate()
+            .map(|(batch_ind, (q, padding_mask))| {
+                let mask = create_causal_mask(q.len());
+                let attn_scores = multiply_complex(q, &transpose(&k_cache[batch_ind])); // Use the full K cache
 
-                let mask: Vec<Vec<u8>> = create_causal_mask(input.len());
-                let attention_scores = multiply_complex(&q, &transpose(&k));
-                let mut attention_scores_scales = scale_attention_scores(&attention_scores, k[0].len() as f64);
+                let mut scaled_scores = scale_attention_scores(&attn_scores, k_cache[batch_ind][0].len() as f64);
 
-                apply_attention_mask_inplace(&mut attention_scores_scales, &mask);
-
-                let attention_weights: Vec<Vec<f64>> = softmax_complex_padding(&attention_scores_scales, &padding_mask);
-
-                (attention_weights, v)
+                apply_attention_mask_inplace(&mut scaled_scores, &mask);
+                softmax_complex_padding(&scaled_scores, &padding_mask)
             })
             .collect();
 
-        let batch_output: Vec<Vec<Vec<Complex<f64>>>> = attention_weights_batch
-            .par_iter()
-            .zip(v_batch)
-            .map(|(attention_weights, v)| {
-                let output: Vec<Vec<Complex<f64>>> = multiply_f64_complex(&attention_weights, &v);
-                output
-            })
-            .collect();
+        // Step 5: Compute final output using cached V values
+        let batch_output: Vec<_> = attention_weights_batch.par_iter().enumerate().map(|(batch_ind, attention_weights)| multiply_f64_complex(attention_weights, &v_cache[batch_ind])).collect();
 
-        self.attention_weights_batch = Some(attention_weights_batch);
+        // Step 6: Store intermediate results
+        self.attention_weights_batch = Some(attention_weights_batch.clone());
         self.output_batch = Some(batch_output.clone());
 
         let mut layer_output = LayerOutput::new_default();
