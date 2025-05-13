@@ -334,11 +334,10 @@ pub fn predict(transformer_network: &mut NeuralNetwork, batch_ids: &Vec<Vec<u32>
             LayerEnum::Softmax(softmax_layer) => {
                 let softmax_layer_clone = Some(softmax_layer).unwrap();
                 if let Some(previous_output) = &output {
-
                     //println!("forward softmax start");
                     let softmax_result: Vec<Vec<Vec<f64>>> = softmax_layer_clone.forward(&previous_output, padding_mask.clone());
                     output_softmax = Some(softmax_result);
-                    println!("forward softmax end");
+                    // println!("forward softmax end");
                 } else {
                     println!("No previous output for Dense layer");
                 }

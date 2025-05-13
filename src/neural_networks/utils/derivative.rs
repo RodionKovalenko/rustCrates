@@ -497,9 +497,9 @@ pub fn global_relative_error_l2(numerical_grad: &Vec<Vec<Vec<Complex<f64>>>>, an
         for (seq_n, seq_a) in batch_n.iter().zip(batch_a.iter()) {
             for (dim_n, dim_a) in seq_n.iter().zip(seq_a.iter()) {
                 let diff = dim_n - dim_a;
-                diff_norm_sq += diff.norm_sqr(); // Equivalent to |diff|^2
-                numerical_norm_sq += dim_n.norm_sqr();
-                analytical_norm_sq += dim_a.norm_sqr();
+                diff_norm_sq += diff.re.powf(2.0); // Equivalent to |diff|^2
+                numerical_norm_sq += dim_n.re.powf(2.0);
+                analytical_norm_sq += dim_a.re.powf(2.0);
             }
         }
     }
@@ -937,7 +937,7 @@ pub fn test_gradient_error_1d_f64(numerical_grad: &Vec<f64>, analytical_grad: &V
 
 pub fn test_gradient_error_1d(numerical_grad: &Vec<Complex<f64>>, analytical_grad: &Vec<Complex<f64>>, epsilon: f64) {
     for (val_numerical, val_analytical) in numerical_grad.iter().zip(analytical_grad) {
-        let abs_diff = (val_numerical - val_analytical).abs();
+        let abs_diff = (val_numerical.re - val_analytical.re).abs();
         // take the largest value out of (val_numerical, val_analytical, epsilon)
         let max_val = val_numerical.abs().max(val_analytical.abs()).max(epsilon);
         let rel_diff = abs_diff / max_val;

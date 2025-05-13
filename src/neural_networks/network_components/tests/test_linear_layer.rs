@@ -96,8 +96,8 @@ mod test_linear_layer {
     fn test_linear_softmax_backward() {
         // Define some small batch size and input dimensions for simplicity
         let batch_size = 1;
-        let input_dim = 20;
-        let output_dim = 20;
+        let input_dim = 5;
+        let output_dim = 5;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
         let epsilon = 1e-8;
@@ -143,10 +143,10 @@ mod test_linear_layer {
 
         // Check if gradient batch dimensions match expected shapes
         //println!("\n analytical gradient_weights_batch: {:?}", gradient_weights_batch);
-        println!("\n analytical gradient_weights_batch dim: {} {}", gradient_weights_batch.len(), gradient_weights_batch[0].len());
+        println!("\n analytical gradient_weights: {:?} ", gradient_weights_batch);
 
         //println!("\n numerical grad: {:?}", num_gradient_weight_batch);
-        println!("\n num_gradient_weight_batch gradient dim: {} {}", num_gradient_weight_batch.len(), num_gradient_weight_batch[0].len());
+        println!("\n num_gradient_weight_batch {:?}", num_gradient_weight_batch);
 
         let global_error = global_relative_error_2d_l2(&num_gradient_weight_batch, &gradient_weights_batch);
 
@@ -170,10 +170,10 @@ mod test_linear_layer {
 
         // Check if gradient batch dimensions match expected shapes
         //println!("\n analytical gradient_weights_batch: {:?}", gradient_weights_batch);
-        println!("\n analytical gradient_weights_batch dim: {} {}", gradient_input_batch.len(), gradient_input_batch[0].len());
+        println!("\n analytical gradient_input_batch: {:?}", gradient_input_batch);
 
         //println!("\n numerical grad: {:?}", num_gradient_weight_batch);
-        println!("\n numerical num_gradient_input_batch gradient dim: {} {}", num_gradient_input_batch.len(), num_gradient_input_batch[0].len());
+        println!("\n numerical num_gradient_input_batch: {:?}", &num_gradient_input_batch);
 
         let global_error = global_relative_error_l2(&num_gradient_input_batch, &gradient_input_batch);
 

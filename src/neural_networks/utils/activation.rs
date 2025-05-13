@@ -335,15 +335,7 @@ pub fn softmax_complex(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<f64>> {
     input
         .par_iter() // Parallel iterator over rows of the input
         .map(|row| {
-            let mut sum: f64 = 0.0;
-
-            // Calculate the sum of exponentials for the row
-            for &val in row {
-                sum += val.re.exp();
-            }
-
-            // Calculate the softmax values for the row
-            row.iter().map(|&val| val.re.exp() / (sum + EPSILON)).collect::<Vec<f64>>()
+            softmax_row(row)
         })
         .collect()
 }
@@ -364,12 +356,7 @@ pub fn softmax_complex_padding(input: &Vec<Vec<Complex<f64>>>, padding_mask: &Ve
                 return vec![0.0; row.len()];
             }
 
-            let max_real = row.iter().map(|c| c.re).fold(f64::NEG_INFINITY, f64::max);
-            let exps_real: Vec<f64> = row.iter().map(|c| (c.re - max_real).exp()).collect();
-            let sum_real: f64 = exps_real.iter().sum();
-
-            // Compute softmax values
-            exps_real.iter().map(|&r| r / sum_real).collect()
+            softmax_row(row)
         })
         .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
 }
@@ -387,6 +374,9 @@ pub fn softmax_last_row(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<f64>> {
 }
 
 pub fn softmax_row(input: &Vec<Complex<f64>>) -> Vec<f64> {
-    let exp_sum: f64 = input.iter().map(|x| x.re.exp()).sum();
-    input.iter().map(|x| x.re.exp() / exp_sum).collect()
+    let max_real = input.iter().map(|c| c.re).fold(f64::NEG_INFINITY, f64::max);
+    let exps_real: Vec<f64> = input.iter().map(|c| (c.re - max_real).exp()).collect();
+    let sum_real: f64 = exps_real.iter().sum();
+
+    exps_real.iter().map(|&r| r / sum_real).collect()
 }
