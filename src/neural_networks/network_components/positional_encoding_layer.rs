@@ -1,4 +1,4 @@
-use crate::{neural_networks::network_types::wavelet_network::wavelet_dwt_in_levels_1d, wavelet_transform::{dwt::transform_1_d, dwt_types::DiscreteWaletetType, modes::WaveletMode}};
+use crate::{neural_networks::network_types::wavelet_network::wavelet_dwt_in_levels_1d, wavelet_transform::{dwt_types::DiscreteWaletetType, modes::WaveletMode}};
 
 use super::gradient_struct::Gradient;
 use num::Complex;
@@ -52,7 +52,7 @@ impl PositionalEncodingLayer {
                     let imag_part: Vec<f64> = token_embeddings.iter().map(|c| c.im).collect();
 
                     // Step 2: Apply wavelet transform separately to real & imaginary parts
-                    let transformed_real: Vec<f64> = wavelet_dwt_in_levels_1d(&real_part, DiscreteWaletetType::DB2, WaveletMode::SYMMETRIC, 3);
+                    let transformed_real: Vec<f64> = wavelet_dwt_in_levels_1d(&real_part, DiscreteWaletetType::DB4, WaveletMode::SYMMETRIC, 3);
                     let transformed_imag: Vec<f64> = wavelet_dwt_in_levels_1d(&imag_part, DiscreteWaletetType::COIF4,WaveletMode::SYMMETRIC, 3);
 
                     // Step 3: Ensure wavelet-transformed outputs have correct dimensions
@@ -126,7 +126,7 @@ impl PositionalEncodingLayer {
     }
 
     /// Applies rotary positional encoding to a single token embedding
-    fn apply_rotary_positional_encoding(&self, embedding: &[Complex<f64>], position: usize, scaling_factor: f64) -> Vec<Complex<f64>> {
+    pub fn apply_rotary_positional_encoding(&self, embedding: &[Complex<f64>], position: usize, scaling_factor: f64) -> Vec<Complex<f64>> {
         assert_eq!(embedding.len(), self.embedding_dim);
         assert_eq!(self.embedding_dim % 2, 0, "Embedding dimension must be even for RoPE.");
 
