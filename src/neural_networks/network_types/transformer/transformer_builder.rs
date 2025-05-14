@@ -39,16 +39,20 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     // Transformer block start
     let num_self_attention_layer: usize = 2;
     for i in 0..num_self_attention_layer {
-        let num_attention_heads: usize = 4;
+        let mut num_attention_heads: usize = 4;
+
+        if i == 0 {
+            num_attention_heads = 2;
+        }
         // Colums are divided into number of heads
         let cols: usize = embedding_dim_compressed;
 
         let attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
         layers.push(LayerEnum::SelfAttention(Box::new(attention_layer)));
 
-        let mut hidden_dim = 64;
+        let mut hidden_dim = 512;
         if i > 0 {
-            hidden_dim = 128;
+            hidden_dim = 1024;
         }
         let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
         layers.push(LayerEnum::FeedForward(Box::new(ffn_layer)));
