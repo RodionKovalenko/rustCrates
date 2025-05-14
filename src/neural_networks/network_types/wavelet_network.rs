@@ -1,10 +1,10 @@
 use crate::neural_networks::utils::image::get_pixel_separate_rgba;
-use crate::utils::data_converter::{ convert_to_c_array_f64_3d, convert_to_f64_1d, convert_to_f64_2d,  convert_to_f64_3d};
+use crate::utils::data_converter::{convert_to_c_array_f64_3d, convert_to_f64_1d, convert_to_f64_2d, convert_to_f64_3d};
 use crate::utils::num_trait::ArrayType;
 use crate::wavelet_transform::cwt::cwt;
 use crate::wavelet_transform::cwt_complex::CWTComplex;
 use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
-use crate::wavelet_transform::dwt::{get_ll_hl_lh_hh, transform_2_df64};
+use crate::wavelet_transform::dwt::{get_ll_hl_lh_hh, transform_1_df64, transform_2_df64};
 use crate::wavelet_transform::dwt_types::DiscreteWaletetType;
 use crate::wavelet_transform::modes::WaveletMode;
 use num_complex::Complex;
@@ -13,6 +13,24 @@ pub const DECOMPOSITION_LEVELS: u32 = 5;
 
 pub fn get_pixels_rgba(image_path: &str) -> Vec<Vec<Vec<f64>>> {
     get_pixel_separate_rgba(image_path)
+}
+
+pub fn wavelet_dwt_in_levels_1d(input: &Vec<f64>, dw_type: DiscreteWaletetType, dw_mode: WaveletMode, decomposition_levels: usize) -> Vec<f64> {
+    // let mut dw_transformed: Vec<f64> = Vec::new();
+
+    // encode with wavelet transform
+    let mut input_decomposed: Vec<f64> = input.clone();
+
+    for _i in 0..decomposition_levels {
+        input_decomposed = transform_1_df64(&input_decomposed, &dw_type, &dw_mode);
+        // let half_len = input_decomposed.len() >> 1;
+        // dw_transformed.extend_from_slice(&input_decomposed[0..half_len]);
+
+        // // Details coefficients for further decomposition
+        // input_decomposed = input_decomposed[half_len..input_decomposed.len()].to_vec();
+    }
+
+    input_decomposed
 }
 
 pub fn decompose_in_wavelet_2d_default<T: ArrayType>(input: &T) -> Vec<Vec<Vec<Complex<f64>>>> {
@@ -36,32 +54,16 @@ pub fn decompose_in_wavelet_2d_default<T: ArrayType>(input: &T) -> Vec<Vec<Vec<C
         frequencies: vec![0.0],
     };
 
-    return decompose_in_wavelets(
-        input,
-        &wavelet_type,
-        &wavelet_mode,
-        &mut cwt_complex_wavelet,
-        &min_height,
-        &min_width,
-        &decomposition_level,
-    );
+    return decompose_in_wavelets(input, &wavelet_type, &wavelet_mode, &mut cwt_complex_wavelet, &min_height, &min_width, &decomposition_level);
 }
 
 /**
  * return wavelel transformed pixels in 4 D <complex<f64>>
  */
-pub fn decompose_in_wavelets<T: ArrayType>(
-    input_data: &T,
-    dw_type: &DiscreteWaletetType,
-    dw_mode: &WaveletMode,
-    cwt_complex_wavelet: &mut CWTComplex,
-    min_height: &usize,
-    min_width: &usize,
-    dec_levels: &i32,
-) -> Vec<Vec<Vec<Complex<f64>>>> {
+pub fn decompose_in_wavelets<T: ArrayType>(input_data: &T, dw_type: &DiscreteWaletetType, dw_mode: &WaveletMode, cwt_complex_wavelet: &mut CWTComplex, min_height: &usize, min_width: &usize, dec_levels: &i32) -> Vec<Vec<Vec<Complex<f64>>>> {
     let num_dim = input_data.dimension();
     let mut pixels: Vec<Vec<Vec<f64>>> = Vec::new();
-    
+
     match num_dim {
         1 => {
             let mut two_d_vec = Vec::new();
@@ -72,9 +74,7 @@ pub fn decompose_in_wavelets<T: ArrayType>(
         2 => {
             pixels.push(convert_to_f64_2d(input_data));
         }
-        3 => {
-            pixels = convert_to_f64_3d(input_data)
-        }
+        3 => pixels = convert_to_f64_3d(input_data),
         _ => (),
     };
 
@@ -91,7 +91,7 @@ pub fn decompose_in_wavelets<T: ArrayType>(
 
             //println!("dw transform : {:?}, {:?}", dw_transformed.len(), dw_transformed[0].len());
 
-            if (input_data.dimension() != 1 && dw_transformed.len() < min_height.clone()) ||  dw_transformed[0].len() < min_width.clone() {
+            if (input_data.dimension() != 1 && dw_transformed.len() < min_height.clone()) || dw_transformed[0].len() < min_width.clone() {
                 break;
             }
             //  save as images
