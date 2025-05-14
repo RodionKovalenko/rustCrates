@@ -378,5 +378,5 @@ pub fn softmax_row(input: &Vec<Complex<f64>>) -> Vec<f64> {
     let exps_real: Vec<f64> = input.iter().map(|c| (c.re - max_real).exp()).collect();
     let sum_real: f64 = exps_real.iter().sum();
 
-    exps_real.iter().map(|&r| r / sum_real).collect()
+    exps_real.par_iter().map(|&r| r / sum_real).collect()
 }
