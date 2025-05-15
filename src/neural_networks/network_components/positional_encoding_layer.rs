@@ -1,5 +1,3 @@
-use crate::{neural_networks::network_types::wavelet_network::wavelet_dwt_in_levels_1d, wavelet_transform::{dwt_types::DiscreteWaletetType, modes::WaveletMode}};
-
 use super::gradient_struct::Gradient;
 use num::Complex;
 use rayon::prelude::*;
@@ -43,31 +41,32 @@ impl PositionalEncodingLayer {
                 //     frequencies: vec![],
                 // };
 
+                //  let seq_len = input.len();
                 for (_position, token_embeddings) in input.iter().enumerate() {
                     // Ensure correct embedding size
                     assert_eq!(token_embeddings.len(), self.embedding_dim, "All token embeddings must match the specified dimension.");
 
                     //Step 1: Convert complex embeddings into real & imaginary parts
-                    let real_part: Vec<f64> = token_embeddings.iter().map(|c| c.re).collect();
-                    let imag_part: Vec<f64> = token_embeddings.iter().map(|c| c.im).collect();
+                    // let real_part: Vec<f64> = token_embeddings.iter().map(|c| c.re).collect();
+                    // let imag_part: Vec<f64> = token_embeddings.iter().map(|c| c.im).collect();
 
-                    // Step 2: Apply wavelet transform separately to real & imaginary parts
-                    let transformed_real: Vec<f64> = wavelet_dwt_in_levels_1d(&real_part, DiscreteWaletetType::DB4, WaveletMode::SYMMETRIC, 3);
-                    let transformed_imag: Vec<f64> = wavelet_dwt_in_levels_1d(&imag_part, DiscreteWaletetType::COIF4,WaveletMode::SYMMETRIC, 3);
+                    // // // Step 2: Apply wavelet transform separately to real & imaginary parts
+                    // let transformed_real: Vec<f64> = apply_wavelet_positional_emb(&real_part, DiscreteWaletetType::SYM16, WaveletMode::SYMMETRIC, 1, _position, seq_len, self.embedding_dim);
+                    // let transformed_imag: Vec<f64> = apply_wavelet_positional_emb(&imag_part, DiscreteWaletetType::COIF4, WaveletMode::SYMMETRIC, 1, _position, seq_len, self.embedding_dim);
 
                     // Step 3: Ensure wavelet-transformed outputs have correct dimensions
-                    let positional_encoding = self.pad_or_trim_wavelet_output(&transformed_real, &transformed_imag);
+                    // let positional_encoding = self.pad_or_trim_wavelet_output(&transformed_real, &transformed_imag);
 
                     // let (transform_cwt, _frequencies) = cwt_complex(&token_embeddings.to_vec(), &mut wavelet).unwrap();
                     // let positional_encoding: Vec<Vec<Complex<f64>>> = convert_to_c_array_f64_2d(transform_cwt);
 
                     //Step 4: Add wavelet-based positional encoding
-                    let _token_with_pos_encoding = self.add_positional_encoding(token_embeddings, &positional_encoding);
+                    //  let _token_with_pos_encoding = self.add_positional_encoding(token_embeddings, &positional_encoding);
 
                     // Step 5: Apply rotary positional encodings
-                    //let rotated_embeddings = self.apply_rotary_positional_encoding(&token_embeddings, _position, _scaling_factor);
+                    let rotated_embeddings = self.apply_rotary_positional_encoding(&token_embeddings, _position, _scaling_factor);
 
-                    output.push(_token_with_pos_encoding);
+                    output.push(rotated_embeddings);
                 }
 
                 // let max = output.iter().flatten().max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Equal));
