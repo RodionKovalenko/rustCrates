@@ -324,7 +324,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, batch_ids: &Vec<Vec<u32>
                 let softmax_layer_clone = Some(softmax_layer).unwrap();
                 if let Some(previous_output) = &output {
                     //println!("forward softmax start");
-                    if forward_only {
+                    if !forward_only {
                         let softmax_result: Vec<Vec<Vec<f64>>> = softmax_layer_clone.forward(&previous_output, padding_mask.clone());
                         output_softmax = Some(softmax_result);
                     } else {
