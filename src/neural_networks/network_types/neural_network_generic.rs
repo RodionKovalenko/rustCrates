@@ -180,6 +180,65 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
     }
 }
 
+pub fn reset_previous_gradient(transformer: &mut NeuralNetwork) {
+    // transformer.learning_rate = learning_rate;
+    for layer in transformer.layers.iter_mut() {
+        match layer {
+            LayerEnum::Embedding(embedding_layer) => {
+                embedding_layer.previous_gradient = None;
+            }
+            LayerEnum::Norm(_norm_layer) => {
+            }
+            LayerEnum::RMSNorm(_norm_layer) => {
+            }
+            LayerEnum::Dense(dense_layer) => {
+                dense_layer.previous_gradient = None;
+            }
+            LayerEnum::SelfAttention(self_attention_layer) => {
+                for attention_head in self_attention_layer.attention_heads.iter_mut() {
+                    attention_head.previous_gradient = None;
+                }
+                if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
+                    match norm_layer {
+                        LayerEnum::RMSNorm(_rms_norm_layer) => {
+                        }
+                        LayerEnum::Norm(_norm_layer) => {
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            LayerEnum::FeedForward(ffn_layer) => {
+                for layer in ffn_layer.layers.iter_mut() {
+                    match layer {
+                        LayerEnum::Dense(dense_layer) => {
+                            dense_layer.previous_gradient = None;
+                        }
+                        LayerEnum::Linear(linear_layer) => {
+                            linear_layer.previous_gradient = None;
+                        }
+                        _ => {}
+                    }
+                }
+                if let Some(norm_layer) = ffn_layer.norm_layer.as_mut() {
+                    match norm_layer {
+                        LayerEnum::RMSNorm(_rms_norm_layer) => {
+                        }
+                        LayerEnum::Norm(_norm_layer) => {
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            LayerEnum::Linear(linear_layer) => {
+                linear_layer.previous_gradient = None;
+            }
+            LayerEnum::Softmax(_softmax_layer) => {}
+            LayerEnum::PositionalEncoding(_positional_encoding_layer) => {}
+        }
+    }
+}
+
 pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
     // transformer.learning_rate = learning_rate;
     for layer in transformer.layers.iter_mut() {
