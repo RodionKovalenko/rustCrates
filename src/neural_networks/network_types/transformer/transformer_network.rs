@@ -22,7 +22,7 @@ use crate::{
             tokenizer::{detokenize, tokenize_batch},
         },
     },
-    utils::sampling_methods::{get_target_predictions, greedy_decoding},
+    utils::{data_converter::convert_c_to_f64_3d, sampling_methods::{get_target_predictions, greedy_decoding}},
 };
 
 pub const MAX_CONTEXT_WINDOW_SIZE: usize = 512;
@@ -173,7 +173,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
 
         let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap();
 
-        println!("input tokens length in inference: {} {}", batch_ids.len(), batch_ids[0].len());
+        // println!("input tokens length in inference: {} {}", batch_ids.len(), batch_ids[0].len());
 
         if max_seq_len > MAX_CONTEXT_WINDOW_SIZE {
             batch_ids = batch_ids
@@ -203,19 +203,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         // Store the last predicted token's softmax probabilities
         all_predictions.push(current_predictions[current_predictions.len() - 1].clone());
 
-        let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = current_predictions
-            .iter()
-            .enumerate()
-            .filter_map(|(_batch_ind, input_seq)| {
-                let sequence_len: usize = input_seq.len();
-
-                // Slide backwards to the last sequence
-                let window = &input_seq[(sequence_len - 1)..sequence_len];
-                let valid_seq_opt = Some(window.to_vec());
-
-                valid_seq_opt
-            })
-            .collect();
+        let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = vec![current_predictions[current_predictions.len() -1].clone()];
 
         let sampled_tokens = greedy_decoding(&predicted_softmax_targets);
         batch_ids[0].push(sampled_tokens[0][0].clone());
@@ -336,8 +324,12 @@ pub fn predict(transformer_network: &mut NeuralNetwork, batch_ids: &Vec<Vec<u32>
                 let softmax_layer_clone = Some(softmax_layer).unwrap();
                 if let Some(previous_output) = &output {
                     //println!("forward softmax start");
-                    let softmax_result: Vec<Vec<Vec<f64>>> = softmax_layer_clone.forward(&previous_output, padding_mask.clone());
-                    output_softmax = Some(softmax_result);
+                    if forward_only {
+                        let softmax_result: Vec<Vec<Vec<f64>>> = softmax_layer_clone.forward(&previous_output, padding_mask.clone());
+                        output_softmax = Some(softmax_result);
+                    } else {
+                        output_softmax = Some(convert_c_to_f64_3d(previous_output));
+                    }
                     // println!("forward softmax end");
                 } else {
                     println!("No previous output for Dense layer");
