@@ -13,7 +13,7 @@ use crate::{
             layer_input_struct::LayerInput,
         },
         network_types::{
-            neural_network_generic::{get_from_db, save_to_sled, NeuralNetwork, OperationMode},
+            neural_network_generic::{get_from_db, reset_previous_gradient, save_to_sled, NeuralNetwork, OperationMode},
             transformer::transformer_builder::create_transformer,
         },
         utils::{
@@ -129,6 +129,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                 if loss_increasing_count > 2 && epoch_processed != epoch {
                     println!("loss is increasing too much, reducing learning rate");
                     transformer_network.decay_learning_rate(0.5); // e.g., reduce LR by half
+                    reset_previous_gradient(transformer_network);
 
                     epoch_processed = epoch;
                 }

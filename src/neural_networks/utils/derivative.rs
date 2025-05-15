@@ -486,7 +486,6 @@ where
     grad_batch
 }
 
-
 // should be < 1e-7
 pub fn global_relative_error_l2(numerical_grad: &Vec<Vec<Vec<Complex<f64>>>>, analytical_grad: &Vec<Vec<Vec<Complex<f64>>>>) -> f64 {
     let mut diff_norm_sq = 0.0;
@@ -579,7 +578,6 @@ pub fn global_relative_error_2d_l2_f64(numerical_grad: &Vec<Vec<f64>>, analytica
 
     global_rel_error
 }
-
 
 pub fn numerical_gradient_weights_without_loss<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
 where

@@ -260,7 +260,7 @@ pub fn activate_output_complex(data: &Vec<Vec<Complex<f64>>>, activation: Activa
         ActivationType::SOFTPLUS => data.iter().map(|row| row.iter().map(|&x| softplus_complex(x)).collect()).collect(),
         ActivationType::PROBIT => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Just return the value as is
         ActivationType::RANDOM => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Just return the value as is
-        _ => vec![]                                  
+        _ => vec![],
     }
 }
 
@@ -334,9 +334,7 @@ where
 pub fn softmax_complex(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<f64>> {
     input
         .par_iter() // Parallel iterator over rows of the input
-        .map(|row| {
-            softmax_row(row)
-        })
+        .map(|row| softmax_row(row))
         .collect()
 }
 
@@ -374,9 +372,12 @@ pub fn softmax_last_row(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<f64>> {
 }
 
 pub fn softmax_row(input: &Vec<Complex<f64>>) -> Vec<f64> {
-    let max_real = input.iter().map(|c| c.re).fold(f64::NEG_INFINITY, f64::max);
-    let exps_real: Vec<f64> = input.iter().map(|c| (c.re - max_real).exp()).collect();
-    let sum_real: f64 = exps_real.iter().sum();
+    // Use norms (magnitudes) only
+    let max_norm = input.iter().map(|c| c.re).fold(f64::NEG_INFINITY, f64::max);
 
-    exps_real.par_iter().map(|&r| r / sum_real).collect()
+    let exps: Vec<f64> = input.iter().map(|c| (c.re - max_norm).exp()).collect();
+
+    let sum: f64 = exps.iter().sum();
+
+    exps.iter().map(|&x| x / sum).collect()
 }

@@ -1,5 +1,6 @@
 use crate::neural_networks::utils::image::get_pixel_separate_rgba;
 use crate::utils::data_converter::{convert_to_c_array_f64_3d, convert_to_f64_1d, convert_to_f64_2d, convert_to_f64_3d};
+use crate::utils::normalization::normalize_f64;
 use crate::utils::num_trait::ArrayType;
 use crate::wavelet_transform::cwt::cwt;
 use crate::wavelet_transform::cwt_complex::CWTComplex;
@@ -15,22 +16,27 @@ pub fn get_pixels_rgba(image_path: &str) -> Vec<Vec<Vec<f64>>> {
     get_pixel_separate_rgba(image_path)
 }
 
-pub fn wavelet_dwt_in_levels_1d(input: &Vec<f64>, dw_type: DiscreteWaletetType, dw_mode: WaveletMode, decomposition_levels: usize) -> Vec<f64> {
-    // let mut dw_transformed: Vec<f64> = Vec::new();
-
+pub fn apply_wavelet_positional_emb(input: &Vec<f64>, dw_type: DiscreteWaletetType, dw_mode: WaveletMode, decomposition_levels: usize, position: usize, seq_len: usize, emb_len: usize) -> Vec<f64> {
     // encode with wavelet transform
-    let mut input_decomposed: Vec<f64> = input.clone();
+    let mut input_decomposed: Vec<f64> = vec![0.0; input.len()];
+
+    let position_ratio = position as f64 / seq_len as f64;
+    let index = (position_ratio * emb_len as f64).floor() as usize;
+    let index = index.min(emb_len - 1); // clamp to valid range
+
+    input_decomposed[index] = position_ratio;
 
     for _i in 0..decomposition_levels {
         input_decomposed = transform_1_df64(&input_decomposed, &dw_type, &dw_mode);
-        // let half_len = input_decomposed.len() >> 1;
-        // dw_transformed.extend_from_slice(&input_decomposed[0..half_len]);
-
-        // // Details coefficients for further decomposition
-        // input_decomposed = input_decomposed[half_len..input_decomposed.len()].to_vec();
     }
 
-    input_decomposed
+    if input_decomposed.len() < emb_len {
+        input_decomposed.resize(emb_len, 0.0);
+    } else {
+        input_decomposed.truncate(emb_len);
+    }
+
+    normalize_f64(&input_decomposed)
 }
 
 pub fn decompose_in_wavelet_2d_default<T: ArrayType>(input: &T) -> Vec<Vec<Vec<Complex<f64>>>> {
