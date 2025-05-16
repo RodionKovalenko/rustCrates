@@ -124,7 +124,7 @@ pub fn get_target_predictions(predicted_softmax_batch: &Vec<Vec<Vec<f64>>>, targ
                 let max = window.iter().flat_map(|w| w.iter()).max_by(|a, b| a.partial_cmp(&b).unwrap_or(Ordering::Less));
 
                 if let Some(max_num) = max {
-                    if max_num > &0.0 {
+                    if max_num.is_finite() {
                         valid_seq_opt = Some(window.to_vec());
                         break;
                     }

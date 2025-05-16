@@ -104,6 +104,11 @@ impl SoftmaxLayer {
                 let seq_ind = seq_ind_start + t;
 
                 for (c, softmax_prob) in softmax_output[seq_ind].iter().enumerate() {
+                    // for log softmax
+                    // let prob = softmax_prob.exp();
+                    // for softmax
+                    //let prob = softmax_prob;
+
                     if target_class == c as u32 {
                         gradient_batch[batch_index][seq_ind][c] += (softmax_prob - 1.0) / normalizer;
                     } else {
