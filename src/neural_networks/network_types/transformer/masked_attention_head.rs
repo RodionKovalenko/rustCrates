@@ -13,6 +13,8 @@ use crate::neural_networks::{
     },
 };
 
+use super::transformer_network::MAX_CONTEXT_WINDOW_SIZE;
+
 // Layer struct
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MaskedAttentionHead {
@@ -59,13 +61,13 @@ impl MaskedAttentionHead {
         let mut weights_k: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
         let mut weights_v: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
 
-        let mut bias_pos: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); rows]; rows];
+        let mut bias_pos: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); MAX_CONTEXT_WINDOW_SIZE]; MAX_CONTEXT_WINDOW_SIZE];
 
         initialize_weights_complex(rows, cols, &mut weights_q);
         initialize_weights_complex(rows, cols, &mut weights_k);
         initialize_weights_complex(rows, cols, &mut weights_v);
 
-        initialize_weights_complex(rows, rows, &mut bias_pos);
+        initialize_weights_complex(MAX_CONTEXT_WINDOW_SIZE, MAX_CONTEXT_WINDOW_SIZE, &mut bias_pos);
 
         let bias_q: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
         let bias_k: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
@@ -146,7 +148,6 @@ impl MaskedAttentionHead {
             (k_new_batch, v_new_batch)
         };
 
-      
         // Step 3: Update the K/V cache (only if inference mode)
         let (k_cache, v_cache): (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<Vec<Complex<f64>>>>) = if layer_input.get_forward_only() {
             // Update K and V cache with new token's values if inference mode
@@ -178,6 +179,7 @@ impl MaskedAttentionHead {
                 let mask = create_causal_mask(q.len());
                 let attn_scores = multiply_complex(q, &transpose(&k_cache[batch_ind])); // Use the full K cache
                 let scaled_scores = scale_attention_scores(&attn_scores, k_cache[batch_ind][0].len() as f64);
+
                 let mut scaled_scores_positioned = add_matrix::<Complex<f64>>(&scaled_scores, &self.bias_pos);
 
                 apply_attention_mask_inplace(&mut scaled_scores_positioned, &mask);
@@ -356,7 +358,16 @@ impl MaskedAttentionHead {
             self.weights_q = calculate_adam_w(&self.weights_q, &grad_w_q, &mut prev_m_weights_q, &mut prev_v_weights_q, learning_rate, time_step);
             self.weights_k = calculate_adam_w(&self.weights_k, &grad_w_k, &mut prev_m_weights_k, &mut prev_v_weights_k, learning_rate, time_step);
             self.weights_v = calculate_adam_w(&self.weights_v, &grad_w_v, &mut prev_m_weights_v, &mut prev_v_weights_v, learning_rate, time_step);
-            self.bias_pos = calculate_adam_w(&self.bias_pos, &grad_bias_pos, &mut prev_m_bias_pos, &mut prev_v_bias_pos, learning_rate, time_step);
+
+            let seq_len = grad_bias_pos.len();
+            let bias_pos_slice: Vec<Vec<Complex<f64>>> = self.bias_pos[0..seq_len].iter().map(|row| row[0..seq_len].to_vec()).collect();
+            let updated_slice = calculate_adam_w(&bias_pos_slice, &grad_bias_pos, &mut prev_m_bias_pos, &mut prev_v_bias_pos, learning_rate, time_step);
+
+            for i in 0..seq_len {
+                for j in 0..seq_len {
+                    self.bias_pos[i][j] = updated_slice[i][j];
+                }
+            }
         } else {
             // Update weights q
             for (i, row) in self.weights_q.iter_mut().enumerate() {
@@ -385,10 +396,10 @@ impl MaskedAttentionHead {
                 }
             }
 
-             // Update bias pos
-             for (i, row) in self.bias_pos.iter_mut().enumerate() {
+            // Update bias pos
+            for (i, row) in self.bias_pos.iter_mut().enumerate() {
                 for (j, bias_pos_v) in row.iter_mut().enumerate() {
-                    if !is_nan_or_inf(&grad_bias_pos[i][j]) {
+                    if i < grad_bias_pos.len() && j < grad_bias_pos[i].len() && !is_nan_or_inf(&grad_bias_pos[i][j]) {
                         *bias_pos_v -= self.learning_rate * (grad_bias_pos[i][j] / batch_size);
                     }
                 }

@@ -393,8 +393,8 @@ pub fn subtract<T: Debug + Clone + Sub<Output = T>>(matrix_a: &Vec<Vec<T>>, matr
 pub fn add_matrix<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<T>>) -> Vec<Vec<T>> {
     let mut matrix_result: Vec<Vec<T>> = matrix_a.clone();
 
-    assert_eq!(matrix_a.len(), matrix_b.len());
-    assert_eq!(matrix_a[0].len(), matrix_b[0].len());
+    // assert_eq!(matrix_a.len(), matrix_b.len());
+    // assert_eq!(matrix_a[0].len(), matrix_b[0].len());
 
     for i in 0..matrix_a.len() {
         for j in 0..matrix_a[i].len() {
