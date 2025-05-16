@@ -518,7 +518,10 @@ fn cross_entropy_loss(predictions: &Vec<Vec<f64>>, target_tokens: &Vec<u32>, pad
         let seq_ind = seq_ind_start + s;
 
         let prob = predictions[seq_ind][target_idx as usize];
+        // for softmax 
         let re_loss = -(prob + 1e-15).ln();
+        //for log softmax
+        //let re_loss = -prob;
         loss += re_loss;
         count += 1.0;
     }

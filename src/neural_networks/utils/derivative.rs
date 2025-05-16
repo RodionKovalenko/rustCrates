@@ -620,10 +620,10 @@ where
         for col in 0..weights[row].len() {
             // Perturb input by epsilon
             let mut weights_plus = weights.clone();
-            weights_plus[row][col] += epsilon;
+            weights_plus[row][col] += Complex::new(epsilon, 0.0);
 
             let mut weights_minus = weights.clone();
-            weights_minus[row][col] -= epsilon;
+            weights_minus[row][col] -= Complex::new(epsilon, 0.0);
 
             // Compute numerical gradient
             let loss_plus = f(&input, &weights_plus);

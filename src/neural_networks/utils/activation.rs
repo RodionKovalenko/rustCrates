@@ -381,3 +381,21 @@ pub fn softmax_row(input: &Vec<Complex<f64>>) -> Vec<f64> {
 
     exps.iter().map(|&x| x / sum).collect()
 }
+
+pub fn log_softmax_row(input: &Vec<Complex<f64>>) -> Vec<f64> {
+    // Extract real parts only
+    let real_parts: Vec<f64> = input.iter().map(|c| c.re).collect();
+
+    // Numerical stability: subtract max real part
+    let max_re = input.iter().map(|c| c.re).fold(f64::NEG_INFINITY, f64::max);
+
+    let shifted_exps: Vec<f64> = real_parts.iter().map(|&x| (x - max_re).exp()).collect();
+
+    let sum_exp: f64 = shifted_exps.iter().sum();
+
+    let log_sum_exp = sum_exp.ln() + max_re;
+
+    let result: Vec<f64> = real_parts.iter().map(|&x| x - log_sum_exp).collect();
+
+    result
+}
