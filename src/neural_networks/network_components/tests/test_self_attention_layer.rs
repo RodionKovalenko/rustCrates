@@ -49,12 +49,14 @@ mod test_self_attention_layer {
         let analytical_gradient_weights_q_batch = gradient.get_gradient_weights_q_batch();
         let analytical_gradient_weights_k_batch = gradient.get_gradient_weights_k_batch();
         let analytical_gradient_input_batch = gradient.get_gradient_input_batch();
+        let analytical_bias_pos_batch = gradient.get_gradient_bias_pos_batch();
 
         let weights_v = attention_head_layer.weights_v.clone();
         let weights_q = attention_head_layer.weights_q.clone();
         let weights_k = attention_head_layer.weights_k.clone();
+        let bias_pos = attention_head_layer.bias_pos.clone();
 
-        // Weight V ------------------------------------------------------------------------------------------- start
+        // // Weight V ------------------------------------------------------------------------------------------- start
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
             attention_head_layer.weights_v = weights.clone();
 
@@ -139,10 +141,10 @@ mod test_self_attention_layer {
 
         let numerical_grad_input_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_sum_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
 
-        println!("\n\nnumerical_grad_input_batch attention layer {:?}", numerical_grad_input_batch);
+        println!("\n numerical_grad_input_batch attention layer {:?}", numerical_grad_input_batch);
         println!("\n dim numerical_grad_input_batch {:?}, {}, {}", numerical_grad_input_batch.len(), numerical_grad_input_batch[0].len(), numerical_grad_input_batch[0][0].len());
 
-        println!("\n\nanalytical gradient input attention layer {:?}", analytical_gradient_input_batch);
+        println!("\n analytical gradient input attention layer {:?}", analytical_gradient_input_batch);
         println!("\n dim nanalytical gradient {:?}, {}, {}", analytical_gradient_input_batch.len(), analytical_gradient_input_batch[0].len(), analytical_gradient_input_batch[0][0].len());
 
         let global_error = global_relative_error_l2(&numerical_grad_input_batch, &analytical_gradient_input_batch);
@@ -151,6 +153,31 @@ mod test_self_attention_layer {
         // For Gelu it can a little more deviation
         test_gradient_batch_error(&numerical_grad_input_batch, &analytical_gradient_input_batch, epsilon);
         //Input gradient ------------------------------------------------------------------------------------------- end
+
+        // Bias Positional gradient ------------------------------------------------------------------------------------------- start
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, bias_pos: &Vec<Vec<Complex<f64>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
+            attention_head_layer.bias_pos = bias_pos.clone();
+
+            layer_input.set_input_batch(input.clone());
+            let output = attention_head_layer.forward(&layer_input);
+
+            output.get_output_batch()
+        };
+
+        let numerical_bias_pos_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &bias_pos.clone(), output_batch.clone(), epsilon);
+
+        println!("\n numerical gradient bias positonal attention layer {:?}", numerical_bias_pos_batch);
+        println!("\n numerical gradient bias positonal dim {:?}, {}, {}", numerical_bias_pos_batch.len(), numerical_bias_pos_batch[0].len(), numerical_bias_pos_batch[0][0].len());
+
+        println!("\n analytical gradient bias positional attention layer {:?}", analytical_bias_pos_batch);
+        println!("\n analytical gradient bias positional dim: {:?}, {}, {}", analytical_bias_pos_batch.len(), analytical_bias_pos_batch[0].len(), analytical_bias_pos_batch[0][0].len());
+
+        let global_error = global_relative_error_l2(&numerical_bias_pos_batch, &analytical_bias_pos_batch);
+        println!("\n\n global relative gradient error input batch: {:?}", &global_error);
+
+        // For Gelu it can a little more deviation
+        test_gradient_batch_error(&numerical_bias_pos_batch, &analytical_bias_pos_batch, epsilon);
+        // Bias Positional gradient ------------------------------------------------------------------------------------------- end
     }
 
     #[test]
