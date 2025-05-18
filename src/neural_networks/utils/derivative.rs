@@ -172,12 +172,7 @@ pub fn norm_softmax_derivative(input: &Vec<Complex<f64>>, softmax_output: &Vec<f
                 let delta_ij = if i == j { 1.0 } else { 0.0 };
                 let dpi_dnormcj = softmax_output[i] * (delta_ij - softmax_output[j]);
 
-                // Correct derivative of norm w.r.t. complex number
-                // ∂‖c‖/∂c = c.conj() / ‖c‖ (not divided by 2)
-                let dnormcj_dcj_re = input[j].re / norm_cj; // Removed /2
-                let dnormcj_dcj_im = -input[j].im / norm_cj; // Removed /2
-
-                jacobian[i][j] = Complex::new(dpi_dnormcj * dnormcj_dcj_re, dpi_dnormcj * dnormcj_dcj_im);
+                jacobian[i][j] = dpi_dnormcj * input[j].conj() / norm_cj; 
             }
         }
     }
