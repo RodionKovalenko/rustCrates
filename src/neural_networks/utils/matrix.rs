@@ -92,20 +92,10 @@ pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Co
 
     // result
 
-    let mut num_rows = matrix_a.len();
-    let mut num_columns = matrix_b[0].len();
-    let mut matrix_a_clone = matrix_a.clone();
-    let mut matrix_b_clone = matrix_b.clone();
-
-    if matrix_a[0].len() != matrix_b.len() {
-        if matrix_a[0].len() == matrix_b[0].len() {
-            matrix_b_clone = transpose(matrix_b);
-            num_columns = matrix_b_clone[0].len();
-        } else if matrix_a.len() == matrix_b.len() {
-            matrix_a_clone = transpose(&matrix_a);
-            num_rows = matrix_a_clone.len();
-        }
-    }
+    let num_rows = matrix_a.len();
+    let num_columns = matrix_b[0].len();
+    let matrix_a_clone = matrix_a.clone();
+    let matrix_b_clone = matrix_b.clone();
 
     // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
     if matrix_a[0].len() != matrix_b.len() && matrix_a.len() != matrix_b.len() {
@@ -122,8 +112,8 @@ pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Co
     pool.install(|| {
         result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
             for j in 0..num_columns {
-                //row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
-                row[j] = (0..matrix_b_clone.len()).map(|k| Complex::new(matrix_a_clone[i][k].re * matrix_b_clone[k][j].re, matrix_a_clone[i][k].im * matrix_b_clone[k][j].im)).sum();
+                row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
+                //row[j] = (0..matrix_b_clone.len()).map(|k| Complex::new(matrix_a_clone[i][k].re * matrix_b_clone[k][j].re, 0.0)).sum();
             }
         });
     });
@@ -209,6 +199,19 @@ pub fn multiply_f64_complex(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<Complex
     result_matrix
 }
 
+pub fn conjugate_transpose(matrix: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    let rows = matrix.len();
+    let cols = matrix[0].len();
+    let mut result = vec![vec![Complex::new(0.0, 0.0); rows]; cols];
+
+    for i in 0..rows {
+        for j in 0..cols {
+            result[j][i] = matrix[i][j].conj();
+        }
+    }
+    result
+}
+
 pub fn transpose<T: Debug + Clone + Sync + Send>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
     let num_rows = matrix_a.len();
     let num_cols = matrix_a[0].len();
@@ -242,27 +245,12 @@ pub fn hadamard_product_2d_c(input_1: &Vec<Vec<Complex<f64>>>, input_2: &Vec<Vec
     let rows = input_1.len();
     let cols = input_1[0].len();
 
-    // Validate dimensions
-    if rows != input_2.len() || cols != input_2[0].len() {
-        panic!("Hadamard input size mismatch: input_1 is {}x{}, input_2 is {}x{}", rows, cols, input_2.len(), input_2[0].len());
-    }
-
-    // Convert to faer matrices
-    let mat_1 = Mat::from_fn(rows, cols, |i, j| input_1[i][j]);
-    let mat_2 = Mat::from_fn(rows, cols, |i, j| input_2[i][j]);
-
-    // Compute Hadamard product of the real parts only
-    let mat_result = Mat::from_fn(rows, cols, |i, j| {
-        let r1 = mat_1[(i, j)].re;
-        let r2 = mat_2[(i, j)].re;
-        Complex::new(r1 * r2, 0.0)
-    });
-
-    // Convert result to Vec<Vec<Complex<f64>>>
+    // Initialize result matrix with zeros
     let mut result = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
+
     for i in 0..rows {
         for j in 0..cols {
-            result[i][j] = mat_result[(i, j)];
+            result[i][j] = input_1[i][j] * input_2[i][j].conj();
         }
     }
 

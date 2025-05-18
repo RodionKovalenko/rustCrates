@@ -116,6 +116,22 @@ fn softmax_derivative_complex(data: &Vec<f64>) -> Vec<Vec<f64>> {
     jacobian
 }
 
+pub fn softmax_derivative_complex_jacobian(softmax_values: &Vec<Vec<f64>>) -> Vec<Vec<Vec<f64>>> {
+    let num_rows = softmax_values.len();
+    let num_cols = softmax_values[0].len();
+
+    // 3D tensor to hold Jacobian matrices for each row
+    let mut derivative: Vec<Vec<Vec<f64>>> = vec![vec![vec![0.0; num_cols]; num_cols]; num_rows];
+
+    for i in 0..num_rows {
+        derivative[i] = softmax_derivative_complex(&softmax_values[i]);
+    }
+
+    //println!("original softmax derivative 3d: {:?} ", &derivative);
+
+    derivative
+}
+
 pub fn softmax_derivative_complex_matrix(softmax_values: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
     let num_rows = softmax_values.len();
     let num_cols = softmax_values[0].len();
@@ -143,18 +159,40 @@ pub fn softmax_derivative_complex_matrix(softmax_values: &Vec<Vec<f64>>) -> Vec<
     grouped_derivated
 }
 
-pub fn softmax_derivative_complex_jacobian(softmax_values: &Vec<Vec<f64>>) -> Vec<Vec<Vec<f64>>> {
+pub fn norm_softmax_derivative(input: &Vec<Complex<f64>>, softmax_output: &Vec<f64>) -> Vec<Vec<Complex<f64>>> {
+    let n = input.len();
+    let mut jacobian = vec![vec![Complex::new(0.0, 0.0); n]; n];
+
+    for i in 0..n {
+        for j in 0..n {
+            let norm_cj = input[j].norm();
+            if norm_cj == 0.0 {
+                jacobian[i][j] = Complex::new(0.0, 0.0);
+            } else {
+                let delta_ij = if i == j { 1.0 } else { 0.0 };
+                let dpi_dnormcj = softmax_output[i] * (delta_ij - softmax_output[j]);
+
+                // Correct derivative of norm w.r.t. complex number
+                // ∂‖c‖/∂c = c.conj() / ‖c‖ (not divided by 2)
+                let dnormcj_dcj_re = input[j].re / norm_cj; // Removed /2
+                let dnormcj_dcj_im = -input[j].im / norm_cj; // Removed /2
+
+                jacobian[i][j] = Complex::new(dpi_dnormcj * dnormcj_dcj_re, dpi_dnormcj * dnormcj_dcj_im);
+            }
+        }
+    }
+
+    jacobian
+}
+pub fn norm_softmax_derivative_complex(input: &Vec<Vec<Complex<f64>>>, softmax_values: &Vec<Vec<f64>>) -> Vec<Vec<Vec<Complex<f64>>>> {
     let num_rows = softmax_values.len();
     let num_cols = softmax_values[0].len();
 
-    // 3D tensor to hold Jacobian matrices for each row
-    let mut derivative: Vec<Vec<Vec<f64>>> = vec![vec![vec![0.0; num_cols]; num_cols]; num_rows];
+    let mut derivative: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); num_cols]; num_cols]; num_rows];
 
     for i in 0..num_rows {
-        derivative[i] = softmax_derivative_complex(&softmax_values[i]);
+        derivative[i] = norm_softmax_derivative(&input[i], &softmax_values[i]);
     }
-
-    //println!("original softmax derivative 3d: {:?} ", &derivative);
 
     derivative
 }
@@ -196,7 +234,7 @@ pub fn backpropagate_softmax(softmax_jacobian: &Vec<Vec<Vec<Complex<f64>>>>, dl_
     dl_dz
 }
 
-pub fn backpropagate_softmax_masked(softmax_jacobian: &Vec<Vec<Vec<f64>>>, dl_ds: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<Complex<f64>>> {
+pub fn backpropagate_softmax_masked(softmax_jacobian: &Vec<Vec<Vec<Complex<f64>>>>, dl_ds: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<Complex<f64>>> {
     let num_rows = dl_ds.len();
     let num_cols = dl_ds[0].len();
 
@@ -305,18 +343,29 @@ where
     for batch in 0..input.len() {
         for seq in 0..input[batch].len() {
             for dim in 0..input[batch][seq].len() {
-                // Perturb input by epsilon
+                // === Real part perturbation ===
                 let mut input_plus = input.clone();
-                input_plus[batch][seq][dim] += epsilon;
+                input_plus[batch][seq][dim].re += epsilon;
 
                 let mut input_minus = input.clone();
-                input_minus[batch][seq][dim] -= epsilon;
+                input_minus[batch][seq][dim].re -= epsilon;
 
-                // Compute numerical gradient
                 let loss_plus = f(&input_plus);
                 let loss_minus = f(&input_minus);
+                let grad_re = (loss_plus - loss_minus).re / (2.0 * epsilon); // only the real part matters
 
-                grad_batch[seq][dim] += (loss_plus - loss_minus) / (2.0 * epsilon);
+                // === Imaginary part perturbation ===
+                let mut input_plus = input.clone();
+                input_plus[batch][seq][dim].im += epsilon;
+
+                let mut input_minus = input.clone();
+                input_minus[batch][seq][dim].im -= epsilon;
+
+                let loss_plus = f(&input_plus);
+                let loss_minus = f(&input_minus);
+                let grad_im = (loss_plus - loss_minus).re / (2.0 * epsilon); // again, just take the real part of the loss
+
+                grad_batch[seq][dim] += Complex::new(grad_re, grad_im);
             }
         }
     }
@@ -362,16 +411,30 @@ where
         for col in 0..weights[row].len() {
             // Perturb input by epsilon
             let mut weights_plus = weights.clone();
-            weights_plus[row][col] += epsilon;
+            weights_plus[row][col].re += epsilon;
 
             let mut weights_minus = weights.clone();
-            weights_minus[row][col] -= epsilon;
+            weights_minus[row][col].re -= epsilon;
 
             // Compute numerical gradient
-            let loss_plus = f(&input, &weights_plus);
-            let loss_minus = f(&input, &weights_minus);
+            let loss_plus_re = f(&input, &weights_plus);
+            let loss_minus_re = f(&input, &weights_minus);
 
-            grad_batch[row][col] += (loss_plus - loss_minus) / (2.0 * epsilon);
+            // Perturb input by epsilon
+            let mut weights_plus = weights.clone();
+            weights_plus[row][col].im += epsilon;
+
+            let mut weights_minus = weights.clone();
+            weights_minus[row][col].im -= epsilon;
+
+            // Compute numerical gradient
+            let loss_plus_im: Complex<f64> = f(&input, &weights_plus);
+            let loss_minus_im: Complex<f64> = f(&input, &weights_minus);
+
+            let grad_re = (loss_plus_re - loss_minus_re).re / (2.0 * epsilon); // again, just take the real part of the loss
+            let grad_im = (loss_plus_im - loss_minus_im).re / (2.0 * epsilon); // again, just take the real part of the loss
+
+            grad_batch[row][col] += Complex::new(grad_re, grad_im);
         }
     }
 
@@ -389,16 +452,30 @@ where
             for col in 0..weights[row].len() {
                 // Perturb input by epsilon
                 let mut weights_plus = weights.clone();
-                weights_plus[row][col] += epsilon;
+                weights_plus[row][col].re += epsilon;
 
                 let mut weights_minus = weights.clone();
-                weights_minus[row][col] -= epsilon;
+                weights_minus[row][col].re -= epsilon;
 
                 // Compute numerical gradient
-                let loss_plus = f(&input, &weights_plus);
-                let loss_minus = f(&input, &weights_minus);
+                let loss_plus_re = f(&input, &weights_plus);
+                let loss_minus_re = f(&input, &weights_minus);
 
-                grad_batch[batch][row][col] += (loss_plus - loss_minus) / (2.0 * epsilon);
+                // Perturb input by epsilon
+                let mut weights_plus = weights.clone();
+                weights_plus[row][col].im += epsilon;
+
+                let mut weights_minus = weights.clone();
+                weights_minus[row][col].im -= epsilon;
+
+                // Compute numerical gradient
+                let loss_plus_im = f(&input, &weights_plus);
+                let loss_minus_im = f(&input, &weights_minus);
+
+                let grad_re = (loss_plus_re - loss_minus_re).re / (2.0 * epsilon); // again, just take the real part of the loss
+                let grad_im = (loss_plus_im - loss_minus_im).re / (2.0 * epsilon); // again, just take the real part of the loss
+
+                grad_batch[batch][row][col] += Complex::new(grad_re, grad_im);
             }
         }
     }
@@ -415,16 +492,30 @@ where
     for row in 0..bias.len() {
         // Perturb input by epsilon
         let mut bias_plus = bias.clone();
-        bias_plus[row] += epsilon;
+        bias_plus[row].re += epsilon;
 
         let mut bias_minus = bias.clone();
-        bias_minus[row] -= epsilon;
+        bias_minus[row].re -= epsilon;
 
         // Compute numerical gradient
-        let loss_plus = f(&input, &bias_plus);
-        let loss_minus = f(&input, &bias_minus);
+        let loss_plus_re = f(&input, &bias_plus);
+        let loss_minus_re = f(&input, &bias_minus);
 
-        grad_batch[row] = (loss_plus - loss_minus) / (2.0 * epsilon);
+        // Perturb input by epsilon
+        let mut bias_plus = bias.clone();
+        bias_plus[row].im += epsilon;
+
+        let mut bias_minus = bias.clone();
+        bias_minus[row].im -= epsilon;
+
+        // Compute numerical gradient
+        let loss_plus_im = f(&input, &bias_plus);
+        let loss_minus_im = f(&input, &bias_minus);
+
+        let grad_re = (loss_plus_re - loss_minus_re).re / (2.0 * epsilon); // again, just take the real part of the loss
+        let grad_im = (loss_plus_im - loss_minus_im).re / (2.0 * epsilon); // again, just take the real part of the loss
+
+        grad_batch[row] = Complex::new(grad_re, grad_im);
     }
 
     grad_batch
@@ -439,18 +530,30 @@ where
     for batch in 0..input.len() {
         for seq in 0..input[batch].len() {
             for dim in 0..input[batch][seq].len() {
-                // Perturb input by epsilon
-                let mut input_plus = input.clone();
-                input_plus[batch][seq][dim] += epsilon;
+                // Real part perturbation
+                let mut input_plus_re = input.clone();
+                input_plus_re[batch][seq][dim].re += epsilon;
 
-                let mut input_minus = input.clone();
-                input_minus[batch][seq][dim] -= epsilon;
+                let mut input_minus_re = input.clone();
+                input_minus_re[batch][seq][dim].re -= epsilon;
 
-                // Compute numerical gradient
-                let loss_plus = f(&input_plus);
-                let loss_minus = f(&input_minus);
+                let loss_plus_re = f(&input_plus_re);
+                let loss_minus_re = f(&input_minus_re);
 
-                grad_batch[batch][seq][dim] = (loss_plus - loss_minus) / (2.0 * epsilon);
+                // Imaginary part perturbation
+                let mut input_plus_im = input.clone();
+                input_plus_im[batch][seq][dim].im += epsilon;
+
+                let mut input_minus_im = input.clone();
+                input_minus_im[batch][seq][dim].im -= epsilon;
+
+                let loss_plus_im: Complex<f64> = f(&input_plus_im);
+                let loss_minus_im: Complex<f64> = f(&input_minus_im);
+
+                let gradient_re = (loss_plus_re - loss_minus_re).re / (2.0 * epsilon);
+                let gradient_im = (loss_plus_im - loss_minus_im).re / (2.0 * epsilon);
+
+                grad_batch[batch][seq][dim] += Complex::new(gradient_re, gradient_im);
             }
         }
     }
@@ -620,20 +723,31 @@ where
         for col in 0..weights[row].len() {
             // Perturb input by epsilon
             let mut weights_plus = weights.clone();
-            weights_plus[row][col] += epsilon;
+            weights_plus[row][col].re += epsilon;
 
             let mut weights_minus = weights.clone();
-            weights_minus[row][col] -= epsilon;
+            weights_minus[row][col].re -= epsilon;
 
             // Compute numerical gradient
-            let loss_plus = f(&input, &weights_plus);
-            let loss_minus = f(&input, &weights_minus);
+            let loss_plus_re = f(&input, &weights_plus);
+            let loss_minus_re = f(&input, &weights_minus);
+
+            // Perturb input by epsilon
+            let mut weights_plus = weights.clone();
+            weights_plus[row][col].im += epsilon;
+
+            let mut weights_minus = weights.clone();
+            weights_minus[row][col].im -= epsilon;
+
+            let loss_plus_im = f(&input, &weights_plus);
+            let loss_minus_im = f(&input, &weights_minus);
 
             for batch_ind in 0..output.len() {
                 for (seq_ind, _input_vec) in output[batch_ind].iter().enumerate() {
                     for (dim_ind, _value) in _input_vec.iter().enumerate() {
-                        let gradient: Complex<f64> = (loss_plus[batch_ind][seq_ind][dim_ind] - loss_minus[batch_ind][seq_ind][dim_ind]) / (2.0 * epsilon);
-                        grad_batch[batch_ind][row][col] += gradient;
+                        let gradient_re: f64 = (loss_plus_re[batch_ind][seq_ind][dim_ind] - loss_minus_re[batch_ind][seq_ind][dim_ind]).re / (2.0 * epsilon);
+                        let gradient_im: f64 = (loss_plus_im[batch_ind][seq_ind][dim_ind] - loss_minus_im[batch_ind][seq_ind][dim_ind]).re / (2.0 * epsilon);
+                        grad_batch[batch_ind][row][col] += Complex::new(gradient_re, gradient_im);
                     }
                 }
             }
@@ -835,33 +949,49 @@ where
     numerical_gradient
 }
 
-pub fn numerical_gradient_check_f64<F>(f: F, z: &Vec<Vec<Complex<f64>>>, epsilon: f64) -> Vec<Vec<f64>>
+pub fn numerical_gradient_check_f64<F>(f: F, z: &Vec<Vec<Complex<f64>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
 where
     F: Fn(&Vec<Vec<Complex<f64>>>) -> Vec<Vec<f64>>,
 {
     let num_rows = z.len();
     let num_cols = z[0].len();
-    let mut numerical_gradient = vec![vec![0.0; num_cols]; num_rows];
+
+    // Gradient[i][k][j] = ∂f[i][k] / ∂z[i][j]
+    let mut gradient = vec![vec![vec![Complex::new(0.0, 0.0); num_cols]; num_cols]; num_rows];
 
     for i in 0..num_rows {
         for j in 0..num_cols {
+            // Perturb real part of z[i][j]
             let mut z_plus = z.clone();
             let mut z_minus = z.clone();
+            z_plus[i][j].re += epsilon;
+            z_minus[i][j].re -= epsilon;
 
-            // Perturb z[i][j] by +epsilon
-            z_plus[i][j] += Complex::new(epsilon, 0.0);
             let f_plus = f(&z_plus);
-
-            // Perturb z[i][j] by -epsilon
-            z_minus[i][j] -= Complex::new(epsilon, 0.0);
             let f_minus = f(&z_minus);
 
-            // Compute the numerical gradient
-            numerical_gradient[i][j] = (f_plus[i][j] - f_minus[i][j]) / (2.0 * epsilon);
+            for k in 0..num_cols {
+                let re_grad = (f_plus[i][k] - f_minus[i][k]) / (2.0 * epsilon);
+                gradient[i][k][j].re = re_grad;
+            }
+
+            // Perturb imaginary part of z[i][j]
+            let mut z_plus = z.clone();
+            let mut z_minus = z.clone();
+            z_plus[i][j].im += epsilon;
+            z_minus[i][j].im -= epsilon;
+
+            let f_plus = f(&z_plus);
+            let f_minus = f(&z_minus);
+
+            for k in 0..num_cols {
+                let im_grad = (f_plus[i][k] - f_minus[i][k]) / (2.0 * epsilon);
+                gradient[i][k][j].im = im_grad;
+            }
         }
     }
 
-    numerical_gradient
+    gradient
 }
 
 pub fn compute_relative_errors(numerical: &Vec<Vec<Vec<Complex<f64>>>>, analytical: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<f64>>> {

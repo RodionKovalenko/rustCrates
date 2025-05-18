@@ -168,10 +168,11 @@ mod test_self_attention_layer {
             output.get_output_batch()
         };
 
-        let small_bias_pos: Vec<Vec<Complex<f64>>> = bias_pos.iter()
-        .take(output_dim) // take first 5 rows
-        .map(|row| row.iter().take(output_dim).cloned().collect()) // take first 5 columns from each row
-        .collect();
+        let small_bias_pos: Vec<Vec<Complex<f64>>> = bias_pos
+            .iter()
+            .take(output_dim) // take first 5 rows
+            .map(|row| row.iter().take(output_dim).cloned().collect()) // take first 5 columns from each row
+            .collect();
 
         let numerical_bias_pos_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &small_bias_pos.clone(), output_batch.clone(), epsilon);
 
