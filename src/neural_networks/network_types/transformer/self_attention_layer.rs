@@ -99,7 +99,7 @@ impl SelfAttentionLayer {
 
         self.output_batch = Some(batch_output.clone());
 
-        if !layer_input.get_forward_only() {
+        if layer_input.get_calculate_gradient() {
             layer_input.set_previous_gradient_input_batch(self.calculate_input_gradient_batch());
         }
 

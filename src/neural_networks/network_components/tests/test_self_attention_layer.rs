@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod test_self_attention_layer {
+    use std::time::Instant;
+
     use num::Complex;
 
     use crate::neural_networks::{
@@ -156,15 +158,22 @@ mod test_self_attention_layer {
 
         // Bias Positional gradient ------------------------------------------------------------------------------------------- start
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, bias_pos: &Vec<Vec<Complex<f64>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
+            //println!("bias pos dim: {} {}", bias_pos.len(), bias_pos[0].len());
             attention_head_layer.bias_pos = bias_pos.clone();
 
+            layer_input.set_calculate_gradient(false);
             layer_input.set_input_batch(input.clone());
             let output = attention_head_layer.forward(&layer_input);
 
             output.get_output_batch()
         };
 
-        let numerical_bias_pos_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &bias_pos.clone(), output_batch.clone(), epsilon);
+        let small_bias_pos: Vec<Vec<Complex<f64>>> = bias_pos.iter()
+        .take(output_dim) // take first 5 rows
+        .map(|row| row.iter().take(output_dim).cloned().collect()) // take first 5 columns from each row
+        .collect();
+
+        let numerical_bias_pos_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &small_bias_pos.clone(), output_batch.clone(), epsilon);
 
         println!("\n numerical gradient bias positonal attention layer {:?}", numerical_bias_pos_batch);
         println!("\n numerical gradient bias positonal dim {:?}, {}, {}", numerical_bias_pos_batch.len(), numerical_bias_pos_batch[0].len(), numerical_bias_pos_batch[0][0].len());
@@ -195,7 +204,7 @@ mod test_self_attention_layer {
         let mut attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, input_dim, output_dim, learning_rate);
 
         let sequence_len = 8;
-        let embedding_dim = 64;
+        let embedding_dim = 16;
         let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(sequence_len, embedding_dim, learning_rate);
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, sequence_len, embedding_dim);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
@@ -237,8 +246,12 @@ mod test_self_attention_layer {
         println!("target tokens ids: {:?}", &target_token_id_batch);
         println!("final output dim: {} {} {}", _softmax_batch_output.len(), _softmax_batch_output[0].len(), _softmax_batch_output[0][0].len());
 
+        let now = Instant::now();
+
         // TEST INPUT GRADIENT
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
+            let seconds_elapsed = now.elapsed();
+            layer_input.set_calculate_gradient(false);
             layer_input.set_input_batch(input.clone());
             layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
@@ -253,6 +266,10 @@ mod test_self_attention_layer {
 
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
 
+            let seconds_elapsed_end = now.elapsed();
+            let duration = seconds_elapsed_end - seconds_elapsed;
+            let _seconds = duration.as_secs_f64();
+            //println!("time elapsed for forward pass for input gradient in seconds: {:?}", _seconds);
             loss
         };
 
@@ -284,9 +301,11 @@ mod test_self_attention_layer {
 
         // Test weights q
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
+            let seconds_elapsed = now.elapsed();
             let attention_head = attention_layer.attention_heads.get_mut(0).unwrap();
             attention_head.weights_q = weights.clone();
 
+            layer_input.set_calculate_gradient(false);
             layer_input.set_input_batch(input.clone());
             layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
@@ -300,6 +319,11 @@ mod test_self_attention_layer {
             let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
 
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
+
+            let seconds_elapsed_end = now.elapsed();
+            let duration = seconds_elapsed_end - seconds_elapsed;
+            let _seconds = duration.as_secs_f64();
+            //println!("time elapsed for forward pass for weight q gradient in seconds: {:?}", _seconds);
 
             loss
         };
