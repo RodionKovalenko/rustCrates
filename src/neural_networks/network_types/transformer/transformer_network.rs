@@ -22,7 +22,10 @@ use crate::{
             tokenizer::{detokenize, tokenize_batch},
         },
     },
-    utils::{data_converter::convert_c_to_f64_3d, sampling_methods::{get_target_predictions, greedy_decoding}},
+    utils::{
+        data_converter::convert_c_to_f64_3d,
+        sampling_methods::{get_target_predictions, greedy_decoding},
+    },
 };
 
 pub const MAX_CONTEXT_WINDOW_SIZE: usize = 512;
@@ -46,6 +49,8 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             let seconds_elapsed = now.elapsed();
             let input_batch_extended = batch_dataset.extend_input_with_target(input_batch, target_batch);
             let target_batch_extended = batch_dataset.extend_target(target_batch);
+
+            println!("input_ batch extended: {:?}", input_batch_extended);
 
             // println!("extended input batch: {:?}", &input_batch_extended);
 
@@ -203,10 +208,15 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         // Store the last predicted token's softmax probabilities
         all_predictions.push(current_predictions[current_predictions.len() - 1].clone());
 
-        let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = vec![current_predictions[current_predictions.len() -1].clone()];
+        let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = vec![vec![current_predictions[0][current_predictions[0].len() - 1].clone()]];
+
+        // println!("predicted softmax target: {} {} {}", predicted_softmax_targets.len(), predicted_softmax_targets[0].len(), predicted_softmax_targets[0][0].len());
 
         let sampled_tokens = greedy_decoding(&predicted_softmax_targets);
         batch_ids[0].push(sampled_tokens[0][0].clone());
+
+        // println!("batch ids: {:?}", batch_ids);
+        // println!("sampled token: {:?}", sampled_tokens[0][0]);
 
         let predicted_token_batch: Vec<String> = sampled_tokens.par_iter().map(|token_indices| detokenize(token_indices, false).unwrap()).collect();
         // Check if the last predicted token is the EOS token
@@ -218,7 +228,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
             break;
         }
 
-        print!("{}", predicted_token);
+        println!("{}", predicted_token);
         // Add the predicted token to the current input batch
         current_input_batch[0] = format!("{}{}", current_input_batch[0], predicted_token);
 
@@ -243,6 +253,10 @@ pub fn predict(transformer_network: &mut NeuralNetwork, batch_ids: &Vec<Vec<u32>
     let mut layer_input = LayerInput::new_default();
     layer_input.set_forward_only(forward_only);
     layer_input.set_time_step(time_step);
+
+    if forward_only {
+        layer_input.set_calculate_gradient(false);
+    }
 
     for layer in transformer_network.layers.iter_mut() {
         match layer {
@@ -518,7 +532,7 @@ fn cross_entropy_loss(predictions: &Vec<Vec<f64>>, target_tokens: &Vec<u32>, pad
         let seq_ind = seq_ind_start + s;
 
         let prob = predictions[seq_ind][target_idx as usize];
-        // for softmax 
+        // for softmax
         let re_loss = -(prob + 1e-15).ln();
         //for log softmax
         //let re_loss = -prob;
