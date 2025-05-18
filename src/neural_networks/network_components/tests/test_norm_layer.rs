@@ -16,8 +16,8 @@ mod test_norm_layer {
         // Define some small batch size and input dimensions for simplicity
         let _batch_size = 2;
         let _seq_len: usize = 2; // Update to match the input structure
-        let _input_dim = 3; // Match the input dimension with your input batch
-        let _output_dim = 3;
+        let _input_dim = 4; // Match the input dimension with your input batch
+        let _output_dim = 4;
         let learning_rate = 0.01;
         let _operation_mode = OperationMode::TRAINING;
         let epsilon = 1e-8;
@@ -25,7 +25,7 @@ mod test_norm_layer {
         // Create a simple LinearLayer with the given input and output dimensions
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(_batch_size, _output_dim, _input_dim);
         let input_batch_before: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(_batch_size, _output_dim, _input_dim);
-        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(_batch_size, _output_dim, 2);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(_batch_size, _output_dim, (_output_dim - 1) as u32);
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];
 
         let mut norm_layer = NormalNormLayer::new(input_batch[0][0].len(), 1e-8, learning_rate);

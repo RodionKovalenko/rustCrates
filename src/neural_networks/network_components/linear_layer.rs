@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
     adam_w::{calculate_adam_w, calculate_adam_w_bias},
-    matrix::{add_vector, clip_gradient_1d, clip_gradients, is_nan_or_inf, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
+    matrix::{add_vector, clip_gradient_1d, clip_gradients, conjugate_transpose, is_nan_or_inf, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
     weights_initializer::initialize_weights_complex,
 };
 
@@ -92,7 +92,7 @@ impl LinearLayer {
         match previous_gradient_batch {
             GradientBatch::Complex(previous_gradient_input_batch) => {
                 for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_input_batch).enumerate() {
-                    weight_gradients[batch_ind] = multiply_complex(&transpose(input_sample), &previous_gradient);
+                    weight_gradients[batch_ind] = multiply_complex(&conjugate_transpose(&input_sample), &previous_gradient);
                     //Accumulate gradients for biases
                     for grad_row in previous_gradient.iter() {
                         for (k, grad_val) in grad_row.iter().enumerate() {
@@ -100,7 +100,7 @@ impl LinearLayer {
                         }
                     }
 
-                    gradient_input_batch[batch_ind] = multiply_complex(&previous_gradient, &transpose(&self.weights));
+                    gradient_input_batch[batch_ind] = multiply_complex(&previous_gradient, &conjugate_transpose(&self.weights));
                 }
             }
             GradientBatch::Real(previous_gradient_input_batch) => {

@@ -19,6 +19,8 @@ pub struct SoftmaxLayer {
     #[serde(skip)]
     softmax_output_batch: Option<Vec<Vec<Vec<f64>>>>,
     #[serde(skip)]
+    input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
     gradient: Option<Gradient>,
     #[serde(skip)]
     padding_mask_batch: Option<Vec<Vec<u32>>>,
@@ -30,6 +32,7 @@ impl SoftmaxLayer {
             learning_rate,
             operation_mode,
             softmax_output_batch: None,
+            input_batch: None,
             gradient: None,
             padding_mask_batch: None,
         }
@@ -56,19 +59,22 @@ impl SoftmaxLayer {
         };
 
         self.softmax_output_batch = Some(layer_output.clone());
+        self.input_batch = Some(input_batch.clone());
 
         layer_output
     }
 
     pub fn backward(&mut self, target_token_ids: &Vec<Vec<u32>>) -> Gradient {
-        let softmax_output_batch: &Vec<Vec<Vec<f64>>> = self.softmax_output_batch.as_ref().expect("Input batch is missing in softmax layer");
+        let softmax_output_batch: &Vec<Vec<Vec<f64>>> = self.softmax_output_batch.as_ref().expect("Softmax output batch is missing in softmax layer");
+        let input_batch: &Vec<Vec<Vec<Complex<f64>>>> = self.input_batch.as_ref().expect("Input batch is missing in softmax layer");
         let padding_mask_batch = self.padding_mask_batch.as_ref().expect("Input batch is missing in softmax layer");
 
         let batch_size = softmax_output_batch.len();
         let seq_len = softmax_output_batch[0].len();
         let vocab_dim = softmax_output_batch[0][0].len();
+        let mut softmax_gradient;
 
-        let mut gradient_batch: Vec<Vec<Vec<f64>>> = vec![vec![vec![0.0; vocab_dim]; seq_len]; batch_size];
+        let mut gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); vocab_dim]; seq_len]; batch_size];
 
         for (batch_index, (softmax_output, target_tokens)) in softmax_output_batch.iter().zip(target_token_ids.iter()).enumerate() {
             let padding_mask = &padding_mask_batch[batch_index];
@@ -76,7 +82,7 @@ impl SoftmaxLayer {
             let mut sequence_len_unpadded: usize = 0;
             for &padding in padding_mask {
                 if padding != 0 {
-                    sequence_len_unpadded +=1;
+                    sequence_len_unpadded += 1;
                 }
             }
 
@@ -86,11 +92,11 @@ impl SoftmaxLayer {
             let mut target_len_unpadded = 0.0;
             for (_t, &target_class) in target_tokens.iter().enumerate() {
                 if target_class != 1 {
-                    target_len_unpadded +=1.0;
+                    target_len_unpadded += 1.0;
                 }
             }
 
-            let normalizer: f64= batch_size as f64 *  target_len_unpadded;
+            let normalizer: f64 = batch_size as f64 * target_len_unpadded;
 
             for (t, &target_class) in target_tokens.iter().enumerate() {
                 if target_class as usize >= vocab_dim {
@@ -109,17 +115,22 @@ impl SoftmaxLayer {
                     // for softmax
                     //let prob = softmax_prob;
 
+                    let real_part_gradient = input_batch[batch_index][seq_ind][c].re / input_batch[batch_index][seq_ind][c].norm();
+                    let im_part_gradient = input_batch[batch_index][seq_ind][c].im / input_batch[batch_index][seq_ind][c].norm();
+                   
                     if target_class == c as u32 {
-                        gradient_batch[batch_index][seq_ind][c] += (softmax_prob - 1.0) / normalizer;
+                        softmax_gradient = (softmax_prob - 1.0) / normalizer;
                     } else {
-                        gradient_batch[batch_index][seq_ind][c] += softmax_prob / normalizer;
+                        softmax_gradient = softmax_prob / normalizer;
                     };
+
+                    gradient_batch[batch_index][seq_ind][c] += Complex::new(softmax_gradient * real_part_gradient, softmax_gradient * im_part_gradient);
                 }
             }
         }
 
         let mut gradient = Gradient::new_default();
-        gradient.set_gradient_input_batch_softmax(gradient_batch);
+        gradient.set_gradient_input_batch(gradient_batch);
         self.gradient = Some(gradient.clone());
 
         gradient
