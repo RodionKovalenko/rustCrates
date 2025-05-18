@@ -12,6 +12,7 @@ pub struct LayerInput {
     input_record: Option<Vec<Vec<Complex<f64>>>>,
     time_step: usize,
     forward_only: bool,
+    calculate_gradient: bool,
 }
 
 impl LayerInput {
@@ -25,6 +26,7 @@ impl LayerInput {
             previous_gradient_input_batch: None,
             time_step: 0,
             forward_only: false,
+            calculate_gradient: true
         }
     }
     pub fn set_input_batch(&mut self, input_batch: Vec<Vec<Vec<Complex<f64>>>>) {
@@ -51,6 +53,9 @@ impl LayerInput {
     pub fn set_time_step(&mut self, time_step: usize) {
         self.time_step = time_step;
     }
+    pub fn set_calculate_gradient(&mut self, calculate_gradient: bool) {
+        self.calculate_gradient = calculate_gradient;
+    }
 
     pub fn get_padding_mask_batch(&self) -> Vec<Vec<u32>> {
         self.padding_mask_batch.clone().unwrap_or_else(|| vec![])
@@ -72,6 +77,9 @@ impl LayerInput {
     }
     pub fn get_forward_only(&self) -> bool {
         self.forward_only
+    }
+    pub fn get_calculate_gradient(&self) -> bool {
+        self.calculate_gradient
     }
     pub fn get_time_step(&self) -> usize {
         self.time_step

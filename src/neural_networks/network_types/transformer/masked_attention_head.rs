@@ -8,7 +8,7 @@ use crate::neural_networks::{
         activation::softmax_complex_padding,
         adam_w::calculate_adam_w,
         derivative::{backpropagate_softmax_masked, softmax_derivative_complex_jacobian},
-        matrix::{add_matrix, clip_gradients, is_nan_or_inf, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
+        matrix::{add_matrix, clip_gradients, get_reduced_matrix, is_nan_or_inf, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -180,7 +180,8 @@ impl MaskedAttentionHead {
                 let attn_scores = multiply_complex(q, &transpose(&k_cache[batch_ind])); // Use the full K cache
                 let scaled_scores = scale_attention_scores(&attn_scores, k_cache[batch_ind][0].len() as f64);
 
-                let mut scaled_scores_positioned = add_matrix::<Complex<f64>>(&scaled_scores, &self.bias_pos);
+                let reduced_bias_pos = get_reduced_matrix(&self.bias_pos, scaled_scores.len(), scaled_scores[0].len());
+                let mut scaled_scores_positioned = add_matrix::<Complex<f64>>(&scaled_scores, &reduced_bias_pos);
 
                 apply_attention_mask_inplace(&mut scaled_scores_positioned, &mask);
                 softmax_complex_padding(&scaled_scores_positioned, &padding_mask)
@@ -453,7 +454,7 @@ fn apply_attention_mask_inplace(attention_scores: &mut Vec<Vec<Complex<f64>>>, m
 
     for row in 0..attention_scores.len() {
         for col in 0..attention_scores[row].len() {
-            if mask[row][col] == 0 {
+            if mask[row % mask.len()][col % mask[0].len()] == 0 {
                 attention_scores[row][col] = large_negative; // Apply the mask
             }
         }

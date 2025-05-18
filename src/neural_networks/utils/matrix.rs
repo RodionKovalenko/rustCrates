@@ -390,19 +390,8 @@ pub fn subtract<T: Debug + Clone + Sub<Output = T>>(matrix_a: &Vec<Vec<T>>, matr
     matrix_result
 }
 
-pub fn add_matrix<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<T>>) -> Vec<Vec<T>> {
-    let mut matrix_result: Vec<Vec<T>> = matrix_a.clone();
-
-    // assert_eq!(matrix_a.len(), matrix_b.len());
-    // assert_eq!(matrix_a[0].len(), matrix_b[0].len());
-
-    for i in 0..matrix_a.len() {
-        for j in 0..matrix_a[i].len() {
-            matrix_result[i][j] = matrix_result[i][j].clone() + matrix_b[i % matrix_b.len()][j % matrix_b[0].len()].clone();
-        }
-    }
-
-    matrix_result
+pub fn add_matrix<T: std::ops::Add<Output = T> + Copy>(a: &[Vec<T>], b: &[Vec<T>]) -> Vec<Vec<T>> {
+    a.iter().zip(b.iter()).map(|(row_a, row_b)| row_a.iter().zip(row_b.iter()).map(|(&x, &y)| x + y).collect()).collect()
 }
 
 pub fn add_matrix_3d<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<Vec<Vec<T>>>, matrix_b: &Vec<Vec<Vec<T>>>) -> Vec<Vec<Vec<T>>> {
@@ -512,6 +501,14 @@ pub fn apply_padding_mask(input: &mut Vec<Vec<Complex<f64>>>, padding_mask: &Vec
             }
         }
     }
+}
+
+pub fn get_reduced_matrix(matrix: &Vec<Vec<Complex<f64>>>, num_rows: usize, num_cols: usize) -> Vec<Vec<Complex<f64>>> {
+    matrix
+        .iter()
+        .take(num_rows) // take first 5 rows
+        .map(|row| row.iter().take(num_cols).cloned().collect()) // take first 5 columns from each row
+        .collect()
 }
 
 pub fn clip_gradients(gradients: &mut Vec<Vec<Complex<f64>>>, threshold: f64) {
