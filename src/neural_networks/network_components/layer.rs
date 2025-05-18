@@ -4,7 +4,7 @@ use crate::neural_networks::{
         activation::activate_output_complex_padding,
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         derivative::get_gradient_complex,
-        matrix::{add_vector, apply_padding_mask_batch, clip_gradient_1d, clip_gradients, hadamard_product_2d_c, is_nan_or_inf, multiply_complex, transpose},
+        matrix::{add_vector, apply_padding_mask_batch, clip_gradient_1d, clip_gradients, conjugate_transpose, hadamard_product_2d_c, is_nan_or_inf, multiply_complex},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -185,8 +185,8 @@ impl Layer {
         for (batch_ind, (input, previous_gradient)) in input_batch.iter().zip(&previous_gradient_batch_padded).enumerate() {
             let gradient_output = get_gradient_complex(&output_batch[batch_ind], &raw_output_batch[batch_ind], self.activation_type.clone());
 
-            input_gradient_batch[batch_ind] = hadamard_product_2d_c(&previous_gradient, &gradient_output);
-            weight_gradients[batch_ind] = multiply_complex(&transpose(&input), &input_gradient_batch[batch_ind]);
+            input_gradient_batch[batch_ind] = hadamard_product_2d_c(previous_gradient, &gradient_output);
+            weight_gradients[batch_ind] = multiply_complex(&conjugate_transpose(&input), &input_gradient_batch[batch_ind]);
 
             //Accumulate gradients for biases
             for grad_row in input_gradient_batch[batch_ind].iter() {
@@ -195,7 +195,7 @@ impl Layer {
                 }
             }
 
-            input_gradient_batch[batch_ind] = multiply_complex(&input_gradient_batch[batch_ind], &transpose(&self.weights));
+            input_gradient_batch[batch_ind] = multiply_complex(&input_gradient_batch[batch_ind], &conjugate_transpose(&self.weights));
         }
 
         gradient.set_gradient_input_batch(input_gradient_batch);

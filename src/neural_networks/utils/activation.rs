@@ -372,14 +372,13 @@ pub fn softmax_last_row(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<f64>> {
 }
 
 pub fn softmax_row(input: &Vec<Complex<f64>>) -> Vec<f64> {
-    // Use norms (magnitudes) only
-    let max_norm = input.iter().map(|c| c.re).fold(f64::NEG_INFINITY, f64::max);
+    let max_norm = input.iter().map(|c| c.norm()).fold(f64::NEG_INFINITY, f64::max);
 
-    let exps: Vec<f64> = input.iter().map(|c| (c.re - max_norm).exp()).collect();
+    let exps: Vec<f64> = input.iter().map(|c| (c.norm() - max_norm).exp()).collect();
 
     let sum: f64 = exps.iter().sum();
 
-    exps.iter().map(|&x| x / sum).collect()
+    exps.into_iter().map(|x| x / sum).collect()
 }
 
 pub fn log_softmax_row(input: &Vec<Complex<f64>>) -> Vec<f64> {
