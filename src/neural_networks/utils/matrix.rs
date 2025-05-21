@@ -98,7 +98,7 @@ pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Co
     let matrix_b_clone = matrix_b.clone();
 
     // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
-    if matrix_a[0].len() != matrix_b.len() && matrix_a.len() != matrix_b.len() {
+    if matrix_a[0].len() != matrix_b.len() {
         panic!("Matrix A does not have the same number of columns as Matrix B rows.");
     }
 
@@ -112,8 +112,8 @@ pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Co
     pool.install(|| {
         result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
             for j in 0..num_columns {
-                row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
-                //row[j] = (0..matrix_b_clone.len()).map(|k| Complex::new(matrix_a_clone[i][k].re * matrix_b_clone[k][j].re, 0.0)).sum();
+                //row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
+                row[j] = (0..matrix_b_clone.len()).map(|k| Complex::new(matrix_a_clone[i][k].re * matrix_b_clone[k][j].re, 0.0)).sum();
             }
         });
     });
@@ -122,23 +122,11 @@ pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Co
 }
 
 pub fn multiply_complex_with_f64(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<f64>>) -> Vec<Vec<Complex<f64>>> {
-    let mut num_rows = matrix_a.len();
-    let mut num_columns = matrix_b[0].len();
-    let mut matrix_a_clone = matrix_a.clone();
-    let mut matrix_b_clone = matrix_b.clone();
-
-    if matrix_a[0].len() != matrix_b.len() {
-        if matrix_a[0].len() == matrix_b[0].len() {
-            matrix_b_clone = transpose(matrix_b);
-            num_columns = matrix_b_clone[0].len();
-        } else if matrix_a.len() == matrix_b.len() {
-            matrix_a_clone = transpose(&matrix_a);
-            num_rows = matrix_a_clone.len();
-        }
-    }
+    let num_rows = matrix_a.len();
+    let num_columns = matrix_b[0].len();
 
     // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
-    if matrix_a[0].len() != matrix_b.len() && matrix_a.len() != matrix_b.len() {
+    if matrix_a[0].len() != matrix_b.len() {
         panic!("Matrix A does not have the same number of columns as Matrix B rows.");
     }
 
@@ -152,8 +140,8 @@ pub fn multiply_complex_with_f64(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &V
     pool.install(|| {
         result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
             for j in 0..num_columns {
-                //row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * Complex::new(matrix_b_clone[k][j], 0.0)).sum();
-                row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
+                //row[j] = (0..matrix_b.len()).map(|k| matrix_a[i][k] * Complex::new(matrix_b[k][j], 0.0)).sum();
+                row[j] = (0..matrix_b.len()).map(|k| matrix_a[i][k] * matrix_b[k][j]).sum();
             }
         });
     });
@@ -162,23 +150,11 @@ pub fn multiply_complex_with_f64(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &V
 }
 
 pub fn multiply_f64_complex(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-    let mut num_rows = matrix_a.len();
-    let mut num_columns = matrix_b[0].len();
-    let mut matrix_a_clone = matrix_a.clone();
-    let mut matrix_b_clone = matrix_b.clone();
-
-    if matrix_a[0].len() != matrix_b.len() {
-        if matrix_a[0].len() == matrix_b[0].len() {
-            matrix_b_clone = transpose(matrix_b);
-            num_columns = matrix_b_clone[0].len();
-        } else if matrix_a.len() == matrix_b.len() {
-            matrix_a_clone = transpose(&matrix_a);
-            num_rows = matrix_a_clone.len();
-        }
-    }
+    let num_rows = matrix_a.len();
+    let num_columns = matrix_b[0].len();
 
     // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
-    if matrix_a[0].len() != matrix_b.len() && matrix_a.len() != matrix_b.len() {
+    if matrix_a[0].len() != matrix_b.len() {
         panic!("Matrix A does not have the same number of columns as Matrix B rows.");
     }
 
@@ -190,8 +166,8 @@ pub fn multiply_f64_complex(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<Complex
     pool.install(|| {
         result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
             for j in 0..num_columns {
-                //row[j] = (0..matrix_b_clone.len()).map(|k| Complex::new(matrix_a_clone[i][k], 0.0) * matrix_b_clone[k][j]).sum();
-                row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
+                //row[j] = (0..matrix_b.len()).map(|k| Complex::new(matrix_a[i][k], 0.0) * matrix_b[k][j]).sum();
+                row[j] = (0..matrix_b.len()).map(|k| matrix_a[i][k] * matrix_b[k][j]).sum();
             }
         });
     });
@@ -207,6 +183,19 @@ pub fn conjugate_transpose(matrix: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f
     for i in 0..rows {
         for j in 0..cols {
             result[j][i] = matrix[i][j].conj();
+        }
+    }
+    result
+}
+
+pub fn conjugate(matrix: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    let rows = matrix.len();
+    let cols = matrix[0].len();
+    let mut result = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
+
+    for i in 0..rows {
+        for j in 0..cols {
+            result[i][j] = matrix[i][j].conj();
         }
     }
     result
@@ -250,7 +239,7 @@ pub fn hadamard_product_2d_c(input_1: &Vec<Vec<Complex<f64>>>, input_2: &Vec<Vec
 
     for i in 0..rows {
         for j in 0..cols {
-            result[i][j] = input_1[i][j] * input_2[i][j].conj();
+            result[i][j] = input_1[i][j] * input_2[i][j];
         }
     }
 
