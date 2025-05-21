@@ -331,14 +331,21 @@ where
 
     result
 }
-pub fn softmax_complex(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<f64>> {
+pub fn softmax_complex_norm(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<f64>> {
     input
         .par_iter() // Parallel iterator over rows of the input
-        .map(|row| softmax_row(row))
+        .map(|row| softmax_row_norm(row))
         .collect()
 }
 
-pub fn softmax_complex_padding(input: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<f64>> {
+pub fn softmax_complex_real(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<f64>> {
+    input
+        .par_iter() // Parallel iterator over rows of the input
+        .map(|row| softmax_row_real(row))
+        .collect()
+}
+
+pub fn softmax_complex_padding_norm(input: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<f64>> {
     // println!("softmax input len {}, {}", input.len(), input[0].len());
     // println!("padding_mask len {}", padding_mask.len());
     // println!("padding mask: {:?}", &padding_mask);
@@ -354,7 +361,28 @@ pub fn softmax_complex_padding(input: &Vec<Vec<Complex<f64>>>, padding_mask: &Ve
                 return vec![0.0; row.len()];
             }
 
-            softmax_row(row)
+            softmax_row_norm(row)
+        })
+        .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
+}
+
+pub fn softmax_complex_padding_real(input: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<f64>> {
+    // println!("softmax input len {}, {}", input.len(), input[0].len());
+    // println!("padding_mask len {}", padding_mask.len());
+    // println!("padding mask: {:?}", &padding_mask);
+
+    input
+        .par_iter()
+        .enumerate() // Parallel iterator over rows of the input
+        .map(|(row_ind, row)| {
+            if padding_mask.len() <= row_ind {
+                panic!("Row mask is smaller than the index: {}, {}", padding_mask.len(), row_ind);
+            }
+            if padding_mask[row_ind] == 0 {
+                return vec![0.0; row.len()];
+            }
+
+            softmax_row_real(row)
         })
         .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
 }
@@ -366,12 +394,12 @@ pub fn softmax_last_row(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<f64>> {
     // Get the last row from the input
     let last_row = &input[input.len() - 1];
 
-    result[input.len() - 1] = softmax_row(&last_row);
+    result[input.len() - 1] = softmax_row_norm(&last_row);
 
     result
 }
 
-pub fn softmax_row(input: &Vec<Complex<f64>>) -> Vec<f64> {
+pub fn softmax_row_norm(input: &Vec<Complex<f64>>) -> Vec<f64> {
     let max_norm = input.iter().map(|c| c.norm()).fold(f64::NEG_INFINITY, f64::max);
 
     let exps: Vec<f64> = input.iter().map(|c| (c.norm() - max_norm).exp()).collect();
@@ -379,6 +407,16 @@ pub fn softmax_row(input: &Vec<Complex<f64>>) -> Vec<f64> {
     let sum: f64 = exps.iter().sum();
 
     exps.into_iter().map(|x| x / sum).collect()
+}
+
+pub fn softmax_row_real(input: &Vec<Complex<f64>>) -> Vec<f64> {
+    let max_norm = input.iter().map(|c| c.re).fold(f64::NEG_INFINITY, f64::max);
+
+    let exps: Vec<f64> = input.iter().map(|c| (c.re - max_norm).exp()).collect();
+
+    let sum: f64 = exps.iter().sum();
+
+    exps.iter().map(|x| x / sum).collect()
 }
 
 pub fn log_softmax_row(input: &Vec<Complex<f64>>) -> Vec<f64> {
