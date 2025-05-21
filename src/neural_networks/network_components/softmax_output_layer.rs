@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
     network_types::neural_network_generic::OperationMode,
-    utils::activation::{softmax_complex_padding, softmax_last_row},
+    utils::activation::{softmax_complex_padding_norm, softmax_last_row},
 };
 
 use super::gradient_struct::Gradient;
@@ -54,7 +54,7 @@ impl SoftmaxLayer {
             OperationMode::TRAINING => input_batch
                 .par_iter()
                 .zip(self.padding_mask_batch.as_ref().unwrap().par_iter())
-                .map(|(input, padding_mask_seq)| softmax_complex_padding(input, padding_mask_seq))
+                .map(|(input, padding_mask_seq)| softmax_complex_padding_norm(input, padding_mask_seq))
                 .collect::<Vec<_>>(),
         };
 

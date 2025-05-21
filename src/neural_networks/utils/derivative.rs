@@ -166,13 +166,13 @@ pub fn norm_softmax_derivative(input: &Vec<Complex<f64>>, softmax_output: &Vec<f
     for i in 0..n {
         for j in 0..n {
             let norm_cj = input[j].norm();
-            if norm_cj == 0.0 {
+            if norm_cj < 1e-12 {
                 jacobian[i][j] = Complex::new(0.0, 0.0);
             } else {
                 let delta_ij = if i == j { 1.0 } else { 0.0 };
                 let dpi_dnormcj = softmax_output[i] * (delta_ij - softmax_output[j]);
 
-                jacobian[i][j] = dpi_dnormcj * input[j].conj() / norm_cj; 
+                jacobian[i][j] = dpi_dnormcj * input[j].conj() / norm_cj;
             }
         }
     }
@@ -229,7 +229,28 @@ pub fn backpropagate_softmax(softmax_jacobian: &Vec<Vec<Vec<Complex<f64>>>>, dl_
     dl_dz
 }
 
-pub fn backpropagate_softmax_masked(softmax_jacobian: &Vec<Vec<Vec<Complex<f64>>>>, dl_ds: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<Complex<f64>>> {
+pub fn backpropagate_softmax_masked_norm(softmax_jacobian: &Vec<Vec<Vec<Complex<f64>>>>, dl_ds: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<Complex<f64>>> {
+    let num_rows = dl_ds.len();
+    let num_cols = dl_ds[0].len();
+
+    let mut dl_dz = vec![vec![Complex::new(0.0, 0.0); num_cols]; num_rows];
+
+    for i in 0..num_rows {
+        if padding_mask[i] == 0 {
+            // Skip updating gradients for masked positions (zero out dl_dz[i])
+            continue;
+        }
+        for j in 0..num_cols {
+            for k in 0..num_cols {
+                dl_dz[i][j] += softmax_jacobian[i][j][k] * dl_ds[i][k];
+            }
+        }
+    }
+
+    dl_dz
+}
+
+pub fn backpropagate_softmax_masked_real(softmax_jacobian: &Vec<Vec<Vec<f64>>>, dl_ds: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<Complex<f64>>> {
     let num_rows = dl_ds.len();
     let num_cols = dl_ds[0].len();
 
@@ -405,26 +426,26 @@ where
     for row in 0..weights.len() {
         for col in 0..weights[row].len() {
             // Perturb input by epsilon
-            let mut weights_plus = weights.clone();
-            weights_plus[row][col].re += epsilon;
+            let mut weights_plus_re = weights.clone();
+            weights_plus_re[row][col].re += epsilon;
 
-            let mut weights_minus = weights.clone();
-            weights_minus[row][col].re -= epsilon;
+            let mut weights_minus_re = weights.clone();
+            weights_minus_re[row][col].re -= epsilon;
 
             // Compute numerical gradient
-            let loss_plus_re = f(&input, &weights_plus);
-            let loss_minus_re = f(&input, &weights_minus);
+            let loss_plus_re = f(&input, &weights_plus_re);
+            let loss_minus_re = f(&input, &weights_minus_re);
 
             // Perturb input by epsilon
-            let mut weights_plus = weights.clone();
-            weights_plus[row][col].im += epsilon;
+            let mut weights_plus_im = weights.clone();
+            weights_plus_im[row][col].im += epsilon;
 
-            let mut weights_minus = weights.clone();
-            weights_minus[row][col].im -= epsilon;
+            let mut weights_minus_im = weights.clone();
+            weights_minus_im[row][col].im -= epsilon;
 
             // Compute numerical gradient
-            let loss_plus_im: Complex<f64> = f(&input, &weights_plus);
-            let loss_minus_im: Complex<f64> = f(&input, &weights_minus);
+            let loss_plus_im: Complex<f64> = f(&input, &weights_plus_im);
+            let loss_minus_im: Complex<f64> = f(&input, &weights_minus_im);
 
             let grad_re = (loss_plus_re - loss_minus_re).re / (2.0 * epsilon); // again, just take the real part of the loss
             let grad_im = (loss_plus_im - loss_minus_im).re / (2.0 * epsilon); // again, just take the real part of the loss

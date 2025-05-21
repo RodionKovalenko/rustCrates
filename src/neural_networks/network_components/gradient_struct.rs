@@ -434,4 +434,18 @@ impl Gradient {
 
         bias_gradients
     }
+
+    pub fn group_array_batch(weight_gradients_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Complex<f64>>> {
+        let mut weight_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); weight_gradients_batch[0][0].len()]; weight_gradients_batch[0].len()];
+
+        for weight_gradient_batch in weight_gradients_batch {
+            for (row, w_gradient) in weight_gradient_batch.iter().enumerate() {
+                for (col, gradient_value) in w_gradient.iter().enumerate() {
+                    weight_gradients[row][col] += gradient_value;
+                }
+            }
+        }
+
+        weight_gradients
+    }
 }
