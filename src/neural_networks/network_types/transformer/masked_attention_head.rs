@@ -260,9 +260,9 @@ impl MaskedAttentionHead {
             // Compute gradient of Wv
             // => dl/dWv = dl/do * do/dv * dv/dwv
             // 2, 4 * 2,2 = 4,2 * 2,2 = 4,2
-            let grad_wv = transpose(&multiply_complex_with_f64(&transpose(&previous_gradient), &attention_weights_batch[batch_ind]));
+            let grad_wv = &multiply_complex_with_f64(&transpose(&previous_gradient), &attention_weights_batch[batch_ind]);
             // 2,5 * 2, 4 = 5, 2 * 2, 4 = 5, 4
-            gradient_v_batch[batch_ind] = multiply_complex(&conjugate_transpose(&input_batch[batch_ind]), &grad_wv);
+            gradient_v_batch[batch_ind] = multiply_complex(&conjugate_transpose(&input_batch[batch_ind]), &transpose(&grad_wv));
 
             let d_k = k[0].len() as f64;
             // Compute gradient of k_scaled w.r.t. k
@@ -295,11 +295,11 @@ impl MaskedAttentionHead {
             // Gradient Wk
             //dl/dWk = (((dl/dO * dO/dS) * dS/dA) * dA/dKT) * dKT/dWk
             // 2,2 * 2,4 = 2,2 * 2,4 = 2,4
-            let dl_dk: Vec<Vec<Complex<f64>>> = multiply_complex(&dl_da, &q_scaled);
+           let dl_dk: Vec<Vec<Complex<f64>>> = multiply_complex(&transpose(&q_scaled), &dl_da);
 
             // println!("dl_dk dim: {}, {}", &dl_dk.len(), &dl_dk[0].len());
             // 2,5 * 2,4 = 5,2 * 2, 4 = 5,4
-            let dl_dwk: Vec<Vec<Complex<f64>>> = multiply_complex(&conjugate_transpose(&input_batch[batch_ind]), &dl_dk);
+            let dl_dwk: Vec<Vec<Complex<f64>>> = multiply_complex(&conjugate_transpose(&input_batch[batch_ind]),  &transpose(&dl_dk));
             // println!("dl_dwk dim: {}, {}", &dl_dwk.len(), &dl_dwk[0].len());
             gradient_k_batch[batch_ind] = dl_dwk;
 
@@ -309,13 +309,12 @@ impl MaskedAttentionHead {
             // println!("\n grad_wv dim: {}, {}", &grad_wv.len(), &grad_wv[0].len());
 
             // 4,2 * 5, 4 = 2, 4 * 4, 5 = 2,5
-            let dl_dqx = multiply_complex(&dl_dq, &conjugate_transpose(&self.weights_q));
-
+              // 4,2 * 5, 4 = 2, 4 * 4, 5 = 2,5
+            let dl_dqx = multiply_complex(&transpose(&dl_dq), &conjugate_transpose(&self.weights_q));
             // 4,2 * 5, 4 = 2, 4 * 4, 5 = 2,5
-            let dl_dkx = multiply_complex(&dl_dk, &conjugate_transpose(&self.weights_k));
-
+            let dl_dkx = multiply_complex(&transpose(&dl_dk), &conjugate_transpose(&self.weights_k));
             // 4,2 * 5, 4 = 2, 4 * 4, 5 = 2,5
-            let dl_dvx = multiply_complex(&grad_wv, &conjugate_transpose(&self.weights_v));
+            let dl_dvx = multiply_complex(&transpose(&grad_wv), &conjugate_transpose(&self.weights_v));
 
             gradient_bias_pos_batch[batch_ind] = dl_da;
             gradient_input_batch[batch_ind] = add_matrix(&dl_dqx, &dl_dkx);
