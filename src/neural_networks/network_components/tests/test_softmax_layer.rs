@@ -10,7 +10,6 @@ mod test_softmax_layer {
                     backpropagate_softmax_masked_norm, gelu_derivative_complex, global_relative_error_2d_l2, global_relative_error_l2, norm_softmax_derivative_complex, numerical_gradient_check_f64, numerical_gradient_input, numerical_gradient_input_batch, sigmoid_derivative_complex,
                     softmax_derivative_complex_jacobian, softsign_derivative_complex, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d,
                 },
-                matrix::conjugate,
                 random_arrays::{generate_random_complex_2d, generate_random_complex_3d, generate_random_u32_batch},
             },
         },
@@ -28,7 +27,7 @@ mod test_softmax_layer {
         let output_dim = 5; // Match output_dim to your layer's output
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
-        let epsilon = 1e-5;
+        let epsilon = 1e-6;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim);
@@ -172,7 +171,7 @@ mod test_softmax_layer {
     }
 
     #[test]
-    fn test_softmax_gradient() {
+    fn test_softmax_norm_gradient() {
         let input_dim: usize = 5; // Match the input dimension with your input batch
         let output_dim = 5; // Match output_dim to your layer's output
         let epsilon = 1e-6;
@@ -194,7 +193,7 @@ mod test_softmax_layer {
     }
 
     #[test]
-    fn test_softmax_gradient_backward() {
+    fn test_softmax_norm_gradient_backward() {
         let input_dim: usize = 5; // Match the input dimension with your input batch
         let output_dim = 5; // Match output_dim to your layer's output
         let epsilon = 1e-6;
@@ -208,7 +207,7 @@ mod test_softmax_layer {
 
         let softmax_gradient: Vec<Vec<Vec<Complex<f64>>>> = norm_softmax_derivative_complex(&z, &softmax_values);
         let analytical_gradient: Vec<Vec<Complex<f64>>> = backpropagate_softmax_masked_norm(&softmax_gradient, &prev_gradient, &padding_mask);
-        let analytical_gradient = conjugate(&analytical_gradient);
+        // let analytical_gradient = conjugate(&analytical_gradient);
 
         let numerical_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_check_f64(softmax_complex_norm, &z, epsilon);
         let numerical_gradient: Vec<Vec<Complex<f64>>> = backpropagate_softmax_masked_norm(&numerical_gradient_batch, &prev_gradient, &padding_mask);
