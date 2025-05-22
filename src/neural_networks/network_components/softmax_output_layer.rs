@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
     network_types::neural_network_generic::OperationMode,
-    utils::activation::{softmax_complex_padding_norm, softmax_last_row},
+    utils::activation::{softmax_complex_padding_real, softmax_last_row},
 };
 
 use super::gradient_struct::Gradient;
@@ -54,7 +54,7 @@ impl SoftmaxLayer {
             OperationMode::TRAINING => input_batch
                 .par_iter()
                 .zip(self.padding_mask_batch.as_ref().unwrap().par_iter())
-                .map(|(input, padding_mask_seq)| softmax_complex_padding_norm(input, padding_mask_seq))
+                .map(|(input, padding_mask_seq)| softmax_complex_padding_real(input, padding_mask_seq))
                 .collect::<Vec<_>>(),
         };
 
@@ -66,7 +66,7 @@ impl SoftmaxLayer {
 
     pub fn backward(&mut self, target_token_ids: &Vec<Vec<u32>>) -> Gradient {
         let softmax_output_batch: &Vec<Vec<Vec<f64>>> = self.softmax_output_batch.as_ref().expect("Softmax output batch is missing in softmax layer");
-        let input_batch: &Vec<Vec<Vec<Complex<f64>>>> = self.input_batch.as_ref().expect("Input batch is missing in softmax layer");
+        let _input_batch: &Vec<Vec<Vec<Complex<f64>>>> = self.input_batch.as_ref().expect("Input batch is missing in softmax layer");
         let padding_mask_batch = self.padding_mask_batch.as_ref().expect("Input batch is missing in softmax layer");
 
         let batch_size = softmax_output_batch.len();
@@ -115,8 +115,8 @@ impl SoftmaxLayer {
                     // for softmax
                     //let prob = softmax_prob;
 
-                    let real_part_gradient = input_batch[batch_index][seq_ind][c].re / input_batch[batch_index][seq_ind][c].norm();
-                    let im_part_gradient = input_batch[batch_index][seq_ind][c].im / input_batch[batch_index][seq_ind][c].norm();
+                    // let real_part_gradient = input_batch[batch_index][seq_ind][c].re / input_batch[batch_index][seq_ind][c].norm();
+                    // let im_part_gradient = input_batch[batch_index][seq_ind][c].im / input_batch[batch_index][seq_ind][c].norm();
                    
                     if target_class == c as u32 {
                         softmax_gradient = (softmax_prob - 1.0) / normalizer;
@@ -124,7 +124,7 @@ impl SoftmaxLayer {
                         softmax_gradient = softmax_prob / normalizer;
                     };
 
-                    gradient_batch[batch_index][seq_ind][c] += Complex::new(softmax_gradient * real_part_gradient, softmax_gradient * im_part_gradient);
+                    gradient_batch[batch_index][seq_ind][c] += Complex::new(softmax_gradient, 0.0);
                 }
             }
         }
