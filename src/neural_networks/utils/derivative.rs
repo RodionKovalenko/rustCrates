@@ -172,7 +172,7 @@ pub fn norm_softmax_derivative(input: &Vec<Complex<f64>>, softmax_output: &Vec<f
                 let delta_ij = if i == j { 1.0 } else { 0.0 };
                 let dpi_dnormcj = softmax_output[i] * (delta_ij - softmax_output[j]);
 
-                jacobian[i][j] = dpi_dnormcj * input[j].conj() / norm_cj;
+                jacobian[i][j] = dpi_dnormcj * input[j] / norm_cj;
             }
         }
     }
@@ -250,11 +250,11 @@ pub fn backpropagate_softmax_masked_norm(softmax_jacobian: &Vec<Vec<Vec<Complex<
     dl_dz
 }
 
-pub fn backpropagate_softmax_masked_real(softmax_jacobian: &Vec<Vec<Vec<f64>>>, dl_ds: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<Complex<f64>>> {
+pub fn backpropagate_softmax_masked_real(softmax_jacobian: &Vec<Vec<Vec<f64>>>, dl_ds: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<f64>> {
     let num_rows = dl_ds.len();
     let num_cols = dl_ds[0].len();
 
-    let mut dl_dz = vec![vec![Complex::new(0.0, 0.0); num_cols]; num_rows];
+    let mut dl_dz = vec![vec![0.0; num_cols]; num_rows];
 
     for i in 0..num_rows {
         if padding_mask[i] == 0 {
@@ -263,7 +263,7 @@ pub fn backpropagate_softmax_masked_real(softmax_jacobian: &Vec<Vec<Vec<f64>>>, 
         }
         for j in 0..num_cols {
             for k in 0..num_cols {
-                dl_dz[i][j] += softmax_jacobian[i][j][k] * dl_ds[i][k];
+                dl_dz[i][j] += softmax_jacobian[i][j][k] * dl_ds[i][k].re;
             }
         }
     }
@@ -1081,7 +1081,7 @@ pub fn test_gradient_error_1d_f64(numerical_grad: &Vec<f64>, analytical_grad: &V
 
 pub fn test_gradient_error_1d(numerical_grad: &Vec<Complex<f64>>, analytical_grad: &Vec<Complex<f64>>, epsilon: f64) {
     for (val_numerical, val_analytical) in numerical_grad.iter().zip(analytical_grad) {
-        let abs_diff = (val_numerical.re - val_analytical.re).abs();
+        let abs_diff = (val_numerical - val_analytical).abs();
         // take the largest value out of (val_numerical, val_analytical, epsilon)
         let max_val = val_numerical.abs().max(val_analytical.abs()).max(epsilon);
         let rel_diff = abs_diff / max_val;

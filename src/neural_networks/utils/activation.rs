@@ -394,7 +394,7 @@ pub fn softmax_last_row(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<f64>> {
     // Get the last row from the input
     let last_row = &input[input.len() - 1];
 
-    result[input.len() - 1] = softmax_row_norm(&last_row);
+    result[input.len() - 1] = softmax_row_real(&last_row);
 
     result
 }

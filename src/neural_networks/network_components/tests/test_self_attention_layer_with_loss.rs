@@ -10,13 +10,13 @@ mod test_self_attention_layer_with_loss {
             transformer::{masked_attention_head::MaskedAttentionHead, transformer_network::cross_entropy_loss_batch},
         },
         utils::{
-            derivative::{global_relative_error_2d_l2, numerical_gradient_weights, test_gradient_error_2d},
+            derivative::{global_relative_error_2d_l2, numerical_gradient_input, numerical_gradient_weights, test_gradient_error_2d},
             random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
         },
     };
 
     #[test]
-    fn test_attention_head_backward_with_loss() {
+    fn test_loss_attention_head_backward() {
         let batch_size = 2;
         let input_dim = 2;
         let output_dim = 4;
@@ -50,14 +50,14 @@ mod test_self_attention_layer_with_loss {
         let gradient = attention_head_layer.backward(&gradient_softmax.get_gradient_input_batch());
         let analytical_gradient_weights_v = gradient.get_gradient_weights_v();
         let analytical_gradient_weights_q = gradient.get_gradient_weights_q();
-        // let analytical_gradient_weights_k = gradient.get_gradient_weights_k();
-        // let analytical_gradient_input = gradient.get_gradient_input();
-        // let analytical_bias_pos_batch = gradient.get_gradient_bias_pos();
+        let analytical_gradient_weights_k = gradient.get_gradient_weights_k();
+        let analytical_gradient_input = gradient.get_gradient_input();
+        let analytical_bias_pos_batch = gradient.get_gradient_bias_pos();
 
         let weights_v = attention_head_layer.weights_v.clone();
         let weights_q = attention_head_layer.weights_q.clone();
-        // let weights_k = attention_head_layer.weights_k.clone();
-        // let bias_pos = attention_head_layer.bias_pos.clone();
+        let weights_k = attention_head_layer.weights_k.clone();
+        let bias_pos = attention_head_layer.bias_pos.clone();
 
         // // Weight V ------------------------------------------------------------------------------------------- start
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
@@ -109,99 +109,107 @@ mod test_self_attention_layer_with_loss {
         let global_error = global_relative_error_2d_l2(&numerical_grad_weight_q, &analytical_gradient_weights_q);
         println!("\n\n global relative gradient error weight q: {:?}", &global_error);
 
-        for s in 0..analytical_gradient_weights_q.len() {
-            let analytical_row_sum: Complex<f64> = analytical_gradient_weights_q[s].iter().sum();
-            let numerical_row_sum: Complex<f64> = numerical_grad_weight_q[s].iter().sum();
-
-            println!("analytical row weights q sum: {:?}", analytical_row_sum);
-            println!("numerical row weights q sum: {:?}", numerical_row_sum);
-        }
-
         // For Gelu it can a little more deviation
         test_gradient_error_2d(&numerical_grad_weight_q, &analytical_gradient_weights_q, epsilon);
         attention_head_layer.weights_q = weights_q.clone();
         // Weight Q ------------------------------------------------------------------------------------------- end
 
-        // // // Weight K ------------------------------------------------------------------------------------------- start
-        // let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
-        //     attention_head_layer.weights_k = weights.clone();
+        // Weight K ------------------------------------------------------------------------------------------- start
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
+            attention_head_layer.weights_k = weights.clone();
 
-        //     layer_input.set_input_batch(input.clone());
-        //     let output = attention_head_layer.forward(&layer_input);
+            layer_input.set_input_batch(input.clone());
+            let attention_head_output = attention_head_layer.forward(&layer_input);
+            let output_softmax = softmax_layer.forward(&attention_head_output.get_output_batch(), Some(padding_mask_batch.clone()));
 
-        //     output.get_output_batch()
-        // };
+            let loss = cross_entropy_loss_batch(&output_softmax, &target_token_id_batch, &padding_mask_batch);
 
-        // let numerical_grad_weight_k_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &weights_k.clone(), output_batch.clone(), epsilon);
+            loss
+        };
 
-        // println!("\n\nnumerical gradient weight k attention layer {:?}", numerical_grad_weight_k_batch);
-        // println!("\n dim numerical gradient {:?}, {}, {}", numerical_grad_weight_k_batch.len(), numerical_grad_weight_k_batch[0].len(), numerical_grad_weight_k_batch[0][0].len());
+        let numerical_grad_weight_k = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &weights_k.clone(), epsilon);
 
-        // println!("\n\nanalytical gradient weight k attention layer {:?}", analytical_gradient_weights_k_batch);
-        // println!("\n dim nanalytical gradient {:?}, {}, {}", analytical_gradient_weights_k_batch.len(), analytical_gradient_weights_k_batch[0].len(), analytical_gradient_weights_k_batch[0][0].len());
+        println!("\n numerical gradient weight k attention layer {:?}", numerical_grad_weight_k);
+        println!("\n dim numerical gradient weights k {:?}, {}", numerical_grad_weight_k.len(), numerical_grad_weight_k[0].len());
 
-        // let global_error = global_relative_error_l2(&numerical_grad_weight_k_batch, &analytical_gradient_weights_k_batch);
-        // println!("\n\n global relative gradient error weight k batch: {:?}", &global_error);
+        println!("\n\n analytical gradient weight k attention layer {:?}", analytical_gradient_weights_k);
+        println!("\n dim nanalytical gradient weights k {:?}, {} ", analytical_gradient_weights_k.len(), analytical_gradient_weights_k[0].len());
 
-        // // For Gelu it can a little more deviation
-        // test_gradient_batch_error(&numerical_grad_weight_k_batch, &analytical_gradient_weights_k_batch, epsilon);
-        // attention_head_layer.weights_k = weights_k.clone();
-        // // Weight K ------------------------------------------------------------------------------------------- end
+        let global_error = global_relative_error_2d_l2(&numerical_grad_weight_k, &analytical_gradient_weights_k);
+        println!("\n\n global relative gradient error weight k: {:?}", &global_error);
 
-        // // Input gradient ------------------------------------------------------------------------------------------- start
-        // let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
-        //     layer_input.set_input_batch(input.clone());
-        //     let output = attention_head_layer.forward(&layer_input);
+        // For Gelu it can a little more deviation
+        test_gradient_error_2d(&numerical_grad_weight_k, &analytical_gradient_weights_k, epsilon);
+        attention_head_layer.weights_k = weights_k.clone();
+        // Weight K ------------------------------------------------------------------------------------------- end
 
-        //     output.get_output_batch()
-        // };
+        // Bias Positional gradient ------------------------------------------------------------------------------------------- start
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
+            attention_head_layer.bias_pos = weights.clone();
 
-        // let numerical_grad_input_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_sum_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
+            layer_input.set_input_batch(input.clone());
+            let attention_head_output = attention_head_layer.forward(&layer_input);
+            let output_softmax = softmax_layer.forward(&attention_head_output.get_output_batch(), Some(padding_mask_batch.clone()));
 
-        // println!("\n numerical_grad_input_batch attention layer {:?}", numerical_grad_input_batch);
-        // println!("\n dim numerical_grad_input_batch {:?}, {}, {}", numerical_grad_input_batch.len(), numerical_grad_input_batch[0].len(), numerical_grad_input_batch[0][0].len());
+            let loss = cross_entropy_loss_batch(&output_softmax, &target_token_id_batch, &padding_mask_batch);
 
-        // println!("\n analytical gradient input attention layer {:?}", analytical_gradient_input_batch);
-        // println!("\n dim nanalytical gradient {:?}, {}, {}", analytical_gradient_input_batch.len(), analytical_gradient_input_batch[0].len(), analytical_gradient_input_batch[0][0].len());
+            loss
+        };
 
-        // let global_error = global_relative_error_l2(&numerical_grad_input_batch, &analytical_gradient_input_batch);
-        // println!("\n\n global relative gradient error input batch: {:?}", &global_error);
+        let small_bias_pos: Vec<Vec<Complex<f64>>> = bias_pos
+            .iter()
+            .take(output_dim) // take first 5 rows
+            .map(|row| row.iter().take(output_dim).cloned().collect()) // take first 5 columns from each row
+            .collect();
 
-        // // For Gelu it can a little more deviation
-        // test_gradient_batch_error(&numerical_grad_input_batch, &analytical_gradient_input_batch, epsilon);
-        // //Input gradient ------------------------------------------------------------------------------------------- end
+        let numerical_grad_bias_pos = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &small_bias_pos.clone(), epsilon);
 
-        // // Bias Positional gradient ------------------------------------------------------------------------------------------- start
-        // let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, bias_pos: &Vec<Vec<Complex<f64>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
-        //     //println!("bias pos dim: {} {}", bias_pos.len(), bias_pos[0].len());
-        //     attention_head_layer.bias_pos = bias_pos.clone();
+        println!("\n numerical gradient bias pos attention layer {:?}", numerical_grad_bias_pos);
+        println!("\n dim numerical gradient bias pos {:?}, {}", numerical_grad_bias_pos.len(), numerical_grad_bias_pos[0].len());
 
-        //     layer_input.set_calculate_gradient(false);
-        //     layer_input.set_input_batch(input.clone());
-        //     let output = attention_head_layer.forward(&layer_input);
+        println!("\n\n analytical gradient bias pos attention layer {:?}", analytical_gradient_weights_q);
+        println!("\n dim nanalytical gradient bias pos {:?}, {} ", analytical_gradient_weights_q.len(), analytical_gradient_weights_q[0].len());
 
-        //     output.get_output_batch()
-        // };
+        let global_error = global_relative_error_2d_l2(&numerical_grad_bias_pos, &analytical_bias_pos_batch);
+        println!("\n\n global relative gradient error bias pos: {:?}", &global_error);
 
-        // let small_bias_pos: Vec<Vec<Complex<f64>>> = bias_pos
-        //     .iter()
-        //     .take(output_dim) // take first 5 rows
-        //     .map(|row| row.iter().take(output_dim).cloned().collect()) // take first 5 columns from each row
-        //     .collect();
+        for s in 0..analytical_bias_pos_batch.len() {
+            let analytical_row_sum: Complex<f64> = analytical_bias_pos_batch[s].iter().sum();
+            let numerical_row_sum: Complex<f64> = numerical_grad_bias_pos[s].iter().sum();
 
-        // let numerical_bias_pos_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &small_bias_pos.clone(), output_batch.clone(), epsilon);
+            println!("analytical row bias pos sum: {:?}", analytical_row_sum);
+            println!("numerical row bias pos sum: {:?}", numerical_row_sum);
+        }
 
-        // println!("\n numerical gradient bias positonal attention layer {:?}", numerical_bias_pos_batch);
-        // println!("\n numerical gradient bias positonal dim {:?}, {}, {}", numerical_bias_pos_batch.len(), numerical_bias_pos_batch[0].len(), numerical_bias_pos_batch[0][0].len());
+        // For Gelu it can a little more deviation
+        test_gradient_error_2d(&numerical_grad_bias_pos, &analytical_bias_pos_batch, epsilon);
+        attention_head_layer.bias_pos = bias_pos.clone();
+        // Bias Positional gradient ------------------------------------------------------------------------------------------- end
 
-        // println!("\n analytical gradient bias positional attention layer {:?}", analytical_bias_pos_batch);
-        // println!("\n analytical gradient bias positional dim: {:?}, {}, {}", analytical_bias_pos_batch.len(), analytical_bias_pos_batch[0].len(), analytical_bias_pos_batch[0][0].len());
+        // Input gradient ------------------------------------------------------------------------------------------- start
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
+            layer_input.set_input_batch(input.clone());
+            let attention_head_output = attention_head_layer.forward(&layer_input);
+            let output_softmax = softmax_layer.forward(&attention_head_output.get_output_batch(), Some(padding_mask_batch.clone()));
 
-        // let global_error = global_relative_error_l2(&numerical_bias_pos_batch, &analytical_bias_pos_batch);
-        // println!("\n\n global relative gradient error input batch: {:?}", &global_error);
+            let loss = cross_entropy_loss_batch(&output_softmax, &target_token_id_batch, &padding_mask_batch);
 
-        // // For Gelu it can a little more deviation
-        // test_gradient_batch_error(&numerical_bias_pos_batch, &analytical_bias_pos_batch, epsilon);
-        // // Bias Positional gradient ------------------------------------------------------------------------------------------- end
+            loss
+        };
+
+        let numerical_grad_input_batch: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, input_batch.clone(), epsilon);
+
+        println!("\n numerical_grad_input_batch attention layer {:?}", numerical_grad_input_batch);
+        println!("\n dim numerical_grad_input_batch {:?}, {}", numerical_grad_input_batch.len(), numerical_grad_input_batch[0].len());
+
+        println!("\n analytical gradient input attention layer {:?}", analytical_gradient_input);
+        println!("\n dim nanalytical gradient {:?}, {}", analytical_gradient_input.len(), analytical_gradient_input[0].len());
+
+        let global_error = global_relative_error_2d_l2(&numerical_grad_input_batch, &analytical_gradient_input);
+        println!("\n\n global relative gradient error input batch: {:?}", &global_error);
+
+        // For Gelu it can a little more deviation
+        test_gradient_error_2d(&numerical_grad_input_batch, &analytical_gradient_input, epsilon);
+        //Input gradient ------------------------------------------------------------------------------------------- end
     }
 }
