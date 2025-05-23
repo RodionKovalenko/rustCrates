@@ -167,8 +167,8 @@ mod test_self_attention_layer_with_loss {
         println!("\n numerical gradient bias pos attention layer {:?}", numerical_grad_bias_pos);
         println!("\n dim numerical gradient bias pos {:?}, {}", numerical_grad_bias_pos.len(), numerical_grad_bias_pos[0].len());
 
-        println!("\n\n analytical gradient bias pos attention layer {:?}", analytical_gradient_weights_q);
-        println!("\n dim nanalytical gradient bias pos {:?}, {} ", analytical_gradient_weights_q.len(), analytical_gradient_weights_q[0].len());
+        println!("\n\n analytical gradient bias pos attention layer {:?}", analytical_bias_pos_batch);
+        println!("\n dim nanalytical gradient bias pos {:?}, {} ", analytical_bias_pos_batch.len(), analytical_bias_pos_batch[0].len());
 
         let global_error = global_relative_error_2d_l2(&numerical_grad_bias_pos, &analytical_bias_pos_batch);
         println!("\n\n global relative gradient error bias pos: {:?}", &global_error);

@@ -878,25 +878,40 @@ where
         for seq in 0..input[batch].len() {
             for dim_i in 0..input[batch][seq].len() {
                 // Perturb input by epsilon
-                let mut input_plus = input.clone();
-                input_plus[batch][seq][dim_i] += epsilon;
+                let mut input_plus_re = input.clone();
+                input_plus_re[batch][seq][dim_i].re += epsilon;
 
-                let mut input_minus = input.clone();
-                input_minus[batch][seq][dim_i] -= epsilon;
+                let mut input_minus_re = input.clone();
+                input_minus_re[batch][seq][dim_i].re -= epsilon;
 
                 // Compute numerical gradient
-                let loss_plus: Vec<Vec<Vec<Complex<f64>>>> = f(&input_plus);
-                let loss_minus: Vec<Vec<Vec<Complex<f64>>>> = f(&input_minus);
+                let loss_plus_re: Vec<Vec<Vec<Complex<f64>>>> = f(&input_plus_re);
+                let loss_minus_re: Vec<Vec<Vec<Complex<f64>>>> = f(&input_minus_re);
+
+                // Perturb input by epsilon
+                let mut input_plus_im = input.clone();
+                input_plus_im[batch][seq][dim_i].im += epsilon;
+
+                let mut input_minus_im = input.clone();
+                input_minus_im[batch][seq][dim_i].im -= epsilon;
+
+                // Compute numerical gradient
+                let loss_plus_im: Vec<Vec<Vec<Complex<f64>>>> = f(&input_plus_im);
+                let loss_minus_im: Vec<Vec<Vec<Complex<f64>>>> = f(&input_minus_im);
 
                 // println!("output loss plus: {:?}", &loss_plus);
                 // println!("output loss minus: {:?} \n\n", &loss_minus);
 
-                let sum_loss_plus: Complex<f64> = loss_plus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
-                let sum_loss_minus: Complex<f64> = loss_minus.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
-                let gradient = (sum_loss_plus - sum_loss_minus) / (2.0 * epsilon);
+                let sum_loss_plus_re: Complex<f64> = loss_plus_re.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
+                let sum_loss_minus_re: Complex<f64> = loss_minus_re.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
+                let gradient_re = (sum_loss_plus_re - sum_loss_minus_re).re / (2.0 * epsilon);
+
+                let sum_loss_plus_im: Complex<f64> = loss_plus_im.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
+                let sum_loss_minus_im: Complex<f64> = loss_minus_im.iter().flat_map(|batch| batch.iter()).flat_map(|seq| seq.iter()).sum();
+                let gradient_im = (sum_loss_plus_im - sum_loss_minus_im).re / (2.0 * epsilon);
 
                 //let gradient = (loss_plus[batch][seq][dim_i] - loss_minus[batch][seq][dim_i]) / (2.0 * epsilon);
-                grad_batch[batch][seq][dim_i] = gradient;
+                grad_batch[batch][seq][dim_i] = Complex::new(gradient_re, gradient_im);
             }
         }
     }
