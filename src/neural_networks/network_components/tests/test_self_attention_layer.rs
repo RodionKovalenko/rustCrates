@@ -50,7 +50,7 @@ mod test_self_attention_layer {
         let analytical_gradient_weights_v_batch = gradient.get_gradient_weights_v_batch();
         let analytical_gradient_weights_q_batch = gradient.get_gradient_weights_q_batch();
         let analytical_gradient_weights_k_batch = gradient.get_gradient_weights_k_batch();
-        let analytical_gradient_input_batch = gradient.get_gradient_input_batch();
+        let analytical_gradient_input = gradient.get_gradient_input();
         let analytical_bias_pos_batch = gradient.get_gradient_bias_pos_batch();
 
         let weights_v = attention_head_layer.weights_v.clone();
@@ -160,7 +160,7 @@ mod test_self_attention_layer {
         println!("\n analytical gradient bias positional dim: {:?}, {}, {}", analytical_bias_pos_batch.len(), analytical_bias_pos_batch[0].len(), analytical_bias_pos_batch[0][0].len());
 
         let global_error = global_relative_error_l2(&numerical_bias_pos_batch, &analytical_bias_pos_batch);
-        println!("\n\n global relative gradient error input batch: {:?}", &global_error);
+        println!("\n\n global relative gradient error bias pos batch: {:?}", &global_error);
 
         // For Gelu it can a little more deviation
         test_gradient_batch_error(&numerical_bias_pos_batch, &analytical_bias_pos_batch, epsilon);
@@ -178,17 +178,18 @@ mod test_self_attention_layer {
 
         let numerical_grad_input_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_sum_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
 
-        println!("\n numerical_grad_input_batch attention layer {:?}", numerical_grad_input_batch);
-        println!("\n dim numerical_grad_input_batch {:?}, {}, {}", numerical_grad_input_batch.len(), numerical_grad_input_batch[0].len(), numerical_grad_input_batch[0][0].len());
+        let numerical_grad_input = Gradient::group_array_batch(&numerical_grad_input_batch);
 
-        println!("\n analytical gradient input attention layer {:?}", analytical_gradient_input_batch);
-        println!("\n dim nanalytical gradient {:?}, {}, {}", analytical_gradient_input_batch.len(), analytical_gradient_input_batch[0].len(), analytical_gradient_input_batch[0][0].len());
+        println!("\n numerical_grad_input_batch attention layer {:?}", numerical_grad_input);
+        println!("\n dim numerical_grad_input_batch {:?}, {}", numerical_grad_input.len(), numerical_grad_input[0].len());
 
-        let global_error = global_relative_error_l2(&numerical_grad_input_batch, &analytical_gradient_input_batch);
+        println!("\n analytical gradient input attention layer {:?}", analytical_gradient_input);
+        println!("\n dim nanalytical gradient {:?}, {}, ", analytical_gradient_input.len(), analytical_gradient_input[0].len());
+
+        let global_error = global_relative_error_2d_l2(&numerical_grad_input, &analytical_gradient_input);
         println!("\n\n global relative gradient error input batch: {:?}", &global_error);
 
-        // For Gelu it can a little more deviation
-        //test_gradient_batch_error(&numerical_grad_input_batch, &analytical_gradient_input_batch, epsilon);
+        test_gradient_error_2d(&numerical_grad_input, &analytical_gradient_input, epsilon);
         //Input gradient ------------------------------------------------------------------------------------------- end
     }
 
