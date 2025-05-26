@@ -201,7 +201,7 @@ mod test_self_attention_layer {
         let output_dim = 8;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
-        let num_attention_heads = 1;
+        let num_attention_heads = 4;
         let epsilon = 1e-8;
 
         // Create a simple LinearLayer with the given input and output dimensions
