@@ -8,9 +8,10 @@ use crate::{
     neural_networks::{
         network_components::{
             gradient_struct::Gradient,
-            input::{extend_input_with_bos, DataTrait, Dataset},
+            input::{concat_batches, extend_input_with_bos, DataTrait, Dataset},
             layer::LayerEnum,
             layer_input_struct::LayerInput,
+            layer_output_struct::LayerOutput,
         },
         network_types::{
             neural_network_generic::{get_from_db, reset_previous_gradient, save_to_sled, NeuralNetwork, OperationMode},
@@ -38,22 +39,28 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
     let mut previous_last_losses: Vec<f64> = Vec::new();
     let mut total_loss_exp_ma = 0.0;
     let alpha = 0.2;
-
+    let mut layer_input = LayerInput::new_default();
     let mut epoch_processed = 0;
 
     'outer: for epoch in 0..num_epochs {
         total_loss = Complex::new(0.0, 0.0);
-        for batch_dataset in dataset.split_into_batches(5) {
+        for batch_dataset in dataset.split_into_batches(1) {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
 
             let seconds_elapsed = now.elapsed();
-            let input_batch_extended = batch_dataset.extend_input_with_target(input_batch, target_batch);
+            let input_batch_extended = extend_input_with_bos(input_batch);
             let target_batch_extended = batch_dataset.extend_target(target_batch);
 
-            // println!("extended input batch: {:?}", &input_batch_extended);
-
-            let (_tokens, mut batch_ids) = tokenize_batch(&input_batch_extended, false).unwrap();
+            let (_tokens, input_ids) = tokenize_batch(&input_batch_extended, false).unwrap();
             let (_tokens, mut target_ids) = tokenize_batch(&target_batch_extended, false).unwrap();
+
+            let mut batch_ids = concat_batches(&input_ids, &target_ids);
+
+            // println!("input_ids tokens: {:?}", &input_ids);
+            // println!("target tokens: {:?}", &target_ids);
+            // println!("extended input tokens: {:?}", &batch_ids);
+            // let original_text_extended: Vec<String> = batch_ids.par_iter().map(|token_indices| detokenize(token_indices, false).unwrap()).collect();
+            // println!("original text: {:?}", &original_text_extended);
 
             let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap();
 
@@ -63,7 +70,15 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                 target_ids = target_batch_ids;
             }
 
-            let (predicted_softmax_batch, padding_mask_batch) = predict(transformer_network, &batch_ids, epoch, false);
+            layer_input.set_batch_ids(batch_ids);
+            layer_input.set_time_step(epoch);
+            layer_input.set_forward_only(false);
+            layer_input.set_calculate_gradient(true);
+            layer_input.set_target_batch_ids(target_ids.clone());
+
+            let network_output = predict(transformer_network, &layer_input);
+            let (predicted_softmax_batch, padding_mask_batch) = (network_output.get_output_batch_f64(), network_output.get_padding_mask_batch());
+
             let loss = cross_entropy_loss_batch(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
             total_loss += loss;
 
@@ -155,10 +170,12 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
     let mut current_input_batch: Vec<String> = extend_input_with_bos(input_batch);
     let mut count_tokens_prediction = 0;
     let now = Instant::now();
+    let mut layer_input = LayerInput::new_default();
 
     print!("Antwort: ");
     // transformer.learning_rate = learning_rate;
     let last_layer_index = transformer_network.layers.len() - 1;
+    let _seconds_elapsed = now.elapsed();
 
     let layer = &mut transformer_network.layers[last_layer_index];
     match layer {
@@ -171,8 +188,6 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
     // Continue predicting until EOS token is predicted
     loop {
         // println!("current input batch: {:?}", &current_input_batch);
-
-        let _seconds_elapsed = now.elapsed();
 
         let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap();
 
@@ -191,12 +206,12 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
                 .collect();
         }
 
-        let (current_predictions, _padding_mask_batch) = predict(transformer_network, &batch_ids, time_step, true);
+        layer_input.set_batch_ids(batch_ids.clone());
+        layer_input.set_time_step(time_step);
+        layer_input.set_forward_only(true);
 
-        // let seconds_elapsed_end = now.elapsed();
-        // let duration = seconds_elapsed_end - _seconds_elapsed;
-        // let seconds = duration.as_secs_f64();
-        // println!("time elapsed in seconds: {:?}", seconds);
+        let network_output = predict(transformer_network, &layer_input);
+        let current_predictions = network_output.get_output_batch_f64();
 
         // If no more predictions are available, break out
         if current_predictions.is_empty() {
@@ -226,7 +241,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
             break;
         }
 
-        println!("{}", predicted_token);
+        print!("{}", predicted_token);
         // Add the predicted token to the current input batch
         current_input_batch[0] = format!("{}{}", current_input_batch[0], predicted_token);
 
@@ -237,16 +252,25 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         }
     }
 
+    let seconds_elapsed_end = now.elapsed();
+    let duration = seconds_elapsed_end - _seconds_elapsed;
+    let seconds = duration.as_secs_f64();
+    println!("time elapsed in seconds: {:?}", seconds);
+
     (all_predictions, current_input_batch)
 }
 
-pub fn predict(transformer_network: &mut NeuralNetwork, batch_ids: &Vec<Vec<u32>>, time_step: usize, forward_only: bool) -> (Vec<Vec<Vec<f64>>>, Vec<Vec<u32>>) {
+pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput) -> LayerOutput {
     // Forward pass
 
     // println!("forward pass start ----------------------------------------------------------------------");
     let mut output = None;
     let mut output_softmax = None;
     let mut padding_mask = None;
+
+    let batch_ids = layer_input.get_batch_ids();
+    let time_step = layer_input.get_time_step();
+    let forward_only = layer_input.get_forward_only();
 
     let mut layer_input = LayerInput::new_default();
     layer_input.set_forward_only(forward_only);
@@ -351,8 +375,12 @@ pub fn predict(transformer_network: &mut NeuralNetwork, batch_ids: &Vec<Vec<u32>
         }
     }
 
+    let mut layer_output = LayerOutput::new_default();
+    layer_output.set_output_batch_f64(output_softmax.unwrap());
+    layer_output.set_padding_mask_batch(padding_mask.unwrap());
+
     //println!("forward pass end ----------------------------------------------------------------------");
-    (output_softmax.unwrap(), padding_mask.unwrap())
+    layer_output
 }
 
 pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<Vec<u32>>, update_params: bool) -> Option<Gradient> {
@@ -520,7 +548,8 @@ fn cross_entropy_loss(predictions: &Vec<Vec<f64>>, target_tokens: &Vec<u32>, pad
         }
     }
 
-    let seq_ind_start = sequence_len_unpadded - target_len;
+    let seq_ind_start = sequence_len_unpadded - target_len - 1;
+    let end_ind = sequence_len_unpadded - 1;
 
     for (s, &target_idx) in target_tokens.iter().enumerate() {
         if target_idx == 1 {
@@ -528,6 +557,10 @@ fn cross_entropy_loss(predictions: &Vec<Vec<f64>>, target_tokens: &Vec<u32>, pad
         }
 
         let seq_ind = seq_ind_start + s;
+
+        if seq_ind >= end_ind {
+            break;
+        }
 
         let prob = predictions[seq_ind][target_idx as usize];
         // for softmax

@@ -82,7 +82,13 @@ mod test_transformer {
         let target_batch_str: Vec<String> = vec![target_str1.to_string()];
 
         let (_tokens, batch_ids) = tokenize_batch(&input_batch_str, false).unwrap();
-        let (output_batch, _padding_mask_batch) = predict(&mut transformer_network, &batch_ids, 0, false);
+
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_batch_ids(batch_ids.clone());
+
+        let network_output = predict(&mut transformer_network, &layer_input);
+        let output_batch = network_output.get_output_batch_f64();
+
         let output_batch: Vec<Vec<Vec<Complex<f64>>>> = convert_to_c_f64_3d::<Vec<Vec<Vec<f64>>>>(&output_batch);
         let (_tokens, target_ids) = tokenize_batch(&target_batch_str, true).unwrap();
         backward(&mut transformer_network, &target_ids, false);
@@ -130,9 +136,8 @@ mod test_transformer {
             let first_attention_head = first_self_attention.attention_heads.iter_mut().next().expect("No attention head found in loss fn");
             first_attention_head.weights_q = weights.clone();
 
-            //println!("\n\n weights_q in loss fn {:?}", weights);
-            let (_tokens, batch_ids) = tokenize_batch(&input_batch_str, false).unwrap();
-            let (softmax_batch_output, padding_mask_batch) = predict(&mut transformer_network, &batch_ids, 0, false);
+            let network_output = predict(&mut transformer_network, &layer_input);
+            let (softmax_batch_output, padding_mask_batch) = (network_output.get_output_batch_f64(), network_output.get_padding_mask_batch());
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_ids, &padding_mask_batch);
 

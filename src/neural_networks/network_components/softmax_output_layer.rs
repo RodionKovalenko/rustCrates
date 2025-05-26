@@ -87,7 +87,8 @@ impl SoftmaxLayer {
             }
 
             let target_len = target_tokens.len();
-            let seq_ind_start = sequence_len_unpadded - target_len;
+            let seq_ind_start = sequence_len_unpadded - target_len - 1;
+            let seq_end = sequence_len_unpadded - 1;
 
             let mut target_len_unpadded = 0.0;
             for (_t, &target_class) in target_tokens.iter().enumerate() {
@@ -108,6 +109,10 @@ impl SoftmaxLayer {
                 }
 
                 let seq_ind = seq_ind_start + t;
+
+                if seq_ind >= seq_end {
+                    break;
+                }
 
                 for (c, softmax_prob) in softmax_output[seq_ind].iter().enumerate() {
                     // for log softmax

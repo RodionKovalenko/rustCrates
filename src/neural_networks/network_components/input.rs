@@ -63,12 +63,23 @@ impl<T: Debug + Clone, O: Debug + Clone> Dataset<T, O> {
     }
 
     pub fn extend_target(&self, target_batch: &Vec<String>) -> Vec<String> {
-        target_batch.clone().iter().map(|target: &String| format!("{} <eos>", target)).collect()
+        target_batch.clone().iter().map(|target: &String| format!(" <sep> {} <eos>", target)).collect()
     }
 }
 
 pub fn extend_input_with_bos(input_batch: &Vec<String>) -> Vec<String> {
-    input_batch.clone().iter().map(|input: &String| format!("<bos> {} ", input)).collect()
+    input_batch.clone().iter().map(|input: &String| format!("<bos> {}", input)).collect()
+}
+
+pub fn concat_batches(a: &Vec<Vec<u32>>, b: &Vec<Vec<u32>>) -> Vec<Vec<u32>> {
+    a.iter()
+        .zip(b.iter())
+        .map(|(row_a, row_b)| {
+            let mut combined = row_a.clone();
+            combined.extend(row_b);
+            combined
+        })
+        .collect()
 }
 
 // Implement the DataTrait for the Dataset struct
