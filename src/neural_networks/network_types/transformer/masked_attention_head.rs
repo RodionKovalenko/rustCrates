@@ -120,8 +120,8 @@ impl MaskedAttentionHead {
 // Implement BaseLayer for Layer struct
 impl MaskedAttentionHead {
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        let input_batch = layer_input.get_input_batch();
-        let padding_mask_batch = layer_input.get_padding_mask_batch();
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = layer_input.get_input_batch();
+        let padding_mask_batch: Vec<Vec<u32>> = layer_input.get_padding_mask_batch();
 
         self.input_batch = Some(input_batch.clone());
         self.padding_mask_batch = Some(padding_mask_batch.clone());
@@ -471,7 +471,7 @@ fn create_causal_mask(rows: usize) -> Vec<Vec<u8>> {
 }
 
 fn apply_attention_mask_inplace(attention_scores: &mut Vec<Vec<Complex<f64>>>, mask: &Vec<Vec<u8>>) {
-    let large_negative = Complex::new(-1e5, 0.0);
+    let large_negative = Complex::new(-1e12, 0.0);
 
     for row in 0..attention_scores.len() {
         for col in 0..attention_scores[row].len() {

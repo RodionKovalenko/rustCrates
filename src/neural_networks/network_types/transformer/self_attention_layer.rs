@@ -62,6 +62,7 @@ impl SelfAttentionLayer {
 
         let batch_size = input_batch.len();
         let sequence_size = input_batch[0].len();
+        let target_batch_ids = layer_input.get_target_batch_ids();
 
         let mut batch_output: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![]; sequence_size]; batch_size];
         // Apply the attention mechanism for each head
@@ -70,6 +71,7 @@ impl SelfAttentionLayer {
         layer_input.set_time_step(self.time_step);
         layer_input.set_input_batch(input_batch.clone());
         layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+        layer_input.set_target_batch_ids(target_batch_ids);
 
         //println!("padding mask batch: {:?}", &padding_mask_batch);
         let attention_head_outputs: Vec<_> = self

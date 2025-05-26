@@ -6,10 +6,12 @@ use serde::{Deserialize, Serialize};
 pub struct LayerInput {
     input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     batch_ids: Option<Vec<Vec<u32>>>,
+    target_batch_ids: Option<Vec<Vec<u32>>>,
     input_batch_before: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     previous_gradient_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     padding_mask_batch: Option<Vec<Vec<u32>>>,
     input_record: Option<Vec<Vec<Complex<f64>>>>,
+    target_tokens_len: usize,
     time_step: usize,
     forward_only: bool,
     calculate_gradient: bool,
@@ -20,13 +22,15 @@ impl LayerInput {
         LayerInput {
             input_batch: None,
             batch_ids: None,
+            target_batch_ids: None,
             input_batch_before: None,
             padding_mask_batch: None,
             input_record: None,
             previous_gradient_input_batch: None,
             time_step: 0,
+            target_tokens_len: 0,
             forward_only: false,
-            calculate_gradient: true
+            calculate_gradient: true,
         }
     }
     pub fn set_input_batch(&mut self, input_batch: Vec<Vec<Vec<Complex<f64>>>>) {
@@ -53,8 +57,14 @@ impl LayerInput {
     pub fn set_time_step(&mut self, time_step: usize) {
         self.time_step = time_step;
     }
+    pub fn set_target_token_len(&mut self, target_token_len: usize) {
+        self.target_tokens_len = target_token_len;
+    }
     pub fn set_calculate_gradient(&mut self, calculate_gradient: bool) {
         self.calculate_gradient = calculate_gradient;
+    }
+    pub fn set_target_batch_ids(&mut self, target_ids: Vec<Vec<u32>>) {
+        self.target_batch_ids = Some(target_ids);
     }
 
     pub fn get_padding_mask_batch(&self) -> Vec<Vec<u32>> {
@@ -65,6 +75,9 @@ impl LayerInput {
     }
     pub fn get_input_batch_before(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
         self.input_batch_before.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_target_batch_ids(&self) -> Vec<Vec<u32>> {
+        self.target_batch_ids.clone().unwrap_or_else(|| vec![])
     }
     pub fn get_previous_gradient_input_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
         self.previous_gradient_input_batch.clone().unwrap_or_else(|| vec![])
@@ -83,5 +96,8 @@ impl LayerInput {
     }
     pub fn get_time_step(&self) -> usize {
         self.time_step
+    }
+    pub fn get_target_token_len(&self) -> usize {
+        self.target_tokens_len
     }
 }
