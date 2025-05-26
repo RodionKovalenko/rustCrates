@@ -1096,9 +1096,9 @@ pub fn test_gradient_error_1d_f64(numerical_grad: &Vec<f64>, analytical_grad: &V
 
 pub fn test_gradient_error_1d(numerical_grad: &Vec<Complex<f64>>, analytical_grad: &Vec<Complex<f64>>, epsilon: f64) {
     for (val_numerical, val_analytical) in numerical_grad.iter().zip(analytical_grad) {
-        let abs_diff = (val_numerical - val_analytical).abs();
+        let abs_diff = (val_numerical - val_analytical).norm();
         // take the largest value out of (val_numerical, val_analytical, epsilon)
-        let max_val = val_numerical.abs().max(val_analytical.abs()).max(epsilon);
+        let max_val = val_numerical.norm().max(val_analytical.norm()).max(epsilon);
         let rel_diff = abs_diff / max_val;
 
         if rel_diff > epsilon {
