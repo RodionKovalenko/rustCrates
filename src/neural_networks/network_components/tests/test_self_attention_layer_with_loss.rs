@@ -38,7 +38,7 @@ mod test_self_attention_layer_with_loss {
         let output_batch = output.get_output_batch();
 
         let _output_softmax = softmax_layer.forward(&output_batch, Some(padding_mask_batch.clone()));
-        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim, (output_dim - 1) as u32);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim - 1, (output_dim - 1) as u32);
 
         println!("\ninput batch in attention head dim : {:?}, {}, {}", &input_batch.len(), &input_batch[0].len(), &input_batch[0][0].len());
         println!("\ninput batch in attention head :{:?}", &input_batch);

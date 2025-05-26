@@ -28,7 +28,7 @@ mod test_self_attention_layer {
 
         let mut attention_head_layer: MaskedAttentionHead = MaskedAttentionHead::new(input_dim, output_dim, learning_rate);
 
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim - 1, input_dim);
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; output_dim]; batch_size];
 
         let mut layer_input = LayerInput::new_default();
@@ -201,7 +201,7 @@ mod test_self_attention_layer {
         let output_dim = 8;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
-        let num_attention_heads = 4;
+        let num_attention_heads = 1;
         let epsilon = 1e-8;
 
         // Create a simple LinearLayer with the given input and output dimensions
@@ -214,7 +214,7 @@ mod test_self_attention_layer {
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
-        let target_token_id_batch: Vec<Vec<u32>> = generate_u32_batch_from_indices(batch_size, output_dim);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_u32_batch_from_indices(batch_size, output_dim - 1);
 
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; output_dim]; batch_size];
 
@@ -301,7 +301,7 @@ mod test_self_attention_layer {
             }
         }
 
-        //test_gradient_batch_error(&num_gradient_input_batch, &gradient_input_batch_att_l, 1e-2);
+        //test_gradient_error_2d(&num_gradient_input_batch_aggregated, &gradient_input_batch_att_l, 1e-2);
 
         // Test weights q
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
