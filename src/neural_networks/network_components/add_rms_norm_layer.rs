@@ -117,7 +117,7 @@ impl RMSNormLayer {
                         } else {
                             - (input_batch[b][s][d_i] * input_batch[b][s][d_j]) / (dim_f64 * rms_cubed)
                         };
-                        input_batch_gradients[b][s][d_j] += grad * previous_gradient_batch[b][s][d_i];
+                        input_batch_gradients[b][s][d_j] += grad.conj() * previous_gradient_batch[b][s][d_i];
                     }
     
                     gradient_gamma_batch[b][d_i] += input_batch[b][s][d_i] / rms;
