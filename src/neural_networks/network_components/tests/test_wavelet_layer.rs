@@ -159,8 +159,8 @@ mod test_wavelet_layer {
 
         let linear_output_dim = 7;
         // Create a simple LinearLayer with the given input and output dimensions
-        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, linear_output_dim);
         let mut wavelet_layer: WaveletLayer = WaveletLayer::new();
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, linear_output_dim);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
         // Define a small input batch, [2][2][3]
@@ -171,32 +171,31 @@ mod test_wavelet_layer {
         let mut layer_input = LayerInput::new_default();
         layer_input.set_input_batch(input_batch.clone());
 
+        let wavelet_output = wavelet_layer.forward(&layer_input);
+        layer_input.set_input_batch(wavelet_output.get_output_batch());
+
         // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
         let linear_output = linear_layer.forward(&layer_input);
-        layer_input.set_input_batch(linear_output.get_output_batch());
 
-        let wavelet_output = wavelet_layer.forward(&layer_input);
-        let _softmax_batch_output = softmax_layer.forward(&wavelet_output.get_output_batch(), Some(padding_mask_batch.clone()));
+        let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
 
         println!("softmax output batch: {:?}", _softmax_batch_output);
         let softmax_gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
-        let wavelet_gradient = wavelet_layer.backward(&softmax_gradient);
-        let linear_gradient = linear_layer.backward(&wavelet_gradient);
+        let linear_gradient = linear_layer.backward(&softmax_gradient);
+        let wavelet_gradient = wavelet_layer.backward(&linear_gradient);
 
-        let (analytical_grad_batch, analytical_grad) = (linear_gradient.get_gradient_input_batch(), linear_gradient.get_gradient_input());
+        let (analytical_grad_batch, analytical_grad) = (wavelet_gradient.get_gradient_input_batch(), wavelet_gradient.get_gradient_input());
 
         // Define the loss function
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             layer_input.set_input_batch(input.clone());
+            let wavelet_output = wavelet_layer.forward(&layer_input);
+            layer_input.set_input_batch(wavelet_output.get_output_batch());
 
             // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
             let linear_output = linear_layer.forward(&layer_input);
-            layer_input.set_input_batch(linear_output.get_output_batch());
 
-            let wavelet_output = wavelet_layer.forward(&layer_input);
-
-            //let wavelet_output = wavelet_layer.forward(&layer_input);
-            let softmax_batch_output = softmax_layer.forward(&wavelet_output.get_output_batch(), Some(padding_mask_batch.clone()));
+            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
 
             loss
