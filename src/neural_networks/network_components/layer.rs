@@ -1,5 +1,5 @@
 use crate::neural_networks::{
-    network_types::{feedforward_layer::FeedForwardLayer, transformer::self_attention_layer::SelfAttentionLayer},
+    network_types::{feedforward_layer::FeedForwardLayer, transformer::self_attention_layer::SelfAttentionLayer, wavelet_layer::WaveletLayer},
     utils::{
         activation::activate_output_complex_padding,
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
@@ -82,6 +82,7 @@ pub enum LayerEnum {
     Norm(Box<NormalNormLayer>),
     SelfAttention(Box<SelfAttentionLayer>),
     Linear(Box<LinearLayer>),
+    Wavelet(Box<WaveletLayer>),
     Softmax(Box<SoftmaxLayer>),
 }
 

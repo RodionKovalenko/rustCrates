@@ -1,5 +1,9 @@
 
+use core::fmt::Debug;
+use serde::{Deserialize, Serialize};
 // types used for Continuous Wavelet Transform
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ContinuousWaletetType {
     // Morlet
     MORL,

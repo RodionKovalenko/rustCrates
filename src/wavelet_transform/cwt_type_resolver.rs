@@ -1,7 +1,7 @@
-use std::f64::consts::{E, PI};
-use num_complex::Complex;
 use crate::wavelet_transform::cwt_complex::CWTComplex;
 use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
+use num_complex::Complex;
+use std::f64::consts::{E, PI};
 
 pub fn get_mexh_constant(sigma: &f64) -> f64 {
     let mex_h_1: f64 = 3.0 * sigma;
@@ -21,7 +21,7 @@ pub fn transform_by_type(v: &f64, sigma: &f64, cw_type: &ContinuousWaletetType) 
         ContinuousWaletetType::GAUS6 => gauss6(v),
         ContinuousWaletetType::GAUS7 => gauss7(v),
         ContinuousWaletetType::GAUS8 => gauss8(v),
-        _ => 0.0
+        _ => 0.0,
     }
 }
 
@@ -40,17 +40,14 @@ pub fn transform_by_complex_type(v: &Complex<f64>, wavelet: &CWTComplex) -> Comp
         ContinuousWaletetType::CGAU6 => cgauss6(v),
         ContinuousWaletetType::CGAU7 => cgauss7(v),
         ContinuousWaletetType::CGAU8 => cgauss8(v),
-        _ => Complex::new(0.0, 0.0)
+        _ => Complex::new(0.0, 0.0),
     }
 }
 
 pub fn get_wavelet_range(cw_type: &ContinuousWaletetType) -> (f64, f64) {
     match cw_type {
-        ContinuousWaletetType::MORL
-        | ContinuousWaletetType::CMOR
-        | ContinuousWaletetType::MEXH => (-8.0, 8.0),
-        | ContinuousWaletetType::SHAN
-        | ContinuousWaletetType::FBSP => (-20.0, 20.0),
+        ContinuousWaletetType::MORL | ContinuousWaletetType::CMOR | ContinuousWaletetType::MEXH => (-8.0, 8.0),
+        ContinuousWaletetType::SHAN | ContinuousWaletetType::FBSP => (-20.0, 20.0),
         _ => (-5.0, 5.0),
     }
 }
@@ -62,7 +59,6 @@ pub fn morl(t: &f64, &_sigma: &f64) -> f64 {
     let t = exp_term * cos_term;
     t
 }
-
 
 pub fn mexh(v: &f64, sigma: &f64) -> f64 {
     let t = get_mexh_constant(sigma) * ((1.0 - (v / (sigma)).powf(2.0)) * E.powf(-0.5 * (v / sigma.clone()).powf(2.0)));
@@ -124,6 +120,41 @@ pub fn cmorl(v: &Complex<f64>, wavelet: &CWTComplex) -> Complex<f64> {
     let i = (2.0 * PI * fc * re).sin() * E.powf(-re.powf(2.0) / fb) / (PI * fb).sqrt();
 
     Complex::new(r, -1.0 * i)
+}
+
+pub fn cmor_derivative(input_batch: &Vec<Vec<Vec<Complex<f64>>>>, wavelet: &CWTComplex) -> Vec<Vec<Vec<Complex<f64>>>> {
+    let analytical_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = input_batch
+        .iter()
+        .map(|batch| {
+            batch
+                .iter()
+                .map(|row| {
+                    row.iter()
+                        .map(|value| {
+                            let x = value.re;
+                            let fb = wavelet.fb;
+                            let fc = wavelet.fc;
+
+                            let norm = 1.0 / (PI * fb).sqrt();
+                            let exp_term = E.powf(-x * x / fb);
+                            let common = exp_term * norm;
+
+                            let re = (-2.0 * x / fb) * common; // real part of gradient
+                            let im = (2.0 * PI * fc) * common; // imaginary part
+
+                            let exp_cos = (2.0 * PI * fc * x).cos();
+                            let exp_sin = (2.0 * PI * fc * x).sin();
+
+                            let grad = Complex::new(-exp_sin * im + exp_cos * re,  -1.0 * (exp_cos * im + exp_sin * re));
+                            grad
+                        })
+                        .collect()
+                })
+                .collect()
+        })
+        .collect();
+
+    analytical_gradient_batch
 }
 
 pub fn cgauss1(v: &Complex<f64>) -> Complex<f64> {
@@ -190,8 +221,10 @@ pub fn cgauss7(v: &Complex<f64>) -> Complex<f64> {
     let re = v.re;
     let common_factor = (PI / 2.0).powf(1.0 / 4.0) * 2390480.0_f64.powf(1.0 / 2.0);
 
-    let r = ((-128.0 * re.powf(7.0) * re.cos() - 448.0 * re.powf(6.0) * re.sin() + 2016.0 * re.powf(5.0) * re.cos() + 3920.0 * re.powf(4.0) * re.sin() - 7000.0 * re.powf(3.0) * re.cos() - 6804.0 * re.powf(2.0) * re.sin() + 4634.0 * re * re.cos() + 1303.0 * re.sin()) * E.powf(-re.powf(2.0))) / common_factor;
-    let i = -1.0 * ((128.0 * re.powf(7.0) * re.sin() - 448.0 * re.powf(6.0) * re.cos() - 2016.0 * re.powf(5.0) * re.sin() + 3920.0 * re.powf(4.0) * re.cos() + 7000.0 * re.powf(3.0) * re.sin() - 6804.0 * re.powf(2.0) * re.cos() - 4634.0 * re * re.sin() + 1303.0 * re.cos()) * E.powf(-re.powf(2.0))) / common_factor;
+    let r = ((-128.0 * re.powf(7.0) * re.cos() - 448.0 * re.powf(6.0) * re.sin() + 2016.0 * re.powf(5.0) * re.cos() + 3920.0 * re.powf(4.0) * re.sin() - 7000.0 * re.powf(3.0) * re.cos() - 6804.0 * re.powf(2.0) * re.sin() + 4634.0 * re * re.cos() + 1303.0 * re.sin()) * E.powf(-re.powf(2.0)))
+        / common_factor;
+    let i = -1.0 * ((128.0 * re.powf(7.0) * re.sin() - 448.0 * re.powf(6.0) * re.cos() - 2016.0 * re.powf(5.0) * re.sin() + 3920.0 * re.powf(4.0) * re.cos() + 7000.0 * re.powf(3.0) * re.sin() - 6804.0 * re.powf(2.0) * re.cos() - 4634.0 * re * re.sin() + 1303.0 * re.cos()) * E.powf(-re.powf(2.0)))
+        / common_factor;
 
     Complex::new(r, i)
 }
@@ -200,8 +233,16 @@ pub fn cgauss8(v: &Complex<f64>) -> Complex<f64> {
     let re = v.re;
     let common_factor = (PI / 2.0).powf(1.0 / 4.0) * 46206736.0_f64.powf(1.0 / 2.0);
 
-    let r = ((256.0 * re.powf(8.0) * re.cos() + 1024.0 * re.powf(7.0) * re.sin() - 5376.0 * re.powf(6.0) * re.cos() - 12544.0 * re.powf(5.0) * re.sin() + 28000.0 * re.powf(4.0) * re.cos() + 36288.0 * re.powf(3.0) * re.sin() - 37072.0 * re.powf(2.0) * re.cos() - 20848.0 * re * re.sin() + 5937.0 * re.cos()) * E.powf(-re.powf(2.0))) / common_factor;
-    let i = -1.0 * ((-256.0 * re.powf(8.0) * re.sin() + 1024.0 * re.powf(7.0) * re.cos() + 5376.0 * re.powf(6.0) * re.sin() - 12544.0 * re.powf(5.0) * re.cos() - 28000.0 * re.powf(4.0) * re.sin() + 36288.0 * re.powf(3.0) * re.cos() + 37072.0 * re.powf(2.0) * re.sin() - 20848.0 * re * re.cos() - 5937.0 * re.sin()) * E.powf(-re.powf(2.0))) / common_factor;
+    let r = ((256.0 * re.powf(8.0) * re.cos() + 1024.0 * re.powf(7.0) * re.sin() - 5376.0 * re.powf(6.0) * re.cos() - 12544.0 * re.powf(5.0) * re.sin() + 28000.0 * re.powf(4.0) * re.cos() + 36288.0 * re.powf(3.0) * re.sin() - 37072.0 * re.powf(2.0) * re.cos() - 20848.0 * re * re.sin()
+        + 5937.0 * re.cos())
+        * E.powf(-re.powf(2.0)))
+        / common_factor;
+    let i = -1.0
+        * ((-256.0 * re.powf(8.0) * re.sin() + 1024.0 * re.powf(7.0) * re.cos() + 5376.0 * re.powf(6.0) * re.sin() - 12544.0 * re.powf(5.0) * re.cos() - 28000.0 * re.powf(4.0) * re.sin() + 36288.0 * re.powf(3.0) * re.cos() + 37072.0 * re.powf(2.0) * re.sin()
+            - 20848.0 * re * re.cos()
+            - 5937.0 * re.sin())
+            * E.powf(-re.powf(2.0)))
+        / common_factor;
     Complex::new(r, i)
 }
 

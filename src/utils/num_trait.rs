@@ -1,15 +1,22 @@
+use num_complex::Complex;
 use std::fmt::Debug;
 use std::ops::{Add, Div, Mul, Sub};
-use num_complex::Complex;
 
-pub trait NumTrait: Add<Output=Self> + Sub<Output=Self> + Mul<Output=Self> + Div<Output=Self> + Sized + Debug + Clone + Copy
-{
+pub trait NumTrait: Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + Div<Output = Self> + Sized + Debug + Clone + Copy {
     fn to_f64(&self) -> f64;
+    fn to_real(&self) -> f64;
+    fn to_imag(&self) -> f64;
 }
 
 impl NumTrait for f64 {
     fn to_f64(&self) -> f64 {
         *self
+    }
+    fn to_real(&self) -> f64 {
+        *self
+    }
+    fn to_imag(&self) -> f64 {
+        0.0
     }
 }
 
@@ -17,10 +24,22 @@ impl NumTrait for u8 {
     fn to_f64(&self) -> f64 {
         *self as f64
     }
+    fn to_real(&self) -> f64 {
+        *self as f64
+    }
+    fn to_imag(&self) -> f64 {
+        0.0
+    }
 }
 impl NumTrait for f32 {
     fn to_f64(&self) -> f64 {
         *self as f64
+    }
+    fn to_real(&self) -> f64 {
+        *self as f64
+    }
+    fn to_imag(&self) -> f64 {
+        0.0
     }
 }
 
@@ -28,23 +47,48 @@ impl NumTrait for i32 {
     fn to_f64(&self) -> f64 {
         *self as f64
     }
+
+    fn to_real(&self) -> f64 {
+        *self as f64
+    }
+    fn to_imag(&self) -> f64 {
+        0.0
+    }
 }
 
 impl NumTrait for i64 {
     fn to_f64(&self) -> f64 {
         *self as f64
     }
+    fn to_real(&self) -> f64 {
+        *self as f64
+    }
+    fn to_imag(&self) -> f64 {
+        0.0
+    }
 }
 
 impl NumTrait for Complex<f32> {
     fn to_f64(&self) -> f64 {
-       self.norm() as f64
+        self.norm() as f64
+    }
+    fn to_real(&self) -> f64 {
+        self.re as f64
+    }
+    fn to_imag(&self) -> f64 {
+        self.im as f64
     }
 }
 
 impl NumTrait for Complex<f64> {
     fn to_f64(&self) -> f64 {
-       self.norm()
+        self.norm()
+    }
+    fn to_real(&self) -> f64 {
+        self.re
+    }
+    fn to_imag(&self) -> f64 {
+        self.im
     }
 }
 
@@ -52,7 +96,14 @@ impl NumTrait for Complex<i32> {
     fn to_f64(&self) -> f64 {
         let real_squared = (self.re * self.re) as f64;
         let imag_squared = (self.im * self.im) as f64;
-        (real_squared + imag_squared).sqrt() 
+        (real_squared + imag_squared).sqrt()
+    }
+
+    fn to_real(&self) -> f64 {
+        self.re as f64
+    }
+    fn to_imag(&self) -> f64 {
+        self.im as f64
     }
 }
 
@@ -60,12 +111,18 @@ impl NumTrait for Complex<i64> {
     fn to_f64(&self) -> f64 {
         let real_squared = (self.re * self.re) as f64;
         let imag_squared = (self.im * self.im) as f64;
-        (real_squared + imag_squared).sqrt() 
+        (real_squared + imag_squared).sqrt()
+    }
+
+    fn to_real(&self) -> f64 {
+        self.re as f64
+    }
+    fn to_imag(&self) -> f64 {
+        self.im as f64
     }
 }
 
-#[derive(Debug)]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum Array {
     Array1D(Vec<f64>),
     ArrayF321D(Vec<f32>),
@@ -114,7 +171,6 @@ pub enum Array {
     Array8D(Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>>>>),
     ArrayF32_8D(Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<f32>>>>>>>>),
     ArrayU8_8D(Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<u8>>>>>>>>),
-
 
     ArrayC1D(Vec<Complex<f64>>),
     ArrayF32C1d(Vec<Complex<f32>>),
@@ -179,7 +235,7 @@ impl ArrayType for Array {
             Array::Array5D(_) => 5,
             Array::Array6D(_) => 6,
             Array::Array7D(_) => 7,
-            _ => 0
+            _ => 0,
         }
     }
 
@@ -193,7 +249,7 @@ impl ArrayType for Array {
             Array::Array6D(vec) => vec.len(),
             Array::Array7D(vec) => vec.len(),
             Array::Array8D(vec) => vec.len(),
-            _ => 0
+            _ => 0,
         }
     }
 
@@ -203,7 +259,7 @@ impl ArrayType for Array {
 
     fn to_complex_array(&self) -> Array {
         match self {
-            _ => Array::ArrayC1D(vec![Complex::new(0.0, 0.0)])
+            _ => Array::ArrayC1D(vec![Complex::new(0.0, 0.0)]),
         }
     }
     fn get_element_type(&self) -> Self::Element {
@@ -262,15 +318,11 @@ impl<T: NumTrait, const N: usize, const M: usize, const P: usize> ArrayType for 
         N
     }
     fn as_f64_array(&self) -> Array {
-        let result: Vec<Vec<Vec<f64>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter().map(|item| item.to_f64()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<f64>>> = self.iter().map(|inner_vec| inner_vec.iter().map(|inner_inner_vec| inner_inner_vec.iter().map(|item| item.to_f64()).collect()).collect()).collect();
         Array::Array3D(result)
     }
     fn to_complex_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Complex<f64>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter().map(|item| Complex::from(item.to_f64())).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Complex<f64>>>> = self.iter().map(|inner_vec| inner_vec.iter().map(|inner_inner_vec| inner_inner_vec.iter().map(|item| Complex::from(item.to_f64())).collect()).collect()).collect();
         Array::ArrayC3D(result)
     }
     fn get_element_type(&self) -> Self::Element {
@@ -287,17 +339,22 @@ impl<T: NumTrait, const N: usize, const M: usize, const P: usize, const K: usize
         N
     }
     fn as_f64_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<f64>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter().map(|item| item.to_f64()).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<f64>>>> = self
+            .iter()
+            .map(|inner_vec| inner_vec.iter().map(|inner_inner_vec| inner_inner_vec.iter().map(|inner_inner_inner_vec| inner_inner_inner_vec.iter().map(|item| item.to_f64()).collect()).collect()).collect())
+            .collect();
         Array::Array4D(result)
     }
     fn to_complex_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<Complex<f64>>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter().map(|item| Complex::from(item.to_f64())).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<Complex<f64>>>>> = self
+            .iter()
+            .map(|inner_vec| {
+                inner_vec
+                    .iter()
+                    .map(|inner_inner_vec| inner_inner_vec.iter().map(|inner_inner_inner_vec| inner_inner_inner_vec.iter().map(|item| Complex::from(item.to_f64())).collect()).collect())
+                    .collect()
+            })
+            .collect();
         Array::ArrayC4D(result)
     }
     fn get_element_type(&self) -> Self::Element {
@@ -314,20 +371,37 @@ impl<T: NumTrait, const N: usize, const M: usize, const P: usize, const K: usize
         N
     }
     fn as_f64_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<Vec<f64>>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter()
-                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter().map(|item| item.to_f64()).collect()).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<Vec<f64>>>>> = self
+            .iter()
+            .map(|inner_vec| {
+                inner_vec
+                    .iter()
+                    .map(|inner_inner_vec| {
+                        inner_inner_vec
+                            .iter()
+                            .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter().map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter().map(|item| item.to_f64()).collect()).collect())
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
         Array::Array5D(result)
     }
     fn to_complex_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter()
-                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter().map(|item| Complex::from(item.to_f64()))
-                        .collect()).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>> = self
+            .iter()
+            .map(|inner_vec| {
+                inner_vec
+                    .iter()
+                    .map(|inner_inner_vec| {
+                        inner_inner_vec
+                            .iter()
+                            .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter().map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter().map(|item| Complex::from(item.to_f64())).collect()).collect())
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
         Array::ArrayC5D(result)
     }
     fn get_element_type(&self) -> Self::Element {
@@ -344,22 +418,47 @@ impl<T: NumTrait, const N: usize, const M: usize, const P: usize, const K: usize
         N
     }
     fn as_f64_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter()
-                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter()
-                        .map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter().map(|item| item.to_f64()).collect()).collect()).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>> = self
+            .iter()
+            .map(|inner_vec| {
+                inner_vec
+                    .iter()
+                    .map(|inner_inner_vec| {
+                        inner_inner_vec
+                            .iter()
+                            .map(|inner_inner_inner_vec| {
+                                inner_inner_inner_vec
+                                    .iter()
+                                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter().map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter().map(|item| item.to_f64()).collect()).collect())
+                                    .collect()
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
         Array::Array6D(result)
     }
     fn to_complex_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter()
-                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter()
-                        .map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter().map(|item| Complex::from(item.to_f64()))
-                            .collect()).collect()).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>>> = self
+            .iter()
+            .map(|inner_vec| {
+                inner_vec
+                    .iter()
+                    .map(|inner_inner_vec| {
+                        inner_inner_vec
+                            .iter()
+                            .map(|inner_inner_inner_vec| {
+                                inner_inner_inner_vec
+                                    .iter()
+                                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter().map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter().map(|item| Complex::from(item.to_f64())).collect()).collect())
+                                    .collect()
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
 
         Array::ArrayC6D(result)
     }
@@ -377,25 +476,62 @@ impl<T: NumTrait, const N: usize, const M: usize, const P: usize, const K: usize
         N
     }
     fn as_f64_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter()
-                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter()
-                        .map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter()
-                            .map(|inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_vec.iter()
-                                .map(|item| item.to_f64()).collect()).collect()).collect()).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>>> = self
+            .iter()
+            .map(|inner_vec| {
+                inner_vec
+                    .iter()
+                    .map(|inner_inner_vec| {
+                        inner_inner_vec
+                            .iter()
+                            .map(|inner_inner_inner_vec| {
+                                inner_inner_inner_vec
+                                    .iter()
+                                    .map(|inner_inner_inner_inner_vec| {
+                                        inner_inner_inner_inner_vec
+                                            .iter()
+                                            .map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter().map(|inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_vec.iter().map(|item| item.to_f64()).collect()).collect())
+                                            .collect()
+                                    })
+                                    .collect()
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
         Array::Array7D(result)
     }
     fn to_complex_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter()
-                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter()
-                        .map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter()
-                            .map(|inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_vec.iter()
-                                .map(|item| Complex::from(item.to_f64())).collect()).collect()).collect()).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>>>> = self
+            .iter()
+            .map(|inner_vec| {
+                inner_vec
+                    .iter()
+                    .map(|inner_inner_vec| {
+                        inner_inner_vec
+                            .iter()
+                            .map(|inner_inner_inner_vec| {
+                                inner_inner_inner_vec
+                                    .iter()
+                                    .map(|inner_inner_inner_inner_vec| {
+                                        inner_inner_inner_inner_vec
+                                            .iter()
+                                            .map(|inner_inner_inner_inner_inner_vec| {
+                                                inner_inner_inner_inner_inner_vec
+                                                    .iter()
+                                                    .map(|inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_vec.iter().map(|item| Complex::from(item.to_f64())).collect())
+                                                    .collect()
+                                            })
+                                            .collect()
+                                    })
+                                    .collect()
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
 
         Array::ArrayC7D(result)
     }
@@ -413,27 +549,77 @@ impl<T: NumTrait, const N: usize, const M: usize, const P: usize, const K: usize
         N
     }
     fn as_f64_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter()
-                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter()
-                        .map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter()
-                            .map(|inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_vec.iter().
-                                map(|inner_inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_inner_vec.iter().map(|item| item.to_f64()).collect()).collect()).collect()).collect()).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>>>> = self
+            .iter()
+            .map(|inner_vec| {
+                inner_vec
+                    .iter()
+                    .map(|inner_inner_vec| {
+                        inner_inner_vec
+                            .iter()
+                            .map(|inner_inner_inner_vec| {
+                                inner_inner_inner_vec
+                                    .iter()
+                                    .map(|inner_inner_inner_inner_vec| {
+                                        inner_inner_inner_inner_vec
+                                            .iter()
+                                            .map(|inner_inner_inner_inner_inner_vec| {
+                                                inner_inner_inner_inner_inner_vec
+                                                    .iter()
+                                                    .map(|inner_inner_inner_inner_inner_inner_vec| {
+                                                        inner_inner_inner_inner_inner_inner_vec
+                                                            .iter()
+                                                            .map(|inner_inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_inner_vec.iter().map(|item| item.to_f64()).collect())
+                                                            .collect()
+                                                    })
+                                                    .collect()
+                                            })
+                                            .collect()
+                                    })
+                                    .collect()
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
         Array::Array8D(result)
     }
     fn to_complex_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter()
-                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter()
-                        .map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter()
-                            .map(|inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_vec.iter().
-                                map(|inner_inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_inner_vec.iter()
-                                    .map(|item| Complex::from(item.to_f64())).collect()).collect()).collect())
-                        .collect()).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>>>>> = self
+            .iter()
+            .map(|inner_vec| {
+                inner_vec
+                    .iter()
+                    .map(|inner_inner_vec| {
+                        inner_inner_vec
+                            .iter()
+                            .map(|inner_inner_inner_vec| {
+                                inner_inner_inner_vec
+                                    .iter()
+                                    .map(|inner_inner_inner_inner_vec| {
+                                        inner_inner_inner_inner_vec
+                                            .iter()
+                                            .map(|inner_inner_inner_inner_inner_vec| {
+                                                inner_inner_inner_inner_inner_vec
+                                                    .iter()
+                                                    .map(|inner_inner_inner_inner_inner_inner_vec| {
+                                                        inner_inner_inner_inner_inner_inner_vec
+                                                            .iter()
+                                                            .map(|inner_inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_inner_vec.iter().map(|item| Complex::from(item.to_f64())).collect())
+                                                            .collect()
+                                                    })
+                                                    .collect()
+                                            })
+                                            .collect()
+                                    })
+                                    .collect()
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
         Array::ArrayC8D(result)
     }
     fn get_element_type(&self) -> Self::Element {
@@ -450,13 +636,12 @@ impl<T: NumTrait> ArrayType for Vec<T> {
         self.len()
     }
     fn as_f64_array(&self) -> Array {
-        let result: Vec<f64> = self.iter()
-            .map(|item| item.to_f64()).collect();
+        let result: Vec<f64> = self.iter().map(|item| item.to_f64()).collect();
 
         Array::Array1D(result)
     }
     fn to_complex_array(&self) -> Array {
-        let result: Vec<Complex<f64>> = self.iter().map(|item| Complex::from(item.to_f64())).collect();
+        let result: Vec<Complex<f64>> = self.iter().map(|item| Complex::new(item.to_real(), item.to_imag())).collect();
         Array::ArrayC1D(result)
     }
     fn get_element_type(&self) -> Self::Element {
@@ -473,13 +658,11 @@ impl<T: NumTrait> ArrayType for Vec<Vec<T>> {
         self.len()
     }
     fn as_f64_array(&self) -> Array {
-        let result: Vec<Vec<f64>> = self.iter()
-            .map(|inner_vec| inner_vec.iter().map(|item| item.to_f64()).collect())
-            .collect();
+        let result: Vec<Vec<f64>> = self.iter().map(|inner_vec| inner_vec.iter().map(|item| item.to_f64()).collect()).collect();
         Array::Array2D(result)
     }
     fn to_complex_array(&self) -> Array {
-        let result: Vec<Vec<Complex<f64>>> = self.iter().map(|inner_vec| inner_vec.iter().map(|item| Complex::from(item.to_f64())).collect()).collect();
+        let result: Vec<Vec<Complex<f64>>> = self.iter().map(|inner_vec| inner_vec.iter().map(|item| Complex::new(item.to_real(), item.to_imag())).collect()).collect();
         Array::ArrayC2D(result)
     }
     fn get_element_type(&self) -> Self::Element {
@@ -496,19 +679,13 @@ impl<T: NumTrait> ArrayType for Vec<Vec<Vec<T>>> {
         self.len()
     }
     fn as_f64_array(&self) -> Array {
-        let result: Vec<Vec<Vec<f64>>> = self.iter()
-            .map(|inner_vec| inner_vec.iter()
-                .map(|inner_inner_vec| inner_inner_vec.iter()
-                    .map(|item| item.to_f64()).collect())
-                .collect()
-            )
-            .collect();
+        let result: Vec<Vec<Vec<f64>>> = self.iter().map(|inner_vec| inner_vec.iter().map(|inner_inner_vec| inner_inner_vec.iter().map(|item| item.to_f64()).collect()).collect()).collect();
         Array::Array3D(result)
     }
     fn to_complex_array(&self) -> Array {
         let result: Vec<Vec<Vec<Complex<f64>>>>
             = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter().map(|item| Complex::from(item.to_f64())).collect()).collect()).collect();
+            .map(|inner_inner_vec| inner_inner_vec.iter().map(|item| Complex::new(item.to_real(), item.to_imag())).collect()).collect()).collect();
         Array::ArrayC3D(result)
     }
     fn get_element_type(&self) -> Self::Element {
@@ -525,17 +702,22 @@ impl<T: NumTrait> ArrayType for Vec<Vec<Vec<Vec<T>>>> {
         self.len()
     }
     fn as_f64_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<f64>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter().map(|item| item.to_f64()).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<f64>>>> = self
+            .iter()
+            .map(|inner_vec| inner_vec.iter().map(|inner_inner_vec| inner_inner_vec.iter().map(|inner_inner_inner_vec| inner_inner_inner_vec.iter().map(|item| item.to_f64()).collect()).collect()).collect())
+            .collect();
         Array::Array4D(result)
     }
     fn to_complex_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<Complex<f64>>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter().map(|item| Complex::from(item.to_f64())).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<Complex<f64>>>>> = self
+            .iter()
+            .map(|inner_vec| {
+                inner_vec
+                    .iter()
+                    .map(|inner_inner_vec| inner_inner_vec.iter().map(|inner_inner_inner_vec| inner_inner_inner_vec.iter().map(|item| Complex::new(item.to_real(), item.to_imag())).collect()).collect())
+                    .collect()
+            })
+            .collect();
         Array::ArrayC4D(result)
     }
     fn get_element_type(&self) -> Self::Element {
@@ -552,20 +734,37 @@ impl<T: NumTrait> ArrayType for Vec<Vec<Vec<Vec<Vec<T>>>>> {
         self.len()
     }
     fn as_f64_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<Vec<f64>>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter()
-                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter().map(|item| item.to_f64()).collect()).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<Vec<f64>>>>> = self
+            .iter()
+            .map(|inner_vec| {
+                inner_vec
+                    .iter()
+                    .map(|inner_inner_vec| {
+                        inner_inner_vec
+                            .iter()
+                            .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter().map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter().map(|item| item.to_f64()).collect()).collect())
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
         Array::Array5D(result)
     }
     fn to_complex_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter()
-                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter().map(|item| Complex::from(item.to_f64()))
-                        .collect()).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>> = self
+            .iter()
+            .map(|inner_vec| {
+                inner_vec
+                    .iter()
+                    .map(|inner_inner_vec| {
+                        inner_inner_vec
+                            .iter()
+                            .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter().map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter().map(|item| Complex::new(item.to_real(), item.to_imag())).collect()).collect())
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
         Array::ArrayC5D(result)
     }
     fn get_element_type(&self) -> Self::Element {
@@ -582,22 +781,47 @@ impl<T: NumTrait> ArrayType for Vec<Vec<Vec<Vec<Vec<Vec<T>>>>>> {
         self.len()
     }
     fn as_f64_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter()
-                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter()
-                        .map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter().map(|item| item.to_f64()).collect()).collect()).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>> = self
+            .iter()
+            .map(|inner_vec| {
+                inner_vec
+                    .iter()
+                    .map(|inner_inner_vec| {
+                        inner_inner_vec
+                            .iter()
+                            .map(|inner_inner_inner_vec| {
+                                inner_inner_inner_vec
+                                    .iter()
+                                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter().map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter().map(|item| item.to_f64()).collect()).collect())
+                                    .collect()
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
         Array::Array6D(result)
     }
     fn to_complex_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter()
-                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter()
-                        .map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter().map(|item| Complex::from(item.to_f64()))
-                            .collect()).collect()).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>>> = self
+            .iter()
+            .map(|inner_vec| {
+                inner_vec
+                    .iter()
+                    .map(|inner_inner_vec| {
+                        inner_inner_vec
+                            .iter()
+                            .map(|inner_inner_inner_vec| {
+                                inner_inner_inner_vec
+                                    .iter()
+                                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter().map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter().map(|item| Complex::new(item.to_real(), item.to_imag())).collect()).collect())
+                                    .collect()
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
 
         Array::ArrayC6D(result)
     }
@@ -615,25 +839,62 @@ impl<T: NumTrait> ArrayType for Vec<Vec<Vec<Vec<Vec<Vec<Vec<T>>>>>>> {
         self.len()
     }
     fn as_f64_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter()
-                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter()
-                        .map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter()
-                            .map(|inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_vec.iter()
-                                .map(|item| item.to_f64()).collect()).collect()).collect()).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>>> = self
+            .iter()
+            .map(|inner_vec| {
+                inner_vec
+                    .iter()
+                    .map(|inner_inner_vec| {
+                        inner_inner_vec
+                            .iter()
+                            .map(|inner_inner_inner_vec| {
+                                inner_inner_inner_vec
+                                    .iter()
+                                    .map(|inner_inner_inner_inner_vec| {
+                                        inner_inner_inner_inner_vec
+                                            .iter()
+                                            .map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter().map(|inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_vec.iter().map(|item| item.to_f64()).collect()).collect())
+                                            .collect()
+                                    })
+                                    .collect()
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
         Array::Array7D(result)
     }
     fn to_complex_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter()
-                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter()
-                        .map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter()
-                            .map(|inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_vec.iter()
-                                .map(|item| Complex::from(item.to_f64())).collect()).collect()).collect()).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>>>> = self
+            .iter()
+            .map(|inner_vec| {
+                inner_vec
+                    .iter()
+                    .map(|inner_inner_vec| {
+                        inner_inner_vec
+                            .iter()
+                            .map(|inner_inner_inner_vec| {
+                                inner_inner_inner_vec
+                                    .iter()
+                                    .map(|inner_inner_inner_inner_vec| {
+                                        inner_inner_inner_inner_vec
+                                            .iter()
+                                            .map(|inner_inner_inner_inner_inner_vec| {
+                                                inner_inner_inner_inner_inner_vec
+                                                    .iter()
+                                                    .map(|inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_vec.iter().map(|item| Complex::new(item.to_real(), item.to_imag())).collect())
+                                                    .collect()
+                                            })
+                                            .collect()
+                                    })
+                                    .collect()
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
 
         Array::ArrayC7D(result)
     }
@@ -651,27 +912,77 @@ impl<T: NumTrait> ArrayType for Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<T>>>>>>>> {
         self.len()
     }
     fn as_f64_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter()
-                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter()
-                        .map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter()
-                            .map(|inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_vec.iter().
-                                map(|inner_inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_inner_vec.iter().map(|item| item.to_f64()).collect()).collect()).collect()).collect()).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<f64>>>>>>>> = self
+            .iter()
+            .map(|inner_vec| {
+                inner_vec
+                    .iter()
+                    .map(|inner_inner_vec| {
+                        inner_inner_vec
+                            .iter()
+                            .map(|inner_inner_inner_vec| {
+                                inner_inner_inner_vec
+                                    .iter()
+                                    .map(|inner_inner_inner_inner_vec| {
+                                        inner_inner_inner_inner_vec
+                                            .iter()
+                                            .map(|inner_inner_inner_inner_inner_vec| {
+                                                inner_inner_inner_inner_inner_vec
+                                                    .iter()
+                                                    .map(|inner_inner_inner_inner_inner_inner_vec| {
+                                                        inner_inner_inner_inner_inner_inner_vec
+                                                            .iter()
+                                                            .map(|inner_inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_inner_vec.iter().map(|item| item.to_f64()).collect())
+                                                            .collect()
+                                                    })
+                                                    .collect()
+                                            })
+                                            .collect()
+                                    })
+                                    .collect()
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
         Array::Array8D(result)
     }
     fn to_complex_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter()
-                .map(|inner_inner_inner_vec| inner_inner_inner_vec.iter()
-                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter()
-                        .map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter()
-                            .map(|inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_vec.iter().
-                                map(|inner_inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_inner_vec.iter()
-                                    .map(|item| Complex::from(item.to_f64())).collect()).collect()).collect())
-                        .collect()).collect()).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Vec<Vec<Vec<Vec<Vec<Complex<f64>>>>>>>>> = self
+            .iter()
+            .map(|inner_vec| {
+                inner_vec
+                    .iter()
+                    .map(|inner_inner_vec| {
+                        inner_inner_vec
+                            .iter()
+                            .map(|inner_inner_inner_vec| {
+                                inner_inner_inner_vec
+                                    .iter()
+                                    .map(|inner_inner_inner_inner_vec| {
+                                        inner_inner_inner_inner_vec
+                                            .iter()
+                                            .map(|inner_inner_inner_inner_inner_vec| {
+                                                inner_inner_inner_inner_inner_vec
+                                                    .iter()
+                                                    .map(|inner_inner_inner_inner_inner_inner_vec| {
+                                                        inner_inner_inner_inner_inner_inner_vec
+                                                            .iter()
+                                                            .map(|inner_inner_inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_inner_inner_vec.iter().map(|item| Complex::new(item.to_real(), item.to_imag())).collect())
+                                                            .collect()
+                                                    })
+                                                    .collect()
+                                            })
+                                            .collect()
+                                    })
+                                    .collect()
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
         Array::ArrayC8D(result)
     }
     fn get_element_type(&self) -> Self::Element {
