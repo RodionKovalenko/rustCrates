@@ -34,7 +34,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
 
     layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
     layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
-    layers.push(LayerEnum::Wavelet(Box::new(WaveletLayer::new())));
+    // layers.push(LayerEnum::Wavelet(Box::new(WaveletLayer::new())));
 
     let rows: usize = embedding_dim_compressed;
 
