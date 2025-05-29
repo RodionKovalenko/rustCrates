@@ -83,9 +83,6 @@ impl WaveletLayer {
             .iter()
             .zip(input_batch)
             .map(|(previous_gradient, input)| {
-                println!("previous grad dim: {} {}", previous_gradient.len(), previous_gradient[0].len());
-                println!("wavelet_gradient dim: {} {}", input.len(), input[0].len());
-
                 //previous_gradient.iter().enumerate().map(|(row_ind, prev_grad_row)| get_wavelet_derivative(&input[row_ind], &wavefun_result, &self.wavelet.scales[0], &prev_grad_row)).collect()
                 get_wavelet_derivative_full(&input, &wavefun_result, &self.wavelet.scales[0], &previous_gradient)
             })
