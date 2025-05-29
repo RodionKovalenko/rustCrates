@@ -52,16 +52,16 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
         let attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
         layers.push(LayerEnum::SelfAttention(Box::new(attention_layer)));
 
-        let mut hidden_dim = 256;
+        let mut hidden_dim = 512;
         if i > 0 {
-            hidden_dim = 1024;
+            hidden_dim = 2048;
         }
+
         let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
         layers.push(LayerEnum::FeedForward(Box::new(ffn_layer)));
     }
     // Transformer block end
 
-   
     let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
     let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode);
 

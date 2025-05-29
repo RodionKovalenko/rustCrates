@@ -30,7 +30,7 @@ impl WaveletLayer {
     pub fn new() -> Self {
         let wavelet = CWTComplex {
             scales: vec![1.0],
-            cw_type: ContinuousWaletetType::CMOR,
+            cw_type: ContinuousWaletetType::CGAU5,
             sampling_period: 1.0,
             fc: 1.0,
             fb: 1.0,
@@ -54,11 +54,9 @@ impl WaveletLayer {
         let output_batch: Vec<Vec<Vec<Complex<f64>>>> = input_batch
             .par_iter()
             .map(|input| {
-                // let (transform_cwt, _frequencies) = cwt_complex(input, &self.wavelet).unwrap();
+                //let (transform_cwt, _frequencies) = cwt_complex(input, &self.wavelet).unwrap();
                 // let wavelet_output = convert_to_c_array_f64_3d(transform_cwt);
                 let (wavelet_output, _frequencies) = cwt_2d_full(input, &self.wavelet);
-
-                // println!("output wavelet: {:?}", &wavelet_output[0]);
                 wavelet_output[0].to_vec()
             })
             .collect();
