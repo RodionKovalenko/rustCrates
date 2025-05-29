@@ -25,12 +25,11 @@ mod test_wavelet_layer {
         let _seq_len: usize = 1; // Update to match the input structure
         let input_dim = 5; // Match the input dimension with your input batch
         let output_dim = 6; // Match output_dim to your layer's output
-        let learning_rate = 0.01;
         let epsilon = 1e-8;
         let epsilon_test = 1e-3;
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let mut wavelet_layer: WaveletLayer = WaveletLayer::new(epsilon, learning_rate);
+        let mut wavelet_layer: WaveletLayer = WaveletLayer::new();
 
         // Define a small input batch, [2][2][3]
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
@@ -92,7 +91,7 @@ mod test_wavelet_layer {
         let epsilon_test = 1e-3;
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let mut wavelet_layer: WaveletLayer = WaveletLayer::new(epsilon, learning_rate);
+        let mut wavelet_layer: WaveletLayer = WaveletLayer::new();
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
         // Define a small input batch, [2][2][3]
@@ -161,7 +160,7 @@ mod test_wavelet_layer {
         let linear_output_dim = 7;
         // Create a simple LinearLayer with the given input and output dimensions
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, linear_output_dim);
-        let mut wavelet_layer: WaveletLayer = WaveletLayer::new(epsilon, learning_rate);
+        let mut wavelet_layer: WaveletLayer = WaveletLayer::new();
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
         // Define a small input batch, [2][2][3]

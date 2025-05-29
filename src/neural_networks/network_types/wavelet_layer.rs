@@ -13,9 +13,6 @@ use crate::{
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WaveletLayer {
-    epsilon: f64,
-    pub learning_rate: f64,
-
     #[serde(skip)]
     input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
@@ -30,7 +27,7 @@ pub struct WaveletLayer {
 }
 
 impl WaveletLayer {
-    pub fn new(epsilon: f64, learning_rate: f64) -> Self {
+    pub fn new() -> Self {
         let wavelet = CWTComplex {
             scales: vec![1.0],
             cw_type: ContinuousWaletetType::CMOR,
@@ -42,8 +39,6 @@ impl WaveletLayer {
         };
 
         Self {
-            epsilon,
-            learning_rate,
             input_batch: None,
             previous_gradient_input_batch: None,
             gradient: None,
