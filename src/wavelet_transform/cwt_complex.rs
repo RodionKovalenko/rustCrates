@@ -1,14 +1,18 @@
-use std::cmp::Ordering;
-use num_complex::Complex;
+use crate::neural_networks::utils::matrix::transpose;
 use crate::utils::array_complex::{convolve_complex, get_coef_complex, integrate_complex, linspace_complex};
 use crate::utils::convolution_modes::ConvolutionMode;
-use crate::wavelet_transform::cwt_type_resolver::transform_by_complex_type;
-use crate::wavelet_transform::cwt_type_resolver::get_wavelet_range;
-use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
-use crate::wavelet_transform::fft::fft_1d;
 use crate::utils::data_converter::{convert_to_c_f64_1d, convert_to_c_f64_2d, convert_to_c_f64_3d, convert_to_c_f64_4d, convert_to_c_f64_5d};
 use crate::utils::num_trait::{Array, ArrayType};
+use crate::wavelet_transform::cwt_type_resolver::get_wavelet_range;
+use crate::wavelet_transform::cwt_type_resolver::transform_by_complex_type;
+use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
+use crate::wavelet_transform::fft::fft_1d;
+use core::fmt::Debug;
+use num_complex::Complex;
+use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CWTComplex {
     pub scales: Vec<f64>,
     pub cw_type: ContinuousWaletetType,
@@ -19,7 +23,21 @@ pub struct CWTComplex {
     pub frequencies: Vec<f64>,
 }
 
-pub fn cwt_c_1d<T: ArrayType>(data: &T, wavelet: &mut CWTComplex) -> (Vec<Vec<Complex<f64>>>, Vec<f64>) {
+impl Default for CWTComplex {
+    fn default() -> Self {
+        CWTComplex {
+            scales: vec![],
+            cw_type: ContinuousWaletetType::MORL, // or any sensible default
+            sampling_period: 1.0,
+            m: 1.0,
+            fb: 1.0,
+            fc: 1.0,
+            frequencies: vec![],
+        }
+    }
+}
+
+pub fn cwt_c_1d<T: ArrayType>(data: &T, wavelet: &CWTComplex) -> (Vec<Vec<Complex<f64>>>, Vec<f64>) {
     let scales = &wavelet.scales;
     let sampling_period = &wavelet.sampling_period;
 
@@ -40,6 +58,7 @@ pub fn cwt_2d<T: ArrayType>(data: &T, wavelet: &CWTComplex) -> (Vec<Vec<Vec<Comp
     let sampling_period = &wavelet.sampling_period;
 
     let data_f64 = convert_to_c_f64_2d(data);
+
     let wavefun_result: Vec<Vec<Complex<f64>>> = wavefun_complex(&10, wavelet);
     let freqencies: Vec<f64> = scale_to_frequency_complex(scales, &wavefun_result, sampling_period);
 
@@ -56,6 +75,36 @@ pub fn cwt_2d<T: ArrayType>(data: &T, wavelet: &CWTComplex) -> (Vec<Vec<Vec<Comp
     (wavelets, freqencies)
 }
 
+pub fn cwt_2d_full<T: ArrayType>(data: &T, wavelet: &CWTComplex) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<f64>) {
+    let scales = &wavelet.scales;
+    let sampling_period = &wavelet.sampling_period;
+
+    let data_f64 = convert_to_c_f64_2d(data);
+
+    let wavefun_result: Vec<Vec<Complex<f64>>> = wavefun_complex(&10, wavelet);
+    let freqencies: Vec<f64> = scale_to_frequency_complex(scales, &wavefun_result, sampling_period);
+
+    let mut wavelets: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
+
+    for s in 0..scales.len() {
+        // Row-wise CWT
+        let mut intermediate: Vec<Vec<Complex<f64>>> = Vec::new();
+        for row in &data_f64 {
+            intermediate.push(get_wavelet_complex(row, &wavefun_result, &scales[s]));
+        }
+
+        // Column-wise CWT
+        let intermediate_transposed = transpose(&intermediate);
+        let mut result_2d: Vec<Vec<Complex<f64>>> = Vec::new();
+        for col in &intermediate_transposed {
+            result_2d.push(get_wavelet_complex(col, &wavefun_result, &scales[s]));
+        }
+
+        wavelets.push(transpose(&result_2d)); // Restore original row-column orientation
+    }
+
+    (wavelets, freqencies)
+}
 
 pub fn cwt_3d<T: ArrayType>(data: &T, wavelet: &CWTComplex) -> (Vec<Vec<Vec<Vec<Complex<f64>>>>>, Vec<f64>) {
     let scales = &wavelet.scales;
@@ -162,6 +211,61 @@ pub fn get_wavelet_complex(data: &Vec<Complex<f64>>, wavefun_result: &Vec<Vec<Co
     coef[limit_down..(coef.len() - limit_up)].to_vec()
 }
 
+pub fn get_wavelet_derivative(
+    data: &Vec<Complex<f64>>,
+    wavefun_result: &Vec<Vec<Complex<f64>>>,
+    scale: &f64,
+    grad_output: &Vec<Complex<f64>>, // <- incoming gradient from next layer
+) -> Vec<Complex<f64>> {
+    // Forward pass to get convolution parameters
+    let integral_scaled = integrate_complex(&wavefun_result[0], &wavefun_result[1], scale);
+    let convolved = convolve_complex(data, &integral_scaled, &ConvolutionMode::FULL);
+    let coef = get_coef_complex(&convolved, scale);
+
+    // Calculate slicing indices used in forward pass
+    let index = (coef.len() - data.len()) as f64 / 2.0;
+    let limit_down = index.floor() as usize;
+
+    // Adjoint of coefficient slicing (pad with zeros)
+    let mut full_grad = vec![Complex::new(0.0, 0.0); coef.len()];
+    full_grad.splice(limit_down..(limit_down + grad_output.len()), grad_output.clone());
+
+    // Adjoint of finite difference operation
+    let scaled_sqrt = -scale.sqrt();
+    let mut grad_convolved = vec![Complex::new(0.0, 0.0); convolved.len()];
+    for i in 0..full_grad.len() {
+        if i < grad_convolved.len() - 1 {
+            grad_convolved[i] += full_grad[i] * scaled_sqrt;
+            grad_convolved[i + 1] -= full_grad[i] * scaled_sqrt;
+        }
+    }
+
+    // Adjoint of convolution (cross-correlation)
+    convolve_complex(&grad_convolved, &integral_scaled, &ConvolutionMode::VALID)
+}
+
+pub fn get_wavelet_derivative_full(input: &Vec<Vec<Complex<f64>>>, wavefun_result: &Vec<Vec<Complex<f64>>>, scale: &f64, grad_output: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    let mut grad_rows: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); input[0].len()]; input.len()];
+
+    // Step 1: Backprop through column-wise CWT
+    let grad_output_t = transpose(grad_output);
+    let input_t = transpose(input);
+    let mut grad_intermediate_t: Vec<Vec<Complex<f64>>> = Vec::new();
+
+    for (i, col) in input_t.iter().enumerate() {
+        grad_intermediate_t.push(get_wavelet_derivative(col, wavefun_result, scale, &grad_output_t[i]));
+    }
+
+    let grad_intermediate = transpose(&grad_intermediate_t); // shape: same as row-CWT output
+
+    // Step 2: Backprop through row-wise CWT
+    for (i, row) in input.iter().enumerate() {
+        grad_rows[i] = get_wavelet_derivative(row, wavefun_result, scale, &grad_intermediate[i]);
+    }
+
+    grad_rows
+}
+
 pub fn wavefun_complex(precision: &i32, wavelet: &CWTComplex) -> Vec<Vec<Complex<f64>>> {
     let cw_type = &wavelet.cw_type;
     let mut y: Vec<Complex<f64>> = Vec::new();
@@ -253,7 +357,7 @@ pub fn frequency_to_scale_by_cwt(frequencies: &Vec<f64>, wavelet: &CWTComplex) -
 
 type ArrayWithFrequencies = (Array, Vec<f64>);
 
-pub fn cwt_complex<T: ArrayType>(data: &T, wavelet: &mut CWTComplex) -> Option<ArrayWithFrequencies> {
+pub fn cwt_complex<T: ArrayType>(data: &T, wavelet: &CWTComplex) -> Option<ArrayWithFrequencies> {
     let num_dim = data.dimension();
 
     match num_dim {
@@ -277,8 +381,6 @@ pub fn cwt_complex<T: ArrayType>(data: &T, wavelet: &mut CWTComplex) -> Option<A
             let (wavelets, frequencies) = cwt_5d(data, wavelet);
             Some((Array::ArrayC6D(wavelets), frequencies))
         }
-        _ => {
-            None
-        }
+        _ => None,
     }
 }

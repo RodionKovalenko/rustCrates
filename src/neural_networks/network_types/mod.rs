@@ -4,3 +4,4 @@ pub mod network_trait;
 pub mod tests;
 pub mod transformer;
 pub mod feedforward_layer;
+pub mod wavelet_layer;

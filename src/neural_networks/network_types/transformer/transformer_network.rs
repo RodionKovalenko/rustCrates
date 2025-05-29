@@ -328,8 +328,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     println!("No previous output for Attention layer");
                 }
             }
-            LayerEnum::FeedForward(dense) => {
-                let dense_layer = Some(dense).unwrap();
+            LayerEnum::FeedForward(dense_layer) => {
                 if let Some(previous_output) = &output {
                     dense_layer.padding_mask_batch = padding_mask.clone();
 
@@ -345,7 +344,6 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                 }
             }
             LayerEnum::Linear(linear_layer) => {
-                let linear_layer = Some(linear_layer).unwrap();
                 if let Some(previous_output) = &output {
                     //println!("forward linear start");
                     layer_input.set_input_batch(previous_output.clone());
@@ -356,12 +354,22 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     println!("No previous output for Dense layer");
                 }
             }
+            LayerEnum::Wavelet(wavelet_layer) => {
+                if let Some(previous_output) = &output {
+                    //println!("forward linear start");
+                    layer_input.set_input_batch(previous_output.clone());
+                    let output_linear = wavelet_layer.forward(&layer_input);
+
+                    output = Some(output_linear.get_output_batch());
+                } else {
+                    println!("No previous output for Dense layer");
+                }
+            }
             LayerEnum::Softmax(softmax_layer) => {
-                let softmax_layer_clone = Some(softmax_layer).unwrap();
                 if let Some(previous_output) = &output {
                     //println!("forward softmax start");
                     if !forward_only {
-                        let softmax_result: Vec<Vec<Vec<f64>>> = softmax_layer_clone.forward(&previous_output, padding_mask.clone());
+                        let softmax_result: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&previous_output, padding_mask.clone());
                         output_softmax = Some(softmax_result);
                     } else {
                         output_softmax = Some(convert_c_to_f64_3d(previous_output));
@@ -454,11 +462,6 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                         dense_layer.update_parameters();
                     }
 
-                    // println!("backward dense end");
-                    let _weight_gradient_batch = gradient_batch.get_gradient_weight_batch();
-                    let _bias_gradient_batch = gradient_batch.get_gradient_bias_batch();
-
-                    //println!("weight gradients batch of ffn layer: {}, {}, {}", &weight_gradient_batch.len(), &weight_gradient_batch[0].len(), &weight_gradient_batch[0][0].len());
                     gradient = Some(gradient_batch);
                 } else {
                     println!("No previous gradient in Dense Layer");
@@ -468,16 +471,19 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                 if let Some(previous_gradient) = gradient {
                     //println!("backward linear start");
                     let gradient_batch: Gradient = linear_layer.backward(&previous_gradient);
-                    // Update weights and biases
+
                     if update_params {
                         linear_layer.update_parameters();
                     }
-                    //println!("backward linear end");
-
-                    let _weight_gradient_batch = gradient_batch.get_gradient_weight_batch();
-                    let _bias_gradient_batch = gradient_batch.get_gradient_bias_batch();
-
-                    //println!("weight gradients batch of linear layer: {}, {}, {}", &weight_gradient_batch.len(), &weight_gradient_batch[0].len(), &weight_gradient_batch[0][0].len());
+                    gradient = Some(gradient_batch);
+                } else {
+                    println!("No previous gradient in Linear Layer");
+                }
+            }
+            LayerEnum::Wavelet(wavelet_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    //println!("backward linear start");
+                    let gradient_batch: Gradient = wavelet_layer.backward(&previous_gradient);
                     gradient = Some(gradient_batch);
                 } else {
                     println!("No previous gradient in Linear Layer");
@@ -486,10 +492,6 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             LayerEnum::Softmax(softmax_layer) => {
                 //println!("backward softmax start");
                 let gradient_batch: Gradient = softmax_layer.backward(target_batch_ids);
-                let _input_gradient_batch = gradient_batch.get_gradient_input_batch();
-
-                // println!("gradients of softmax layer: {}, {}, {}", &input_gradient_batch.len(), &input_gradient_batch[0].len(),  &input_gradient_batch[0][0].len());
-                //println!("backward softmax end");
                 gradient = Some(gradient_batch);
             }
             _ => {}

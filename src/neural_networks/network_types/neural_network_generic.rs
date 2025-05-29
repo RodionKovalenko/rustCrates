@@ -174,6 +174,7 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
             LayerEnum::Linear(linear_layer) => {
                 linear_layer.learning_rate = learning_rate;
             }
+            LayerEnum::Wavelet(_wavelet_layer) => {}
             LayerEnum::Softmax(_softmax_layer) => {}
             LayerEnum::PositionalEncoding(_positional_encoding_layer) => {}
         }
@@ -187,10 +188,8 @@ pub fn reset_previous_gradient(transformer: &mut NeuralNetwork) {
             LayerEnum::Embedding(embedding_layer) => {
                 embedding_layer.previous_gradient = None;
             }
-            LayerEnum::Norm(_norm_layer) => {
-            }
-            LayerEnum::RMSNorm(_norm_layer) => {
-            }
+            LayerEnum::Norm(_norm_layer) => {}
+            LayerEnum::RMSNorm(_norm_layer) => {}
             LayerEnum::Dense(dense_layer) => {
                 dense_layer.previous_gradient = None;
             }
@@ -200,10 +199,8 @@ pub fn reset_previous_gradient(transformer: &mut NeuralNetwork) {
                 }
                 if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
                     match norm_layer {
-                        LayerEnum::RMSNorm(_rms_norm_layer) => {
-                        }
-                        LayerEnum::Norm(_norm_layer) => {
-                        }
+                        LayerEnum::RMSNorm(_rms_norm_layer) => {}
+                        LayerEnum::Norm(_norm_layer) => {}
                         _ => {}
                     }
                 }
@@ -222,10 +219,8 @@ pub fn reset_previous_gradient(transformer: &mut NeuralNetwork) {
                 }
                 if let Some(norm_layer) = ffn_layer.norm_layer.as_mut() {
                     match norm_layer {
-                        LayerEnum::RMSNorm(_rms_norm_layer) => {
-                        }
-                        LayerEnum::Norm(_norm_layer) => {
-                        }
+                        LayerEnum::RMSNorm(_rms_norm_layer) => {}
+                        LayerEnum::Norm(_norm_layer) => {}
                         _ => {}
                     }
                 }
@@ -233,6 +228,7 @@ pub fn reset_previous_gradient(transformer: &mut NeuralNetwork) {
             LayerEnum::Linear(linear_layer) => {
                 linear_layer.previous_gradient = None;
             }
+            LayerEnum::Wavelet(_wavelet_layer) => {}
             LayerEnum::Softmax(_softmax_layer) => {}
             LayerEnum::PositionalEncoding(_positional_encoding_layer) => {}
         }
@@ -299,6 +295,7 @@ pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
             LayerEnum::Linear(linear_layer) => {
                 println!("linear layer weigths: {} {}", linear_layer.weights.len(), linear_layer.weights[0].len());
             }
+            LayerEnum::Wavelet(_wavelet_layer) => {}
             LayerEnum::Softmax(_softmax_layer) => {}
             LayerEnum::PositionalEncoding(_positional_encoding_layer) => {}
         }

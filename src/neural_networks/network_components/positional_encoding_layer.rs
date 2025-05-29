@@ -15,16 +15,24 @@ pub struct PositionalEncodingLayer {
     pub base: f64,
     #[serde(skip)]
     pub gradient: Option<Gradient>,
+    #[serde(skip)]
+    pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
 }
 
 impl PositionalEncodingLayer {
     pub fn new(embedding_dim: usize) -> Self {
-        Self { embedding_dim, base: INITIAL_BASE, gradient: None }
+        Self {
+            embedding_dim,
+            base: INITIAL_BASE,
+            gradient: None,
+            input_batch: None,
+        }
     }
 
     /// Apply positional encoding to a batch of embeddings
-    pub fn forward(&self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
         let _scaling_factor = SCALING_FAKTOR;
+        self.input_batch = Some(input_batch.clone());
 
         input_batch
             .par_iter() // Parallel iterator for efficiency
@@ -81,11 +89,45 @@ impl PositionalEncodingLayer {
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
         let mut gradient = Gradient::new_default();
+        let input_batch = self.input_batch.as_ref().expect("Input batch is missing in positional encoding layer");
 
-        // Use reference to avoid unnecessary cloning
-        gradient.set_gradient_input_batch(previous_gradient_batch.clone());
+        let input_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = input_batch
+            .iter()
+            .zip(previous_gradient_batch.iter())
+            .map(|(input_sequence, grad_sequence)| {
+                input_sequence
+                    .iter()
+                    .enumerate()
+                    .map(|(position, _embedding)| {
+                        let mut rotated_grad = vec![Complex::new(0.0, 0.0); self.embedding_dim];
+                        let half_dim = self.embedding_dim / 2;
+
+                        for i in 0..half_dim {
+                            let even_idx = 2 * i;
+                            let odd_idx = even_idx + 1;
+
+                            let mut theta = position as f64 / ((self.base * SCALING_FAKTOR).powf(2.0 * i as f64 / self.embedding_dim as f64));
+                            theta = theta.clamp(-1.0, 1.0);
+                            let (sin_theta, cos_theta) = theta.sin_cos();
+
+                            // Get gradients for the even and odd dimensions
+                            let grad_even = grad_sequence[position][even_idx];
+                            let grad_odd = grad_sequence[position][odd_idx];
+
+                            // Apply inverse rotation (transpose of the rotation matrix)
+                            rotated_grad[even_idx] = Complex::new(grad_even.re * cos_theta + grad_odd.re * sin_theta, grad_even.im * cos_theta + grad_odd.im * sin_theta);
+
+                            rotated_grad[odd_idx] = Complex::new(-grad_even.re * sin_theta + grad_odd.re * cos_theta, -grad_even.im * sin_theta + grad_odd.im * cos_theta);
+                        }
+
+                        rotated_grad
+                    })
+                    .collect()
+            })
+            .collect();
+
+        gradient.set_gradient_input_batch(input_gradient_batch);
         self.gradient = Some(gradient.clone());
-
         gradient
     }
 

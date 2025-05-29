@@ -179,7 +179,7 @@ mod test_transformer {
         let rows: usize = 16;
 
         let mut embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
-        let positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
+        let mut positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
         let mut linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
         let mut softmax_layer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING);
 

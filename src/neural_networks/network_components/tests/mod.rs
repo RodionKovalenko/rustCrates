@@ -8,3 +8,5 @@ pub mod test_norm_layer;
 pub mod test_serialization;
 pub mod test_sliding_window;
 pub mod test_self_attention_layer_with_loss;
+pub mod test_wavelet_layer;
+pub mod test_positional_encoding_layer;
