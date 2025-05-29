@@ -199,7 +199,7 @@ pub fn get_wavelet_complex(data: &Vec<Complex<f64>>, wavefun_result: &Vec<Vec<Co
     let limit_up: usize;
 
     integral_scaled = integrate_complex(&wavefun_result[0], &wavefun_result[1], scale);
-    convolved = convolve_complex(data, &integral_scaled, &ConvolutionMode::VALID);
+    convolved = convolve_complex(data, &integral_scaled, &ConvolutionMode::FULL);
 
     coef = get_coef_complex(&convolved, scale);
 
@@ -219,7 +219,7 @@ pub fn get_wavelet_derivative(
 ) -> Vec<Complex<f64>> {
     // Forward pass to get convolution parameters
     let integral_scaled = integrate_complex(&wavefun_result[0], &wavefun_result[1], scale);
-    let convolved = convolve_complex(data, &integral_scaled, &ConvolutionMode::VALID);
+    let convolved = convolve_complex(data, &integral_scaled, &ConvolutionMode::FULL);
     let coef = get_coef_complex(&convolved, scale);
 
     // Calculate slicing indices used in forward pass
