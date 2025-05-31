@@ -262,7 +262,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
 
 pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput) -> LayerOutput {
     // Forward pass
-
+    // let now = Instant::now();
     // println!("forward pass start ----------------------------------------------------------------------");
     let mut output = None;
     let mut output_softmax = None;
@@ -284,12 +284,14 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
         match layer {
             LayerEnum::Embedding(embedding_layer) => {
                 layer_input.set_batch_ids(batch_ids.clone());
+
+                //let seconds_elapsed = now.elapsed();
                 let (embeddings, padding_m) = embedding_layer.forward(&layer_input);
-                // println!("padding mask batch in embedding layer: {:?}", &padding_m);
 
                 output = Some(embeddings);
                 padding_mask = Some(padding_m);
 
+                //println!("time elapsed in seconds in embedding: {:?}", (now.elapsed() - seconds_elapsed).as_secs_f64());
                 // println!("padding mask: {:?}", &padding_mask);
             }
             LayerEnum::PositionalEncoding(positional_encoding_layer) => {
@@ -297,7 +299,10 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     let positional_encoding_l = Some(positional_encoding_layer).unwrap();
 
                     //println!("forward pos encoding");
+                    //let seconds_elapsed = now.elapsed();
                     let positional_encodings: Vec<Vec<Vec<Complex<f64>>>> = positional_encoding_l.forward(&previous_output);
+
+                    //println!("time elapsed in seconds in positional encoding: {:?}", (now.elapsed() - seconds_elapsed).as_secs_f64());
                     output = Some(positional_encodings);
                 } else {
                     println!("No previous output for Attention layer");
@@ -308,8 +313,10 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     layer_input.set_input_batch(previous_output.clone());
 
                     //println!("forward norm");
+                    //let seconds_elapsed = now.elapsed();
                     let norm_output = norm_layer.forward(&layer_input);
 
+                    //println!("time elapsed in seconds in norm layer: {:?}", (now.elapsed() - seconds_elapsed).as_secs_f64());
                     output = Some(norm_output.get_output_batch());
                 } else {
                     println!("No previous output for Attention layer");
@@ -322,7 +329,10 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     layer_input.set_padding_mask_batch(padding_m.clone());
 
                     //println!("forward self-attention start");
+                    //let seconds_elapsed = now.elapsed();
                     let output_attention = attention.forward(&layer_input);
+
+                    //println!("time elapsed in seconds in self attention layer: {:?}", (now.elapsed() - seconds_elapsed).as_secs_f64());
                     output = Some(output_attention.get_output_batch());
                 } else {
                     println!("No previous output for Attention layer");
@@ -334,8 +344,11 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
 
                     //println!("forward ffn start");
                     layer_input.set_input_batch(previous_output.to_vec());
+
+                    //let seconds_elapsed = now.elapsed();
                     let layer_output = dense_layer.forward(&layer_input);
 
+                    //println!("time elapsed in seconds in ffn layer: {:?}", (now.elapsed() - seconds_elapsed).as_secs_f64());
                     output = Some(layer_output.get_output_batch());
 
                     check_nan_or_inf_3d(&mut layer_output.get_output_batch(), "output ffn dense");
@@ -347,8 +360,11 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                 if let Some(previous_output) = &output {
                     //println!("forward linear start");
                     layer_input.set_input_batch(previous_output.clone());
+
+                    //let seconds_elapsed = now.elapsed();
                     let output_linear = linear_layer.forward(&layer_input);
 
+                    //println!("time elapsed in seconds in linear layer: {:?}", (now.elapsed() - seconds_elapsed).as_secs_f64());
                     output = Some(output_linear.get_output_batch());
                 } else {
                     println!("No previous output for Dense layer");
@@ -358,8 +374,11 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                 if let Some(previous_output) = &output {
                     //println!("forward linear start");
                     layer_input.set_input_batch(previous_output.clone());
+
+                    //let seconds_elapsed = now.elapsed();
                     let output_linear = wavelet_layer.forward(&layer_input);
 
+                    //println!("time elapsed in seconds in wavelet layer: {:?}", (now.elapsed() - seconds_elapsed).as_secs_f64());
                     output = Some(output_linear.get_output_batch());
                 } else {
                     println!("No previous output for Dense layer");
@@ -368,12 +387,16 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
             LayerEnum::Softmax(softmax_layer) => {
                 if let Some(previous_output) = &output {
                     //println!("forward softmax start");
+
+                    //let seconds_elapsed = now.elapsed();
                     if !forward_only {
                         let softmax_result: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&previous_output, padding_mask.clone());
                         output_softmax = Some(softmax_result);
                     } else {
                         output_softmax = Some(convert_c_to_f64_3d(previous_output));
                     }
+
+                    //println!("time elapsed in seconds in softmax layer: {:?}", (now.elapsed() - seconds_elapsed).as_secs_f64());
                     // println!("forward softmax end");
                 } else {
                     println!("No previous output for Dense layer");
