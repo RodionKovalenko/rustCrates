@@ -60,7 +60,7 @@ fn read_input(prompt: &str) -> Result<String, io::Error> {
 }
 
 async fn start_server() -> std::io::Result<()> {
-    println!("🚀 Starting Actix-web server at http://localhost:8080");
+    println!("🚀 Starting Actix-web server at http://localhost:7860");
 
     let tera = Tera::new("templates/**/*").expect("Failed to load templates");
 
@@ -78,7 +78,7 @@ async fn start_server() -> std::io::Result<()> {
             .route("/api/train_status", web::get().to(api_train_status))
             .route("/api/predict", web::post().to(api_predict))
     })
-    .bind(("0.0.0.0", 8080))?
+    .bind(("0.0.0.0", 7860))?
     .run()
     .await
 }
