@@ -44,7 +44,7 @@ COPY --from=builder /app/datasets ./datasets
 COPY --from=builder /app/src/neural_networks/tokenizers/gtp_neox_tokenizer.json ./src/neural_networks/tokenizers/gtp_neox_tokenizer.json
 
 # Expose the port the web server uses
-EXPOSE 8080
+EXPOSE 7860
 
 # Start the application
 ENTRYPOINT ["./wav-transformer"]

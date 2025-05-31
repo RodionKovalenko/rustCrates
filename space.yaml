@@ -2,4 +2,4 @@
 title: Wav Transformer App
 sdk: docker
 docker:
-  port: 8080  # The port Actix is listening on
+  port: 7860  # The port Actix is listening on
