@@ -1,0 +1,5 @@
+# space.yaml
+title: Wav Transformer App
+sdk: docker
+docker:
+  port: 8080  # The port Actix is listening on

@@ -54,8 +54,8 @@
     <h1>Train and Infer Model</h1>
 
     <h2>Train Model</h2>
-    <form action="/api/train" method="post" onsubmit="startPolling();">
-        <input name="epochs" type="number" placeholder="Epochs" required />
+    <form id="train-form">
+        <input name="epochs" id="epochs" type="number" placeholder="Epochs" required />
         <button type="submit">Train</button>
     </form>
 
@@ -69,11 +69,6 @@
         <button type="submit">Submit</button>
     </form>
 
-    {% if train_result %}
-    <h3>Training Result:</h3>
-    <p>{{ train_result }}</p>
-    {% endif %}
-
     {% if infer_result %}
     <h3>Inference Result:</h3>
     <p>{{ infer_result }}</p>
@@ -82,17 +77,33 @@
     <script>
         let pollInterval;
 
-        function startPolling() {
-            document.getElementById('training-status').innerText = "Training in progress...";
-            pollInterval = setInterval(checkTrainingStatus, 3000);
-        }
+        document.getElementById('train-form').addEventListener('submit', async function (e) {
+            e.preventDefault();
+            const epochs = document.getElementById('epochs').value;
+
+            try {
+                await fetch('/api/train', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams({ epochs }),
+                });
+
+                document.getElementById('training-status').innerText = "⏳ Training in progress...";
+                pollInterval = setInterval(checkTrainingStatus, 3000);
+            } catch (err) {
+                document.getElementById('training-status').innerText = "❌ Failed to start training.";
+                console.error(err);
+            }
+        });
 
         async function checkTrainingStatus() {
             try {
                 const res = await fetch('/api/train_status');
                 const data = await res.json();
                 if (data.done) {
-                    document.getElementById('training-status').innerText = data.result || "Training done.";
+                    document.getElementById('training-status').innerText = data.result || "✅ Training done.";
                     clearInterval(pollInterval);
                 }
             } catch (e) {

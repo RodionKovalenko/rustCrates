@@ -1,5 +1,5 @@
 [package]
-name = "rust_main_project"
+name = "wav-transformer"
 version = "0.1.0"
 authors = ["Rodion Kovalenko <rodion.kovalenko@npo-applications.de>"]
 edition = "2018"

@@ -11,7 +11,7 @@ use crate::{
     },
 };
 
-pub fn train_transformer_from_dataset() {
+pub fn train_transformer_from_dataset(num_epochs: usize) -> bool {
     let now = Instant::now();
 
     let mut transformer = match get_from_db(SLED_DB_TRANSFORMER_V1) {
@@ -30,7 +30,7 @@ pub fn train_transformer_from_dataset() {
     };
 
     let learning_rate = 0.001;
-    let num_epochs = 5000;
+    let num_epochs = num_epochs;
     transformer.learning_rate = learning_rate;
     update_learning_rate(&mut transformer, learning_rate);
     print_networt_structure(&mut transformer);
@@ -41,8 +41,8 @@ pub fn train_transformer_from_dataset() {
     let dataset: Dataset<String, String> = load_data_xquad_de_as_dataset().unwrap();
     let batch_size = 4;
     let data_batches: Vec<Dataset<String, String>> = dataset.split_into_batches(batch_size);
-    
-   let dataset_batch = data_batches[0].get_batch(0, batch_size).unwrap();
+
+    let dataset_batch = data_batches[0].get_batch(0, batch_size).unwrap();
 
     let (input_batch, target_batch) = (dataset_batch.0, dataset_batch.1);
     println!("input batch: {:?}", input_batch);
@@ -53,4 +53,7 @@ pub fn train_transformer_from_dataset() {
     let seconds_elapsed_end = now.elapsed();
 
     println!("time elapsed in seconds: {:?}", seconds_elapsed_end - seconds_elapsed);
+
+    println!("done");
+    true
 }

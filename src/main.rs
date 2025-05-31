@@ -15,6 +15,11 @@ struct PredictForm {
     prompt: String,
 }
 
+#[derive(Deserialize)]
+struct TrainForm {
+    epochs: usize,
+}
+
 struct AppState {
     training_done: Mutex<bool>,
     training_result: Mutex<Option<String>>,
@@ -29,7 +34,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(arg1) = args.get(1) {
         match arg1.as_str() {
-            "train" => train_transformer_from_dataset(),
+            "train" => {
+                train_transformer_from_dataset(5000);
+            }
             "predict" => {
                 let input = read_input("Enter input text for prediction: ")?;
                 predict_by_text(&vec![input]);
@@ -71,7 +78,7 @@ async fn start_server() -> std::io::Result<()> {
             .route("/api/train_status", web::get().to(api_train_status))
             .route("/api/predict", web::post().to(api_predict))
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("0.0.0.0", 8080))?
     .run()
     .await
 }
@@ -87,8 +94,9 @@ async fn index(tmpl: web::Data<Tera>) -> impl Responder {
     }
 }
 
-async fn api_train(state: web::Data<AppState>) -> impl Responder {
+async fn api_train(form: Form<TrainForm>, state: web::Data<AppState>) -> impl Responder {
     let state_clone = state.clone();
+    let epochs = form.epochs;
 
     actix_web::rt::spawn(async move {
         {
@@ -96,11 +104,11 @@ async fn api_train(state: web::Data<AppState>) -> impl Responder {
             *done = false;
         }
 
-        let _result = train_transformer_from_dataset();
+        let _result: bool = train_transformer_from_dataset(epochs);
 
         {
             let mut training_result = state_clone.training_result.lock().unwrap();
-            *training_result = Some("Training complete.".to_string());
+            *training_result = Some(format!("✅ Training complete with {} epochs.", epochs));
         }
 
         {
