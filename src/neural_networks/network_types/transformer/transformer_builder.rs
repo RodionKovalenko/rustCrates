@@ -34,14 +34,13 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
 
     layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
     layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
-    // layers.push(LayerEnum::Wavelet(Box::new(WaveletLayer::new())));
 
     let rows: usize = embedding_dim_compressed;
 
     // Transformer block start
     let num_self_attention_layer: usize = 2;
     for i in 0..num_self_attention_layer {
-        let mut num_attention_heads: usize = 4;
+        let mut num_attention_heads: usize = 1;
 
         if i == 0 {
             num_attention_heads = 2;
@@ -52,9 +51,9 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
         let attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
         layers.push(LayerEnum::SelfAttention(Box::new(attention_layer)));
 
-        let mut hidden_dim = 512;
+        let mut hidden_dim = 256;
         if i > 0 {
-            hidden_dim = 2048;
+            hidden_dim = 512;
         }
 
         let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);

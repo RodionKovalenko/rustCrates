@@ -26,8 +26,8 @@ url = "2.2.1"
 curl = "*"
 futures = "0.3.30"
 hyper = "1.6.0"
-tokio = { version = "1.44.1", features = ["full"] }
-reqwest = "0.12.15"
+tokio = { version = "1.45.1", features = ["full"] }
+reqwest = "0.12.18"
 error-chain = "0.12"
 chrono = {version="0.4.40",features = ["serde"]}
 num-traits = "0.2.14"
@@ -38,7 +38,7 @@ sled = "0.34"
 tokenizers = "0.21.1"
 rand_distr = "0.5.1"
 plotters = "0.3"   #
-yahoo_finance_api = "3.0.0"
+yahoo_finance_api = "4.0.0"
 time = "0.3.41"
 csv = "1.1"
 faer = "0.22.6"
@@ -49,7 +49,10 @@ statrs = "0.18"
 thiserror = "2.0.12"
 hf-hub = { version = "0.4.2", features = ["tokio"] }
 anyhow = "1.0.98"
-num_cpus = "1.13"
+num_cpus = "1.17"
+actix-web = "4"
+tera = "1.17"
+encoding_rs = "0.8"
 
 [profile.release]
 opt-level = 3 # Optimize for size "z", for speeed 3

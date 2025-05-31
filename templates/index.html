@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Rust Model Trainer</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            padding: 2rem;
+            max-width: 800px;
+            margin: auto;
+        }
+
+        textarea {
+            display: block;
+            width: 100%;
+            min-height: 300px;
+            resize: vertical;
+            padding: 1rem;
+            font-size: 1rem;
+            line-height: 1.5;
+        }
+
+        form {
+            margin-bottom: 2rem;
+        }
+
+        button {
+            margin-top: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            font-size: 1rem;
+        }
+
+        input[name="epochs"] {
+            height: 40px;
+            font-size: 1.1rem;
+            padding: 0 0.5rem;
+        }
+
+        #training-status {
+            font-weight: bold;
+            margin-top: 1rem;
+            color: green;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Train and Infer Model</h1>
+
+    <h2>Train Model</h2>
+    <form action="/api/train" method="post" onsubmit="startPolling();">
+        <input name="epochs" type="number" placeholder="Epochs" required />
+        <button type="submit">Train</button>
+    </form>
+
+    <div id="training-status"></div>
+
+    <h2>Run Inference</h2>
+    <form action="/api/predict" method="post">
+        <label for="prompt">Enter full text:</label><br />
+        <textarea name="prompt" id="prompt" placeholder="Paste or write your full input here..."
+            required>{% if prompt %}{{ prompt }}{% endif %}</textarea><br />
+        <button type="submit">Submit</button>
+    </form>
+
+    {% if train_result %}
+    <h3>Training Result:</h3>
+    <p>{{ train_result }}</p>
+    {% endif %}
+
+    {% if infer_result %}
+    <h3>Inference Result:</h3>
+    <p>{{ infer_result }}</p>
+    {% endif %}
+
+    <script>
+        let pollInterval;
+
+        function startPolling() {
+            document.getElementById('training-status').innerText = "Training in progress...";
+            pollInterval = setInterval(checkTrainingStatus, 3000);
+        }
+
+        async function checkTrainingStatus() {
+            try {
+                const res = await fetch('/api/train_status');
+                const data = await res.json();
+                if (data.done) {
+                    document.getElementById('training-status').innerText = data.result || "Training done.";
+                    clearInterval(pollInterval);
+                }
+            } catch (e) {
+                console.error("Error checking training status:", e);
+            }
+        }
+    </script>
+</body>
+
+</html>

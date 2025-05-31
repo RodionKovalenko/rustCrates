@@ -8,3 +8,4 @@ pub mod array_operations;
 pub mod linalg;
 pub mod normalization;
 pub mod sampling_methods;
+pub mod string;
