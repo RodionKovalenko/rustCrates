@@ -3904,53 +3904,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rust_main_project"
-version = "0.1.0"
-dependencies = [
- "actix-web",
- "anyhow",
- "assert_approx_eq",
- "backtrace",
- "bincode",
- "cast",
- "chrono",
- "csv",
- "curl",
- "encoding_rs",
- "enigo",
- "error-chain",
- "faer",
- "futures",
- "hf-hub",
- "hyper",
- "image 0.25.6",
- "lazy_static",
- "num",
- "num-complex",
- "num-traits",
- "num_cpus",
- "plotters",
- "rand 0.9.1",
- "rand_distr 0.5.1",
- "rayon",
- "reqwest",
- "serde",
- "serde-big-array",
- "serde_derive",
- "serde_json",
- "sled",
- "statrs",
- "tera",
- "thiserror 2.0.12",
- "time",
- "tokenizers",
- "tokio",
- "url",
- "webbrowser",
- "yahoo_finance_api",
-]
-
-[[package]]
 name = "rustc-demangle"
 version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5155,6 +5108,53 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+]
+
+[[package]]
+name = "wav-transformer"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "anyhow",
+ "assert_approx_eq",
+ "backtrace",
+ "bincode",
+ "cast",
+ "chrono",
+ "csv",
+ "curl",
+ "encoding_rs",
+ "enigo",
+ "error-chain",
+ "faer",
+ "futures",
+ "hf-hub",
+ "hyper",
+ "image 0.25.6",
+ "lazy_static",
+ "num",
+ "num-complex",
+ "num-traits",
+ "num_cpus",
+ "plotters",
+ "rand 0.9.1",
+ "rand_distr 0.5.1",
+ "rayon",
+ "reqwest",
+ "serde",
+ "serde-big-array",
+ "serde_derive",
+ "serde_json",
+ "sled",
+ "statrs",
+ "tera",
+ "thiserror 2.0.12",
+ "time",
+ "tokenizers",
+ "tokio",
+ "url",
+ "webbrowser",
+ "yahoo_finance_api",
 ]
 
 [[package]]
