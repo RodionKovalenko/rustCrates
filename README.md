@@ -1,4 +1,4 @@
-# rustCrates---
+---
 title: Wav Rust Trainer
 emoji: 🦀
 colorFrom: indigo
