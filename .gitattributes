@@ -1,2 +1,8 @@
 STORAGE/SLED_TOKENIZER/db/* filter=lfs diff=lfs merge=lfs -text
-STORAGE/SLED_TOKENIZER/db filter=lfs diff=lfs merge=lfs -text
+STORAGE/SLED_EMBEDDING/db filter=lfs diff=lfs merge=lfs -text
+STORAGE/transformer_01.04.2025 filter=lfs diff=lfs merge=lfs -text
+STORAGE/* filter=lfs diff=lfs merge=lfs -text
+*.png filter=lfs diff=lfs merge=lfs -text
+*.jpg filter=lfs diff=lfs merge=lfs -text
+STORAGE/SLED_EMBEDDING/snap.* filter=lfs diff=lfs merge=lfs -text
+training_data/* filter=lfs diff=lfs merge=lfs -text
