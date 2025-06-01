@@ -20,10 +20,13 @@ COPY . .
 # Build in release mode
 RUN cargo build --release
 
+# Find the produced binary name
+# We'll rename it to a known name (wav-transformer) in the next stage
+
 # Stage 2: Runtime image with GLIBC >= 2.35 (to match Rust latest build)
 FROM debian:bookworm-slim
 
-# Install minimal runtime dependencies including wget and git
+# Install minimal runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     git \
@@ -36,27 +39,26 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy the compiled binary from the builder stage
-COPY --from=builder /app/target/release/wav-transformer .
+# ⚠️ Rename the built binary to a consistent name (wav-transformer)
+# You MUST match this to your actual compiled binary name (from Cargo.toml [package].name)
+# For example: npoa-wav-transformer => wav-transformer
 
-# Copy any needed templates (for HTML rendering)
+COPY --from=builder /app/target/release/npoa-wav-transformer ./wav-transformer
+
+# Copy additional resources
 COPY --from=builder /app/templates ./templates
 COPY --from=builder /app/STORAGE ./STORAGE
 COPY --from=builder /app/datasets ./datasets
 COPY --from=builder /app/src/neural_networks/tokenizers/gtp_neox_tokenizer.json ./src/neural_networks/tokenizers/gtp_neox_tokenizer.json
 
-# Create a non-root user first
+# Create a non-root user
 RUN useradd -m appuser
-
-# Change ownership of /app to appuser
 RUN chown -R appuser:appuser /app
 
-# Expose the port the web server uses
 EXPOSE 7860
 
-# Switch to non-root user
 USER appuser
 
-# Start the application
+# Run the app
 ENTRYPOINT ["./wav-transformer"]
 CMD []

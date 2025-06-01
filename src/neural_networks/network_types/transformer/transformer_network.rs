@@ -165,7 +165,6 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String>) -> (Vec<Vec<Vec<f64>>>, Vec<String>) {
     let mut all_predictions: Vec<Vec<Vec<f64>>> = Vec::new();
     let time_step: usize = 0;
-    let mut _padding_mask_batch: Vec<Vec<u32>> = Vec::new();
 
     let mut current_input_batch: Vec<String> = extend_input_with_bos(input_batch);
     let mut count_tokens_prediction = 0;
@@ -173,7 +172,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
     let mut layer_input = LayerInput::new_default();
 
     print!("Antwort: ");
-    // transformer.learning_rate = learning_rate;
+
     let last_layer_index = transformer_network.layers.len() - 1;
     let _seconds_elapsed = now.elapsed();
 
@@ -183,27 +182,34 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         _ => {}
     }
 
-    let (_tokens, mut batch_ids) = tokenize_batch(&current_input_batch, false).unwrap();
+    let (_tokens, mut batch_ids) = match tokenize_batch(&current_input_batch, false) {
+        Ok(res) => res,
+        Err(e) => {
+            println!("Error tokenizing batch: {:?}", e);
+            return (all_predictions, current_input_batch);
+        }
+    };
 
     // Continue predicting until EOS token is predicted
     loop {
-        // println!("current input batch: {:?}", &current_input_batch);
-
         if batch_ids.is_empty() {
             println!("batch_ids is empty. Breaking.");
             break;
         }
 
-        let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap();
+        let max_seq_len = batch_ids.iter().map(|v| v.len()).max().unwrap_or(0);
 
-        // println!("input tokens length in inference: {} {}", batch_ids.len(), batch_ids[0].len());
+        if max_seq_len == 0 {
+            println!("All sequences in batch_ids are empty. Breaking.");
+            break;
+        }
 
         if max_seq_len > MAX_CONTEXT_WINDOW_SIZE {
             batch_ids = batch_ids
                 .into_iter()
                 .map(|mut seq| {
                     if seq.len() > MAX_CONTEXT_WINDOW_SIZE {
-                        seq.split_off(seq.len() - MAX_CONTEXT_WINDOW_SIZE) // keeps only the last CONTEXT_WINDOW_SIZE
+                        seq.split_off(seq.len() - MAX_CONTEXT_WINDOW_SIZE) // keep last tokens
                     } else {
                         seq
                     }
@@ -218,17 +224,27 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         let network_output = predict(transformer_network, &layer_input);
         let current_predictions = network_output.get_output_batch_f64();
 
-        // If no more predictions are available, break out
         if current_predictions.is_empty() {
+            println!("current_predictions is empty. Breaking.");
+            break;
+        }
+        if current_predictions[0].is_empty() {
+            println!("current_predictions[0] is empty. Breaking.");
             break;
         }
 
         // Store the last predicted token's softmax probabilities
         all_predictions.push(current_predictions[current_predictions.len() - 1].clone());
 
-        let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = vec![vec![current_predictions[0][current_predictions[0].len() - 1].clone()]];
+        let last_pred = match current_predictions[0].last() {
+            Some(val) => val.clone(),
+            None => {
+                println!("No last prediction found. Breaking.");
+                break;
+            }
+        };
 
-        // println!("predicted softmax target: {} {} {}", predicted_softmax_targets.len(), predicted_softmax_targets[0].len(), predicted_softmax_targets[0][0].len());
+        let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = vec![vec![last_pred]];
 
         let sampled_tokens = greedy_decoding(&predicted_softmax_targets);
 
@@ -239,26 +255,29 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
 
         batch_ids[0].push(sampled_tokens[0][0].clone());
 
-        // println!("batch ids: {:?}", batch_ids);
-        // println!("sampled token: {:?}", sampled_tokens[0][0]);
+        let predicted_token_batch: Vec<String> = sampled_tokens
+            .par_iter()
+            .map(|token_indices| {
+                detokenize(token_indices, false).unwrap_or_else(|e| {
+                    println!("Error detokenizing: {:?}", e);
+                    "<detokenize_error>".to_string()
+                })
+            })
+            .collect();
 
-        let predicted_token_batch: Vec<String> = sampled_tokens.par_iter().map(|token_indices| detokenize(token_indices, false).unwrap()).collect();
-        // Check if the last predicted token is the EOS token
-        let predicted_token = predicted_token_batch[predicted_token_batch.len() - 1].clone();
+        let predicted_token = predicted_token_batch.last().unwrap_or(&"<none>".to_string()).clone();
 
-        // If EOS token is predicted, break the loop
         if predicted_token == "<eos>" {
             println!("\n\n <eos> predicted. Breaking ....");
             break;
         }
 
         print!("{}", predicted_token);
-        // Add the predicted token to the current input batch
         current_input_batch[0] = format!("{}{}", current_input_batch[0], predicted_token);
 
         count_tokens_prediction += 1;
-
         if count_tokens_prediction > 20 {
+            println!("\nMax token prediction limit reached. Breaking.");
             break;
         }
     }
@@ -266,7 +285,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
     let seconds_elapsed_end = now.elapsed();
     let duration = seconds_elapsed_end - _seconds_elapsed;
     let seconds = duration.as_secs_f64();
-    println!("time elapsed in seconds: {:?}", seconds);
+    println!("\ntime elapsed in seconds: {:?}", seconds);
 
     (all_predictions, current_input_batch)
 }
