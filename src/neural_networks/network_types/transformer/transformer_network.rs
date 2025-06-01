@@ -189,6 +189,11 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
     loop {
         // println!("current input batch: {:?}", &current_input_batch);
 
+        if batch_ids.is_empty() {
+            println!("batch_ids is empty. Breaking.");
+            break;
+        }
+
         let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap();
 
         // println!("input tokens length in inference: {} {}", batch_ids.len(), batch_ids[0].len());
@@ -226,6 +231,12 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         // println!("predicted softmax target: {} {} {}", predicted_softmax_targets.len(), predicted_softmax_targets[0].len(), predicted_softmax_targets[0][0].len());
 
         let sampled_tokens = greedy_decoding(&predicted_softmax_targets);
+
+        if batch_ids.is_empty() || sampled_tokens.is_empty() || sampled_tokens[0].is_empty() {
+            println!("Error: batch_ids or sampled_tokens is empty. Breaking.");
+            break;
+        }
+
         batch_ids[0].push(sampled_tokens[0][0].clone());
 
         // println!("batch ids: {:?}", batch_ids);
