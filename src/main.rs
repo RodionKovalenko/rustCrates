@@ -46,6 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else {
         println!("No arguments provided.");
+        start_server().await?;
     }
 
     Ok(())
