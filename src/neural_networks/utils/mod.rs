@@ -11,3 +11,4 @@ pub mod random_arrays;
 pub mod adam_w;
 pub mod dataset_loader;
 pub mod array_splitting;
+pub mod matrix_approximation;

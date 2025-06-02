@@ -3,9 +3,122 @@ use num::Complex;
 use num_traits::NumCast;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
+use std::ffi::c_void;
 use std::fmt::Debug;
 use std::ops::{Add, Mul, Sub};
 use std::sync::{Arc, Mutex};
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct CuDoubleComplex {
+    pub x: f64,
+    pub y: f64,
+}
+
+impl From<Complex<f64>> for CuDoubleComplex {
+    fn from(c: Complex<f64>) -> Self {
+        Self { x: c.re, y: c.im }
+    }
+}
+
+#[link(name = "cublas")]
+extern "system" {
+    pub fn cublasCreate_v2(handle: *mut *mut c_void) -> i32;
+    pub fn cublasDestroy_v2(handle: *mut c_void) -> i32;
+
+    pub fn cublasZgemm3m(handle: *mut c_void, transa: i32, transb: i32, m: i32, n: i32, k: i32, alpha: *const CuDoubleComplex, A: *const CuDoubleComplex, lda: i32, B: *const CuDoubleComplex, ldb: i32, beta: *const CuDoubleComplex, C: *mut CuDoubleComplex, ldc: i32) -> i32;
+
+    pub fn cudaMalloc(devPtr: *mut *mut c_void, size: usize) -> i32;
+    pub fn cudaMemcpy(dst: *mut c_void, src: *const c_void, count: usize, kind: i32) -> i32;
+    pub fn cudaFree(devPtr: *mut c_void) -> i32;
+}
+
+const CUDA_MEMCPY_HOST_TO_DEVICE: i32 = 1;
+const CUDA_MEMCPY_DEVICE_TO_HOST: i32 = 2;
+const CUBLAS_STATUS_SUCCESS: i32 = 0;
+const CUBLAS_OP_N: i32 = 0;
+
+fn check_cuda(status: i32) {
+    if status != 0 {
+        panic!("CUDA call failed with status: {}", status);
+    }
+}
+
+pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    let a_rows = matrix_a.len();
+    let a_cols = matrix_a[0].len();
+    let b_rows = matrix_b.len();
+    let b_cols = matrix_b[0].len();
+
+    if a_cols != b_rows {
+        panic!("Invalid matrix dimensions: A is {}x{}, B is {}x{}", a_rows, a_cols, b_rows, b_cols);
+    }
+
+    // Flatten in column-major order
+    let a_flat: Vec<CuDoubleComplex> = (0..a_cols).flat_map(|j| (0..a_rows).map(move |i| CuDoubleComplex::from(matrix_a[i][j]))).collect();
+    let b_flat: Vec<CuDoubleComplex> = (0..b_cols).flat_map(|j| (0..b_rows).map(move |i| CuDoubleComplex::from(matrix_b[i][j]))).collect();
+    let mut c_flat: Vec<CuDoubleComplex> = vec![CuDoubleComplex { x: 0.0, y: 0.0 }; a_rows * b_cols];
+
+    let m = a_rows as i32;
+    let n = b_cols as i32;
+    let k = a_cols as i32;
+
+    let lda = m;
+    let ldb = k;
+    let ldc = m;
+
+    let alpha = CuDoubleComplex { x: 1.0, y: 0.0 };
+    let beta = CuDoubleComplex { x: 0.0, y: 0.0 };
+
+    unsafe {
+        let mut handle: *mut c_void = std::ptr::null_mut();
+        let status = cublasCreate_v2(&mut handle);
+        if status != CUBLAS_STATUS_SUCCESS || handle.is_null() {
+            panic!("Failed to create cuBLAS handle: status = {}, handle = {:?}", status, handle);
+        }
+
+        let size_a = a_flat.len() * std::mem::size_of::<CuDoubleComplex>();
+        let size_b = b_flat.len() * std::mem::size_of::<CuDoubleComplex>();
+        let size_c = c_flat.len() * std::mem::size_of::<CuDoubleComplex>();
+
+        let mut d_a: *mut c_void = std::ptr::null_mut();
+        let mut d_b: *mut c_void = std::ptr::null_mut();
+        let mut d_c: *mut c_void = std::ptr::null_mut();
+
+        check_cuda(cudaMalloc(&mut d_a, size_a));
+        check_cuda(cudaMalloc(&mut d_b, size_b));
+        check_cuda(cudaMalloc(&mut d_c, size_c));
+
+        check_cuda(cudaMemcpy(d_a, a_flat.as_ptr() as *const c_void, size_a, CUDA_MEMCPY_HOST_TO_DEVICE));
+        check_cuda(cudaMemcpy(d_b, b_flat.as_ptr() as *const c_void, size_b, CUDA_MEMCPY_HOST_TO_DEVICE));
+
+        let status = cublasZgemm3m(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, d_a as *const CuDoubleComplex, lda, d_b as *const CuDoubleComplex, ldb, &beta, d_c as *mut CuDoubleComplex, ldc);
+
+        if status != CUBLAS_STATUS_SUCCESS {
+            cublasDestroy_v2(handle);
+            panic!("cublasZgemm3m failed with status: {}", status);
+        }
+
+        check_cuda(cudaMemcpy(c_flat.as_mut_ptr() as *mut c_void, d_c, size_c, CUDA_MEMCPY_DEVICE_TO_HOST));
+
+        cudaFree(d_a);
+        cudaFree(d_b);
+        cudaFree(d_c);
+
+        cublasDestroy_v2(handle);
+    }
+
+    // Convert back to row-major
+    let mut result = vec![vec![Complex::new(0.0, 0.0); b_cols]; a_rows];
+    for j in 0..b_cols {
+        for i in 0..a_rows {
+            let z = c_flat[j * a_rows + i];
+            result[i][j] = Complex::new(z.x, z.y);
+        }
+    }
+
+    result
+}
 
 pub fn multiply<T, V>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<V>>) -> Vec<Vec<f64>>
 where
@@ -65,61 +178,61 @@ pub unsafe fn convert_to_faer_mat_unchecked(matrix: &[Vec<Complex<f64>>]) -> Mat
     Mat::from_fn(rows, cols, |i, j| matrix[i][j])
 }
 
-pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-    let a_rows = matrix_a.len();
-    let a_cols = matrix_a[0].len();
-    let b_rows = matrix_b.len();
-    let b_cols = matrix_b[0].len();
+// pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+//     let a_rows = matrix_a.len();
+//     let a_cols = matrix_a[0].len();
+//     let b_rows = matrix_b.len();
+//     let b_cols = matrix_b[0].len();
 
-    // Validate dimensions for matrix multiplication
-    if a_cols != b_rows {
-        panic!("Invalid matrix dimensions: A is {}x{}, B is {}x{}", a_rows, a_cols, b_rows, b_cols);
-    }
-    let mat_a = unsafe { convert_to_faer_mat_unchecked(matrix_a) };
-    let mat_b = unsafe { convert_to_faer_mat_unchecked(matrix_b) };
+//     // Validate dimensions for matrix multiplication
+//     if a_cols != b_rows {
+//         panic!("Invalid matrix dimensions: A is {}x{}, B is {}x{}", a_rows, a_cols, b_rows, b_cols);
+//     }
+//     let mat_a = unsafe { convert_to_faer_mat_unchecked(matrix_a) };
+//     let mat_b = unsafe { convert_to_faer_mat_unchecked(matrix_b) };
 
-    // Perform matrix multiplication using faer
-    let mat_c = &mat_a * &mat_b;
+//     // Perform matrix multiplication using faer
+//     let mat_c = &mat_a * &mat_b;
 
-    // Convert the result matrix back to Vec<Vec<Complex<f64>>>
-    // Convert result back to Vec<Vec<Complex<f64>>>
-    let mut result = vec![vec![Complex::new(0.0, 0.0); mat_c.ncols()]; mat_c.nrows()];
-    for i in 0..mat_c.nrows() {
-        for j in 0..mat_c.ncols() {
-            result[i][j] = mat_c[(i, j)];
-        }
-    }
+//     // Convert the result matrix back to Vec<Vec<Complex<f64>>>
+//     // Convert result back to Vec<Vec<Complex<f64>>>
+//     let mut result = vec![vec![Complex::new(0.0, 0.0); mat_c.ncols()]; mat_c.nrows()];
+//     for i in 0..mat_c.nrows() {
+//         for j in 0..mat_c.ncols() {
+//             result[i][j] = mat_c[(i, j)];
+//         }
+//     }
 
-    result
+//     result
 
-    // let num_rows = matrix_a.len();
-    // let num_columns = matrix_b[0].len();
-    // let matrix_a_clone = matrix_a.clone();
-    // let matrix_b_clone = matrix_b.clone();
+//     // let num_rows = matrix_a.len();
+//     // let num_columns = matrix_b[0].len();
+//     // let matrix_a_clone = matrix_a.clone();
+//     // let matrix_b_clone = matrix_b.clone();
 
-    // // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
-    // if matrix_a[0].len() != matrix_b.len() {
-    //     panic!("Matrix A does not have the same number of columns as Matrix B rows.");
-    // }
+//     // // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
+//     // if matrix_a[0].len() != matrix_b.len() {
+//     //     panic!("Matrix A does not have the same number of columns as Matrix B rows.");
+//     // }
 
-    // // Initialize result matrix with 0.0 values
-    // let mut result_matrix: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
+//     // // Initialize result matrix with 0.0 values
+//     // let mut result_matrix: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
 
-    // // println!("anzahl cput {}", num_cpus::get());
+//     // // println!("anzahl cput {}", num_cpus::get());
 
-    // let pool = ThreadPoolBuilder::new().num_threads(num_cpus::get()).build().unwrap();
+//     // let pool = ThreadPoolBuilder::new().num_threads(num_cpus::get()).build().unwrap();
 
-    // pool.install(|| {
-    //     result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
-    //         for j in 0..num_columns {
-    //             row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
-    //             //row[j] = (0..matrix_b_clone.len()).map(|k| Complex::new(matrix_a_clone[i][k].re * matrix_b_clone[k][j].re, 0.0)).sum();
-    //         }
-    //     });
-    // });
+//     // pool.install(|| {
+//     //     result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
+//     //         for j in 0..num_columns {
+//     //             row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
+//     //             //row[j] = (0..matrix_b_clone.len()).map(|k| Complex::new(matrix_a_clone[i][k].re * matrix_b_clone[k][j].re, 0.0)).sum();
+//     //         }
+//     //     });
+//     // });
 
-    // result_matrix
-}
+//     // result_matrix
+// }
 
 pub fn multiply_complex_with_f64(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<f64>>) -> Vec<Vec<Complex<f64>>> {
     let num_rows = matrix_a.len();
@@ -246,6 +359,14 @@ pub fn hadamard_product_2d_c(input_1: &Vec<Vec<Complex<f64>>>, input_2: &Vec<Vec
     result
 }
 
+pub fn dot_product_complex(input_1: &Vec<Complex<f64>>, input_2: &Vec<Complex<f64>>) -> Complex<f64> {
+    assert_eq!(input_1.len(), input_2.len(), "Vectors must be the same length");
+    let mut sum = Complex::<f64>::new(0.0, 0.0);
+    for i in 0..input_1.len() {
+        sum += input_1[i] * input_2[i];
+    }
+    sum
+}
 pub fn convert_3d_to_2d<T: Clone>(array_3d: &Vec<Vec<Vec<T>>>) -> Vec<Vec<T>> {
     let mut array_2d = Vec::new();
 

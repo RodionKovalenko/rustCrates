@@ -25,6 +25,8 @@ FROM debian:bookworm-slim
 
 # Install minimal runtime dependencies
 RUN apt-get update && apt-get install -y \
+    libc6 \
+    libssl3 \
     ca-certificates \
     git \
     libxdo3 \
@@ -45,15 +47,18 @@ COPY --from=builder /app/datasets ./datasets
 COPY --from=builder /app/src/neural_networks/tokenizers/gtp_neox_tokenizer.json ./src/neural_networks/tokenizers/gtp_neox_tokenizer.json
 
 # Create a non-root user and give ownership
-RUN useradd -m appuser
-RUN chown -R appuser:appuser /app
+RUN useradd -m appuser \
+    && chown -R appuser:appuser /app
 
 # Expose the port expected by Hugging Face
 EXPOSE 7860
 
+# Enable full Rust backtraces for better debugging
+ENV RUST_BACKTRACE=full
+
 # Switch to non-root user
 USER appuser
 
-# Run the app (no arguments if not needed)
+# Run the app with `server` argument
 ENTRYPOINT ["./wav-transformer"]
-CMD []
+CMD ["server"]

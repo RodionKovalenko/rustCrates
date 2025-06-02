@@ -292,7 +292,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
 
 pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput) -> LayerOutput {
     // Forward pass
-    // let now = Instant::now();
+    let now = Instant::now();
     // println!("forward pass start ----------------------------------------------------------------------");
     let mut output = None;
     let mut output_softmax = None;
@@ -309,6 +309,8 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
     if forward_only {
         layer_input.set_calculate_gradient(false);
     }
+
+    let start = now.elapsed();
 
     for layer in transformer_network.layers.iter_mut() {
         match layer {
@@ -439,6 +441,8 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
     let mut layer_output = LayerOutput::new_default();
     layer_output.set_output_batch_f64(output_softmax.unwrap());
     layer_output.set_padding_mask_batch(padding_mask.unwrap());
+
+    println!("time elapsed in forward pass in predict: {:?}", (now.elapsed() - start).as_secs_f64());
 
     //println!("forward pass end ----------------------------------------------------------------------");
     layer_output
