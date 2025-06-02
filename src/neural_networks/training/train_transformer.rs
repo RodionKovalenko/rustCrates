@@ -11,7 +11,7 @@ use crate::{
     },
 };
 
-pub fn train_transformer_from_dataset(num_epochs: usize) -> bool {
+pub fn train_transformer_from_dataset(num_epochs: usize, num_records: usize, batch_size: usize) -> bool {
     let now = Instant::now();
 
     let mut transformer = match get_from_db(SLED_DB_TRANSFORMER_V1) {
@@ -39,9 +39,7 @@ pub fn train_transformer_from_dataset(num_epochs: usize) -> bool {
     println!("time elapsed in seconds: {:?}", &seconds_elapsed);
 
     let dataset: Dataset<String, String> = load_data_xquad_de_as_dataset().unwrap();
-    let batch_size = 4;
-    let data_batches: Vec<Dataset<String, String>> = dataset.split_into_batches(batch_size);
-
+    let data_batches: Vec<Dataset<String, String>> = dataset.split_into_batches(num_records);
     let dataset_batch = data_batches[0].get_batch(0, batch_size).unwrap();
 
     let (input_batch, target_batch) = (dataset_batch.0, dataset_batch.1);
@@ -49,7 +47,7 @@ pub fn train_transformer_from_dataset(num_epochs: usize) -> bool {
     println!("target batch: {:?}", target_batch);
     let dataset_small = Dataset::new(input_batch.clone(), target_batch.clone());
 
-    train(&mut transformer, dataset_small, num_epochs);
+    train(&mut transformer, dataset_small, num_epochs, batch_size);
     let seconds_elapsed_end = now.elapsed();
 
     println!("time elapsed in seconds: {:?}", seconds_elapsed_end - seconds_elapsed);

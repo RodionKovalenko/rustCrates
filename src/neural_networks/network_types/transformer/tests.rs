@@ -88,7 +88,7 @@ mod tests {
         let dataset = Dataset::new(input, target);
         let num_epochs: usize = 5000;
 
-        train(&mut transformer, dataset, num_epochs);
+        train(&mut transformer, dataset, num_epochs, 4);
         let seconds_elapsed_end = now.elapsed();
 
         println!("time elapsed in seconds: {:?}", seconds_elapsed_end - seconds_elapsed);
@@ -170,7 +170,7 @@ mod tests {
         println!("target batch: {:?}", target_batch);
         let dataset_small = Dataset::new(input_batch.clone(), target_batch.clone());
 
-        train(&mut transformer, dataset_small, num_epochs);
+        train(&mut transformer, dataset_small, num_epochs, 4);
         let seconds_elapsed_end = now.elapsed();
 
         println!("time elapsed in seconds: {:?}", seconds_elapsed_end - seconds_elapsed);

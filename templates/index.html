@@ -36,10 +36,14 @@
             font-size: 1rem;
         }
 
-        input[name="epochs"] {
+        input[name="epochs"],
+        input[name="batch_size"],
+        input[name="num_records"] {
             height: 40px;
             font-size: 1.1rem;
             padding: 0 0.5rem;
+            margin-right: 0.5rem;
+            width: 120px;
         }
 
         #training-status {
@@ -55,7 +59,9 @@
 
     <h2>Train Model</h2>
     <form id="train-form">
-        <input name="epochs" id="epochs" type="number" placeholder="Epochs" required />
+        <input name="epochs" id="epochs" type="number" placeholder="Epochs" required min="1" />
+        <input name="batch_size" id="batch_size" type="number" placeholder="Batch Size" required min="1" />
+        <input name="num_records" id="num_records" type="number" placeholder="Number of Records" required min="1" />
         <button type="submit">Train</button>
     </form>
 
@@ -79,7 +85,10 @@
 
         document.getElementById('train-form').addEventListener('submit', async function (e) {
             e.preventDefault();
+
             const epochs = document.getElementById('epochs').value;
+            const batch_size = document.getElementById('batch_size').value;
+            const num_records = document.getElementById('num_records').value;
 
             try {
                 await fetch('/api/train', {
@@ -87,7 +96,7 @@
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
                     },
-                    body: new URLSearchParams({ epochs }),
+                    body: new URLSearchParams({ epochs, batch_size, num_records }),
                 });
 
                 document.getElementById('training-status').innerText = "⏳ Training in progress...";

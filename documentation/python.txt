@@ -1,0 +1,8 @@
+#activate venv in python
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+
+#build rust project for python
+pip install maturin
+
+maturin develop --release
