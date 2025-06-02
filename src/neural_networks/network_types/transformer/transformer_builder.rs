@@ -40,7 +40,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     // Transformer block start
     let num_self_attention_layer: usize = 2;
     for i in 0..num_self_attention_layer {
-        let mut num_attention_heads: usize = 1;
+        let mut num_attention_heads: usize = 4;
 
         if i == 0 {
             num_attention_heads = 2;

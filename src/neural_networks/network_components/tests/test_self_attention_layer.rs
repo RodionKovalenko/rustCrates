@@ -18,6 +18,36 @@ mod test_self_attention_layer {
         },
     };
 
+    #[ignore]
+    #[test]
+    fn test_attention_head_performance() {
+        let batch_size = 1;
+        let input_dim = 512;
+        let output_dim = 512;
+
+        let learning_rate = 0.0001;
+
+        let mut attention_head_layer: MaskedAttentionHead = MaskedAttentionHead::new(input_dim, output_dim, learning_rate);
+
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
+        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; output_dim]; batch_size];
+
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_input_batch(input_batch.clone());
+        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+
+        let output = attention_head_layer.forward(&layer_input);
+        let output_batch = output.get_output_batch();
+
+        println!("\ninput batch in attention head dim : {:?}, {}, {}", &input_batch.len(), &input_batch[0].len(), &input_batch[0][0].len());
+
+        println!("\noutput_batch in attention head dim : {:?}, {}, {}", &output_batch.len(), &output_batch[0].len(), &output_batch[0][0].len());
+
+        let previous_gradient = vec![vec![vec![Complex::new(1.0, 0.0); output_batch[0][0].len()]; output_batch[0].len()]; output_batch.len()];
+
+        let _gradient = attention_head_layer.backward(&previous_gradient);
+    }
+
     #[test]
     fn test_attention_head_backward() {
         let batch_size = 2;

@@ -444,7 +444,7 @@ impl MaskedAttentionHead {
     }
 }
 
-fn scale_attention_scores(attention_scores: &Vec<Vec<Complex<f64>>>, d_k: f64) -> Vec<Vec<Complex<f64>>> {
+pub fn scale_attention_scores(attention_scores: &Vec<Vec<Complex<f64>>>, d_k: f64) -> Vec<Vec<Complex<f64>>> {
     let scaling_factor = 1.0 / (1e-8 + d_k.sqrt());
     let mut scaled_scores = attention_scores.clone();
 

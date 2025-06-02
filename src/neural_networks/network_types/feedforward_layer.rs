@@ -96,7 +96,7 @@ impl FeedForwardLayer {
         self.output_batch = Some(output.clone());
         let mut previous_gradient_input_batch = vec![];
 
-        if !input.get_forward_only() {
+        if input.get_calculate_gradient() {
             previous_gradient_input_batch = self.calculate_input_gradient_batch();
         }
 
