@@ -32,7 +32,7 @@ use crate::{
 pub const MAX_CONTEXT_WINDOW_SIZE: usize = 512;
 pub const CONTEXT_OVERLAPPING: usize = 450;
 
-pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize) {
+pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize, batch_size: usize) {
     let mut total_loss: Complex<f64>;
     let loss_threshold: f64 = 0.004;
     let now = Instant::now();
@@ -44,7 +44,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
     'outer: for epoch in 0..num_epochs {
         total_loss = Complex::new(0.0, 0.0);
-        for batch_dataset in dataset.split_into_batches(2) {
+        for batch_dataset in dataset.split_into_batches(batch_size) {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
 
             let seconds_elapsed = now.elapsed();
