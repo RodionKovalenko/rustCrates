@@ -58,11 +58,6 @@ cuda-sys = "0.2"
 cc = "1.0"
 pyo3 = { version = "0.20", features = ["extension-module", "abi3-py37"] }
 
-# [target.x86_64-pc-windows-msvc]
-# rustflags = [
-#   "-L", "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.9\\lib\\x64",
-#   "-l", "dylib=cublas"
-# ]
 [package.metadata.maturin]
 name = "neural_networks"
 

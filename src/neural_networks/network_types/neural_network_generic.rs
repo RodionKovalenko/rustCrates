@@ -174,6 +174,9 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
             LayerEnum::Linear(linear_layer) => {
                 linear_layer.learning_rate = learning_rate;
             }
+            LayerEnum::MultiLinear(linear_layer) => {
+                linear_layer.learning_rate = learning_rate;
+            }
             LayerEnum::Wavelet(_wavelet_layer) => {}
             LayerEnum::Softmax(_softmax_layer) => {}
             LayerEnum::PositionalEncoding(_positional_encoding_layer) => {}
@@ -228,6 +231,7 @@ pub fn reset_previous_gradient(transformer: &mut NeuralNetwork) {
             LayerEnum::Linear(linear_layer) => {
                 linear_layer.previous_gradient = None;
             }
+            LayerEnum::MultiLinear(_linear_layer) => {}
             LayerEnum::Wavelet(_wavelet_layer) => {}
             LayerEnum::Softmax(_softmax_layer) => {}
             LayerEnum::PositionalEncoding(_positional_encoding_layer) => {}
@@ -295,9 +299,18 @@ pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
             LayerEnum::Linear(linear_layer) => {
                 println!("linear layer weigths: {} {}", linear_layer.weights.len(), linear_layer.weights[0].len());
             }
-            LayerEnum::Wavelet(_wavelet_layer) => {}
-            LayerEnum::Softmax(_softmax_layer) => {}
-            LayerEnum::PositionalEncoding(_positional_encoding_layer) => {}
+            LayerEnum::MultiLinear(multilinear_layer) => {
+                println!("multilinear layers: {} ", multilinear_layer.layers.len());
+            }
+            LayerEnum::Wavelet(_wavelet_layer) => {
+                 println!("wavelet layer,  {:?}", &_wavelet_layer.wavelet);
+            }
+            LayerEnum::Softmax(_softmax_layer) => {
+                println!("softmax layer");
+            }
+            LayerEnum::PositionalEncoding(_positional_encoding_layer) => {
+                println!("positional encoding layer");
+            }
         }
     }
 }

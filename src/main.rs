@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(arg1) = args.get(1) {
         match arg1.as_str() {
             "train" => {
-                train_transformer_from_dataset(5000, 4, 4);
+                train_transformer_from_dataset(5000, 4, 2);
             }
             "predict" => {
                 let input = read_input("Enter input text for prediction: ")?;
