@@ -6,6 +6,7 @@ pub mod norm_layer;
 pub mod embedding_layer;
 pub mod positional_encoding_layer;
 pub mod linear_layer;
+pub mod multi_linear_layer;
 pub mod softmax_output_layer;
 pub mod gradient_struct;
 pub mod layer_input_struct;

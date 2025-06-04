@@ -1,12 +1,11 @@
 use crate::neural_networks::{
-    network_types::{feedforward_layer::FeedForwardLayer, transformer::self_attention_layer::SelfAttentionLayer, wavelet_layer::WaveletLayer},
-    utils::{
+    network_components::multi_linear_layer::MultiLinearLayer, network_types::{feedforward_layer::FeedForwardLayer, transformer::self_attention_layer::SelfAttentionLayer, wavelet_layer::WaveletLayer}, utils::{
         activation::activate_output_complex_padding,
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         derivative::get_gradient_complex,
         matrix::{add_vector, apply_padding_mask_batch, clip_gradient_1d, clip_gradients, conjugate_transpose, hadamard_product_2d_c, is_nan_or_inf, multiply_complex, transpose},
         weights_initializer::initialize_weights_complex,
-    },
+    }
 };
 use core::fmt::Debug;
 use num::Complex;
@@ -82,6 +81,7 @@ pub enum LayerEnum {
     Norm(Box<NormalNormLayer>),
     SelfAttention(Box<SelfAttentionLayer>),
     Linear(Box<LinearLayer>),
+    MultiLinear(Box<MultiLinearLayer>),
     Wavelet(Box<WaveletLayer>),
     Softmax(Box<SoftmaxLayer>),
 }

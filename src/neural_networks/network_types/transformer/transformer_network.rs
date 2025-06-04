@@ -34,7 +34,7 @@ pub const CONTEXT_OVERLAPPING: usize = 450;
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize, batch_size: usize) {
     let mut total_loss: Complex<f64>;
-    let loss_threshold: f64 = 0.004;
+    let loss_threshold: f64 = 0.0008;
     let now = Instant::now();
     let mut previous_last_losses: Vec<f64> = Vec::new();
     let mut total_loss_exp_ma = 0.0;
@@ -170,6 +170,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
     let mut count_tokens_prediction = 0;
     let now = Instant::now();
     let mut layer_input = LayerInput::new_default();
+    layer_input.set_calculate_gradient(false);
 
     print!("Antwort: ");
 
@@ -219,7 +220,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
 
         layer_input.set_batch_ids(batch_ids.clone());
         layer_input.set_time_step(time_step);
-        layer_input.set_forward_only(true);
+        layer_input.set_forward_only(false);
 
         let network_output = predict(transformer_network, &layer_input);
         let current_predictions = network_output.get_output_batch_f64();
@@ -310,7 +311,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
         layer_input.set_calculate_gradient(false);
     }
 
-    let start = now.elapsed();
+    let _start = now.elapsed();
 
     for layer in transformer_network.layers.iter_mut() {
         match layer {
@@ -402,6 +403,20 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     println!("No previous output for Dense layer");
                 }
             }
+            LayerEnum::MultiLinear(multi_linear_layer) => {
+                if let Some(previous_output) = &output {
+                    //println!("forward linear start");
+                    layer_input.set_input_batch(previous_output.clone());
+
+                    //let seconds_elapsed = now.elapsed();
+                    let output_linear = multi_linear_layer.forward(&layer_input);
+
+                    //println!("time elapsed in seconds in MultiLinear layer: {:?}", (now.elapsed() - seconds_elapsed).as_secs_f64());
+                    output = Some(output_linear.get_output_batch());
+                } else {
+                    println!("No previous output for Multilinear layer");
+                }
+            }
             LayerEnum::Wavelet(wavelet_layer) => {
                 if let Some(previous_output) = &output {
                     //println!("forward linear start");
@@ -442,7 +457,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
     layer_output.set_output_batch_f64(output_softmax.unwrap());
     layer_output.set_padding_mask_batch(padding_mask.unwrap());
 
-    println!("time elapsed in forward pass in predict: {:?}", (now.elapsed() - start).as_secs_f64());
+    //println!("time elapsed in forward pass in predict: {:?}", (now.elapsed() - start).as_secs_f64());
 
     //println!("forward pass end ----------------------------------------------------------------------");
     layer_output
@@ -537,6 +552,19 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     println!("No previous gradient in Linear Layer");
                 }
             }
+            LayerEnum::MultiLinear(multi_linear_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    //println!("backward linear start");
+                    let gradient_batch: Gradient = multi_linear_layer.backward(&previous_gradient);
+
+                    if update_params {
+                        multi_linear_layer.update_parameters();
+                    }
+                    gradient = Some(gradient_batch);
+                } else {
+                    println!("No previous gradient in Linear Layer");
+                }
+            }
             LayerEnum::Wavelet(wavelet_layer) => {
                 if let Some(previous_gradient) = gradient {
                     //println!("backward linear start");
@@ -575,6 +603,8 @@ pub fn predict_by_text(input: &Vec<String>) -> Vec<String> {
     };
 
     let (_predicted_softmax_targets, all_predicted_tokens) = predict_token_by_token(&mut transformer, &input);
+
+    println!("prediction is: {:?}", all_predicted_tokens);
 
     all_predicted_tokens
 }

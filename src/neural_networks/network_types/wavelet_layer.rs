@@ -22,7 +22,7 @@ pub struct WaveletLayer {
     time_step: usize,
     #[serde(skip)]
     output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
-    wavelet: CWTComplex,
+    pub wavelet: CWTComplex,
 }
 
 impl WaveletLayer {

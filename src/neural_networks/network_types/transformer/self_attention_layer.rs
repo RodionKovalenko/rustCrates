@@ -268,8 +268,6 @@ impl SelfAttentionLayer {
             }
         }
 
-        for attention_head in self.attention_heads.iter_mut() {
-            attention_head.update_parameters();
-        }
+        self.attention_heads.par_iter_mut().for_each(|attention_head| attention_head.update_parameters());
     }
 }
