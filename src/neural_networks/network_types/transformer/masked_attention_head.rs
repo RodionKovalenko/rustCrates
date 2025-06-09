@@ -492,7 +492,7 @@ fn create_causal_mask(rows: usize) -> Vec<Vec<u8>> {
 }
 
 fn apply_attention_mask_inplace(attention_scores: &mut Vec<Vec<Complex<f64>>>, mask: &Vec<Vec<u8>>) {
-    let large_negative = Complex::new(-1e12, 0.0);
+    let large_negative = Complex::new(-1e12, -1e12);
 
     for row in 0..attention_scores.len() {
         for col in 0..attention_scores[row].len() {
