@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod test_positional_encoding_layer {
     use crate::neural_networks::{
-        network_components::positional_encoding_layer::PositionalEncodingLayer,
+        network_components::{layer_input_struct::LayerInput, positional_encoding_layer::PositionalEncodingLayer},
         utils::{
             derivative::{global_relative_error_l2, numerical_gradient_input_batch_sum_without_loss, test_gradient_batch_error},
             random_arrays::generate_random_complex_3d,
@@ -27,13 +27,18 @@ mod test_positional_encoding_layer {
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
         let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(1.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
 
-        let _positonal_encoding_output = positonal_encoding_layer.forward(&input_batch);
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_input_batch(input_batch.clone());
+        let _positonal_encoding_output = positonal_encoding_layer.forward(&layer_input);
         let positonal_encoding_gradient = positonal_encoding_layer.backward(&previous_gradient_batch);
 
         let (analytical_grad_batch, _analytical_grad) = (positonal_encoding_gradient.get_gradient_input_batch(), positonal_encoding_gradient.get_gradient_input());
 
         // Define the loss function
-        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Vec<Vec<Vec<Complex<f64>>>> { positonal_encoding_layer.forward(input) };
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Vec<Vec<Vec<Complex<f64>>>> { 
+            layer_input.set_input_batch(input.clone());
+            positonal_encoding_layer.forward(&layer_input)
+         };
 
         let numerical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_sum_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
         //let numerical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_without_loss(&mut loss_fn, input_batch.clone(), epsilon);

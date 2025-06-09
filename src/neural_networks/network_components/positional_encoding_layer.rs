@@ -1,3 +1,5 @@
+use crate::neural_networks::network_components::layer_input_struct::LayerInput;
+
 use super::gradient_struct::Gradient;
 use num::Complex;
 use rayon::prelude::*;
@@ -30,8 +32,10 @@ impl PositionalEncodingLayer {
     }
 
     /// Apply positional encoding to a batch of embeddings
-    pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn forward(&mut self, layer_input: &LayerInput) -> Vec<Vec<Vec<Complex<f64>>>> {
+        let input_batch = layer_input.get_input_batch();
         let _scaling_factor = SCALING_FAKTOR;
+        let forward_only = layer_input.get_forward_only();
         self.input_batch = Some(input_batch.clone());
 
         input_batch
@@ -54,6 +58,13 @@ impl PositionalEncodingLayer {
                     // Ensure correct embedding size
                     assert_eq!(token_embeddings.len(), self.embedding_dim, "All token embeddings must match the specified dimension.");
 
+                    let mut time_step = _position;
+
+                    if forward_only && layer_input.get_time_step() > 0 {
+                        time_step = layer_input.get_time_step();
+                    }
+                    println!("time step in positional encoding: timestep: -> {}", time_step);
+
                     //Step 1: Convert complex embeddings into real & imaginary parts
                     // let real_part: Vec<f64> = token_embeddings.iter().map(|c| c.re).collect();
                     // let imag_part: Vec<f64> = token_embeddings.iter().map(|c| c.im).collect();
@@ -72,7 +83,7 @@ impl PositionalEncodingLayer {
                     //  let _token_with_pos_encoding = self.add_positional_encoding(token_embeddings, &positional_encoding);
 
                     // Step 5: Apply rotary positional encodings
-                    let rotated_embeddings = self.apply_rotary_positional_encoding(&token_embeddings, _position, _scaling_factor);
+                    let rotated_embeddings = self.apply_rotary_positional_encoding(&token_embeddings, time_step, _scaling_factor);
 
                     output.push(rotated_embeddings);
                 }

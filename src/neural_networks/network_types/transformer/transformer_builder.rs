@@ -55,6 +55,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
         let mut hidden_dim = 512;
         if i > 0 {
             hidden_dim = 1024;
+            layers.push(LayerEnum::Wavelet(Box::new(WaveletLayer::new())));
         }
 
         let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
@@ -66,7 +67,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
     let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode);
 
-    layers.push(LayerEnum::Wavelet(Box::new(WaveletLayer::new())));
+    // layers.push(LayerEnum::Wavelet(Box::new(WaveletLayer::new())));
     layers.push(LayerEnum::Linear(Box::new(linear_layer)));
     layers.push(LayerEnum::Softmax(Box::new(softmax_layer)));
 

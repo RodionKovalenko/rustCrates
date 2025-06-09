@@ -4,12 +4,11 @@ use std::sync::Mutex;
 
 use actix_web::web::Form;
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
-use serde::Deserialize;
-use tera::{Context, Tera};
 use neural_networks::neural_networks::network_types::transformer::transformer_network::predict_by_text;
 use neural_networks::neural_networks::training::train_transformer::train_transformer_from_dataset;
 use neural_networks::utils::string::fix_encoding;
-
+use serde::Deserialize;
+use tera::{Context, Tera};
 
 #[derive(Deserialize)]
 struct PredictForm {
@@ -20,7 +19,7 @@ struct PredictForm {
 struct TrainForm {
     epochs: usize,
     batch_size: usize,
-    num_records: usize
+    num_records: usize,
 }
 
 struct AppState {

@@ -72,7 +72,7 @@ fn tanh<T: RealActivation>(z: T) -> T {
     (exp_z - exp_neg_z) / (exp_z + exp_neg_z)
 }
 
-fn relu<T: RealActivation>(z: T) -> T {
+pub fn relu<T: RealActivation>(z: T) -> T {
     if z > T::zero() {
         z
     } else {
@@ -385,6 +385,25 @@ pub fn softmax_complex_padding_real(input: &Vec<Vec<Complex<f64>>>, padding_mask
             softmax_row_real(row)
         })
         .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
+}
+
+pub fn softmax_matrix_f64(input: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
+    input
+        .par_iter()
+        .map(|row| {
+            softmax_row_f64(row)
+        })
+        .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
+}
+
+pub fn softmax_row_f64(input: &Vec<f64>) -> Vec<f64> {
+    let max_norm = input.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+
+    let exps: Vec<f64> = input.iter().map(|&x| (x - max_norm).exp()).collect();
+
+    let sum: f64 = exps.iter().sum();
+
+    exps.iter().map(|&x| x / sum).collect()
 }
 
 pub fn softmax_last_row(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<f64>> {

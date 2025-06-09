@@ -1,4 +1,5 @@
 use faer::Mat;
+// use ndarray::Array2;
 use num::Complex;
 use num_traits::NumCast;
 use rayon::prelude::*;
@@ -7,6 +8,96 @@ use std::ffi::c_void;
 use std::fmt::Debug;
 use std::ops::{Add, Mul, Sub};
 use std::sync::{Arc, Mutex};
+use std::ffi::c_char;
+
+extern "C" {
+    fn zgemm_(transa: *const c_char, transb: *const c_char, m: *const i64, n: *const i64, k: *const i64, alpha: *const Complex<f64>, a: *const Complex<f64>, lda: *const i64, b: *const Complex<f64>, ldb: *const i64, beta: *const Complex<f64>, c: *mut Complex<f64>, ldc: *const i64);
+}
+pub fn multiply_complex(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<f64>>]) -> Vec<Vec<Complex<f64>>> {
+    let m = matrix_a.len() as i64;
+    let k = matrix_a[0].len() as i64;
+    let n = matrix_b[0].len() as i64;
+
+    assert!(m > 0 && n > 0 && k > 0, "Matrices must not be empty");
+    assert!(matrix_b.len() as i64 == k, "A's columns must match B's rows");
+    for row in matrix_a {
+        assert_eq!(row.len(), k as usize, "All rows of A must have the same length");
+    }
+    for row in matrix_b {
+        assert_eq!(row.len(), n as usize, "All rows of B must have the same length");
+    }
+
+    fn flatten_col_major(mat: &[Vec<Complex<f64>>], rows: i64, cols: i64) -> Vec<Complex<f64>> {
+        let mut v = Vec::with_capacity((rows * cols) as usize);
+        for col in 0..cols {
+            for row in 0..rows {
+                v.push(mat[row as usize][col as usize]);
+            }
+        }
+        v
+    }
+
+    let a = flatten_col_major(matrix_a, m, k);
+    let b = flatten_col_major(matrix_b, k, n);
+    let mut c = vec![Complex::<f64>::new(0.0, 0.0); (m * n) as usize];
+
+    let transa = b'N';
+    let transb = b'N';
+    let lda = m;
+    let ldb = k;
+    let ldc = m;
+    let alpha = Complex::<f64>::new(1.0, 0.0);
+    let beta = Complex::<f64>::new(0.0, 0.0);
+
+    //println!("Calling zgemm_ with m={}, n={}, k={}, lda={}, ldb={}, ldc={}", m, n, k, lda, ldb, ldc);
+
+    unsafe {
+        zgemm_(&transa as *const u8 as *const c_char, &transb as *const u8 as *const c_char, &m, &n, &k, &alpha, a.as_ptr(), &lda, b.as_ptr(), &ldb, &beta, c.as_mut_ptr(), &ldc);
+    }
+
+    let mut result = vec![vec![Complex::<f64>::new(0.0, 0.0); n as usize]; m as usize];
+    for col in 0..n as usize {
+        for row in 0..m as usize {
+            result[row][col] = c[col * m as usize + row];
+        }
+    }
+    result
+}
+
+// pub fn multiply_complex(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<f64>>]) -> Vec<Vec<Complex<f64>>> {
+//     let m = matrix_a.len();
+//     let k = matrix_a[0].len();
+//     let n = matrix_b[0].len();
+
+//     // Convert matrix_a into Array2 (shape m x k)
+//     let mut a = Array2::<Complex<f64>>::zeros((m, k));
+//     for (i, row) in matrix_a.iter().enumerate() {
+//         for (j, &val) in row.iter().enumerate() {
+//             a[[i, j]] = val;
+//         }
+//     }
+
+//     // Convert matrix_b into Array2 (shape k x n)
+//     let mut b = Array2::<Complex<f64>>::zeros((k, n));
+//     for (i, row) in matrix_b.iter().enumerate() {
+//         for (j, &val) in row.iter().enumerate() {
+//             b[[i, j]] = val;
+//         }
+//     }
+
+//     // Multiply using ndarray dot (will use BLAS if enabled)
+//     let c = a.dot(&b);
+
+//     // Convert result back to Vec<Vec<Complex<f64>>>
+//     let mut result = vec![vec![Complex::new(0.0, 0.0); n]; m];
+//     for i in 0..m {
+//         for j in 0..n {
+//             result[i][j] = c[[i, j]];
+//         }
+//     }
+
+//     result
+// }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -44,7 +135,7 @@ fn check_cuda(status: i32) {
     }
 }
 
-pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+pub fn multiply_complex_cuda(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
     let a_rows = matrix_a.len();
     let a_cols = matrix_a[0].len();
     let b_rows = matrix_b.len();
