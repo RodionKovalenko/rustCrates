@@ -35,8 +35,13 @@ fn main() {
     println!("cargo:rustc-link-lib=dylib=cudart");
     println!("cargo:rustc-link-lib=dylib=cuda");
 
-    // Optional: emit path warnings to debug build.rs output
+    // // Optional: emit path warnings to debug build.rs output
     println!("cargo:warning=Linked against CUDA from: {}", cuda_lib_path);
+
+    let openblas_path = env::var("OPENBLAS_DIR").unwrap_or_else(|_| r"C:\Users\rkovalenko\Desktop\OpenBLAS-0.3.29_x64_64".into());
+    let openblas_lib = format!("{}\\lib", openblas_path);
+    println!("cargo:rustc-link-search=native={}", openblas_lib);
+    println!("cargo:rustc-link-lib=dylib=openblas");
 }
 
 pub fn copy_dir(file_dir_path: &str, target_dir_path: &str) {

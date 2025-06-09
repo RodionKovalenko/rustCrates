@@ -11,4 +11,6 @@ pub mod softmax_output_layer;
 pub mod gradient_struct;
 pub mod layer_input_struct;
 pub mod layer_output_struct;
+pub mod performer;
+pub mod performer_complex;
 pub mod tests;

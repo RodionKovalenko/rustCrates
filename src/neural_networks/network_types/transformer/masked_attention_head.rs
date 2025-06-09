@@ -177,6 +177,10 @@ impl MaskedAttentionHead {
             (k_new_batch, v_new_batch)
         };
 
+        // println!("k_cache: {} {} {}", k_cache.len(), k_cache[0].len(), k_cache[0][0].len());
+        // println!("v_cache: {} {} {}", v_cache.len(), v_cache[0].len(), v_cache[0][0].len());
+        // println!("q_batch: {} {} {}", q_batch.len(), q_batch[0].len(), q_batch[0][0].len());
+
         // Step 4: Compute attention weights in parallel using the entire Q batch and cached K/V
         let attention_weights_batch_inactivated: Vec<Vec<Vec<Complex<f64>>>> = q_batch
             .par_iter()
@@ -206,6 +210,8 @@ impl MaskedAttentionHead {
         self.attention_weights_batch = Some(attention_weights_activated);
         self.attention_weights_batch_raw = Some(attention_weights_batch_inactivated);
         self.output_batch = Some(batch_output.clone());
+
+        // println!("output_batch in attention head: {} {} {}", batch_output.len(), batch_output[0].len(), batch_output[0][0].len());
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(batch_output);
@@ -457,6 +463,21 @@ pub fn scale_attention_scores(attention_scores: &Vec<Vec<Complex<f64>>>, d_k: f6
 
     scaled_scores
 }
+
+pub fn scale_attention_scores_f64(attention_scores: &Vec<Vec<f64>>, d_k: f64) -> Vec<Vec<f64>> {
+    let scaling_factor = 1.0 / (1e-8 + d_k.sqrt());
+    let mut scaled_scores = attention_scores.clone();
+
+    // Scale each attention score
+    for row in 0..scaled_scores.len() {
+        for col in 0..scaled_scores[row].len() {
+            scaled_scores[row][col] = scaled_scores[row][col] * scaling_factor;
+        }
+    }
+
+    scaled_scores
+}
+
 
 fn create_causal_mask(rows: usize) -> Vec<Vec<u8>> {
     let mut mask = vec![vec![0; rows]; rows]; // Initialize with zeros

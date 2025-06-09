@@ -56,6 +56,7 @@ impl SelfAttentionLayer {
         let input_batch = layer_input.get_input_batch();
         let padding_mask_batch = layer_input.get_padding_mask_batch();
         let forward_only = layer_input.get_forward_only();
+        let calculate_gradient = layer_input.get_calculate_gradient();
 
         self.input_batch = Some(input_batch.clone());
         self.time_step = layer_input.get_time_step();
@@ -72,6 +73,7 @@ impl SelfAttentionLayer {
         layer_input.set_input_batch(input_batch.clone());
         layer_input.set_padding_mask_batch(padding_mask_batch.clone());
         layer_input.set_target_batch_ids(target_batch_ids);
+        layer_input.set_calculate_gradient(calculate_gradient);
 
         //println!("padding mask batch: {:?}", &padding_mask_batch);
         let attention_head_outputs: Vec<_> = self
@@ -125,7 +127,7 @@ impl SelfAttentionLayer {
         layer_output.set_output_batch(batch_output.clone());
         self.output_batch = Some(batch_output.clone());
 
-        // println!("input dim in norm after self attention: {} {}, {}", batch_output.len(), batch_output[0].len(), batch_output[0][0].len());
+        // println!("output dim self attention: {} {}, {}", batch_output.len(), batch_output[0].len(), batch_output[0][0].len());
 
         layer_output
     }
