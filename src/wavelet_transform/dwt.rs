@@ -1,11 +1,11 @@
-use std::fmt::Debug;
-use std::ops::{AddAssign, Mul, Neg};
-use num_traits::{FromPrimitive, Num, ToPrimitive};
 use crate::utils::data_converter::{convert_to_f64_1d, convert_to_f64_2d};
 use crate::utils::num_trait::{ArrayType, NumTrait};
 use crate::wavelet_transform::dwt_type_resolver::{get_high_pass_filter, get_inverse_high_pass_filter, get_inverse_low_pass_filter, get_low_pass_filter};
 use crate::wavelet_transform::dwt_types::DiscreteWaletetType;
 use crate::wavelet_transform::modes::WaveletMode;
+use num_traits::{FromPrimitive, Num, ToPrimitive};
+use std::fmt::Debug;
+use std::ops::{AddAssign, Mul, Neg};
 
 pub fn transform_2_d_partial<T: NumTrait>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<Vec<f64>> {
     let mut data_trans: Vec<Vec<f64>> = Vec::new();
@@ -139,12 +139,10 @@ pub fn transform_1_df64(data: &Vec<f64>, dw_type: &DiscreteWaletetType, mode: &W
         ind_transform += 1;
     }
 
-
     data_trans
 }
 
-pub fn inverse_transform_1_d<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> + Into<f64> + AddAssign + ToPrimitive + Neg<Output=T>>
-(data: &Vec<T>, dw_type: &DiscreteWaletetType, _mode: &WaveletMode, _level: u32) -> Vec<f64> {
+pub fn inverse_transform_1_d<T: Debug + Copy + FromPrimitive + Mul<T, Output = T> + Into<f64> + AddAssign + ToPrimitive + Neg<Output = T>>(data: &Vec<T>, dw_type: &DiscreteWaletetType, _mode: &WaveletMode, _level: u32) -> Vec<f64> {
     // inverse low pass filter (moving averages filter)
     let inverse_low_pass_filter: Vec<f64> = get_inverse_low_pass_filter(&dw_type);
     // inverse high pass filter (moving differences filter)
@@ -191,8 +189,7 @@ pub fn inverse_transform_1_d<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> 
     data_trans
 }
 
-pub fn inverse_transform_2_d_partial<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> + Into<f64> + AddAssign + ToPrimitive + Neg<Output=T>>
-(data: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode, level: u32) -> Vec<Vec<f64>> {
+pub fn inverse_transform_2_d_partial<T: Debug + Copy + FromPrimitive + Mul<T, Output = T> + Into<f64> + AddAssign + ToPrimitive + Neg<Output = T>>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode, level: u32) -> Vec<Vec<f64>> {
     let mut data_trans: Vec<Vec<f64>> = Vec::new();
 
     for r in data.iter() {
@@ -202,8 +199,7 @@ pub fn inverse_transform_2_d_partial<T: Debug + Copy + FromPrimitive + Mul<T, Ou
     data_trans
 }
 
-pub fn inverse_transform_2_d<T: Debug + Copy + FromPrimitive + Mul<T, Output=T> + Into<f64> + AddAssign + ToPrimitive + Neg<Output=T>>
-(data: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode, level: u32) -> Vec<Vec<f64>> {
+pub fn inverse_transform_2_d<T: Debug + Copy + FromPrimitive + Mul<T, Output = T> + Into<f64> + AddAssign + ToPrimitive + Neg<Output = T>>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode, level: u32) -> Vec<Vec<f64>> {
     let mut data_trans: Vec<Vec<f64>> = inverse_transform_2_d_partial(&data, &dw_type, &mode, level);
 
     data_trans = transpose(data_trans);
@@ -281,8 +277,7 @@ pub fn insert_padding_before(data_trans: &mut Vec<f64>, mode: &WaveletMode, size
     }
 }
 
-pub fn insert_padding_after(data_trans: &mut Vec<f64>, mode: &WaveletMode, size: usize, padding_len_before: usize)
-{
+pub fn insert_padding_after(data_trans: &mut Vec<f64>, mode: &WaveletMode, size: usize, padding_len_before: usize) {
     let origin_data = data_trans.clone();
     let mut tmp_ind = 0;
     let mut val: f64;
@@ -326,8 +321,45 @@ pub fn insert_padding_after(data_trans: &mut Vec<f64>, mode: &WaveletMode, size:
     }
 }
 
+pub fn get_ll_hh<T>(data: &Vec<Vec<T>>) -> Vec<Vec<Vec<T>>>
+where
+    T: Num + Clone + PartialOrd + ToPrimitive + Debug + Copy,
+{
+    // top left: average approximation
+    let mut ll: Vec<Vec<T>> = Vec::new();
+    let mut hh: Vec<Vec<T>> = Vec::new();
+
+    let half_col_ind = data[0].len() >> 1;
+
+    for row in data.iter() {
+        ll.push(row[0..half_col_ind].to_vec());
+        hh.push(row[half_col_ind..].to_vec());
+    }
+
+    vec![ll, hh]
+}
+
+pub fn combine_ll_hh<T>(ll_hh: &Vec<Vec<Vec<T>>>) -> Vec<Vec<T>>
+where
+    T: Num + Clone + PartialOrd + ToPrimitive + Debug + Copy,
+{
+    let len_r = ll_hh[0].len();
+
+    let mut combined_vec: Vec<Vec<T>> = ll_hh[0].clone();
+    let mut ind_r: usize;
+
+    for i in 0..len_r {
+        ind_r = &i % ll_hh[0].len();
+        combined_vec[i].extend_from_slice(&ll_hh[1][ind_r]);
+    }
+
+    combined_vec
+}
+
 pub fn get_ll_hl_lh_hh<T>(data: &Vec<Vec<T>>) -> Vec<Vec<Vec<T>>>
-    where T: Num + Clone + PartialOrd + ToPrimitive + Debug + Copy {
+where
+    T: Num + Clone + PartialOrd + ToPrimitive + Debug + Copy,
+{
     // top left: average approximation
     let mut ll: Vec<Vec<T>> = Vec::new();
     let mut lh: Vec<Vec<T>> = Vec::new();
@@ -350,32 +382,33 @@ pub fn get_ll_hl_lh_hh<T>(data: &Vec<Vec<T>>) -> Vec<Vec<Vec<T>>>
     vec![ll, hl, lh, hh]
 }
 
-pub fn combine_ll_lh_hl_hh(ll_lh_hl_hh: &Vec<Vec<Vec<f64>>>) -> Vec<Vec<f64>> {
+pub fn combine_ll_lh_hl_hh<T>(ll_lh_hl_hh: &Vec<Vec<Vec<T>>>) -> Vec<Vec<T>>
+where
+    T: Num + Clone + PartialOrd + ToPrimitive + Debug + Copy,
+{
     let len_r = ll_lh_hl_hh[0].len() << 1;
     let len_c = ll_lh_hl_hh[0][0].len() << 1;
 
-    let mut combined_vec: Vec<Vec<f64>> = ll_lh_hl_hh[0].clone();
+    let mut combined_vec: Vec<Vec<T>> = ll_lh_hl_hh[0].clone();
     let mut ind_r: usize;
     let mut ind_c: usize;
 
     for i in 0..len_r {
         for j in 0..len_c {
-            if i.clone() >= combined_vec.len() {
+            if i >= combined_vec.len() {
                 combined_vec.push(Vec::new());
             }
 
             ind_r = &i % ll_lh_hl_hh[0].len();
             ind_c = &j % ll_lh_hl_hh[0][0].len();
 
-            if j.clone() >= ll_lh_hl_hh[0][0].len() {
-                combined_vec[i.clone()].push(ll_lh_hl_hh[1][ind_r.clone()][ind_c.clone()].clone());
+            if j >= ll_lh_hl_hh[0][0].len() {
+                combined_vec[i].push(ll_lh_hl_hh[2][ind_r][ind_c].clone());
             }
-            if i.clone() >= ll_lh_hl_hh[0].len() {
-                if j.clone() < ll_lh_hl_hh[0][0].len() {
-                    combined_vec[i.clone()].push(ll_lh_hl_hh[2][ind_r.clone()][ind_c.clone()].clone());
-                } else {
-                    combined_vec[i.clone()].push(ll_lh_hl_hh[3][ind_r.clone()][ind_c.clone()].clone());
-                }
+            if i >= ll_lh_hl_hh[0].len() {
+                combined_vec[i] = ll_lh_hl_hh[1][ind_r].clone();
+
+                combined_vec[i].extend_from_slice(&ll_lh_hl_hh[3][ind_r]);
             }
         }
     }
