@@ -12,3 +12,4 @@ pub mod test_wavelet_layer;
 pub mod test_positional_encoding_layer;
 pub mod test_attention_head_approximation;
 pub mod test_linear_matrix_mul;
+pub mod test_wavelet_compression;

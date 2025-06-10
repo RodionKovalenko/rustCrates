@@ -63,7 +63,7 @@ impl PositionalEncodingLayer {
                     if forward_only && layer_input.get_time_step() > 0 {
                         time_step = layer_input.get_time_step();
                     }
-                    println!("time step in positional encoding: timestep: -> {}", time_step);
+                    // println!("time step in positional encoding: timestep: -> {}", time_step);
 
                     //Step 1: Convert complex embeddings into real & imaginary parts
                     // let real_part: Vec<f64> = token_embeddings.iter().map(|c| c.re).collect();
