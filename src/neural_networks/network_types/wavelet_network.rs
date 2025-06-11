@@ -5,7 +5,7 @@ use crate::utils::num_trait::ArrayType;
 use crate::wavelet_transform::cwt::cwt;
 use crate::wavelet_transform::cwt_complex::CWTComplex;
 use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
-use crate::wavelet_transform::dwt::{get_ll_hl_lh_hh, transform_1_df64, transform_2_df64};
+use crate::wavelet_transform::dwt::{dwt_1d, dwt_2d_full, get_ll_hl_lh_hh};
 use crate::wavelet_transform::dwt_types::DiscreteWaletetType;
 use crate::wavelet_transform::modes::WaveletMode;
 use num_complex::Complex;
@@ -27,7 +27,7 @@ pub fn apply_wavelet_positional_emb(input: &Vec<f64>, dw_type: DiscreteWaletetTy
     input_decomposed[index] = position_ratio;
 
     for _i in 0..decomposition_levels {
-        input_decomposed = transform_1_df64(&input_decomposed, &dw_type, &dw_mode);
+        input_decomposed = dwt_1d(&input_decomposed, &dw_type, &dw_mode);
     }
 
     if input_decomposed.len() < emb_len {
@@ -93,7 +93,7 @@ pub fn decompose_in_wavelets<T: ArrayType>(input_data: &T, dw_type: &DiscreteWal
         let mut pixel_rgba: Vec<Vec<f64>> = pixels[p].clone();
 
         for _i in 0..dec_levels.clone() {
-            dw_transformed = transform_2_df64(&pixel_rgba, &dw_type, &dw_mode);
+            dw_transformed = dwt_2d_full(&pixel_rgba, &dw_type, &dw_mode);
 
             //println!("dw transform : {:?}, {:?}", dw_transformed.len(), dw_transformed[0].len());
 

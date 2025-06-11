@@ -9,7 +9,7 @@ mod tests {
     use crate::wavelet_transform::cwt::{cwt, cwt_1d, cwt_2d, cwt_3d, cwt_4d, cwt_5d};
     use crate::wavelet_transform::cwt_complex::CWTComplex;
     use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
-    use crate::wavelet_transform::dwt::{get_ll_hl_lh_hh, insert_padding_after, insert_padding_before, transform_2_d, transform_2_df64};
+    use crate::wavelet_transform::dwt::{get_ll_hl_lh_hh, insert_padding_after, insert_padding_before, dwt_2d_full};
     use crate::wavelet_transform::dwt_types::DiscreteWaletetType;
     use crate::wavelet_transform::fft::{fft_real1_d, fft_real2_d};
     use crate::wavelet_transform::modes::WaveletMode;
@@ -532,7 +532,7 @@ mod tests {
         let data_2d = vec![vec![1.0, 2.0, 3.0, 4.0, 5.0], vec![6.0, 7.0, 8.0, 9.0, 10.0]];
 
         let dwt_type = DiscreteWaletetType::DB1;
-        let transformed = transform_2_d(&data_2d, &dwt_type, &WaveletMode::CONSTANT);
+        let transformed = dwt_2d_full(&data_2d, &dwt_type, &WaveletMode::CONSTANT);
 
         assert_eq!(transformed, [[8.0, 12.000000000000004, 15.000000000000004, -0.9999999999999998, -1.0000000000000004, 0.0],
             [-5.0, -5.000000000000001, -5.000000000000001, -4.440892098500626e-16, 3.3306690738754696e-16, 0.0]]);
@@ -547,7 +547,7 @@ mod tests {
 
         let data_2d = vec![vec![1.15, 2.22, 3.36, 4.45, 5.59], vec![6.61, 7.72, 8.83, 9.94, 10.17]];
         let dwt_type = DiscreteWaletetType::DB2;
-        let transformed = transform_2_d(&data_2d, &dwt_type, &WaveletMode::CONSTANT);
+        let transformed = dwt_2d_full(&data_2d, &dwt_type, &WaveletMode::CONSTANT);
         let llhllhhh: Vec<Vec<Vec<f64>>> = get_ll_hl_lh_hh(&transformed);
 
         assert_eq!(llhllhhh, [[[1.1055969296248855, 2.659056465474454, 7.315913630276377, 10.341801825333636],
@@ -559,7 +559,7 @@ mod tests {
                 [-0.0025000000000000022, -0.0019527222831138048, -0.04130045318994102, -1.1493874523372615e-16]]]);
 
         let dwt_type = DiscreteWaletetType::DB3;
-        let transformed = transform_2_d(&data_2d, &dwt_type, &WaveletMode::CONSTANT);
+        let transformed = dwt_2d_full(&data_2d, &dwt_type, &WaveletMode::CONSTANT);
         let llhllhhh: Vec<Vec<Vec<f64>>> = get_ll_hl_lh_hh(&transformed);
 
         assert_eq!(llhllhhh, [[[2.625357908947451, 2.2648791841237403, 4.287629314819762, 9.094444333091051, 11.40816414879493],
@@ -584,7 +584,7 @@ mod tests {
 
         let dwt_type = DiscreteWaletetType::DB4;
         let mode = WaveletMode::SYMMETRIC;
-        let transformed = transform_2_d(&data_2d, &dwt_type, &mode);
+        let transformed = dwt_2d_full(&data_2d, &dwt_type, &mode);
         assert_eq!(transformed, [
             [10.825626749849437, 6.745432828355063, 2.356790385209029, 4.445414851141745, 9.460976076794744, 10.825626749849437, 0.050103715123674335, 0.06491804986849077, 0.2856701317488374, -0.6013410686663525, 0.20064917192535203, 0.050103715123674335],
             [20.447850161982082, 17.59051584442521, 13.186045643284851, 15.496196141038325, 19.525959398727597, 20.447850161982082, 0.10420787549244984, 0.05524181426824209, -0.3463430158085348, 0.26155105382246907, -0.07465772777462679, 0.10420787549244984],
@@ -598,7 +598,7 @@ mod tests {
 
         let dwt_type = DiscreteWaletetType::DB3;
         let mode = WaveletMode::ANTISYMMETRIC;
-        let transformed = transform_2_d(&data_2d, &dwt_type, &mode);
+        let transformed = dwt_2d_full(&data_2d, &dwt_type, &mode);
 
         assert_eq!(transformed, [[-7.059330713252228, -3.020493770561815, 4.743067531543018, 9.863918479147635, -4.527161526876614, 2.415028580534773, -0.6156945381601403, 4.126108713933346, -0.2977728281395854, 0.4878628480654078],
             [7.059330713252228, 3.0204937705618153, -4.743067531543019, -9.863918479147637, 4.527161526876615, -2.415028580534773, 0.6156945381601401, -4.1261087139333466, 0.2977728281395854, -0.487862848065408],
@@ -612,7 +612,7 @@ mod tests {
                            vec![6.616161616161616161, 7.7272727272727272, 8.818181818181818181, 9.0, 10.0, 11.0]];
         let dwt_type = DiscreteWaletetType::DB3;
         let mode = WaveletMode::REFLECT;
-        let transformed = transform_2_d(&data_2d, &dwt_type, &mode);
+        let transformed = dwt_2d_full(&data_2d, &dwt_type, &mode);
 
 
         assert_eq!(transformed, [[13.732913469298964, 9.725434897432464, 9.764487540695733, 12.955200103349293, 16.377519544779094, -1.1705101601780417, 0.8092884428468606, -0.03389717286400182, -0.37092738704534667, 0.34180385299810595],
@@ -635,7 +635,7 @@ mod tests {
 
         let dwt_type = DiscreteWaletetType::DB3;
         let mode = WaveletMode::ANTIREFLECT;
-        let transformed = transform_2_d(&data_2d, &dwt_type, &mode);
+        let transformed = dwt_2d_full(&data_2d, &dwt_type, &mode);
 
         assert_eq!(transformed, [[-42.556383650647675, -38.55638365064768, -34.55638365064768, -30.556383650647675, -26.556383650647668, -6.567066884119701e-16,
             6.853763933504303e-16, -3.997579540348742e-15, 0.0, 5.368332327049601e-15],
@@ -714,7 +714,7 @@ mod tests {
             let mut pixel_rgba: Vec<Vec<f64>> = pixels[p].clone();
 
             for _i in 0..dec_levels.clone() {
-                dw_transformed = transform_2_df64(&pixel_rgba, &wavelet_type, &wavelet_mode);
+                dw_transformed = dwt_2d_full(&pixel_rgba, &wavelet_type, &wavelet_mode);
 
                 if dw_transformed.len() < MIN_HEIGHT || dw_transformed[0].len() < MIN_WIDTH {
                     break;

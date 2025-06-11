@@ -1,8 +1,9 @@
+use num::Num;
 use num_complex::Complex;
 use std::fmt::Debug;
 use std::ops::{Add, Div, Mul, Sub};
 
-pub trait NumTrait: Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + Div<Output = Self> + Sized + Debug + Clone + Copy {
+pub trait NumTrait: Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + Div<Output = Self> + Sized + Debug + Clone + Copy + Num {
     fn to_f64(&self) -> f64;
     fn to_real(&self) -> f64;
     fn to_imag(&self) -> f64;
@@ -683,9 +684,7 @@ impl<T: NumTrait> ArrayType for Vec<Vec<Vec<T>>> {
         Array::Array3D(result)
     }
     fn to_complex_array(&self) -> Array {
-        let result: Vec<Vec<Vec<Complex<f64>>>>
-            = self.iter().map(|inner_vec| inner_vec.iter()
-            .map(|inner_inner_vec| inner_inner_vec.iter().map(|item| Complex::new(item.to_real(), item.to_imag())).collect()).collect()).collect();
+        let result: Vec<Vec<Vec<Complex<f64>>>> = self.iter().map(|inner_vec| inner_vec.iter().map(|inner_inner_vec| inner_inner_vec.iter().map(|item| Complex::new(item.to_real(), item.to_imag())).collect()).collect()).collect();
         Array::ArrayC3D(result)
     }
     fn get_element_type(&self) -> Self::Element {
@@ -814,7 +813,12 @@ impl<T: NumTrait> ArrayType for Vec<Vec<Vec<Vec<Vec<Vec<T>>>>>> {
                             .map(|inner_inner_inner_vec| {
                                 inner_inner_inner_vec
                                     .iter()
-                                    .map(|inner_inner_inner_inner_vec| inner_inner_inner_inner_vec.iter().map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter().map(|item| Complex::new(item.to_real(), item.to_imag())).collect()).collect())
+                                    .map(|inner_inner_inner_inner_vec| {
+                                        inner_inner_inner_inner_vec
+                                            .iter()
+                                            .map(|inner_inner_inner_inner_inner_vec| inner_inner_inner_inner_inner_vec.iter().map(|item| Complex::new(item.to_real(), item.to_imag())).collect())
+                                            .collect()
+                                    })
                                     .collect()
                             })
                             .collect()
