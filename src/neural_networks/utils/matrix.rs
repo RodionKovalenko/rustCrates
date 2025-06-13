@@ -4,7 +4,7 @@ use num::Complex;
 use num_traits::NumCast;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
-use std::ffi::c_void;
+// use std::ffi::c_void;
 use std::fmt::Debug;
 use std::ops::{Add, Mul, Sub};
 use std::sync::{Arc, Mutex};
@@ -99,117 +99,117 @@ pub fn multiply_complex(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<
 //     result
 // }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-pub struct CuDoubleComplex {
-    pub x: f64,
-    pub y: f64,
-}
+// #[repr(C)]
+// #[derive(Clone, Copy, Debug)]
+// pub struct CuDoubleComplex {
+//     pub x: f64,
+//     pub y: f64,
+// }
 
-impl From<Complex<f64>> for CuDoubleComplex {
-    fn from(c: Complex<f64>) -> Self {
-        Self { x: c.re, y: c.im }
-    }
-}
+// impl From<Complex<f64>> for CuDoubleComplex {
+//     fn from(c: Complex<f64>) -> Self {
+//         Self { x: c.re, y: c.im }
+//     }
+// }
 
-#[link(name = "cublas")]
-extern "system" {
-    pub fn cublasCreate_v2(handle: *mut *mut c_void) -> i32;
-    pub fn cublasDestroy_v2(handle: *mut c_void) -> i32;
+// #[link(name = "cublas")]
+// extern "system" {
+//     pub fn cublasCreate_v2(handle: *mut *mut c_void) -> i32;
+//     pub fn cublasDestroy_v2(handle: *mut c_void) -> i32;
 
-    pub fn cublasZgemm3m(handle: *mut c_void, transa: i32, transb: i32, m: i32, n: i32, k: i32, alpha: *const CuDoubleComplex, A: *const CuDoubleComplex, lda: i32, B: *const CuDoubleComplex, ldb: i32, beta: *const CuDoubleComplex, C: *mut CuDoubleComplex, ldc: i32) -> i32;
+//     pub fn cublasZgemm3m(handle: *mut c_void, transa: i32, transb: i32, m: i32, n: i32, k: i32, alpha: *const CuDoubleComplex, A: *const CuDoubleComplex, lda: i32, B: *const CuDoubleComplex, ldb: i32, beta: *const CuDoubleComplex, C: *mut CuDoubleComplex, ldc: i32) -> i32;
 
-    pub fn cudaMalloc(devPtr: *mut *mut c_void, size: usize) -> i32;
-    pub fn cudaMemcpy(dst: *mut c_void, src: *const c_void, count: usize, kind: i32) -> i32;
-    pub fn cudaFree(devPtr: *mut c_void) -> i32;
-}
+//     pub fn cudaMalloc(devPtr: *mut *mut c_void, size: usize) -> i32;
+//     pub fn cudaMemcpy(dst: *mut c_void, src: *const c_void, count: usize, kind: i32) -> i32;
+//     pub fn cudaFree(devPtr: *mut c_void) -> i32;
+// }
 
-const CUDA_MEMCPY_HOST_TO_DEVICE: i32 = 1;
-const CUDA_MEMCPY_DEVICE_TO_HOST: i32 = 2;
-const CUBLAS_STATUS_SUCCESS: i32 = 0;
-const CUBLAS_OP_N: i32 = 0;
+// const CUDA_MEMCPY_HOST_TO_DEVICE: i32 = 1;
+// const CUDA_MEMCPY_DEVICE_TO_HOST: i32 = 2;
+// const CUBLAS_STATUS_SUCCESS: i32 = 0;
+// const CUBLAS_OP_N: i32 = 0;
 
-fn check_cuda(status: i32) {
-    if status != 0 {
-        panic!("CUDA call failed with status: {}", status);
-    }
-}
+// fn check_cuda(status: i32) {
+//     if status != 0 {
+//         panic!("CUDA call failed with status: {}", status);
+//     }
+// }
 
-pub fn multiply_complex_cuda(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-    let a_rows = matrix_a.len();
-    let a_cols = matrix_a[0].len();
-    let b_rows = matrix_b.len();
-    let b_cols = matrix_b[0].len();
+// pub fn multiply_complex_cuda(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+//     let a_rows = matrix_a.len();
+//     let a_cols = matrix_a[0].len();
+//     let b_rows = matrix_b.len();
+//     let b_cols = matrix_b[0].len();
 
-    if a_cols != b_rows {
-        panic!("Invalid matrix dimensions: A is {}x{}, B is {}x{}", a_rows, a_cols, b_rows, b_cols);
-    }
+//     if a_cols != b_rows {
+//         panic!("Invalid matrix dimensions: A is {}x{}, B is {}x{}", a_rows, a_cols, b_rows, b_cols);
+//     }
 
-    // Flatten in column-major order
-    let a_flat: Vec<CuDoubleComplex> = (0..a_cols).flat_map(|j| (0..a_rows).map(move |i| CuDoubleComplex::from(matrix_a[i][j]))).collect();
-    let b_flat: Vec<CuDoubleComplex> = (0..b_cols).flat_map(|j| (0..b_rows).map(move |i| CuDoubleComplex::from(matrix_b[i][j]))).collect();
-    let mut c_flat: Vec<CuDoubleComplex> = vec![CuDoubleComplex { x: 0.0, y: 0.0 }; a_rows * b_cols];
+//     // Flatten in column-major order
+//     let a_flat: Vec<CuDoubleComplex> = (0..a_cols).flat_map(|j| (0..a_rows).map(move |i| CuDoubleComplex::from(matrix_a[i][j]))).collect();
+//     let b_flat: Vec<CuDoubleComplex> = (0..b_cols).flat_map(|j| (0..b_rows).map(move |i| CuDoubleComplex::from(matrix_b[i][j]))).collect();
+//     let mut c_flat: Vec<CuDoubleComplex> = vec![CuDoubleComplex { x: 0.0, y: 0.0 }; a_rows * b_cols];
 
-    let m = a_rows as i32;
-    let n = b_cols as i32;
-    let k = a_cols as i32;
+//     let m = a_rows as i32;
+//     let n = b_cols as i32;
+//     let k = a_cols as i32;
 
-    let lda = m;
-    let ldb = k;
-    let ldc = m;
+//     let lda = m;
+//     let ldb = k;
+//     let ldc = m;
 
-    let alpha = CuDoubleComplex { x: 1.0, y: 0.0 };
-    let beta = CuDoubleComplex { x: 0.0, y: 0.0 };
+//     let alpha = CuDoubleComplex { x: 1.0, y: 0.0 };
+//     let beta = CuDoubleComplex { x: 0.0, y: 0.0 };
 
-    unsafe {
-        let mut handle: *mut c_void = std::ptr::null_mut();
-        let status = cublasCreate_v2(&mut handle);
-        if status != CUBLAS_STATUS_SUCCESS || handle.is_null() {
-            panic!("Failed to create cuBLAS handle: status = {}, handle = {:?}", status, handle);
-        }
+//     unsafe {
+//         let mut handle: *mut c_void = std::ptr::null_mut();
+//         let status = cublasCreate_v2(&mut handle);
+//         if status != CUBLAS_STATUS_SUCCESS || handle.is_null() {
+//             panic!("Failed to create cuBLAS handle: status = {}, handle = {:?}", status, handle);
+//         }
 
-        let size_a = a_flat.len() * std::mem::size_of::<CuDoubleComplex>();
-        let size_b = b_flat.len() * std::mem::size_of::<CuDoubleComplex>();
-        let size_c = c_flat.len() * std::mem::size_of::<CuDoubleComplex>();
+//         let size_a = a_flat.len() * std::mem::size_of::<CuDoubleComplex>();
+//         let size_b = b_flat.len() * std::mem::size_of::<CuDoubleComplex>();
+//         let size_c = c_flat.len() * std::mem::size_of::<CuDoubleComplex>();
 
-        let mut d_a: *mut c_void = std::ptr::null_mut();
-        let mut d_b: *mut c_void = std::ptr::null_mut();
-        let mut d_c: *mut c_void = std::ptr::null_mut();
+//         let mut d_a: *mut c_void = std::ptr::null_mut();
+//         let mut d_b: *mut c_void = std::ptr::null_mut();
+//         let mut d_c: *mut c_void = std::ptr::null_mut();
 
-        check_cuda(cudaMalloc(&mut d_a, size_a));
-        check_cuda(cudaMalloc(&mut d_b, size_b));
-        check_cuda(cudaMalloc(&mut d_c, size_c));
+//         check_cuda(cudaMalloc(&mut d_a, size_a));
+//         check_cuda(cudaMalloc(&mut d_b, size_b));
+//         check_cuda(cudaMalloc(&mut d_c, size_c));
 
-        check_cuda(cudaMemcpy(d_a, a_flat.as_ptr() as *const c_void, size_a, CUDA_MEMCPY_HOST_TO_DEVICE));
-        check_cuda(cudaMemcpy(d_b, b_flat.as_ptr() as *const c_void, size_b, CUDA_MEMCPY_HOST_TO_DEVICE));
+//         check_cuda(cudaMemcpy(d_a, a_flat.as_ptr() as *const c_void, size_a, CUDA_MEMCPY_HOST_TO_DEVICE));
+//         check_cuda(cudaMemcpy(d_b, b_flat.as_ptr() as *const c_void, size_b, CUDA_MEMCPY_HOST_TO_DEVICE));
 
-        let status = cublasZgemm3m(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, d_a as *const CuDoubleComplex, lda, d_b as *const CuDoubleComplex, ldb, &beta, d_c as *mut CuDoubleComplex, ldc);
+//         let status = cublasZgemm3m(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, d_a as *const CuDoubleComplex, lda, d_b as *const CuDoubleComplex, ldb, &beta, d_c as *mut CuDoubleComplex, ldc);
 
-        if status != CUBLAS_STATUS_SUCCESS {
-            cublasDestroy_v2(handle);
-            panic!("cublasZgemm3m failed with status: {}", status);
-        }
+//         if status != CUBLAS_STATUS_SUCCESS {
+//             cublasDestroy_v2(handle);
+//             panic!("cublasZgemm3m failed with status: {}", status);
+//         }
 
-        check_cuda(cudaMemcpy(c_flat.as_mut_ptr() as *mut c_void, d_c, size_c, CUDA_MEMCPY_DEVICE_TO_HOST));
+//         check_cuda(cudaMemcpy(c_flat.as_mut_ptr() as *mut c_void, d_c, size_c, CUDA_MEMCPY_DEVICE_TO_HOST));
 
-        cudaFree(d_a);
-        cudaFree(d_b);
-        cudaFree(d_c);
+//         cudaFree(d_a);
+//         cudaFree(d_b);
+//         cudaFree(d_c);
 
-        cublasDestroy_v2(handle);
-    }
+//         cublasDestroy_v2(handle);
+//     }
 
-    // Convert back to row-major
-    let mut result = vec![vec![Complex::new(0.0, 0.0); b_cols]; a_rows];
-    for j in 0..b_cols {
-        for i in 0..a_rows {
-            let z = c_flat[j * a_rows + i];
-            result[i][j] = Complex::new(z.x, z.y);
-        }
-    }
+//     // Convert back to row-major
+//     let mut result = vec![vec![Complex::new(0.0, 0.0); b_cols]; a_rows];
+//     for j in 0..b_cols {
+//         for i in 0..a_rows {
+//             let z = c_flat[j * a_rows + i];
+//             result[i][j] = Complex::new(z.x, z.y);
+//         }
+//     }
 
-    result
-}
+//     result
+// }
 
 pub fn multiply<T, V>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<V>>) -> Vec<Vec<f64>>
 where
