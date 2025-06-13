@@ -39,10 +39,19 @@ pub fn train_transformer_from_dataset(num_epochs: usize, num_records: usize, bat
     println!("time elapsed in seconds: {:?}", &seconds_elapsed);
 
     let dataset: Dataset<String, String> = load_data_xquad_de_as_dataset().unwrap();
-    let data_batches: Vec<Dataset<String, String>> = dataset.split_into_batches(num_records);
-    let dataset_batch = data_batches[0].get_batch(0, batch_size).unwrap();
+    let data_batches: Vec<Dataset<String, String>> = dataset.split_into_batches(batch_size);
 
-    let (input_batch, target_batch) = (dataset_batch.0, dataset_batch.1);
+    let mut input_batch: Vec<String> = Vec::new();
+    let mut target_batch: Vec<String> = Vec::new();
+
+    for i in 0..(num_records / batch_size) {
+        let dataset_batch = data_batches[i].get_batch(0, batch_size).unwrap();
+        let (inputs, targets) = (dataset_batch.0, dataset_batch.1);
+
+        input_batch.extend(inputs);
+        target_batch.extend(targets);
+    }
+
     println!("input batch: {:?}", input_batch);
     println!("target batch: {:?}", target_batch);
     let dataset_small = Dataset::new(input_batch.clone(), target_batch.clone());
