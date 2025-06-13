@@ -104,7 +104,7 @@ impl EmbeddingLayer {
         } else {
             println!("File exists. Deserializing the file");
             let embedding_layer = Self::deserialize(embedding_file_path);
-            
+
             embedding_layer
         }
     }
@@ -198,6 +198,23 @@ impl EmbeddingLayer {
             })
             .collect::<Vec<Vec<Vec<Complex<f64>>>>>(); // Collect the result for the entire batch
 
+        // let compression_token_batch: Vec<_> = token_ids_output
+        //     .iter()
+        //     .map(|token_input| {
+        //         let token_transposed = &transpose(token_input);
+        //         let dwt_compressed = dwt_2d_partial(token_transposed, &DiscreteWaletetType::DB2, &WaveletMode::CONSTANT);
+
+        //         let wav_hh_ll: Vec<Vec<Vec<Complex<f64>>>> = get_ll_hh(&dwt_compressed);
+        //         let wav_ll = &wav_hh_ll[0];
+
+        //         transpose(&wav_ll)
+        //     })
+        //     .collect();
+
+        // println!("comporession token batch {} {} {}", compression_token_batch.len(), compression_token_batch[0].len(), compression_token_batch[0][0].len());
+
+        // let padding_mask_comp: Vec<Vec<u32>> = vec![vec![1; compression_token_batch[0].len()]];
+
         (token_ids_output, padding_mask)
     }
     // Update embeddings using gradients
@@ -243,11 +260,11 @@ impl EmbeddingLayer {
                 }
 
                 let embedding_normalized = normalize(&token_embedding);
-                
+
                 if let Ok(mut cache) = self.cache.write() {
                     cache.insert(token_id, embedding_normalized.clone());
                 }
-                
+
                 Self::update_embedding(db, &token_id, &embedding_normalized);
                 // println!("new token embedding: {:?}", token_embedding);
             }
@@ -259,7 +276,6 @@ impl EmbeddingLayer {
 
         let serialized_embedding = bincode::serialize(embedding).expect("Failed to serialize embedding");
         db.insert(key, serialized_embedding).expect("Failed to save or update embedding in Sled");
-
     }
 
     pub fn serialize(embedding_layer: &EmbeddingLayer, embedding_file_path: &Path) {

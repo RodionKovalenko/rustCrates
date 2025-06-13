@@ -223,7 +223,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         layer_input.set_batch_ids(batch_ids.clone());
 
         if time_step > 0 {
-            // // let last_tokens: Vec<Vec<u32>> = batch_ids.iter().map(|seq| vec![*seq.last().unwrap()]).collect();
+            // let last_tokens: Vec<Vec<u32>> = batch_ids.iter().map(|seq| vec![*seq.last().unwrap()]).collect();
             let last_n = 1;
 
             let last_tokens_batch: Vec<Vec<u32>> = batch_ids
@@ -237,11 +237,13 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
                     }
                 })
                 .collect();
-            println!("batch ids {:?}", batch_ids);
-            println!("last token id {:?}", last_tokens_batch);
 
+            // println!("batch ids {:?}", batch_ids);
+            // println!("last token id {:?}", last_tokens_batch);
             layer_input.set_batch_ids(last_tokens_batch);
         }
+
+        // println!("batch ids {:?}", batch_ids);
 
         layer_input.set_time_step(time_step);
 
@@ -478,7 +480,9 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
     layer_output.set_output_batch_f64(output_softmax.unwrap());
     layer_output.set_padding_mask_batch(padding_mask.unwrap());
 
-    println!("time elapsed in forward pass in predict: {:?}", (now.elapsed() - _start).as_secs_f64());
+    if !forward_only {
+        println!("time elapsed in forward pass in predict: {:?}", (now.elapsed() - _start).as_secs_f64());
+    }
 
     //println!("forward pass end ----------------------------------------------------------------------");
     layer_output
