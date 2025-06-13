@@ -35,7 +35,7 @@ impl PositionalEncodingLayer {
     pub fn forward(&mut self, layer_input: &LayerInput) -> Vec<Vec<Vec<Complex<f64>>>> {
         let input_batch = layer_input.get_input_batch();
         let _scaling_factor = SCALING_FAKTOR;
-        let forward_only = layer_input.get_forward_only();
+        let _forward_only = layer_input.get_forward_only();
         self.input_batch = Some(input_batch.clone());
 
         input_batch
@@ -60,7 +60,7 @@ impl PositionalEncodingLayer {
 
                     let mut time_step = _position;
 
-                    if forward_only && layer_input.get_time_step() > 0 {
+                    if _forward_only && layer_input.get_time_step() > 0 {
                         time_step = layer_input.get_time_step();
                     }
                     // println!("time step in positional encoding: timestep: -> {}", time_step);

@@ -65,12 +65,12 @@ mod test_wavelet_compression {
 
     #[test]
     fn test_complex_wavelet_row_partial() {
-        let seq_len = 8;
-        let dim = 8;
+        let seq_len = 450;
+        let dim = 16;
 
         let matrix_1: Vec<Vec<Complex<f64>>> = transpose(&generate_random_complex_2d(seq_len, dim));
 
-        let wav_trans_1: Vec<Vec<Complex<f64>>> = dwt_2d_partial(&matrix_1, &DiscreteWaletetType::DB1, &WaveletMode::CONSTANT);
+        let wav_trans_1: Vec<Vec<Complex<f64>>> = dwt_2d_partial(&matrix_1, &DiscreteWaletetType::DB1, &WaveletMode::SYMMETRIC);
 
         println!("\n matrix 1: dim: {} {}", matrix_1.len(), matrix_1[0].len());
         println!("\n wav_trans_1: dim: {} {}", wav_trans_1.len(), wav_trans_1[0].len());

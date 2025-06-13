@@ -3,7 +3,6 @@ use crate::neural_networks::{
     network_types::{
         feedforward_layer::FeedForwardLayer,
         neural_network_generic::{create, NeuralNetwork, OperationMode},
-        wavelet_layer::WaveletLayer,
         wavelet_network::DECOMPOSITION_LEVELS,
     },
 };
@@ -55,7 +54,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
         let mut hidden_dim = 512;
         if i > 0 {
             hidden_dim = 1024;
-            layers.push(LayerEnum::Wavelet(Box::new(WaveletLayer::new())));
+            //layers.push(LayerEnum::Wavelet(Box::new(WaveletLayer::new())));
         }
 
         let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
