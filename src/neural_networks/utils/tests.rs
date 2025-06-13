@@ -4,7 +4,7 @@ mod tests {
 
     use crate::neural_networks::utils::{
         derivative::test_gradient_error_2d,
-        matrix::{multiply, multiply_complex, multiply_complex_fear, transpose},
+        matrix::{multiply, multiply_complex, transpose},
         random_arrays::generate_random_complex_3d,
     };
 
