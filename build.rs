@@ -23,10 +23,10 @@ fn main() {
     copy_dir("training_data", "training_data");
     copy_dir("tests", "tests");
 
-    let openblas_path = env::var("OPENBLAS_DIR").unwrap_or_else(|_| r"C:\\Users\\jeti8\\OneDrive\\Desktop\\Rodion Projects\\OpenBLAS-0.3.29_x64".into());
-    let openblas_lib = format!("{}\\lib", openblas_path);
-    println!("cargo:rustc-link-search=native={}", openblas_lib);
-    println!("cargo:rustc-link-lib=dylib=openblas");
+    // let openblas_path = env::var("OPENBLAS_DIR").unwrap_or_else(|_| r"C:\\Users\\jeti8\\OneDrive\\Desktop\\Rodion Projects\\OpenBLAS-0.3.29_x64".into());
+    // let openblas_lib = format!("{}\\lib", openblas_path);
+    // println!("cargo:rustc-link-search=native={}", openblas_lib);
+    // println!("cargo:rustc-link-lib=dylib=openblas");
 }
 
 pub fn copy_dir(file_dir_path: &str, target_dir_path: &str) {
