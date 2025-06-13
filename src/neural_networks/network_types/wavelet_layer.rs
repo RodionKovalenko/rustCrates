@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     neural_networks::network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     wavelet_transform::{
-        cwt_complex::{cwt_2d_full, get_wavelet_derivative_full, wavefun_complex, CWTComplex},
+        cwt_complex::{cwt_2d, get_wavelet_derivative, wavefun_complex, CWTComplex},
         cwt_types::ContinuousWaletetType,
     },
 };
@@ -53,9 +53,8 @@ impl WaveletLayer {
         let output_batch: Vec<Vec<Vec<Complex<f64>>>> = input_batch
             .par_iter()
             .map(|input| {
-                //let (transform_cwt, _frequencies) = cwt_complex(input, &self.wavelet).unwrap();
-                // let wavelet_output = convert_to_c_array_f64_3d(transform_cwt);
-                let (wavelet_output, _frequencies) = cwt_2d_full(input, &self.wavelet);
+                // let (wavelet_output, _frequencies) = cwt_2d_full(input, &self.wavelet);
+                let (wavelet_output, _frequencies) = cwt_2d(input, &self.wavelet);
                 wavelet_output[0].to_vec()
             })
             .collect();
@@ -80,8 +79,8 @@ impl WaveletLayer {
             .iter()
             .zip(input_batch)
             .map(|(previous_gradient, input)| {
-                //previous_gradient.iter().enumerate().map(|(row_ind, prev_grad_row)| get_wavelet_derivative(&input[row_ind], &wavefun_result, &self.wavelet.scales[0], &prev_grad_row)).collect()
-                get_wavelet_derivative_full(&input, &wavefun_result, &self.wavelet.scales[0], &previous_gradient)
+                previous_gradient.iter().enumerate().map(|(row_ind, prev_grad_row)| get_wavelet_derivative(&input[row_ind], &wavefun_result, &self.wavelet.scales[0], &prev_grad_row)).collect()
+                //get_wavelet_derivative_full(&input, &wavefun_result, &self.wavelet.scales[0], &previous_gradient)
             })
             .collect();
 

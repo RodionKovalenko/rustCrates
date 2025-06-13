@@ -1,8 +1,9 @@
 use crate::neural_networks::{
-    network_components::{embedding_layer::EmbeddingLayer, layer::LayerEnum, linear_layer::LinearLayer, multi_linear_layer::MultiLinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
+    network_components::{embedding_layer::EmbeddingLayer, layer::LayerEnum, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
     network_types::{
         feedforward_layer::FeedForwardLayer,
         neural_network_generic::{create, NeuralNetwork, OperationMode},
+        wavelet_layer::WaveletLayer,
         wavelet_network::DECOMPOSITION_LEVELS,
     },
 };
@@ -16,7 +17,6 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let number_of_hidden_neurons: usize = 32;
     let minibatch_size: usize = 50;
     let learning_rate: f64 = 0.01;
-    let num_lin_layers = 30;
 
     let mut transformer_network: NeuralNetwork = create(number_inputs, number_outputs, number_of_hidden_layers, number_of_hidden_neurons, minibatch_size, learning_rate);
 
@@ -33,10 +33,10 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
 
     layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
+    layers.push(LayerEnum::Wavelet(Box::new(WaveletLayer::new())));
     layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
 
     let rows: usize = embedding_dim_compressed;
-
     // Transformer block start
     let num_self_attention_layer: usize = 2;
     for i in 0..num_self_attention_layer {
@@ -54,7 +54,6 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
         let mut hidden_dim = 512;
         if i > 0 {
             hidden_dim = 1024;
-            //layers.push(LayerEnum::Wavelet(Box::new(WaveletLayer::new())));
         }
 
         let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
@@ -62,11 +61,9 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     }
     // Transformer block end
 
-    let _multi_liniear_layer = MultiLinearLayer::new(learning_rate, rows, vocab_size, num_lin_layers);
     let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
     let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode);
 
-    // layers.push(LayerEnum::Wavelet(Box::new(WaveletLayer::new())));
     layers.push(LayerEnum::Linear(Box::new(linear_layer)));
     layers.push(LayerEnum::Softmax(Box::new(softmax_layer)));
 
