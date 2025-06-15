@@ -1,5 +1,5 @@
 use crate::neural_networks::{
-    network_components::multi_linear_layer::MultiLinearLayer, network_types::{feedforward_layer::FeedForwardLayer, transformer::self_attention_layer::SelfAttentionLayer, wavelet_layer::WaveletLayer}, utils::{
+    network_components::multi_linear_layer::MultiLinearLayer, network_types::{feedforward_layer::FeedForwardLayer, transformer::self_attention_layer::SelfAttentionLayer, wavelet_complex_layer::WaveletComplexLayer}, utils::{
         activation::activate_output_complex_padding,
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         derivative::get_gradient_complex,
@@ -82,7 +82,7 @@ pub enum LayerEnum {
     SelfAttention(Box<SelfAttentionLayer>),
     Linear(Box<LinearLayer>),
     MultiLinear(Box<MultiLinearLayer>),
-    Wavelet(Box<WaveletLayer>),
+    Wavelet(Box<WaveletComplexLayer>),
     Softmax(Box<SoftmaxLayer>),
 }
 
