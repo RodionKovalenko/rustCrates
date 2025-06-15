@@ -25,12 +25,12 @@ where
     let mut data_trans: Vec<Vec<T>> = dwt_2d_partial(data, &dw_type, &mode);
 
     // println!("before transposed array: {:?}", &data_trans);
-    data_trans = transpose(data_trans);
+    data_trans = transpose(&data_trans);
     // println!("transposed array: {:?}", &data_trans);
 
     data_trans = dwt_2d_partial(&data_trans, &dw_type, &mode);
 
-    transpose(data_trans)
+    transpose(&data_trans)
 }
 
 pub fn dwt_1d<T>(data: &Vec<T>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<T>
@@ -142,31 +142,9 @@ where
 {
     let mut data_trans: Vec<Vec<T>> = inverse_dwt_2d_partial(&data, &dw_type, &mode, level);
 
-    data_trans = transpose(data_trans);
+    data_trans = transpose(&data_trans);
 
-    transpose(inverse_dwt_2d_partial(&data_trans, &dw_type, &mode, level.clone()))
-}
-
-pub fn set_value<T>(data_trans: &mut Vec<T>, value: T, i: &usize)
-where
-    T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
-{
-    if i >= &data_trans.len() {
-        data_trans.push(value);
-    } else {
-        data_trans[i.clone()] = value;
-    }
-}
-
-pub fn set_value_2d<T>(data_trans: &mut Vec<Vec<T>>, value: Vec<T>, i: &usize)
-where
-    T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
-{
-    if i >= &data_trans.len() {
-        data_trans.push(value);
-    } else {
-        data_trans[i.clone()] = value;
-    }
+    transpose(&inverse_dwt_2d_partial(&data_trans, &dw_type, &mode, level.clone()))
 }
 
 pub fn insert_padding_before<T>(data_trans: &mut Vec<T>, mode: &WaveletMode, size: usize)
@@ -291,6 +269,77 @@ where
     }
 }
 
+pub fn grad_dwt_1d_trend<T>(grad_output: &Vec<T>, dw_type: &DiscreteWaletetType, _mode: &WaveletMode) -> Vec<T>
+where
+    T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
+{
+    let mut grad_output_padded = grad_output.clone();
+    grad_output_padded.extend_from_slice(&vec![T::zero(); grad_output.len()]);
+
+    // println!("grad output padded: {:?}", &grad_output_padded);
+
+    inverse_dwt_1d(&grad_output_padded, dw_type, _mode, 0)
+}
+
+pub fn grad_dwt_1d_full<T>(grad_output: &Vec<T>, dw_type: &DiscreteWaletetType, _mode: &WaveletMode) -> Vec<T>
+where
+    T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
+{
+    inverse_dwt_1d(&grad_output, dw_type, _mode, 0)
+}
+
+
+pub fn grad_dwt_2d<T>(grad_output: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<Vec<T>>
+where
+    T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
+{
+    // Apply gradient to columns (after transposing)
+    let mut grad_trans = grad_dwt_2d_partial(&transpose(grad_output), dw_type, mode);
+    // Then to rows (after transposing back)
+    grad_trans = transpose(&grad_trans);
+    grad_dwt_2d_partial(&grad_trans, dw_type, mode)
+}
+
+pub fn grad_dwt_2d_partial<T>(grad_output: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<Vec<T>>
+where
+    T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
+{
+    grad_output.iter().map(|row| grad_dwt_1d_trend(row, dw_type, mode)).collect()
+}
+
+pub fn set_value<T>(data_trans: &mut Vec<T>, value: T, i: &usize)
+where
+    T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
+{
+    if i >= &data_trans.len() {
+        data_trans.push(value);
+    } else {
+        data_trans[i.clone()] = value;
+    }
+}
+
+pub fn set_value_2d<T>(data_trans: &mut Vec<Vec<T>>, value: Vec<T>, i: &usize)
+where
+    T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
+{
+    if i >= &data_trans.len() {
+        data_trans.push(value);
+    } else {
+        data_trans[i.clone()] = value;
+    }
+}
+
+pub fn get_ll_hh_1d<T>(data: &Vec<T>) -> Vec<Vec<T>>
+where
+    T: Num + Clone + Debug + Copy,
+{
+    let half_col_ind = data.len() >> 1;
+    let ll: Vec<T> = data[0..half_col_ind].to_vec();
+    let hh: Vec<T> = data[half_col_ind..].to_vec();
+
+    vec![ll, hh]
+}
+
 pub fn get_ll_hh<T>(data: &Vec<Vec<T>>) -> Vec<Vec<Vec<T>>>
 where
     T: Num + Clone + Debug + Copy,
@@ -386,7 +435,7 @@ where
     combined_vec
 }
 
-fn transpose<T>(original: Vec<Vec<T>>) -> Vec<Vec<T>>
+fn transpose<T>(original: &Vec<Vec<T>>) -> Vec<Vec<T>>
 where
     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
 {
@@ -395,7 +444,7 @@ where
 
     for original_row in original {
         for (item, transposed_row) in original_row.into_iter().zip(&mut transposed) {
-            transposed_row.push(item);
+            transposed_row.push(*item);
         }
     }
 

@@ -151,7 +151,7 @@ impl EmbeddingLayer {
         let token_input_ids: Vec<Vec<u32>> = layer_input.get_batch_ids();
         let db: &Db = get_db_embedding();
         self.time_step = layer_input.get_time_step();
-        let (token_input_batch_padded, padding_mask) = EmbeddingLayer::apply_padding_to_batch(&token_input_ids);
+        let (token_input_batch_padded, _padding_mask) = EmbeddingLayer::apply_padding_to_batch(&token_input_ids);
         let embedding_dim = self.embedding_dim;
 
         // Get a reference to the cache
@@ -198,24 +198,7 @@ impl EmbeddingLayer {
             })
             .collect::<Vec<Vec<Vec<Complex<f64>>>>>(); // Collect the result for the entire batch
 
-        // let compression_token_batch: Vec<_> = token_ids_output
-        //     .iter()
-        //     .map(|token_input| {
-        //         let token_transposed = &transpose(token_input);
-        //         let dwt_compressed = dwt_2d_partial(token_transposed, &DiscreteWaletetType::DB2, &WaveletMode::CONSTANT);
-
-        //         let wav_hh_ll: Vec<Vec<Vec<Complex<f64>>>> = get_ll_hh(&dwt_compressed);
-        //         let wav_ll = &wav_hh_ll[0];
-
-        //         transpose(&wav_ll)
-        //     })
-        //     .collect();
-
-        // println!("comporession token batch {} {} {}", compression_token_batch.len(), compression_token_batch[0].len(), compression_token_batch[0][0].len());
-
-        // let padding_mask_comp: Vec<Vec<u32>> = vec![vec![1; compression_token_batch[0].len()]];
-
-        (token_ids_output, padding_mask)
+        (token_ids_output, _padding_mask)
     }
     // Update embeddings using gradients
     pub fn backward(&mut self, previous_gradients: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {

@@ -6,13 +6,13 @@ use serde::{Deserialize, Serialize};
 use crate::{
     neural_networks::network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     wavelet_transform::{
-        cwt_complex::{cwt_2d, get_wavelet_derivative, wavefun_complex, CWTComplex},
+        cwt_complex::{cwt_2d, cwt_2d_full, get_wavelet_derivative, get_wavelet_derivative_full, wavefun_complex, CWTComplex},
         cwt_types::ContinuousWaletetType,
     },
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WaveletLayer {
+pub struct WaveletComplexLayer {
     #[serde(skip)]
     input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
@@ -23,9 +23,10 @@ pub struct WaveletLayer {
     #[serde(skip)]
     output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     pub wavelet: CWTComplex,
+    pub is_full_mode: bool,
 }
 
-impl WaveletLayer {
+impl WaveletComplexLayer {
     pub fn new() -> Self {
         let wavelet = CWTComplex {
             scales: vec![1.0],
@@ -44,6 +45,7 @@ impl WaveletLayer {
             output_batch: None,
             time_step: 0,
             wavelet,
+            is_full_mode: false,
         }
     }
 
@@ -53,9 +55,13 @@ impl WaveletLayer {
         let output_batch: Vec<Vec<Vec<Complex<f64>>>> = input_batch
             .par_iter()
             .map(|input| {
-                // let (wavelet_output, _frequencies) = cwt_2d_full(input, &self.wavelet);
-                let (wavelet_output, _frequencies) = cwt_2d(input, &self.wavelet);
-                wavelet_output[0].to_vec()
+                if self.is_full_mode {
+                    let (wavelet_output, _frequencies) = cwt_2d_full(input, &self.wavelet);
+                    wavelet_output[0].to_vec()
+                } else {
+                    let (wavelet_output, _frequencies) = cwt_2d(input, &self.wavelet);
+                    wavelet_output[0].to_vec()
+                }
             })
             .collect();
 
@@ -79,8 +85,11 @@ impl WaveletLayer {
             .iter()
             .zip(input_batch)
             .map(|(previous_gradient, input)| {
-                previous_gradient.iter().enumerate().map(|(row_ind, prev_grad_row)| get_wavelet_derivative(&input[row_ind], &wavefun_result, &self.wavelet.scales[0], &prev_grad_row)).collect()
-                //get_wavelet_derivative_full(&input, &wavefun_result, &self.wavelet.scales[0], &previous_gradient)
+                if self.is_full_mode {
+                    get_wavelet_derivative_full(&input, &wavefun_result, &self.wavelet.scales[0], &previous_gradient)
+                } else {
+                    previous_gradient.iter().enumerate().map(|(row_ind, prev_grad_row)| get_wavelet_derivative(&input[row_ind], &wavefun_result, &self.wavelet.scales[0], &prev_grad_row)).collect()
+                }
             })
             .collect();
 

@@ -3,7 +3,7 @@ use crate::neural_networks::{
     network_types::{
         feedforward_layer::FeedForwardLayer,
         neural_network_generic::{create, NeuralNetwork, OperationMode},
-        wavelet_layer::WaveletLayer,
+        wavelet_complex_layer::WaveletComplexLayer,
         wavelet_network::DECOMPOSITION_LEVELS,
     },
 };
@@ -33,7 +33,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
 
     layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
-    layers.push(LayerEnum::Wavelet(Box::new(WaveletLayer::new())));
+    layers.push(LayerEnum::Wavelet(Box::new(WaveletComplexLayer::new())));
     layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
 
     let rows: usize = embedding_dim_compressed;
