@@ -3,7 +3,7 @@ mod test_wavelet_discrete_layer {
     use crate::{
         neural_networks::{
             network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
-            network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch, wavelet_discrete_layer::WaveletDiscreteLayer},
+            network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch, wavelet_discrete_layer::DiscreteWaveletLayer},
             utils::{
                 derivative::{global_relative_error_2d_l2, numerical_gradient_dwt_1d, numerical_gradient_input, numerical_gradient_input_batch, numerical_gradient_input_batch_sum_without_loss, test_gradient_batch_error, test_gradient_error_2d},
                 random_arrays::{generate_random_complex_2d, generate_random_complex_3d, generate_random_u32_batch},
@@ -24,18 +24,23 @@ mod test_wavelet_discrete_layer {
         // Define some small batch size and input dimensions for simplicity
         let batch_size = 1;
         let feature_dim = 3;
-        let seq_len = 6;
+        let seq_len = 8;
         let epsilon = 1e-8;
         let epsilon_test = 1e-6;
+        let target_dim = 3;
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let mut wavelet_discrete_layer: WaveletDiscreteLayer = WaveletDiscreteLayer::new();
+        let mut wavelet_discrete_layer: DiscreteWaveletLayer = DiscreteWaveletLayer::new();
 
         // Define a small input batch, [2][2][3]
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, seq_len, feature_dim);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, target_dim - 1, (seq_len - 1) as u32);
 
         let mut layer_input = LayerInput::new_default();
         layer_input.set_input_batch(input_batch.clone());
+        layer_input.set_target_batch_ids(target_token_id_batch.clone());
+
+        println!("target token id batch: {:?}", target_token_id_batch);
 
         let _wavelet_output = wavelet_discrete_layer.forward(&layer_input);
         let dwt = _wavelet_output.get_output_batch();
@@ -134,9 +139,9 @@ mod test_wavelet_discrete_layer {
     fn test_softmax_discrete_wavelet_layer_backward() {
         // Define some small batch size and input dimensions for simplicity
         let batch_size = 1;
-        let _seq_len: usize = 1; // Update to match the input structure
-        let input_dim = 4; // Match the input dimension with your input batch
-        let output_dim = 5; // Match output_dim to your layer's output
+        let _seq_len: usize = 1;
+        let input_dim = 3;
+        let output_dim = 13;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
         let epsilon = 1e-8;
@@ -144,15 +149,24 @@ mod test_wavelet_discrete_layer {
         let target_dim = 3;
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let mut wavelet_layer: WaveletDiscreteLayer = WaveletDiscreteLayer::new();
+        let mut wavelet_layer: DiscreteWaveletLayer = DiscreteWaveletLayer::new();
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
         // Define a small input batch, [2][2][3]
+        // input includes target tokens + padding already !
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
-        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, target_dim - 1, (output_dim - 1) as u32);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, target_dim - 1, (target_dim) as u32);
+        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];
+        // let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1, 1, 1, 1, 1, 1, 1, 1]; input_batch.len()];
+
+        println!("input_batch: {:?}", input_batch);
+        println!("target_token id batch: {:?}", target_token_id_batch);
+        println!("padding mask batch: {:?}", padding_mask_batch);
 
         let mut layer_input = LayerInput::new_default();
         layer_input.set_input_batch(input_batch.clone());
+        layer_input.set_target_batch_ids(target_token_id_batch.clone());
+        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
         let wavelet_output = wavelet_layer.forward(&layer_input);
         let wavelet_dwt = wavelet_output.get_output_batch();
@@ -206,38 +220,43 @@ mod test_wavelet_discrete_layer {
         // Define some small batch size and input dimensions for simplicity
         let batch_size = 1;
         let _seq_len: usize = 1; // Update to match the input structure
-        let input_dim = 4; // Match the input dimension with your input batch
-        let output_dim = 16; // Match output_dim to your layer's output
+        let input_dim = 16; // Match the input dimension with your input batch
+        let output_dim = 50; // Match output_dim to your layer's output
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
         let epsilon = 1e-8;
         let epsilon_test = 1e-3;
-        let target_dim = 3;
+        let target_dim = 15;
 
-        let linear_output_dim = 4;
+        let linear_output_dim = 70;
         // Create a simple LinearLayer with the given input and output dimensions
-        let mut wavelet_layer: WaveletDiscreteLayer = WaveletDiscreteLayer::new();
+        let mut wavelet_layer: DiscreteWaveletLayer = DiscreteWaveletLayer::new();
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, linear_output_dim);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
         // Define a small input batch, [2][2][3]
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
-        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, target_dim - 1, (target_dim) as u32);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, target_dim - 1, (output_dim + 1) as u32);
+
+        println!("target token id batch: {:?}", target_token_id_batch);
 
         let mut layer_input = LayerInput::new_default();
         layer_input.set_input_batch(input_batch.clone());
+        layer_input.set_target_batch_ids(target_token_id_batch.clone());
 
         let wavelet_output = wavelet_layer.forward(&layer_input);
         layer_input.set_input_batch(wavelet_output.get_output_batch());
         let wavelet_dwt = wavelet_output.get_output_batch();
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; wavelet_dwt[0].len()]; wavelet_dwt.len()];
 
+        println!("wavelet_dwt batch: {:?} {} {}", wavelet_dwt.len(), wavelet_dwt[0].len(), wavelet_dwt[0][0].len());
+
         // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
         let linear_output = linear_layer.forward(&layer_input);
 
         let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
 
-        println!("softmax output batch: {:?}", _softmax_batch_output);
+        // println!("softmax output batch: {:?}", _softmax_batch_output);
         let softmax_gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
         let linear_gradient: Gradient = linear_layer.backward(&softmax_gradient);
         let wavelet_gradient: Gradient = wavelet_layer.backward(&linear_gradient);
@@ -263,10 +282,10 @@ mod test_wavelet_discrete_layer {
         let numerical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch(&mut loss_fn, input_batch.clone(), epsilon);
 
         //Check if gradient batch dimensions match expected shapes
-        println!("\n analytical grad: {:?}", analytical_grad);
+        // println!("\n analytical grad: {:?}", analytical_grad);
         println!("\n analytical grad dim : {:?} {}", analytical_grad.len(), analytical_grad[0].len());
 
-        println!("\n numerical grad: {:?}", numerical_grad);
+        // println!("\n numerical grad: {:?}", numerical_grad);
         println!("\n numerical grad dim: {:?} {}", numerical_grad.len(), numerical_grad[0].len());
 
         for b in 0..analytical_grad_batch.len() {

@@ -3,7 +3,7 @@ mod test_wavelet_layer {
     use crate::{
         neural_networks::{
             network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
-            network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch, wavelet_complex_layer::WaveletComplexLayer},
+            network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch, wavelet_complex_layer::ComplexWaveletLayer},
             utils::{
                 derivative::{global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_input, numerical_gradient_input_batch, numerical_gradient_input_batch_sum_without_loss, numerical_gradient_input_batch_without_loss, test_gradient_batch_error, test_gradient_error_2d},
                 random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
@@ -29,7 +29,7 @@ mod test_wavelet_layer {
         let epsilon_test = 1e-3;
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let mut wavelet_layer: WaveletComplexLayer = WaveletComplexLayer::new();
+        let mut wavelet_layer: ComplexWaveletLayer = ComplexWaveletLayer::new();
 
         // Define a small input batch, [2][2][3]
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
@@ -91,7 +91,7 @@ mod test_wavelet_layer {
         let epsilon_test = 1e-3;
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let mut wavelet_layer: WaveletComplexLayer = WaveletComplexLayer::new();
+        let mut wavelet_layer: ComplexWaveletLayer = ComplexWaveletLayer::new();
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
         // Define a small input batch, [2][2][3]
@@ -159,7 +159,7 @@ mod test_wavelet_layer {
 
         let linear_output_dim = 7;
         // Create a simple LinearLayer with the given input and output dimensions
-        let mut wavelet_layer: WaveletComplexLayer = WaveletComplexLayer::new();
+        let mut wavelet_layer: ComplexWaveletLayer = ComplexWaveletLayer::new();
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, linear_output_dim);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
