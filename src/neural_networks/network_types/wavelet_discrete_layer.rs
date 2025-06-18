@@ -75,6 +75,7 @@ impl DiscreteWaveletLayer {
         let forward_only = layer_input.get_forward_only();
         let padding_mask_batch: Vec<Vec<u32>> = layer_input.get_padding_mask_batch();
         let mut _min_compressed_dim = 16;
+        let time_step = layer_input.get_time_step();
 
         if !forward_only {
             _min_compressed_dim = target_batch_ids[0].len();
@@ -90,34 +91,48 @@ impl DiscreteWaveletLayer {
                     (ll_hl_lh_hh[0].to_vec(), vec![], vec![], 0) // No detail saved in full mode
                 } else {
                     let padding_mask = &padding_mask_batch[batch_ind];
-                    let target_ids = &target_batch_ids[batch_ind];
-                    let mut trend: Vec<Vec<Complex<f64>>>;
-                    let target_emb: Vec<Vec<Complex<f64>>>;
-                    let mut comp_pad_mask_b: Vec<u32>;
+                    let mut target_ids: &Vec<u32> = &vec![];
+
+                    if !target_batch_ids.is_empty() {
+                        target_ids = &target_batch_ids[batch_ind];
+                    }
+
+                    let mut trend: Vec<Vec<Complex<f64>>> = input.clone();
+                    let mut input_only_separated = input.clone();
+                    let mut target_emb: Vec<Vec<Complex<f64>>> = vec![];
+                    let mut comp_pad_mask_b: Vec<u32> = padding_mask.clone();
                     let mut compress_levels: i32 = 0;
 
-                    let (input_only, target, pad_inp_mask) = self.separate_input_target(input, target_ids, padding_mask);
-                    let (new_trend, _new_details) = self.compress_partial(&input_only);
+                    if !forward_only || (forward_only && time_step == 0) {
+                        let (input_only, target, pad_inp_mask) = self.separate_input_target(input, target_ids, padding_mask);
 
-                    comp_pad_mask_b = self.compress_padding_mask(&pad_inp_mask);
+                        // println!("input only dim: {:?} {}", input_only.len(), input_only[0].len());
+                        // println!("input dim: {:?} {}", input.len(), input[0].len());
+                        // println!("target ids dim: {:?}", target_ids.len());
 
-                    trend = new_trend;
-                    target_emb = target;
-                    compress_levels += 1;
+                        let (new_trend, _new_details) = self.compress_partial(&input_only);
+
+                        comp_pad_mask_b = self.compress_padding_mask(&pad_inp_mask);
+                        input_only_separated = input_only;
+
+                        trend = new_trend;
+                        target_emb = target;
+                        compress_levels += 1;
+                    }
 
                     // println!("trend before extend slice: {} {}", trend.len(), trend[0].len());
                     // println!("padding mask before extend slice: {:?}", comp_pad_mask_b);
 
                     if !target_emb.is_empty() {
                         // [input + padding + target]
-                        // trend.extend_from_slice(&target_emb);
-                        // comp_pad_mask_b.extend_from_slice(&vec![1; target_emb.len()]);
+                        trend.extend_from_slice(&target_emb);
+                        comp_pad_mask_b.extend_from_slice(&vec![1; target_emb.len()]);
                     }
 
                     // println!("trend after extend slice: {} {}", trend.len(), trend[0].len());
                     // println!("padding mask after extend slice: {:?}", comp_pad_mask_b);
 
-                    (trend, input_only, comp_pad_mask_b, compress_levels)
+                    (trend, input_only_separated, comp_pad_mask_b, compress_levels)
                 }
             })
             .collect();
@@ -162,18 +177,19 @@ impl DiscreteWaveletLayer {
                 } else {
                     let input_only = &input_only_batch[batch_ind];
                     let target_ids = &target_batch_ids[batch_ind];
-                    // let padding_mask = &padding_mask_batch[batch_ind];
 
-                    let mut gradient_decompr = self.decompress_partial(&grad_output, 0);
+                    let mut gradient_decompr = self.decompress_partial(&grad_output, target_ids.len());
 
-                    println!("gradient decomp dim: {} {}", gradient_decompr.len(), gradient_decompr[0].len());
+                    // println!("gradient decomp dim: {} {}", gradient_decompr.len(), gradient_decompr[0].len());
+                    // println!("input_only dim: {} {}", input_only.len(), input_only[0].len());
+                    // println!("gradient output dim: {} {}", grad_output.len(), grad_output[0].len());
 
                     if input_only.len() != gradient_decompr.len() {
                         gradient_decompr = self.align_gradient_rows_complex(input_only, &gradient_decompr, grad_output);
                     }
 
                     for i in (grad_output.len() - target_ids.len())..grad_output.len() {
-                        //gradient_decompr.push(grad_output[i].clone());
+                        gradient_decompr.push(grad_output[i].clone());
                     }
 
                     gradient_decompr
@@ -303,9 +319,9 @@ impl DiscreteWaveletLayer {
         let input_rows = input.len();
         let cols = gradient_decompr[0].len();
 
-        println!("\n input dim: {} {}", input.len(), input[0].len());
-        println!("\n gradient dim: {} {}", gradient.len(), gradient[0].len());
-        println!("\n gradient decompre dim: {} {}", gradient_decompr.len(), gradient_decompr[0].len());
+        // println!("\n input dim: {} {}", input.len(), input[0].len());
+        // println!("\n gradient dim: {} {}", gradient.len(), gradient[0].len());
+        // println!("\n gradient decompre dim: {} {}", gradient_decompr.len(), gradient_decompr[0].len());
 
         let mut result = Vec::with_capacity(gradient.len());
 

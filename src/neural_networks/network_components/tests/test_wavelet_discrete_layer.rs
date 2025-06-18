@@ -141,7 +141,7 @@ mod test_wavelet_discrete_layer {
         let batch_size = 1;
         let _seq_len: usize = 1;
         let input_dim = 3;
-        let output_dim = 13;
+        let output_dim = 16;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
         let epsilon = 1e-8;
