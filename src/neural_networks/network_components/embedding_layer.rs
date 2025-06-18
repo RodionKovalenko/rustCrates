@@ -109,9 +109,9 @@ impl EmbeddingLayer {
         }
     }
 
-    pub fn apply_padding_to_batch(token_input_ids_batch: &Vec<Vec<u32>>, target_batch_ids: &Vec<Vec<u32>>) -> (Vec<Vec<u32>>, Vec<Vec<u32>>) {
-        let mut max_token_len = token_input_ids_batch.iter().map(|seq| seq.len()).max().unwrap_or(0);
-        max_token_len = max_token_len - target_batch_ids.len();
+    pub fn apply_padding_to_batch(token_input_ids_batch: &Vec<Vec<u32>>, _target_batch_ids: &Vec<Vec<u32>>) -> (Vec<Vec<u32>>, Vec<Vec<u32>>) {
+        let max_token_len = token_input_ids_batch.iter().map(|seq| seq.len()).max().unwrap_or(0);
+        // max_token_len = max_token_len - target_batch_ids.len();
 
         //println!("token input before padding: {:?}", &token_input_ids_batch);
         // Initialize a new vector to hold padded sequences
@@ -119,7 +119,7 @@ impl EmbeddingLayer {
         let mut padding_mask_batch: Vec<Vec<u32>> = Vec::new();
 
         // Iterate through each sequence in the batch
-        for (batch_ind, token_input_ids) in token_input_ids_batch.iter().enumerate() {
+        for (_batch_ind, token_input_ids) in token_input_ids_batch.iter().enumerate() {
             // Clone the sequence to modify it (since we're not allowed to mutate the original)
             let mut padded_sequence = token_input_ids.clone();
             let mut padding_mask = vec![1; token_input_ids.len()];
@@ -133,10 +133,12 @@ impl EmbeddingLayer {
                 padding_mask.push(0); // Add Padding Mask token (0 -> ignore, 1 consider in the calculations)
             }
 
-            for i in 0..target_batch_ids[batch_ind].len() {
-                padded_sequence.push(target_batch_ids[batch_ind][i]);
-                padding_mask.push(1);
-            }
+            // if !target_batch_ids.is_empty() {
+            //     for i in 0..target_batch_ids[batch_ind].len() {
+            //         padded_sequence.push(target_batch_ids[batch_ind][i]);
+            //         padding_mask.push(1);
+            //     }
+            // }
 
             //println!("token id len after padding: {:?}", &padded_sequence.len());
 
@@ -158,6 +160,7 @@ impl EmbeddingLayer {
         let target_batch_ids = layer_input.get_target_batch_ids();
         let db: &Db = get_db_embedding();
         self.time_step = layer_input.get_time_step();
+
         let (token_input_batch_padded, _padding_mask) = EmbeddingLayer::apply_padding_to_batch(&token_input_ids, &target_batch_ids);
         let embedding_dim = self.embedding_dim;
 
