@@ -2,18 +2,19 @@
 name = "wav-transformer"
 version = "0.1.0"
 authors = ["Rodion Kovalenko <rodion.kovalenko@npo-applications.de>"]
-edition = "2018"
+edition = "2021"
 build = "build.rs"
 
 [lib]
 name = "neural_networks"
 path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]  # Both Python and Rust compatible
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 backtrace = "0.3"
-rand="0.9.1"
+rand = "0.9.1"
 assert_approx_eq = "1.0.0"
 serde = { version = "1.0.217", features = ["derive"] }
 serde_derive = "1.0.219"
@@ -29,15 +30,15 @@ hyper = "1.6.0"
 tokio = { version = "1.45.1", features = ["full"] }
 reqwest = "0.12.18"
 error-chain = "0.12"
-chrono = {version="0.4.40",features = ["serde"]}
+chrono = { version = "0.4.40", features = ["serde"] }
 num-traits = "0.2.14"
 cast = "0.3.0"
 image = "0.25.6"
 serde-big-array = "0.5.1"
-sled = "0.34" 
+sled = "0.34"
 tokenizers = "0.21.1"
 rand_distr = "0.5.1"
-plotters = "0.3"   #
+plotters = "0.3"
 yahoo_finance_api = "4.0.0"
 time = "0.3.41"
 csv = "1.1"
@@ -53,8 +54,16 @@ num_cpus = "1.17"
 actix-web = "4"
 tera = "1.17"
 encoding_rs = "0.8"
+# cuda-sys = "0.2"
+cc = "1.0"
+pyo3 = { version = "0.20", features = ["extension-module", "abi3-py37"] }
+ndarray = { version = "0.16.0", features = ["blas"] }
+openblas-src = { version = "0.10", features = ["system"] }
+
+[package.metadata.maturin]
+name = "neural_networks"
 
 [profile.release]
-opt-level = 3 # Optimize for size "z", for speeed 3
-lto = true     # Enable Link Time Optimization
+opt-level = 3     # Optimize for size "z", for speeed 3
+lto = true        # Enable Link Time Optimization
 codegen-units = 1 # Reduce the number of codegen units to improve optimization

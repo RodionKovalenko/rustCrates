@@ -3,7 +3,7 @@ FROM rust:latest AS builder
 
 WORKDIR /app
 
-# Install system dependencies for building (openssl, zstd, xdo, etc.)
+# Install system dependencies for building
 RUN apt-get update && apt-get install -y \
     libssl-dev \
     pkg-config \
@@ -20,11 +20,13 @@ COPY . .
 # Build in release mode
 RUN cargo build --release
 
-# Stage 2: Runtime image with GLIBC >= 2.35 (to match Rust latest build)
+# Stage 2: Runtime image with GLIBC >= 2.35
 FROM debian:bookworm-slim
 
-# Install minimal runtime dependencies including wget and git
+# Install minimal runtime dependencies
 RUN apt-get update && apt-get install -y \
+    libc6 \
+    libssl3 \
     ca-certificates \
     git \
     libxdo3 \
@@ -36,27 +38,27 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy the compiled binary from the builder stage
-COPY --from=builder /app/target/release/wav-transformer .
+COPY --from=builder /app/target/release/wav-transformer ./wav-transformer
 
-# Copy any needed templates (for HTML rendering)
+# Copy additional resources
 COPY --from=builder /app/templates ./templates
 COPY --from=builder /app/STORAGE ./STORAGE
 COPY --from=builder /app/datasets ./datasets
 COPY --from=builder /app/src/neural_networks/tokenizers/gtp_neox_tokenizer.json ./src/neural_networks/tokenizers/gtp_neox_tokenizer.json
 
-# Create a non-root user first
-RUN useradd -m appuser
+# Create a non-root user and give ownership
+RUN useradd -m appuser \
+    && chown -R appuser:appuser /app
 
-# Change ownership of /app to appuser
-RUN chown -R appuser:appuser /app
-
-# Expose the port the web server uses
+# Expose the port expected by Hugging Face
 EXPOSE 7860
+
+# Enable full Rust backtraces for better debugging
+ENV RUST_BACKTRACE=full
 
 # Switch to non-root user
 USER appuser
 
-# Start the application
+# Run the app with `server` argument
 ENTRYPOINT ["./wav-transformer"]
-CMD []
+CMD ["server"]

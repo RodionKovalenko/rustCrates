@@ -14,7 +14,7 @@ use crate::{
             layer_output_struct::LayerOutput,
         },
         network_types::{
-            neural_network_generic::{get_from_db, reset_previous_gradient, save_to_sled, NeuralNetwork, OperationMode},
+            neural_network_generic::{get_from_db, print_networt_structure, reset_previous_gradient, save_to_sled, NeuralNetwork, OperationMode},
             transformer::transformer_builder::create_transformer,
         },
         utils::{
@@ -32,7 +32,7 @@ use crate::{
 pub const MAX_CONTEXT_WINDOW_SIZE: usize = 512;
 pub const CONTEXT_OVERLAPPING: usize = 450;
 
-pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize) {
+pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize, batch_size: usize) {
     let mut total_loss: Complex<f64>;
     let loss_threshold: f64 = 0.004;
     let now = Instant::now();
@@ -44,7 +44,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
     'outer: for epoch in 0..num_epochs {
         total_loss = Complex::new(0.0, 0.0);
-        for batch_dataset in dataset.split_into_batches(2) {
+        for batch_dataset in dataset.split_into_batches(batch_size) {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
 
             let seconds_elapsed = now.elapsed();
@@ -164,16 +164,16 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
 pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String>) -> (Vec<Vec<Vec<f64>>>, Vec<String>) {
     let mut all_predictions: Vec<Vec<Vec<f64>>> = Vec::new();
-    let time_step: usize = 0;
-    let mut _padding_mask_batch: Vec<Vec<u32>> = Vec::new();
-
     let mut current_input_batch: Vec<String> = extend_input_with_bos(input_batch);
     let mut count_tokens_prediction = 0;
+
     let now = Instant::now();
     let mut layer_input = LayerInput::new_default();
+    layer_input.set_calculate_gradient(false);
+    layer_input.set_forward_only(true);
 
     print!("Antwort: ");
-    // transformer.learning_rate = learning_rate;
+
     let last_layer_index = transformer_network.layers.len() - 1;
     let _seconds_elapsed = now.elapsed();
 
@@ -183,27 +183,36 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         _ => {}
     }
 
-    let (_tokens, mut batch_ids) = tokenize_batch(&current_input_batch, false).unwrap();
+    let (_tokens, mut batch_ids) = match tokenize_batch(&current_input_batch, false) {
+        Ok(res) => res,
+        Err(e) => {
+            println!("Error tokenizing batch: {:?}", e);
+            return (all_predictions, current_input_batch);
+        }
+    };
+
+    let mut time_step = 0;
 
     // Continue predicting until EOS token is predicted
     loop {
-        // println!("current input batch: {:?}", &current_input_batch);
-
         if batch_ids.is_empty() {
             println!("batch_ids is empty. Breaking.");
             break;
         }
 
-        let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap();
+        let max_seq_len = batch_ids.iter().map(|v| v.len()).max().unwrap_or(0);
 
-        // println!("input tokens length in inference: {} {}", batch_ids.len(), batch_ids[0].len());
+        if max_seq_len == 0 {
+            println!("All sequences in batch_ids are empty. Breaking.");
+            break;
+        }
 
         if max_seq_len > MAX_CONTEXT_WINDOW_SIZE {
             batch_ids = batch_ids
                 .into_iter()
                 .map(|mut seq| {
                     if seq.len() > MAX_CONTEXT_WINDOW_SIZE {
-                        seq.split_off(seq.len() - MAX_CONTEXT_WINDOW_SIZE) // keeps only the last CONTEXT_WINDOW_SIZE
+                        seq.split_off(seq.len() - MAX_CONTEXT_WINDOW_SIZE) // keep last tokens
                     } else {
                         seq
                     }
@@ -212,23 +221,46 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         }
 
         layer_input.set_batch_ids(batch_ids.clone());
+
+        if time_step > 0 {
+            // let last_tokens: Vec<Vec<u32>> = batch_ids.iter().map(|seq| vec![*seq.last().unwrap()]).collect();
+            let last_n = 1;
+
+            let last_tokens_batch: Vec<Vec<u32>> = batch_ids
+                .iter()
+                .map(|seq| {
+                    let len = seq.len();
+                    if len >= last_n {
+                        seq[len - last_n..].to_vec() // take last n tokens
+                    } else {
+                        seq.to_vec() // fallback: return the whole sequence
+                    }
+                })
+                .collect();
+
+            // println!("batch ids {:?}", batch_ids);
+            // println!("last token id {:?}", last_tokens_batch);
+            layer_input.set_batch_ids(last_tokens_batch);
+        }
+
+        // println!("batch ids {:?}", batch_ids);
+
         layer_input.set_time_step(time_step);
-        layer_input.set_forward_only(true);
 
         let network_output = predict(transformer_network, &layer_input);
         let current_predictions = network_output.get_output_batch_f64();
 
-        // If no more predictions are available, break out
-        if current_predictions.is_empty() {
+        if current_predictions.is_empty() || current_predictions[0].is_empty() {
+            println!("Empty predictions. Breaking.");
             break;
         }
 
         // Store the last predicted token's softmax probabilities
         all_predictions.push(current_predictions[current_predictions.len() - 1].clone());
 
-        let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = vec![vec![current_predictions[0][current_predictions[0].len() - 1].clone()]];
+        let last_pred = current_predictions[0].last().unwrap();
 
-        // println!("predicted softmax target: {} {} {}", predicted_softmax_targets.len(), predicted_softmax_targets[0].len(), predicted_softmax_targets[0][0].len());
+        let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = vec![vec![last_pred.clone()]];
 
         let sampled_tokens = greedy_decoding(&predicted_softmax_targets);
 
@@ -239,57 +271,66 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
 
         batch_ids[0].push(sampled_tokens[0][0].clone());
 
-        // println!("batch ids: {:?}", batch_ids);
-        // println!("sampled token: {:?}", sampled_tokens[0][0]);
+        let predicted_token_batch: Vec<String> = sampled_tokens
+            .par_iter()
+            .map(|token_indices| {
+                detokenize(token_indices, false).unwrap_or_else(|e| {
+                    println!("Error detokenizing: {:?}", e);
+                    "<detokenize_error>".to_string()
+                })
+            })
+            .collect();
 
-        let predicted_token_batch: Vec<String> = sampled_tokens.par_iter().map(|token_indices| detokenize(token_indices, false).unwrap()).collect();
-        // Check if the last predicted token is the EOS token
-        let predicted_token = predicted_token_batch[predicted_token_batch.len() - 1].clone();
+        let predicted_token = predicted_token_batch.last().unwrap_or(&"<none>".to_string()).clone();
 
-        // If EOS token is predicted, break the loop
         if predicted_token == "<eos>" {
             println!("\n\n <eos> predicted. Breaking ....");
             break;
         }
 
         print!("{}", predicted_token);
-        // Add the predicted token to the current input batch
         current_input_batch[0] = format!("{}{}", current_input_batch[0], predicted_token);
 
         count_tokens_prediction += 1;
-
         if count_tokens_prediction > 20 {
+            println!("\nMax token prediction limit reached. Breaking.");
             break;
+        }
+
+        if time_step == 0 {
+            time_step = batch_ids[0].len() - 1;
+        } else {
+            time_step += 1;
         }
     }
 
     let seconds_elapsed_end = now.elapsed();
     let duration = seconds_elapsed_end - _seconds_elapsed;
     let seconds = duration.as_secs_f64();
-    println!("time elapsed in seconds: {:?}", seconds);
+    println!("\ntime elapsed in seconds: {:?}", seconds);
 
     (all_predictions, current_input_batch)
 }
 
 pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput) -> LayerOutput {
     // Forward pass
-    // let now = Instant::now();
+
     // println!("forward pass start ----------------------------------------------------------------------");
     let mut output = None;
     let mut output_softmax = None;
     let mut padding_mask = None;
 
     let batch_ids = layer_input.get_batch_ids();
-    let time_step = layer_input.get_time_step();
     let forward_only = layer_input.get_forward_only();
 
-    let mut layer_input = LayerInput::new_default();
-    layer_input.set_forward_only(forward_only);
-    layer_input.set_time_step(time_step);
+    let mut layer_input = layer_input.clone();
 
     if forward_only {
         layer_input.set_calculate_gradient(false);
     }
+
+    let now = Instant::now();
+    let _start = now.elapsed();
 
     for layer in transformer_network.layers.iter_mut() {
         match layer {
@@ -300,7 +341,8 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                 let (embeddings, padding_m) = embedding_layer.forward(&layer_input);
 
                 output = Some(embeddings);
-                padding_mask = Some(padding_m);
+                padding_mask = Some(padding_m.clone());
+                layer_input.set_padding_mask_batch(padding_m);
 
                 //println!("time elapsed in seconds in embedding: {:?}", (now.elapsed() - seconds_elapsed).as_secs_f64());
                 // println!("padding mask: {:?}", &padding_mask);
@@ -311,7 +353,8 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
 
                     //println!("forward pos encoding");
                     //let seconds_elapsed = now.elapsed();
-                    let positional_encodings: Vec<Vec<Vec<Complex<f64>>>> = positional_encoding_l.forward(&previous_output);
+                    layer_input.set_input_batch(previous_output.clone());
+                    let positional_encodings: Vec<Vec<Vec<Complex<f64>>>> = positional_encoding_l.forward(&layer_input);
 
                     //println!("time elapsed in seconds in positional encoding: {:?}", (now.elapsed() - seconds_elapsed).as_secs_f64());
                     output = Some(positional_encodings);
@@ -381,16 +424,47 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     println!("No previous output for Dense layer");
                 }
             }
-            LayerEnum::Wavelet(wavelet_layer) => {
+            LayerEnum::MultiLinear(multi_linear_layer) => {
                 if let Some(previous_output) = &output {
                     //println!("forward linear start");
                     layer_input.set_input_batch(previous_output.clone());
 
                     //let seconds_elapsed = now.elapsed();
-                    let output_linear = wavelet_layer.forward(&layer_input);
+                    let output_linear = multi_linear_layer.forward(&layer_input);
+
+                    //println!("time elapsed in seconds in MultiLinear layer: {:?}", (now.elapsed() - seconds_elapsed).as_secs_f64());
+                    output = Some(output_linear.get_output_batch());
+                } else {
+                    println!("No previous output for Multilinear layer");
+                }
+            }
+            LayerEnum::Wavelet(wavelet_layer) => {
+                if let Some(previous_output) = &output {
+                    //println!("forward wavelet layer start");
+                    layer_input.set_input_batch(previous_output.clone());
+
+                    //let seconds_elapsed = now.elapsed();
+                    let output_cwt = wavelet_layer.forward(&layer_input);
 
                     //println!("time elapsed in seconds in wavelet layer: {:?}", (now.elapsed() - seconds_elapsed).as_secs_f64());
-                    output = Some(output_linear.get_output_batch());
+                    output = Some(output_cwt.get_output_batch());
+                } else {
+                    println!("No previous output for Dense layer");
+                }
+            }
+            LayerEnum::DiscreteWavelet(wavelet_layer) => {
+                if let Some(previous_output) = &output {
+                    //println!("forward discrete wavelet layer start");
+                    layer_input.set_input_batch(previous_output.clone());
+
+                    //let seconds_elapsed = now.elapsed();
+                    let output_dwt = wavelet_layer.forward(&layer_input);
+
+                    padding_mask = Some(output_dwt.get_padding_mask_batch());
+                    layer_input.set_padding_mask_batch(output_dwt.get_padding_mask_batch());
+
+                    //println!("time elapsed in seconds in wavelet layer: {:?}", (now.elapsed() - seconds_elapsed).as_secs_f64());
+                    output = Some(output_dwt.get_output_batch());
                 } else {
                     println!("No previous output for Dense layer");
                 }
@@ -420,6 +494,10 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
     let mut layer_output = LayerOutput::new_default();
     layer_output.set_output_batch_f64(output_softmax.unwrap());
     layer_output.set_padding_mask_batch(padding_mask.unwrap());
+
+    if !forward_only {
+        println!("time elapsed in forward pass in predict: {:?}", (now.elapsed() - _start).as_secs_f64());
+    }
 
     //println!("forward pass end ----------------------------------------------------------------------");
     layer_output
@@ -514,7 +592,29 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     println!("No previous gradient in Linear Layer");
                 }
             }
+            LayerEnum::MultiLinear(multi_linear_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    //println!("backward linear start");
+                    let gradient_batch: Gradient = multi_linear_layer.backward(&previous_gradient);
+
+                    if update_params {
+                        multi_linear_layer.update_parameters();
+                    }
+                    gradient = Some(gradient_batch);
+                } else {
+                    println!("No previous gradient in Linear Layer");
+                }
+            }
             LayerEnum::Wavelet(wavelet_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    //println!("backward linear start");
+                    let gradient_batch: Gradient = wavelet_layer.backward(&previous_gradient);
+                    gradient = Some(gradient_batch);
+                } else {
+                    println!("No previous gradient in Linear Layer");
+                }
+            }
+            LayerEnum::DiscreteWavelet(wavelet_layer) => {
                 if let Some(previous_gradient) = gradient {
                     //println!("backward linear start");
                     let gradient_batch: Gradient = wavelet_layer.backward(&previous_gradient);
@@ -551,7 +651,10 @@ pub fn predict_by_text(input: &Vec<String>) -> Vec<String> {
         }
     };
 
+    print_networt_structure(&mut transformer);
     let (_predicted_softmax_targets, all_predicted_tokens) = predict_token_by_token(&mut transformer, &input);
+
+    println!("prediction is: {:?}", all_predicted_tokens);
 
     all_predicted_tokens
 }
@@ -577,15 +680,17 @@ fn cross_entropy_loss(predictions: &Vec<Vec<f64>>, target_tokens: &Vec<u32>, pad
     let target_len = target_tokens.len();
     let mut count = 0.0;
 
-    let mut sequence_len_unpadded: usize = 0;
-    for &padding in padding_mask {
-        if padding != 0 {
-            sequence_len_unpadded += 1;
+    let mut _sequence_len_unpadded: usize = 0;
+    for padding in padding_mask.iter() {
+        if *padding != 0 {
+            _sequence_len_unpadded += 1;
         }
     }
 
-    let seq_ind_start = sequence_len_unpadded - target_len - 1;
-    let end_ind = sequence_len_unpadded - 1;
+    // let seq_ind_start = _sequence_len_unpadded - target_len - 1;
+    // let end_ind = _sequence_len_unpadded - 1;
+    let seq_ind_start = predictions.len() - target_len - 1;
+    let end_ind = predictions.len() - 1;
 
     for (s, &target_idx) in target_tokens.iter().enumerate() {
         if target_idx == 1 {

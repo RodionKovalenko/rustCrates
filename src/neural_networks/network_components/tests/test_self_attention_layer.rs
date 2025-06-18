@@ -10,13 +10,43 @@ mod test_self_attention_layer {
             feedforward_layer::FeedForwardLayer,
             neural_network_generic::OperationMode,
             transformer::{masked_attention_head::MaskedAttentionHead, self_attention_layer::SelfAttentionLayer, transformer_network::cross_entropy_loss_batch},
-            wavelet_layer::WaveletLayer,
+            wavelet_complex_layer::ComplexWaveletLayer,
         },
         utils::{
             derivative::{global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_input_batch, numerical_gradient_input_batch_sum_without_loss, numerical_gradient_weights, numerical_gradient_weights_multiple_layers_without_loss, test_gradient_batch_error, test_gradient_error_2d},
             random_arrays::{generate_random_complex_3d, generate_u32_batch_from_indices},
         },
     };
+
+    #[ignore]
+    #[test]
+    fn test_attention_head_performance() {
+        let batch_size = 1;
+        let input_dim = 512;
+        let output_dim = 512;
+
+        let learning_rate = 0.0001;
+
+        let mut attention_head_layer: MaskedAttentionHead = MaskedAttentionHead::new(input_dim, output_dim, learning_rate);
+
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
+        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; output_dim]; batch_size];
+
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_input_batch(input_batch.clone());
+        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+
+        let output = attention_head_layer.forward(&layer_input);
+        let output_batch = output.get_output_batch();
+
+        println!("\ninput batch in attention head dim : {:?}, {}, {}", &input_batch.len(), &input_batch[0].len(), &input_batch[0][0].len());
+
+        println!("\noutput_batch in attention head dim : {:?}, {}, {}", &output_batch.len(), &output_batch[0].len(), &output_batch[0][0].len());
+
+        let previous_gradient = vec![vec![vec![Complex::new(1.0, 0.0); output_batch[0][0].len()]; output_batch[0].len()]; output_batch.len()];
+
+        let _gradient = attention_head_layer.backward(&previous_gradient);
+    }
 
     #[test]
     fn test_attention_head_backward() {
@@ -211,7 +241,7 @@ mod test_self_attention_layer {
         let sequence_len = 8;
         let embedding_dim = 16;
         let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(sequence_len, embedding_dim, learning_rate);
-        let mut wavelet_layer: WaveletLayer = WaveletLayer::new();
+        let mut wavelet_layer: ComplexWaveletLayer = ComplexWaveletLayer::new();
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, sequence_len, embedding_dim);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 

@@ -1,0 +1,41 @@
+installing open blas:
+
+
+1. download and install openblas: https://sourceforge.net/projects/openblas/files/v0.3.29/
+unpack and set PATH variable:
+set OPENBLAS_DIR=C:\Users\rkovalenko\Desktop\OpenBLAS-0.3.29_x64_64
+
+PATH: C:\Users\rkovalenko\Desktop\OpenBLAS-0.3.29_x64_64\lib
+PATH: C:\Users\rkovalenko\vcpkg
+PATH: C:\Users\rkovalenko\Desktop\OpenBLAS-0.3.29_x64_64\bin
+
+SET VARIABLES: 
+NAME: VCPKG_ROOT
+PATH: C:\Users\rkovalenko\vcpkg
+
+NAME: OPENBLAS_DIR
+PATH: C:\Users\rkovalenko\Desktop\OpenBLAS-0.3.29_x64_64
+
+NAME: OPENBLAS_INCLUDE_DIR
+PATH: C:\Users\rkovalenko\Desktop\OpenBLAS-0.3.29_x64_64\include
+
+NAME: OPENBLAS_LIB_DIR
+PATH: C:\Users\rkovalenko\Desktop\OpenBLAS-0.3.29_x64_64\lib
+
+
+2. install vcpkg: 
+git clone https://github.com/microsoft/vcpkg
+cd vcpkg
+bootstrap-vcpkg.bat
+
+
+vcpkg install openblas:x64-windows
+vcpkg integrate install
+
+include openblas in build.rs:
+    let openblas_path = env::var("OPENBLAS_DIR").unwrap_or_else(|_| r"C:\Users\rkovalenko\Desktop\OpenBLAS-0.3.29_x64_64".into());
+    let openblas_lib = format!("{}\\lib", openblas_path);
+    println!("cargo:rustc-link-search=native={}", openblas_lib);
+    println!("cargo:rustc-link-lib=dylib=openblas");
+
+

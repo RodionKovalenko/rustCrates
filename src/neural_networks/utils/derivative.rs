@@ -919,6 +919,53 @@ where
     grad_batch
 }
 
+pub fn numerical_gradient_input_batch_sum_without_loss_dwt<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, dwt: &Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
+where
+    F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>>,
+{
+    let mut grad_batch = vec![vec![vec![Complex::new(0.0, 0.0); dwt[0][0].len()]; dwt[0].len()]; dwt.len()];
+
+    for batch in 0..input.len() {
+        for seq in 0..input[batch].len() {
+            for dim_i in 0..input[batch][seq].len() {
+                // Perturb input by epsilon
+                let mut input_plus_re = input.clone();
+                input_plus_re[batch][seq][dim_i].re += epsilon;
+
+                let mut input_minus_re = input.clone();
+                input_minus_re[batch][seq][dim_i].re -= epsilon;
+
+                // Compute numerical gradient
+                let loss_plus_re: Vec<Vec<Vec<Complex<f64>>>> = f(&input_plus_re);
+                let loss_minus_re: Vec<Vec<Vec<Complex<f64>>>> = f(&input_minus_re);
+
+                // Perturb input by epsilon
+                let mut input_plus_im = input.clone();
+                input_plus_im[batch][seq][dim_i].im += epsilon;
+
+                let mut input_minus_im = input.clone();
+                input_minus_im[batch][seq][dim_i].im -= epsilon;
+
+                // Compute numerical gradient
+                let loss_plus_im: Vec<Vec<Vec<Complex<f64>>>> = f(&input_plus_im);
+                let loss_minus_im: Vec<Vec<Vec<Complex<f64>>>> = f(&input_minus_im);
+
+                for batch_ind in 0..loss_plus_im.len() {
+                    for (seq_ind, _input_vec) in loss_plus_im[batch_ind].iter().enumerate() {
+                        for (dim_ind, _value) in _input_vec.iter().enumerate() {
+                            let gradient_re: f64 = (loss_plus_re[batch_ind][seq_ind][dim_ind] - loss_minus_re[batch_ind][seq_ind][dim_ind]).re / (2.0 * epsilon);
+                            let gradient_im: f64 = (loss_plus_im[batch_ind][seq_ind][dim_ind] - loss_minus_im[batch_ind][seq_ind][dim_ind]).re / (2.0 * epsilon);
+                            grad_batch[batch_ind][seq_ind][dim_ind] += Complex::new(gradient_re, gradient_im);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    grad_batch
+}
+
 pub fn numerical_gradient_input_batch_without_loss<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
 where
     F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>>,
@@ -975,6 +1022,41 @@ where
             // Compute the numerical gradient
             numerical_gradient[i][j] = (f_plus[i][j] - f_minus[i][j]) / Complex::new(2.0 * epsilon, 0.0);
         }
+    }
+
+    numerical_gradient
+}
+
+pub fn numerical_gradient_dwt_1d<F>(f: F, z: &Vec<Complex<f64>>, epsilon: f64) -> Vec<Complex<f64>>
+where
+    F: Fn(&Vec<Complex<f64>>) -> Complex<f64>,
+{
+    let num_rows = z.len();
+    let mut numerical_gradient = vec![Complex::new(0.0, 0.0); num_rows];
+
+    for i in 0..num_rows {
+        let mut z_plus_re = z.clone();
+        let mut z_minus_re = z.clone();
+        let mut z_plus_im = z.clone();
+        let mut z_minus_im = z.clone();
+
+        // Perturb z[i][j] by +epsilon
+        z_plus_re[i].re += epsilon;
+        z_minus_re[i].re -= epsilon;
+
+        let f_plus_re = f(&z_plus_re);
+        let f_minus_re = f(&z_minus_re);
+
+        z_plus_im[i].im += epsilon;
+        z_minus_im[i].im -= epsilon;
+
+        let f_plus_im = f(&z_plus_im);
+        let f_minus_im = f(&z_minus_im);
+
+        let grad_re = (f_plus_re - f_minus_re).re / (2.0 * epsilon);
+        let grad_im = (f_plus_im - f_minus_im).re / (2.0 * epsilon);
+
+        numerical_gradient[i] += Complex::new(grad_re, grad_im);
     }
 
     numerical_gradient

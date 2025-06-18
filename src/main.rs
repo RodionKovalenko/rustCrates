@@ -4,11 +4,11 @@ use std::sync::Mutex;
 
 use actix_web::web::Form;
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
+use neural_networks::neural_networks::network_types::transformer::transformer_network::predict_by_text;
+use neural_networks::neural_networks::training::train_transformer::train_transformer_from_dataset;
+use neural_networks::utils::string::fix_encoding;
 use serde::Deserialize;
 use tera::{Context, Tera};
-
-use neural_networks::neural_networks::{network_types::transformer::transformer_network::predict_by_text, training::train_transformer::train_transformer_from_dataset};
-use neural_networks::utils::string::fix_encoding;
 
 #[derive(Deserialize)]
 struct PredictForm {
@@ -18,6 +18,8 @@ struct PredictForm {
 #[derive(Deserialize)]
 struct TrainForm {
     epochs: usize,
+    batch_size: usize,
+    num_records: usize,
 }
 
 struct AppState {
@@ -35,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(arg1) = args.get(1) {
         match arg1.as_str() {
             "train" => {
-                train_transformer_from_dataset(5000);
+                train_transformer_from_dataset(5000, 4, 2);
             }
             "predict" => {
                 let input = read_input("Enter input text for prediction: ")?;
@@ -46,6 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else {
         println!("No arguments provided.");
+        start_server().await?;
     }
 
     Ok(())
@@ -97,6 +100,8 @@ async fn index(tmpl: web::Data<Tera>) -> impl Responder {
 async fn api_train(form: Form<TrainForm>, state: web::Data<AppState>) -> impl Responder {
     let state_clone = state.clone();
     let epochs = form.epochs;
+    let num_records = form.num_records;
+    let batch_size = form.batch_size;
 
     actix_web::rt::spawn(async move {
         {
@@ -104,7 +109,7 @@ async fn api_train(form: Form<TrainForm>, state: web::Data<AppState>) -> impl Re
             *done = false;
         }
 
-        let _result: bool = train_transformer_from_dataset(epochs);
+        let _result: bool = train_transformer_from_dataset(epochs, num_records, batch_size);
 
         {
             let mut training_result = state_clone.training_result.lock().unwrap();

@@ -79,16 +79,19 @@ impl SoftmaxLayer {
         for (batch_index, (softmax_output, target_tokens)) in softmax_output_batch.iter().zip(target_token_ids.iter()).enumerate() {
             let padding_mask = &padding_mask_batch[batch_index];
 
-            let mut sequence_len_unpadded: usize = 0;
-            for &padding in padding_mask {
-                if padding != 0 {
-                    sequence_len_unpadded += 1;
+            let mut _sequence_len_unpadded: usize = 0;
+            for padding in padding_mask.iter() {
+                if *padding != 0 {
+                    _sequence_len_unpadded += 1;
                 }
             }
 
             let target_len = target_tokens.len();
-            let seq_ind_start = sequence_len_unpadded - target_len - 1;
-            let seq_end = sequence_len_unpadded - 1;
+            // let seq_ind_start = _sequence_len_unpadded - target_len - 1;
+            // let seq_end = _sequence_len_unpadded - 1;
+
+            let seq_ind_start = softmax_output.len() - target_len - 1;
+            let seq_end =  softmax_output.len() - 1;
 
             let mut target_len_unpadded = 0.0;
             for (_t, &target_class) in target_tokens.iter().enumerate() {
@@ -122,7 +125,7 @@ impl SoftmaxLayer {
 
                     // let real_part_gradient = input_batch[batch_index][seq_ind][c].re / input_batch[batch_index][seq_ind][c].norm();
                     // let im_part_gradient = input_batch[batch_index][seq_ind][c].im / input_batch[batch_index][seq_ind][c].norm();
-                   
+
                     if target_class == c as u32 {
                         softmax_gradient = (softmax_prob - 1.0) / normalizer;
                     } else {

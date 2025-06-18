@@ -1,6 +1,6 @@
-use std::{env, io};
 use std::fs;
 use std::path::Path;
+use std::{env, io};
 fn copy_recursive(from: &Path, to: &Path) -> io::Result<()> {
     if !to.exists() {
         fs::create_dir_all(&to)?;
@@ -22,6 +22,11 @@ fn copy_recursive(from: &Path, to: &Path) -> io::Result<()> {
 fn main() {
     copy_dir("training_data", "training_data");
     copy_dir("tests", "tests");
+
+    let openblas_path = env::var("OPENBLAS_DIR").unwrap_or_else(|_| r"C:\\Users\\jeti8\\OneDrive\\Desktop\\Rodion Projects\\OpenBLAS-0.3.29_x64".into());
+    let openblas_lib = format!("{}\\lib", openblas_path);
+    println!("cargo:rustc-link-search=native={}", openblas_lib);
+    println!("cargo:rustc-link-lib=dylib=openblas");
 }
 
 pub fn copy_dir(file_dir_path: &str, target_dir_path: &str) {
@@ -37,38 +42,3 @@ pub fn copy_dir(file_dir_path: &str, target_dir_path: &str) {
 
     copy_recursive(&source_dir, &destination).unwrap();
 }
-
-// trait CopyRecursive {
-//     fn copy_recursive(&self, destination: &Path) -> std::io::Result<()>;
-// }
-
-// impl CopyRecursive for Path {
-//     fn copy_recursive(&self, destination: &Path) -> std::io::Result<()> {
-//         if !self.exists() {
-//             return Err(std::io::Error::new(
-//                 std::io::ErrorKind::NotFound,
-//                 format!("Source path does not exist: {:?}", self),
-//             ));
-//         }
-//         if self.is_dir() {
-//             fs::create_dir_all(destination)?;
-//             for entry in fs::read_dir(self)? {
-//                 let entry = entry?;
-//                 let file_type = entry.file_type()?;
-//                 let entry_path = entry.path();
-//                 let destination_path = destination.join(entry.file_name());
-//                 if file_type.is_dir() {
-//                     entry_path.copy_recursive(&destination_path)?;
-//                 } else {
-//                     fs::copy(&entry_path, &destination_path)?;
-//                 }
-//             }
-//         } else {
-//             if let Some(parent) = destination.parent() {
-//                 fs::create_dir_all(parent)?;
-//             }
-//             fs::copy(self, destination)?;
-//         }
-//         Ok(())
-//     }
-// }

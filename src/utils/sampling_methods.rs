@@ -1,6 +1,6 @@
-use std::cmp::Ordering;
 use rand::prelude::*;
 use rand_distr::weighted::WeightedIndex;
+use std::cmp::Ordering;
 
 pub fn greedy_decoding(predictions: &Vec<Vec<Vec<f64>>>) -> Vec<Vec<u32>> {
     predictions
@@ -111,15 +111,18 @@ pub fn get_target_predictions(predicted_softmax_batch: &Vec<Vec<Vec<f64>>>, targ
             let mut valid_seq_opt = None;
             let padding_mask = &padding_mask_batch[batch_ind];
 
-            let mut sequence_len_unpadded: usize = 0;
-            for &padding in padding_mask {
-                if padding != 0 {
-                    sequence_len_unpadded += 1;
+            let mut _sequence_len_unpadded: usize = 0;
+            for padding in padding_mask.iter() {
+                if *padding != 0 {
+                    _sequence_len_unpadded += 1;
                 }
             }
 
+            // let ind_end = _sequence_len_unpadded - target_len;
+            let ind_end = input_seq.len() - target_len;
+
             // Slide backwards to find a valid window of length `target_len`
-            for offset in (0..=sequence_len_unpadded - target_len).rev() {
+            for offset in (0..=ind_end).rev() {
                 let window = &input_seq[offset..offset + target_len];
                 let max = window.iter().flat_map(|w| w.iter()).max_by(|a, b| a.partial_cmp(&b).unwrap_or(Ordering::Less));
 

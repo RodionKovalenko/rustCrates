@@ -104,13 +104,14 @@ impl EmbeddingLayer {
         } else {
             println!("File exists. Deserializing the file");
             let embedding_layer = Self::deserialize(embedding_file_path);
-            
+
             embedding_layer
         }
     }
 
-    pub fn apply_padding_to_batch(token_input_ids_batch: &Vec<Vec<u32>>) -> (Vec<Vec<u32>>, Vec<Vec<u32>>) {
+    pub fn apply_padding_to_batch(token_input_ids_batch: &Vec<Vec<u32>>, _target_batch_ids: &Vec<Vec<u32>>) -> (Vec<Vec<u32>>, Vec<Vec<u32>>) {
         let max_token_len = token_input_ids_batch.iter().map(|seq| seq.len()).max().unwrap_or(0);
+        // max_token_len = max_token_len - target_batch_ids.len();
 
         //println!("token input before padding: {:?}", &token_input_ids_batch);
         // Initialize a new vector to hold padded sequences
@@ -118,7 +119,7 @@ impl EmbeddingLayer {
         let mut padding_mask_batch: Vec<Vec<u32>> = Vec::new();
 
         // Iterate through each sequence in the batch
-        for token_input_ids in token_input_ids_batch.iter() {
+        for (_batch_ind, token_input_ids) in token_input_ids_batch.iter().enumerate() {
             // Clone the sequence to modify it (since we're not allowed to mutate the original)
             let mut padded_sequence = token_input_ids.clone();
             let mut padding_mask = vec![1; token_input_ids.len()];
@@ -131,6 +132,13 @@ impl EmbeddingLayer {
             while padding_mask.len() < max_token_len {
                 padding_mask.push(0); // Add Padding Mask token (0 -> ignore, 1 consider in the calculations)
             }
+
+            // if !target_batch_ids.is_empty() {
+            //     for i in 0..target_batch_ids[batch_ind].len() {
+            //         padded_sequence.push(target_batch_ids[batch_ind][i]);
+            //         padding_mask.push(1);
+            //     }
+            // }
 
             //println!("token id len after padding: {:?}", &padded_sequence.len());
 
@@ -149,9 +157,11 @@ impl EmbeddingLayer {
     /// Look up embeddings for a batch of token IDs
     pub fn forward(&mut self, layer_input: &LayerInput) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<u32>>) {
         let token_input_ids: Vec<Vec<u32>> = layer_input.get_batch_ids();
+        let target_batch_ids = layer_input.get_target_batch_ids();
         let db: &Db = get_db_embedding();
         self.time_step = layer_input.get_time_step();
-        let (token_input_batch_padded, padding_mask) = EmbeddingLayer::apply_padding_to_batch(&token_input_ids);
+
+        let (token_input_batch_padded, _padding_mask) = EmbeddingLayer::apply_padding_to_batch(&token_input_ids, &target_batch_ids);
         let embedding_dim = self.embedding_dim;
 
         // Get a reference to the cache
@@ -198,7 +208,7 @@ impl EmbeddingLayer {
             })
             .collect::<Vec<Vec<Vec<Complex<f64>>>>>(); // Collect the result for the entire batch
 
-        (token_ids_output, padding_mask)
+        (token_ids_output, _padding_mask)
     }
     // Update embeddings using gradients
     pub fn backward(&mut self, previous_gradients: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
@@ -243,11 +253,11 @@ impl EmbeddingLayer {
                 }
 
                 let embedding_normalized = normalize(&token_embedding);
-                
+
                 if let Ok(mut cache) = self.cache.write() {
                     cache.insert(token_id, embedding_normalized.clone());
                 }
-                
+
                 Self::update_embedding(db, &token_id, &embedding_normalized);
                 // println!("new token embedding: {:?}", token_embedding);
             }
@@ -259,7 +269,6 @@ impl EmbeddingLayer {
 
         let serialized_embedding = bincode::serialize(embedding).expect("Failed to serialize embedding");
         db.insert(key, serialized_embedding).expect("Failed to save or update embedding in Sled");
-
     }
 
     pub fn serialize(embedding_layer: &EmbeddingLayer, embedding_file_path: &Path) {

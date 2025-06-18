@@ -1,11 +1,215 @@
 use faer::Mat;
+// use ndarray::Array2;
 use num::Complex;
 use num_traits::NumCast;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
+// use std::ffi::c_void;
 use std::fmt::Debug;
 use std::ops::{Add, Mul, Sub};
 use std::sync::{Arc, Mutex};
+use std::ffi::c_char;
+
+extern "C" {
+    fn zgemm_(transa: *const c_char, transb: *const c_char, m: *const i64, n: *const i64, k: *const i64, alpha: *const Complex<f64>, a: *const Complex<f64>, lda: *const i64, b: *const Complex<f64>, ldb: *const i64, beta: *const Complex<f64>, c: *mut Complex<f64>, ldc: *const i64);
+}
+pub fn multiply_complex(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<f64>>]) -> Vec<Vec<Complex<f64>>> {
+    let m = matrix_a.len() as i64;
+    let k = matrix_a[0].len() as i64;
+    let n = matrix_b[0].len() as i64;
+
+    assert!(m > 0 && n > 0 && k > 0, "Matrices must not be empty");
+    assert!(matrix_b.len() as i64 == k, "A's columns must match B's rows");
+    for row in matrix_a {
+        assert_eq!(row.len(), k as usize, "All rows of A must have the same length");
+    }
+    for row in matrix_b {
+        assert_eq!(row.len(), n as usize, "All rows of B must have the same length");
+    }
+
+    fn flatten_col_major(mat: &[Vec<Complex<f64>>], rows: i64, cols: i64) -> Vec<Complex<f64>> {
+        let mut v = Vec::with_capacity((rows * cols) as usize);
+        for col in 0..cols {
+            for row in 0..rows {
+                v.push(mat[row as usize][col as usize]);
+            }
+        }
+        v
+    }
+
+    let a = flatten_col_major(matrix_a, m, k);
+    let b = flatten_col_major(matrix_b, k, n);
+    let mut c = vec![Complex::<f64>::new(0.0, 0.0); (m * n) as usize];
+
+    let transa = b'N';
+    let transb = b'N';
+    let lda = m;
+    let ldb = k;
+    let ldc = m;
+    let alpha = Complex::<f64>::new(1.0, 0.0);
+    let beta = Complex::<f64>::new(0.0, 0.0);
+
+    //println!("Calling zgemm_ with m={}, n={}, k={}, lda={}, ldb={}, ldc={}", m, n, k, lda, ldb, ldc);
+
+    unsafe {
+        zgemm_(&transa as *const u8 as *const c_char, &transb as *const u8 as *const c_char, &m, &n, &k, &alpha, a.as_ptr(), &lda, b.as_ptr(), &ldb, &beta, c.as_mut_ptr(), &ldc);
+    }
+
+    let mut result = vec![vec![Complex::<f64>::new(0.0, 0.0); n as usize]; m as usize];
+    for col in 0..n as usize {
+        for row in 0..m as usize {
+            result[row][col] = c[col * m as usize + row];
+        }
+    }
+    result
+}
+
+// pub fn multiply_complex(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<f64>>]) -> Vec<Vec<Complex<f64>>> {
+//     let m = matrix_a.len();
+//     let k = matrix_a[0].len();
+//     let n = matrix_b[0].len();
+
+//     // Convert matrix_a into Array2 (shape m x k)
+//     let mut a = Array2::<Complex<f64>>::zeros((m, k));
+//     for (i, row) in matrix_a.iter().enumerate() {
+//         for (j, &val) in row.iter().enumerate() {
+//             a[[i, j]] = val;
+//         }
+//     }
+
+//     // Convert matrix_b into Array2 (shape k x n)
+//     let mut b = Array2::<Complex<f64>>::zeros((k, n));
+//     for (i, row) in matrix_b.iter().enumerate() {
+//         for (j, &val) in row.iter().enumerate() {
+//             b[[i, j]] = val;
+//         }
+//     }
+
+//     // Multiply using ndarray dot (will use BLAS if enabled)
+//     let c = a.dot(&b);
+
+//     // Convert result back to Vec<Vec<Complex<f64>>>
+//     let mut result = vec![vec![Complex::new(0.0, 0.0); n]; m];
+//     for i in 0..m {
+//         for j in 0..n {
+//             result[i][j] = c[[i, j]];
+//         }
+//     }
+
+//     result
+// }
+
+// #[repr(C)]
+// #[derive(Clone, Copy, Debug)]
+// pub struct CuDoubleComplex {
+//     pub x: f64,
+//     pub y: f64,
+// }
+
+// impl From<Complex<f64>> for CuDoubleComplex {
+//     fn from(c: Complex<f64>) -> Self {
+//         Self { x: c.re, y: c.im }
+//     }
+// }
+
+// #[link(name = "cublas")]
+// extern "system" {
+//     pub fn cublasCreate_v2(handle: *mut *mut c_void) -> i32;
+//     pub fn cublasDestroy_v2(handle: *mut c_void) -> i32;
+
+//     pub fn cublasZgemm3m(handle: *mut c_void, transa: i32, transb: i32, m: i32, n: i32, k: i32, alpha: *const CuDoubleComplex, A: *const CuDoubleComplex, lda: i32, B: *const CuDoubleComplex, ldb: i32, beta: *const CuDoubleComplex, C: *mut CuDoubleComplex, ldc: i32) -> i32;
+
+//     pub fn cudaMalloc(devPtr: *mut *mut c_void, size: usize) -> i32;
+//     pub fn cudaMemcpy(dst: *mut c_void, src: *const c_void, count: usize, kind: i32) -> i32;
+//     pub fn cudaFree(devPtr: *mut c_void) -> i32;
+// }
+
+// const CUDA_MEMCPY_HOST_TO_DEVICE: i32 = 1;
+// const CUDA_MEMCPY_DEVICE_TO_HOST: i32 = 2;
+// const CUBLAS_STATUS_SUCCESS: i32 = 0;
+// const CUBLAS_OP_N: i32 = 0;
+
+// fn check_cuda(status: i32) {
+//     if status != 0 {
+//         panic!("CUDA call failed with status: {}", status);
+//     }
+// }
+
+// pub fn multiply_complex_cuda(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+//     let a_rows = matrix_a.len();
+//     let a_cols = matrix_a[0].len();
+//     let b_rows = matrix_b.len();
+//     let b_cols = matrix_b[0].len();
+
+//     if a_cols != b_rows {
+//         panic!("Invalid matrix dimensions: A is {}x{}, B is {}x{}", a_rows, a_cols, b_rows, b_cols);
+//     }
+
+//     // Flatten in column-major order
+//     let a_flat: Vec<CuDoubleComplex> = (0..a_cols).flat_map(|j| (0..a_rows).map(move |i| CuDoubleComplex::from(matrix_a[i][j]))).collect();
+//     let b_flat: Vec<CuDoubleComplex> = (0..b_cols).flat_map(|j| (0..b_rows).map(move |i| CuDoubleComplex::from(matrix_b[i][j]))).collect();
+//     let mut c_flat: Vec<CuDoubleComplex> = vec![CuDoubleComplex { x: 0.0, y: 0.0 }; a_rows * b_cols];
+
+//     let m = a_rows as i32;
+//     let n = b_cols as i32;
+//     let k = a_cols as i32;
+
+//     let lda = m;
+//     let ldb = k;
+//     let ldc = m;
+
+//     let alpha = CuDoubleComplex { x: 1.0, y: 0.0 };
+//     let beta = CuDoubleComplex { x: 0.0, y: 0.0 };
+
+//     unsafe {
+//         let mut handle: *mut c_void = std::ptr::null_mut();
+//         let status = cublasCreate_v2(&mut handle);
+//         if status != CUBLAS_STATUS_SUCCESS || handle.is_null() {
+//             panic!("Failed to create cuBLAS handle: status = {}, handle = {:?}", status, handle);
+//         }
+
+//         let size_a = a_flat.len() * std::mem::size_of::<CuDoubleComplex>();
+//         let size_b = b_flat.len() * std::mem::size_of::<CuDoubleComplex>();
+//         let size_c = c_flat.len() * std::mem::size_of::<CuDoubleComplex>();
+
+//         let mut d_a: *mut c_void = std::ptr::null_mut();
+//         let mut d_b: *mut c_void = std::ptr::null_mut();
+//         let mut d_c: *mut c_void = std::ptr::null_mut();
+
+//         check_cuda(cudaMalloc(&mut d_a, size_a));
+//         check_cuda(cudaMalloc(&mut d_b, size_b));
+//         check_cuda(cudaMalloc(&mut d_c, size_c));
+
+//         check_cuda(cudaMemcpy(d_a, a_flat.as_ptr() as *const c_void, size_a, CUDA_MEMCPY_HOST_TO_DEVICE));
+//         check_cuda(cudaMemcpy(d_b, b_flat.as_ptr() as *const c_void, size_b, CUDA_MEMCPY_HOST_TO_DEVICE));
+
+//         let status = cublasZgemm3m(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, d_a as *const CuDoubleComplex, lda, d_b as *const CuDoubleComplex, ldb, &beta, d_c as *mut CuDoubleComplex, ldc);
+
+//         if status != CUBLAS_STATUS_SUCCESS {
+//             cublasDestroy_v2(handle);
+//             panic!("cublasZgemm3m failed with status: {}", status);
+//         }
+
+//         check_cuda(cudaMemcpy(c_flat.as_mut_ptr() as *mut c_void, d_c, size_c, CUDA_MEMCPY_DEVICE_TO_HOST));
+
+//         cudaFree(d_a);
+//         cudaFree(d_b);
+//         cudaFree(d_c);
+
+//         cublasDestroy_v2(handle);
+//     }
+
+//     // Convert back to row-major
+//     let mut result = vec![vec![Complex::new(0.0, 0.0); b_cols]; a_rows];
+//     for j in 0..b_cols {
+//         for i in 0..a_rows {
+//             let z = c_flat[j * a_rows + i];
+//             result[i][j] = Complex::new(z.x, z.y);
+//         }
+//     }
+
+//     result
+// }
 
 pub fn multiply<T, V>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<V>>) -> Vec<Vec<f64>>
 where
@@ -65,7 +269,7 @@ pub unsafe fn convert_to_faer_mat_unchecked(matrix: &[Vec<Complex<f64>>]) -> Mat
     Mat::from_fn(rows, cols, |i, j| matrix[i][j])
 }
 
-pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+pub fn multiply_complex_fear(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
     let a_rows = matrix_a.len();
     let a_cols = matrix_a[0].len();
     let b_rows = matrix_b.len();
@@ -246,6 +450,14 @@ pub fn hadamard_product_2d_c(input_1: &Vec<Vec<Complex<f64>>>, input_2: &Vec<Vec
     result
 }
 
+pub fn dot_product_complex(input_1: &Vec<Complex<f64>>, input_2: &Vec<Complex<f64>>) -> Complex<f64> {
+    assert_eq!(input_1.len(), input_2.len(), "Vectors must be the same length");
+    let mut sum = Complex::<f64>::new(0.0, 0.0);
+    for i in 0..input_1.len() {
+        sum += input_1[i] * input_2[i];
+    }
+    sum
+}
 pub fn convert_3d_to_2d<T: Clone>(array_3d: &Vec<Vec<Vec<T>>>) -> Vec<Vec<T>> {
     let mut array_2d = Vec::new();
 

@@ -213,7 +213,8 @@ mod test_transformer {
 
         // forward
         let (embeddings, padding_mask_batch) = embedding_layer.forward(&layer_input);
-        let positional_encoding_output = positional_encoding_layer.forward(&embeddings);
+        layer_input.set_input_batch(embeddings.clone());
+        let positional_encoding_output = positional_encoding_layer.forward(&layer_input);
 
         layer_input.set_input_batch(positional_encoding_output.clone());
         layer_input.set_padding_mask_batch(padding_mask_batch.clone());
@@ -266,7 +267,9 @@ mod test_transformer {
 
             layer_input.set_batch_ids(batch_ids.clone());
             let (embeddings, padding_mask_batch) = embedding_layer.forward(&layer_input);
-            let positional_encoding_output = positional_encoding_layer.forward(&embeddings);
+
+            layer_input.set_input_batch(embeddings.clone());
+            let positional_encoding_output = positional_encoding_layer.forward(&layer_input);
 
             layer_input.set_input_batch(positional_encoding_output.clone());
 
