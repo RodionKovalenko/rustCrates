@@ -82,14 +82,16 @@ impl NormalNormLayer {
     }
 
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = layer_input.get_input_batch();
+        let mut input_batch: Vec<Vec<Vec<Complex<f64>>>> = layer_input.get_input_batch();
         let input_batch_before: Vec<Vec<Vec<Complex<f64>>>> = layer_input.get_input_batch_before();
         let mut output_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
         let mut normalized_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
         let mut mean_batch: Vec<Vec<Complex<f64>>> = Vec::new();
         let mut var_batch: Vec<Vec<Complex<f64>>> = Vec::new();
 
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = add_matrix_3d_c(&input_batch, &input_batch_before);
+        if !&input_batch_before.is_empty() {
+            input_batch = add_matrix_3d_c(&input_batch, &input_batch_before);
+        }
 
         for input in input_batch.iter() {
             let mut norm_seq = Vec::new();
@@ -187,8 +189,6 @@ impl NormalNormLayer {
 
                             let dxhat: Complex<f64> = previous_gradient[b][s][f] * self.gamma[f];
                             let x: Complex<f64> = input_batch[b][s][f];
-                            let _x_orig: Complex<f64> = _input_batch_before[b][s][f];
-                            let _x_input = x - _x_orig;
 
                             let dmu = dmu_sum * self.gamma[f] + dvar_sum * dx_minus_mu_sum;
 
@@ -236,11 +236,8 @@ impl NormalNormLayer {
 
                             let dxhat: Complex<f64> = previous_gradient[b][s][f] * self.gamma[f];
                             let x: Complex<f64> = input_batch[b][s][f];
-                            let _x_orig: Complex<f64> = _input_batch_before[b][s][f];
-                            let _x_input = x - _x_orig;
 
                             let dmu = dmu_sum * self.gamma[f] + dvar_sum * dx_minus_mu_sum;
-
                             let gradient: Complex<f64> = (dxhat * std_inv) + (dvar_sum * (2.0 * (x - mu) / n)) + dmu / n;
 
                             for j in 0..feature_dim {

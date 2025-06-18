@@ -10,7 +10,7 @@ mod test_self_attention_layer {
             feedforward_layer::FeedForwardLayer,
             neural_network_generic::OperationMode,
             transformer::{masked_attention_head::MaskedAttentionHead, self_attention_layer::SelfAttentionLayer, transformer_network::cross_entropy_loss_batch},
-            wavelet_complex_layer::WaveletComplexLayer,
+            wavelet_complex_layer::ComplexWaveletLayer,
         },
         utils::{
             derivative::{global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_input_batch, numerical_gradient_input_batch_sum_without_loss, numerical_gradient_weights, numerical_gradient_weights_multiple_layers_without_loss, test_gradient_batch_error, test_gradient_error_2d},
@@ -241,7 +241,7 @@ mod test_self_attention_layer {
         let sequence_len = 8;
         let embedding_dim = 16;
         let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(sequence_len, embedding_dim, learning_rate);
-        let mut wavelet_layer: WaveletComplexLayer = WaveletComplexLayer::new();
+        let mut wavelet_layer: ComplexWaveletLayer = ComplexWaveletLayer::new();
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, sequence_len, embedding_dim);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 

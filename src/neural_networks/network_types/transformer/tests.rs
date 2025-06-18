@@ -46,7 +46,7 @@ mod tests {
         println!("time elapsed in seconds: {:?}", &seconds_elapsed);
 
         //let input_str1: &str = "Wie geht es dir?";
-        let input_str2: &str = "Was ist die Hauptstadt von Deutschland? Ich möchte es wissen";
+        let input_str2: &str = "Was ist die Hauptstadt von Deutschland? Kannst du bitte eine kurze Antwort geben?";
         // let input_str3: &str = "Was kommt nach Donnerstag?";
         // let input_str4: &str = "Was macht 2+3 aus?";
 

@@ -321,12 +321,9 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
     let mut padding_mask = None;
 
     let batch_ids = layer_input.get_batch_ids();
-    let time_step = layer_input.get_time_step();
     let forward_only = layer_input.get_forward_only();
 
-    let mut layer_input = LayerInput::new_default();
-    layer_input.set_forward_only(forward_only);
-    layer_input.set_time_step(time_step);
+    let mut layer_input = layer_input.clone();
 
     if forward_only {
         layer_input.set_calculate_gradient(false);
@@ -344,7 +341,8 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                 let (embeddings, padding_m) = embedding_layer.forward(&layer_input);
 
                 output = Some(embeddings);
-                padding_mask = Some(padding_m);
+                padding_mask = Some(padding_m.clone());
+                layer_input.set_padding_mask_batch(padding_m);
 
                 //println!("time elapsed in seconds in embedding: {:?}", (now.elapsed() - seconds_elapsed).as_secs_f64());
                 // println!("padding mask: {:?}", &padding_mask);
@@ -446,10 +444,27 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     layer_input.set_input_batch(previous_output.clone());
 
                     //let seconds_elapsed = now.elapsed();
-                    let output_linear = wavelet_layer.forward(&layer_input);
+                    let output_cwt = wavelet_layer.forward(&layer_input);
 
                     //println!("time elapsed in seconds in wavelet layer: {:?}", (now.elapsed() - seconds_elapsed).as_secs_f64());
-                    output = Some(output_linear.get_output_batch());
+                    output = Some(output_cwt.get_output_batch());
+                } else {
+                    println!("No previous output for Dense layer");
+                }
+            }
+            LayerEnum::DiscreteWavelet(wavelet_layer) => {
+                if let Some(previous_output) = &output {
+                    //println!("forward discrete wavelet layer start");
+                    layer_input.set_input_batch(previous_output.clone());
+
+                    //let seconds_elapsed = now.elapsed();
+                    let output_dwt = wavelet_layer.forward(&layer_input);
+
+                    padding_mask = Some(output_dwt.get_padding_mask_batch());
+                    layer_input.set_padding_mask_batch(output_dwt.get_padding_mask_batch());
+
+                    //println!("time elapsed in seconds in wavelet layer: {:?}", (now.elapsed() - seconds_elapsed).as_secs_f64());
+                    output = Some(output_dwt.get_output_batch());
                 } else {
                     println!("No previous output for Dense layer");
                 }
@@ -599,6 +614,15 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     println!("No previous gradient in Linear Layer");
                 }
             }
+            LayerEnum::DiscreteWavelet(wavelet_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    //println!("backward linear start");
+                    let gradient_batch: Gradient = wavelet_layer.backward(&previous_gradient);
+                    gradient = Some(gradient_batch);
+                } else {
+                    println!("No previous gradient in Linear Layer");
+                }
+            }
             LayerEnum::Softmax(softmax_layer) => {
                 //println!("backward softmax start");
                 let gradient_batch: Gradient = softmax_layer.backward(target_batch_ids);
@@ -656,15 +680,17 @@ fn cross_entropy_loss(predictions: &Vec<Vec<f64>>, target_tokens: &Vec<u32>, pad
     let target_len = target_tokens.len();
     let mut count = 0.0;
 
-    let mut sequence_len_unpadded: usize = 0;
-    for &padding in padding_mask {
-        if padding != 0 {
-            sequence_len_unpadded += 1;
+    let mut _sequence_len_unpadded: usize = 0;
+    for padding in padding_mask.iter() {
+        if *padding != 0 {
+            _sequence_len_unpadded += 1;
         }
     }
 
-    let seq_ind_start = sequence_len_unpadded - target_len - 1;
-    let end_ind = sequence_len_unpadded - 1;
+    // let seq_ind_start = _sequence_len_unpadded - target_len - 1;
+    // let end_ind = _sequence_len_unpadded - 1;
+    let seq_ind_start = predictions.len() - target_len - 1;
+    let end_ind = predictions.len() - 1;
 
     for (s, &target_idx) in target_tokens.iter().enumerate() {
         if target_idx == 1 {

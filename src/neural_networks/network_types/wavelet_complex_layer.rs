@@ -12,7 +12,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WaveletComplexLayer {
+pub struct ComplexWaveletLayer {
     #[serde(skip)]
     input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
@@ -26,7 +26,7 @@ pub struct WaveletComplexLayer {
     pub is_full_mode: bool,
 }
 
-impl WaveletComplexLayer {
+impl ComplexWaveletLayer {
     pub fn new() -> Self {
         let wavelet = CWTComplex {
             scales: vec![1.0],
