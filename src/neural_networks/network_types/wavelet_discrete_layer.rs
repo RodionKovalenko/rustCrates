@@ -57,7 +57,7 @@ impl DiscreteWaveletLayer {
             gradient: None,
             output_batch: None,
             time_step: 0,
-            wavelet: DiscreteWaletetType::DB1,
+            wavelet: DiscreteWaletetType::DB2,
             wavelet_mode: WaveletMode::SYMMETRIC,
             is_full_mode: false,
             approx_details: None,
@@ -110,8 +110,8 @@ impl DiscreteWaveletLayer {
 
                     if !target_emb.is_empty() {
                         // [input + padding + target]
-                        trend.extend_from_slice(&target_emb);
-                        comp_pad_mask_b.extend_from_slice(&vec![1; target_emb.len()]);
+                        // trend.extend_from_slice(&target_emb);
+                        // comp_pad_mask_b.extend_from_slice(&vec![1; target_emb.len()]);
                     }
 
                     // println!("trend after extend slice: {} {}", trend.len(), trend[0].len());
@@ -149,7 +149,6 @@ impl DiscreteWaveletLayer {
         let input_batch = self.input_batch.as_ref().expect("Input batch not found");
         let target_batch_ids = self.target_batch_ids.as_ref().expect("no target_batch_ids found");
         let input_only_batch = self.input_only_batch.as_ref().expect("no input only batch found");
-        let output_batch = self.output_batch.as_ref().expect("no padding_mask_batch ound");
         let grad_output_batch = previous_gradient.get_gradient_input_batch();
 
         assert_eq!(input_batch.len(), grad_output_batch.len(), "Input and gradient batch size mismatch");
@@ -165,17 +164,16 @@ impl DiscreteWaveletLayer {
                     let target_ids = &target_batch_ids[batch_ind];
                     // let padding_mask = &padding_mask_batch[batch_ind];
 
-                    let output_comp = &output_batch[batch_ind];
-                    println!("\n compr output: {} {}", output_comp.len(), output_comp[0].len());
-                    let mut gradient_decompr = self.decompress_partial(grad_output, target_ids.len());
+                    let mut gradient_decompr = self.decompress_partial(&grad_output, 0);
+
+                    println!("gradient decomp dim: {} {}", gradient_decompr.len(), gradient_decompr[0].len());
 
                     if input_only.len() != gradient_decompr.len() {
-                        gradient_decompr = self.align_gradient_rows_complex(input_only, &gradient_decompr, grad_output, target_ids.len());
+                        gradient_decompr = self.align_gradient_rows_complex(input_only, &gradient_decompr, grad_output);
                     }
 
                     for i in (grad_output.len() - target_ids.len())..grad_output.len() {
-                        println!("index i: {}", i);
-                        gradient_decompr.push(grad_output[i].clone());
+                        //gradient_decompr.push(grad_output[i].clone());
                     }
 
                     gradient_decompr
@@ -271,6 +269,18 @@ impl DiscreteWaveletLayer {
         let approx: Vec<Vec<Complex<f64>>> = transpose(&wav_hh_ll[0]); // Approximation (LL)
         (approx, detail)
     }
+    pub fn decompress_partial(&self, grad_output: &Vec<Vec<Complex<f64>>>, target_len: usize) -> Vec<Vec<Complex<f64>>> {
+        let mut gradient_comp = vec![];
+
+        for i in 0..(grad_output.len() - target_len) {
+            gradient_comp.push(grad_output[i].clone());
+        }
+
+        let gradient_partial = grad_dwt_2d_partial(&transpose(&gradient_comp), &self.wavelet, &self.wavelet_mode);
+        let gradient_transposed = transpose(&gradient_partial);
+
+        gradient_transposed
+    }
     pub fn compress_padding_mask(&self, padding_mask: &Vec<u32>) -> Vec<u32> {
         let input_f64: Vec<f64> = padding_mask.iter().map(|v| *v as f64).collect();
         let dwt_partial: Vec<f64> = dwt_1d(&input_f64, &self.wavelet, &self.wavelet_mode);
@@ -289,42 +299,26 @@ impl DiscreteWaveletLayer {
 
         compressed_mask
     }
-    pub fn decompress_partial(&self, grad_output: &Vec<Vec<Complex<f64>>>, target_len: usize) -> Vec<Vec<Complex<f64>>> {
-        let mut gradient_comp = vec![];
-
-        for i in 0..(grad_output.len() - target_len) {
-            gradient_comp.push(grad_output[i].clone());
-        }
-
-        let gradient_partial = grad_dwt_2d_partial(&transpose(&gradient_comp), &self.wavelet, &self.wavelet_mode);
-        let gradient_transposed = transpose(&gradient_partial);
-
-        gradient_transposed
-    }
-    pub fn align_gradient_rows_complex(&self, input: &Vec<Vec<Complex<f64>>>, gradient_decompr: &Vec<Vec<Complex<f64>>>, gradient: &Vec<Vec<Complex<f64>>>, target_len: usize) -> Vec<Vec<Complex<f64>>> {
-        // 3,3
+    pub fn align_gradient_rows_complex(&self, input: &Vec<Vec<Complex<f64>>>, gradient_decompr: &Vec<Vec<Complex<f64>>>, gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
         let input_rows = input.len();
         let cols = gradient_decompr[0].len();
-
-        // gradient dim: 4, 3
-        // gradient decompr 4,3
-        // input only 3,3
-        // target 2,3
 
         println!("\n input dim: {} {}", input.len(), input[0].len());
         println!("\n gradient dim: {} {}", gradient.len(), gradient[0].len());
         println!("\n gradient decompre dim: {} {}", gradient_decompr.len(), gradient_decompr[0].len());
-        println!("\n target len: {}", target_len);
 
         let mut result = Vec::with_capacity(gradient.len());
 
         // Copy the first (input_rows - 1) rows
         for i in 0..(input_rows - 1) {
-            result.push(gradient_decompr[i].clone());
+            if i < gradient_decompr.len() - 1 {
+                result.push(gradient_decompr[i].clone());
+            }
         }
 
         // Sum remaining rows into the last row
         let mut last_row = vec![Complex::new(0.0, 0.0); cols];
+
         for i in (input_rows - 1)..gradient_decompr.len() {
             for j in 0..cols {
                 last_row[j] += gradient_decompr[i][j];
