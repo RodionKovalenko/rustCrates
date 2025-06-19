@@ -8,7 +8,7 @@ use crate::{
         network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
         utils::matrix::transpose,
     },
-    utils::array::unzip5,
+    utils::array::unzip4,
     wavelet_transform::{
         dwt::{dwt_1d, dwt_2d_full, dwt_2d_partial, get_ll_hh, get_ll_hh_1d, get_ll_hl_lh_hh, grad_dwt_2d, grad_dwt_2d_partial},
         dwt_types::DiscreteWaletetType,
@@ -37,7 +37,7 @@ pub struct DiscreteWaveletLayer {
     #[serde(skip)]
     pub details_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
-    pub compression_levels: Option<Vec<i32>>,
+    pub compression_levels: usize,
     #[serde(skip)]
     pub compressed_padding_mask_b: Option<Vec<Vec<u32>>>,
     #[serde(skip)]
@@ -58,11 +58,11 @@ impl DiscreteWaveletLayer {
             gradient: None,
             output_batch: None,
             time_step: 0,
-            wavelet: DiscreteWaletetType::DB2,
+            wavelet: DiscreteWaletetType::DB1,
             wavelet_mode: WaveletMode::SYMMETRIC,
             is_full_mode: false,
             details_batch: None,
-            compression_levels: None,
+            compression_levels: 3,
             compressed_padding_mask_b: None,
             padding_mask_batch: None,
             target_batch: None,
@@ -75,12 +75,7 @@ impl DiscreteWaveletLayer {
         let target_batch_ids: Vec<Vec<u32>> = layer_input.get_target_batch_ids();
         let forward_only = layer_input.get_forward_only();
         let padding_mask_batch: Vec<Vec<u32>> = layer_input.get_padding_mask_batch();
-        let mut _min_compressed_dim = 16;
         let time_step = layer_input.get_time_step();
-
-        if !forward_only {
-            _min_compressed_dim = target_batch_ids[0].len();
-        }
 
         let results: Vec<_> = input_batch
             .par_iter()
@@ -89,7 +84,7 @@ impl DiscreteWaveletLayer {
                 if self.is_full_mode {
                     let dwt_full = dwt_2d_full(input, &self.wavelet, &self.wavelet_mode);
                     let ll_hl_lh_hh = get_ll_hl_lh_hh(&dwt_full);
-                    (ll_hl_lh_hh[0].to_vec(), vec![], vec![], vec![], 0) // No detail saved in full mode
+                    (ll_hl_lh_hh[0].to_vec(), vec![], vec![], vec![]) // No detail saved in full mode
                 } else {
                     let padding_mask = &padding_mask_batch[batch_ind];
                     let mut target_ids: &Vec<u32> = &vec![];
@@ -103,7 +98,6 @@ impl DiscreteWaveletLayer {
                     let mut input_only_separated = input.clone();
                     let mut target_emb: Vec<Vec<Complex<f64>>> = vec![];
                     let mut comp_pad_mask_b: Vec<u32> = padding_mask.clone();
-                    let mut compress_levels: i32 = 0;
 
                     if !forward_only || (forward_only && time_step == 0) {
                         let (input_only, target, pad_inp_mask) = self.separate_input_target(input, target_ids, padding_mask);
@@ -115,7 +109,6 @@ impl DiscreteWaveletLayer {
                         trend = new_trend;
                         details = _new_details;
                         target_emb = target;
-                        compress_levels += 1;
                     }
 
                     if !target_emb.is_empty() {
@@ -124,19 +117,18 @@ impl DiscreteWaveletLayer {
                         comp_pad_mask_b.extend_from_slice(&vec![1; target_emb.len()]);
                     }
 
-                    (trend, input_only_separated, details, comp_pad_mask_b, compress_levels)
+                    (trend, input_only_separated, details, comp_pad_mask_b)
                 }
             })
             .collect();
 
-        let (trend_batch, input_only, details_batch, comp_pad_mask_b, compress_levels) = unzip5(results);
+        let (trend_batch, input_only, details_batch, comp_pad_mask_b) = unzip4(results);
 
         self.input_batch = Some(input_batch.clone());
         self.input_only_batch = Some(input_only);
         self.trend_input_batch = Some(trend_batch.clone());
         self.time_step = layer_input.get_time_step();
         self.output_batch = Some(trend_batch.clone());
-        self.compression_levels = Some(compress_levels);
         self.target_batch_ids = Some(target_batch_ids);
         self.padding_mask_batch = Some(padding_mask_batch.clone());
         self.compressed_padding_mask_b = Some(comp_pad_mask_b.clone());
@@ -237,27 +229,63 @@ impl DiscreteWaveletLayer {
 
         (input_without_target, target, padding_input_mask)
     }
-    pub fn compress_partial(&self, input: &Vec<Vec<Complex<f64>>>) -> (Vec<Vec<Complex<f64>>>, Vec<Vec<Complex<f64>>>) {
-        let dwt_partial: Vec<Vec<Complex<f64>>> = dwt_2d_partial(&transpose(&input), &self.wavelet, &self.wavelet_mode);
-        let wav_hh_ll: Vec<Vec<Vec<Complex<f64>>>> = get_ll_hh(&dwt_partial);
-        let detail: Vec<Vec<Complex<f64>>> = transpose(&wav_hh_ll[1].clone()); // Save HH detail
-        let approx: Vec<Vec<Complex<f64>>> = transpose(&wav_hh_ll[0]); // Approximation (LL)
-        (approx, detail)
+    pub fn compress_partial(&self, input: &[Vec<Complex<f64>>]) -> (Vec<Vec<Complex<f64>>>, Vec<Vec<Complex<f64>>>) {
+        let mut trend = input.to_vec();
+        let mut details = Vec::new();
+
+        for _ in 0..self.compression_levels {
+            //println!("trend dim: {} {}", trend.len(), trend[0].len());
+            let dwt_partial = dwt_2d_partial(&transpose(&trend), &self.wavelet, &self.wavelet_mode);
+            let ll_hh = get_ll_hh(&dwt_partial);
+            trend = transpose(&ll_hh[0]);
+            details = transpose(&ll_hh[1]);
+        }
+
+        //println!("trend dim: {} {}", trend.len(), trend[0].len());
+
+        (trend, details)
     }
     pub fn decompress_partial(&self, grad_output: &Vec<Vec<Complex<f64>>>, target_len: usize) -> Vec<Vec<Complex<f64>>> {
         let seq_len = grad_output.len();
         let gradient_without_target = grad_output[..seq_len.saturating_sub(target_len)].to_vec();
         let mut gradient_transp = transpose(&gradient_without_target);
 
-        for i in 0..gradient_transp.len() {
-            gradient_transp[i].extend_from_slice(&vec![Complex::new(0.0, 0.0); seq_len]);
+        for _ in 0..self.compression_levels {
+            //println!("gradient trans: {:?} {}", gradient_transp.len(), gradient_transp[0].len());
+            let seq_len = gradient_transp[0].len();
+            for i in 0..gradient_transp.len() {
+                gradient_transp[i].extend_from_slice(&vec![Complex::new(0.0, 0.0); seq_len]);
+            }
+            // println!("gradient extended: {:?} {}", gradient_transp.len(), gradient_transp[0].len());
+            gradient_transp = grad_dwt_2d_partial(&gradient_transp, &self.wavelet, &self.wavelet_mode);
         }
 
-        let gradient_partial = grad_dwt_2d_partial(&gradient_transp, &self.wavelet, &self.wavelet_mode);
-        let gradient_transposed = transpose(&gradient_partial);
-
+        // println!("gradient trans: {:?} {}", gradient_transp.len(), gradient_transp[0].len());
+        let gradient_transposed = transpose(&gradient_transp);
         gradient_transposed
     }
+    // pub fn compress_partial(&self, input: &Vec<Vec<Complex<f64>>>) -> (Vec<Vec<Complex<f64>>>, Vec<Vec<Complex<f64>>>) {
+    //     let dwt_partial: Vec<Vec<Complex<f64>>> = dwt_2d_partial(&transpose(&input), &self.wavelet, &self.wavelet_mode);
+    //     let wav_hh_ll: Vec<Vec<Vec<Complex<f64>>>> = get_ll_hh(&dwt_partial);
+    //     let detail: Vec<Vec<Complex<f64>>> = transpose(&wav_hh_ll[1].clone()); // Save HH detail
+    //     let approx: Vec<Vec<Complex<f64>>> = transpose(&wav_hh_ll[0]); // Approximation (LL)
+    //     (approx, detail)
+    // }
+    // pub fn decompress_partial(&self, grad_output: &Vec<Vec<Complex<f64>>>, target_len: usize) -> Vec<Vec<Complex<f64>>> {
+    //     let seq_len = grad_output.len();
+    //     let gradient_without_target = grad_output[..seq_len.saturating_sub(target_len)].to_vec();
+
+    //     let mut gradient_transp = transpose(&gradient_without_target);
+
+    //     for i in 0..gradient_transp.len() {
+    //         gradient_transp[i].extend_from_slice(&vec![Complex::new(0.0, 0.0); seq_len]);
+    //     }
+
+    //     let gradient_partial = grad_dwt_2d_partial(&gradient_transp, &self.wavelet, &self.wavelet_mode);
+    //     let gradient_transposed = transpose(&gradient_partial);
+
+    //     gradient_transposed
+    // }
     pub fn compress_padding_mask(&self, padding_mask: &Vec<u32>) -> Vec<u32> {
         let input_f64: Vec<f64> = padding_mask.iter().map(|v| *v as f64).collect();
         let dwt_partial: Vec<f64> = dwt_1d(&input_f64, &self.wavelet, &self.wavelet_mode);
