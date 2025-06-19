@@ -275,10 +275,9 @@ where
 {
     let mut grad_output_padded = grad_output.clone();
     grad_output_padded.extend_from_slice(&vec![T::zero(); grad_output.len()]);
+    let gradient_extended = inverse_dwt_1d(&grad_output_padded, dw_type, _mode, 0);
 
-    // println!("grad output padded: {:?}", &grad_output_padded);
-
-    inverse_dwt_1d(&grad_output_padded, dw_type, _mode, 0)
+    gradient_extended
 }
 
 pub fn grad_dwt_1d_full<T>(grad_output: &Vec<T>, dw_type: &DiscreteWaletetType, _mode: &WaveletMode) -> Vec<T>
@@ -287,7 +286,6 @@ where
 {
     inverse_dwt_1d(&grad_output, dw_type, _mode, 0)
 }
-
 
 pub fn grad_dwt_2d<T>(grad_output: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<Vec<T>>
 where

@@ -140,13 +140,12 @@ mod test_wavelet_discrete_layer {
         // Define some small batch size and input dimensions for simplicity
         let batch_size = 1;
         let _seq_len: usize = 1;
-        let input_dim = 3;
+        let input_dim = 5;
         let output_dim = 16;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
         let epsilon = 1e-8;
         let epsilon_test = 1e-5;
-        let target_dim = 3;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut wavelet_layer: DiscreteWaveletLayer = DiscreteWaveletLayer::new();
@@ -155,7 +154,7 @@ mod test_wavelet_discrete_layer {
         // Define a small input batch, [2][2][3]
         // input includes target tokens + padding already !
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
-        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, target_dim - 1, (target_dim) as u32);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, input_dim, (input_dim -1) as u32);
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];
         // let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1, 1, 1, 1, 1, 1, 1, 1]; input_batch.len()];
 
