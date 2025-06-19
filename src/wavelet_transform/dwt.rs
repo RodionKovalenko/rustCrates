@@ -273,9 +273,9 @@ pub fn grad_dwt_1d_trend<T>(grad_output: &Vec<T>, dw_type: &DiscreteWaletetType,
 where
     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
 {
-    let mut grad_output_padded = grad_output.clone();
-    grad_output_padded.extend_from_slice(&vec![T::zero(); grad_output.len()]);
-    let gradient_extended = inverse_dwt_1d(&grad_output_padded, dw_type, _mode, 0);
+    //let mut grad_output_padded = grad_output.clone();
+    // grad_output_padded.extend_from_slice(&vec![T::zero(); grad_output.len()]);
+    let gradient_extended = inverse_dwt_1d(&grad_output, dw_type, _mode, 0);
 
     gradient_extended
 }
