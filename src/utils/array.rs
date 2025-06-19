@@ -1,10 +1,10 @@
-use std::cmp::{max, min};
 use crate::utils::convolution_modes::ConvolutionMode;
+use std::cmp::{max, min};
 
 /*
-    Aranges a vector of f64 values from start to end with a step value
-    e.g. arange(0.0, 10.0, 1.0) -> [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
- */
+   Aranges a vector of f64 values from start to end with a step value
+   e.g. arange(0.0, 10.0, 1.0) -> [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+*/
 pub fn arange(start: &f64, end: &f64, step: &f64) -> Vec<f64> {
     let size = ((end - start) / step) as usize;
     let mut result: Vec<f64> = vec![0.0; size];
@@ -20,9 +20,9 @@ pub fn arange(start: &f64, end: &f64, step: &f64) -> Vec<f64> {
 }
 
 /*
-    Creates a vector of f64 values from start to end with n_samples
-    e.g. linspace(0.0, 10.0, 5, false) -> [0.0, 2.5, 5.0, 7.5, 10.0]
- */
+   Creates a vector of f64 values from start to end with n_samples
+   e.g. linspace(0.0, 10.0, 5, false) -> [0.0, 2.5, 5.0, 7.5, 10.0]
+*/
 pub fn linspace(start: &f64, end: &f64, n_samples: &i32, include_end: bool) -> Vec<f64> {
     let span = end - start;
     let n = n_samples.clone() as f64;
@@ -49,9 +49,9 @@ pub fn linspace(start: &f64, end: &f64, n_samples: &i32, include_end: bool) -> V
 }
 
 /*
-     Convolves a kernel with a data vector
-     three modes are possible: full, same, valid
- */
+    Convolves a kernel with a data vector
+    three modes are possible: full, same, valid
+*/
 pub fn convolve(data: &Vec<f64>, kernel: &Vec<f64>, conv_mode: &ConvolutionMode) -> Vec<f64> {
     let mut data_clone = data.clone();
     let mut kernel_clone = kernel.clone();
@@ -111,8 +111,8 @@ pub fn convolve(data: &Vec<f64>, kernel: &Vec<f64>, conv_mode: &ConvolutionMode)
 }
 
 /*
-    Convolves a kernel with a 2-d data vector using the convolve function
- */
+   Convolves a kernel with a 2-d data vector using the convolve function
+*/
 pub fn convolve_2d(kernel: &Vec<f64>, data: &Vec<Vec<f64>>, conv_mode: &ConvolutionMode) -> Vec<Vec<f64>> {
     let mut convolved: Vec<Vec<f64>> = Vec::new();
 
@@ -134,8 +134,8 @@ pub fn convolve_3d(kernel: &Vec<f64>, data: &Vec<Vec<Vec<f64>>>, conv_mode: &Con
 }
 
 /*
-    Integrates a vector using the rectangle integration method.
- */
+   Integrates a vector using the rectangle integration method.
+*/
 pub fn integrate(x: &Vec<f64>, y: &Vec<f64>, scale: &f64) -> Vec<f64> {
     let step = x[1].clone() - x[0].clone();
     let mut integral: Vec<f64> = Vec::new();
@@ -166,8 +166,8 @@ pub fn integrate(x: &Vec<f64>, y: &Vec<f64>, scale: &f64) -> Vec<f64> {
 }
 
 /*
-    returns the array of differences multiplied by the square root of the scale
- */
+   returns the array of differences multiplied by the square root of the scale
+*/
 pub fn get_coef(a: &Vec<f64>, scale: &f64) -> Vec<f64> {
     let mut diff: Vec<f64> = Vec::new();
     let scaled_sqrt = -1.0 * scale.clone().sqrt();
@@ -181,8 +181,8 @@ pub fn get_coef(a: &Vec<f64>, scale: &f64) -> Vec<f64> {
 }
 
 /*
-    returns the 2-d array of differences multiplied by the square root of the scale
- */
+   returns the 2-d array of differences multiplied by the square root of the scale
+*/
 pub fn get_coef_2d(a: &Vec<Vec<f64>>, scale: &f64) -> Vec<Vec<f64>> {
     let mut diff: Vec<Vec<f64>> = Vec::new();
     let mut vec: Vec<f64>;
@@ -205,4 +205,44 @@ pub fn get_coef_3d(a: &Vec<Vec<Vec<f64>>>, scale: &f64) -> Vec<Vec<Vec<f64>>> {
     }
 
     diff
+}
+
+pub fn unzip3<A, B, C>(v: Vec<(A, B, C)>) -> (Vec<A>, Vec<B>, Vec<C>) {
+    let mut va = Vec::with_capacity(v.len());
+    let mut vb = Vec::with_capacity(v.len());
+    let mut vc = Vec::with_capacity(v.len());
+    for (a, b, c) in v {
+        va.push(a);
+        vb.push(b);
+        vc.push(c);
+    }
+    (va, vb, vc)
+}
+pub fn unzip4<A, B, C, D>(v: Vec<(A, B, C, D)>) -> (Vec<A>, Vec<B>, Vec<C>, Vec<D>) {
+    let mut va = Vec::with_capacity(v.len());
+    let mut vb = Vec::with_capacity(v.len());
+    let mut vc = Vec::with_capacity(v.len());
+    let mut vd = Vec::with_capacity(v.len());
+    for (a, b, c, d) in v {
+        va.push(a);
+        vb.push(b);
+        vc.push(c);
+        vd.push(d)
+    }
+    (va, vb, vc, vd)
+}
+pub fn unzip5<A, B, C, D, E>(v: Vec<(A, B, C, D, E)>) -> (Vec<A>, Vec<B>, Vec<C>, Vec<D>, Vec<E>) {
+    let mut va = Vec::with_capacity(v.len());
+    let mut vb = Vec::with_capacity(v.len());
+    let mut vc = Vec::with_capacity(v.len());
+    let mut vd = Vec::with_capacity(v.len());
+    let mut ve = Vec::with_capacity(v.len());
+    for (a, b, c, d, e) in v {
+        va.push(a);
+        vb.push(b);
+        vc.push(c);
+        vd.push(d);
+        ve.push(e);
+    }
+    (va, vb, vc, vd, ve)
 }
