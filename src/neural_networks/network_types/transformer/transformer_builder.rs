@@ -1,7 +1,7 @@
 use crate::neural_networks::{
     network_components::{embedding_layer::EmbeddingLayer, layer::LayerEnum, linear_layer::LinearLayer, norm_layer::NormalNormLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
     network_types::{
-        feedforward_layer::FeedForwardLayer, neural_network_generic::{create, NeuralNetwork, OperationMode}, wavelet_complex_layer::ComplexWaveletLayer, wavelet_discrete_layer::DiscreteWaveletLayer, wavelet_network::DECOMPOSITION_LEVELS
+        feedforward_layer::FeedForwardLayer, neural_network_generic::{create, NeuralNetwork, OperationMode}, wavelet_discrete_layer::DiscreteWaveletLayer, wavelet_network::DECOMPOSITION_LEVELS
     },
 };
 

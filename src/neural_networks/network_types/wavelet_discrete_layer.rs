@@ -57,7 +57,7 @@ impl DiscreteWaveletLayer {
             gradient: None,
             output_batch: None,
             time_step: 0,
-            wavelet: DiscreteWaletetType::DB2,
+            wavelet: DiscreteWaletetType::DB1,
             wavelet_mode: WaveletMode::SYMMETRIC,
             is_full_mode: false,
             approx_details: None,
