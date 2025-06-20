@@ -479,7 +479,7 @@ pub fn scale_attention_scores_f64(attention_scores: &Vec<Vec<f64>>, d_k: f64) ->
 }
 
 
-fn create_causal_mask(rows: usize) -> Vec<Vec<u8>> {
+pub fn create_causal_mask(rows: usize) -> Vec<Vec<u8>> {
     let mut mask = vec![vec![0; rows]; rows]; // Initialize with zeros
 
     for i in 0..rows {
