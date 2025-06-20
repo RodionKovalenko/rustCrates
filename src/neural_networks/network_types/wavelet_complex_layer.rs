@@ -4,7 +4,10 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    neural_networks::network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+    neural_networks::{
+        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+        network_types::transformer::masked_attention_head::create_causal_mask,
+    },
     wavelet_transform::{
         cwt_complex::{cwt_2d, cwt_2d_full, get_wavelet_derivative, get_wavelet_derivative_full, wavefun_complex, CWTComplex},
         cwt_types::ContinuousWaletetType,
@@ -55,13 +58,19 @@ impl ComplexWaveletLayer {
         let output_batch: Vec<Vec<Vec<Complex<f64>>>> = input_batch
             .par_iter()
             .map(|input| {
+                let mut output;
                 if self.is_full_mode {
                     let (wavelet_output, _frequencies) = cwt_2d_full(input, &self.wavelet);
-                    wavelet_output[0].to_vec()
+                    output = wavelet_output[0].to_vec();
                 } else {
                     let (wavelet_output, _frequencies) = cwt_2d(input, &self.wavelet);
-                    wavelet_output[0].to_vec()
+                    output = wavelet_output[0].to_vec();
                 }
+
+                let causal_mask = create_causal_mask(output.len());
+                self.apply_attention_mask_inplace(&mut output, &causal_mask);
+
+                output
             })
             .collect();
 
@@ -99,5 +108,15 @@ impl ComplexWaveletLayer {
 
         self.gradient = Some(gradient.clone());
         gradient
+    }
+
+    fn apply_attention_mask_inplace(&self, attention_scores: &mut Vec<Vec<Complex<f64>>>, mask: &Vec<Vec<u8>>) {
+        for row in 0..attention_scores.len() {
+            for col in 0..attention_scores[row].len() {
+                if mask[row % mask.len()][col % mask[0].len()] == 0 {
+                    attention_scores[row][col] = Complex::new(0.0, 0.0); // Apply the mask
+                }
+            }
+        }
     }
 }

@@ -60,11 +60,11 @@ impl DiscreteWaveletLayer {
             gradient: None,
             output_batch: None,
             time_step: 0,
-            wavelet: DiscreteWaletetType::DB4,
+            wavelet: DiscreteWaletetType::DB2,
             wavelet_mode: WaveletMode::SYMMETRIC,
             is_full_mode: false,
             details_batch: None,
-            compression_levels: 5,
+            compression_levels: 4,
             compression_dims: None,
             compressed_padding_mask_b: None,
             padding_mask_batch: None,
@@ -119,6 +119,7 @@ impl DiscreteWaveletLayer {
                         trend.extend_from_slice(&target_emb);
                         comp_pad_mask_b.extend_from_slice(&vec![1; target_emb.len()]);
                     }
+                    assert_eq!(comp_pad_mask_b.len(), trend.len());
 
                     (trend, input_only_separated, compression_dims, comp_pad_mask_b)
                 }
@@ -247,10 +248,6 @@ impl DiscreteWaveletLayer {
 
             // println!("compression dim: {}", trend.len());
             compression_dim.push(trend.len());
-
-            if trend.len() < 24 {
-                break;
-            }
         }
 
         //println!("trend dim: {} {}", trend.len(), trend[0].len());
@@ -301,13 +298,22 @@ impl DiscreteWaveletLayer {
     // }
     pub fn compress_padding_mask(&self, padding_mask: &Vec<u32>) -> Vec<u32> {
         let input_f64: Vec<f64> = padding_mask.iter().map(|v| *v as f64).collect();
-        let dwt_partial: Vec<f64> = dwt_1d(&input_f64, &self.wavelet, &self.wavelet_mode);
+        let mut dwt_partial: Vec<f64> = input_f64.clone();
 
-        let wav_hh_ll: Vec<Vec<f64>> = get_ll_hh_1d(&dwt_partial);
-        let approx: Vec<f64> = wav_hh_ll[0].clone(); // Approximation (LL)
+        for _ in 0..self.compression_levels {
+            let dwt = dwt_1d(&dwt_partial, &self.wavelet, &self.wavelet_mode);
+            let wav_hh_ll: Vec<Vec<f64>> = get_ll_hh_1d(&dwt);
+            dwt_partial = wav_hh_ll[0].clone(); // Approximation (LL)
+
+            // println!("padding mask compressed: {:?}", dwt_partial);
+            // println!("padding mask compressed dim: {:?}", dwt_partial.len());
+        }
 
         // Step 4: Threshold the approximation to get new mask
-        let compressed_mask: Vec<u32> = approx.iter().map(|&val| if val > 0.99 { 1 } else { 0 }).collect();
+        let compressed_mask: Vec<u32> = dwt_partial.iter().map(|&val| if val > 0.99 { 1 } else { 0 }).collect();
+
+        // println!("final padding mask compressed: {:?}", compressed_mask);
+        // println!("final padding mask compressed dim: {:?}", compressed_mask.len());
 
         compressed_mask
     }
