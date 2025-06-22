@@ -21,6 +21,9 @@ pub struct SelfAttentionLayer {
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
+    pub previous_gradient: Option<Gradient>,
+    #[serde(skip)]
     pub time_step: usize,
 }
 
@@ -38,6 +41,7 @@ impl SelfAttentionLayer {
         let epsilon: f64 = 0.000000000001;
         let _norm_layer_rms = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(cols, epsilon, learning_rate))));
         let _norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(cols, epsilon, learning_rate))));
+        let previus_gradient = Gradient::new_default();
 
         Self {
             attention_heads,
@@ -45,6 +49,7 @@ impl SelfAttentionLayer {
             norm_layer: _norm_layer,
             input_batch: None,
             output_batch: None,
+            previous_gradient: Some(previus_gradient),
             time_step: 0,
         }
     }
@@ -135,6 +140,7 @@ impl SelfAttentionLayer {
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
         // let input_batch = self.input_batch.as_ref().expect("Input batch not found in self-attention layer backward");
         let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient_batch.clone();
+        let mut previous_gradient = self.previous_gradient.as_ref().expect("no previous gradient in self attetion layer found");
 
         let mut gradient: Gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(previous_gradient_batch.clone());

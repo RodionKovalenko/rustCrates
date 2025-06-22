@@ -256,6 +256,8 @@ impl EmbeddingLayer {
 
                 if let Ok(mut cache) = self.cache.write() {
                     cache.insert(token_id, embedding_normalized.clone());
+                } else {
+                    panic!("embedding was not updated in cache");
                 }
 
                 Self::update_embedding(db, &token_id, &embedding_normalized);

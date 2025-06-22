@@ -44,7 +44,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
     'outer: for epoch in 0..num_epochs {
         total_loss = Complex::new(0.0, 0.0);
-        for batch_dataset in dataset.split_into_batches(batch_size) {
+        for batch_dataset in dataset.split_into_batches(1) {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
 
             let seconds_elapsed = now.elapsed();
@@ -72,9 +72,13 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
             layer_input.set_batch_ids(batch_ids);
             layer_input.set_time_step(epoch);
+            layer_input.set_batch_size(batch_size);
             layer_input.set_forward_only(false);
             layer_input.set_calculate_gradient(true);
             layer_input.set_target_batch_ids(target_ids.clone());
+
+            transformer_network.minibatch_size = batch_size;
+            transformer_network.time_step = epoch;
 
             let network_output = predict(transformer_network, &layer_input);
             let (predicted_softmax_batch, padding_mask_batch) = (network_output.get_output_batch_f64(), network_output.get_padding_mask_batch());
@@ -507,6 +511,10 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
     // Backward pass
 
     let mut gradient: Option<Gradient> = None;
+    let batch_size = transformer_network.get_minibatch_size();
+    let time_step = transformer_network.get_time_step();
+
+    let update_gradients: bool = time_step % batch_size == 0 && update_params;
 
     for layer in transformer_network.layers.iter_mut().rev() {
         match layer {
@@ -516,7 +524,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
                     let gradient_batch: Gradient = embedding_layer.backward(&previous_gradient_batch);
 
-                    if update_params {
+                    if update_gradients {
                         embedding_layer.update_parameters(&target_batch_ids, transformer_network.learning_rate);
                     }
                     //println!("backward embedding end");
@@ -554,7 +562,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
 
                     let gradient_batch: Gradient = attention_layer.backward(&previous_gradient_batch);
                     // Update weights and biases
-                    if update_params {
+                    if update_gradients {
                         attention_layer.update_parameters();
                     }
                     // println!("backward attention layer end");
@@ -570,7 +578,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     //println!("backward dense start");
                     let gradient_batch: Gradient = dense_layer.backward(&previous_gradient_batch);
                     // Update weights and biases
-                    if update_params {
+                    if update_gradients {
                         dense_layer.update_parameters();
                     }
 
@@ -584,7 +592,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     //println!("backward linear start");
                     let gradient_batch: Gradient = linear_layer.backward(&previous_gradient);
 
-                    if update_params {
+                    if update_gradients {
                         linear_layer.update_parameters();
                     }
                     gradient = Some(gradient_batch);
@@ -597,7 +605,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     //println!("backward linear start");
                     let gradient_batch: Gradient = multi_linear_layer.backward(&previous_gradient);
 
-                    if update_params {
+                    if update_gradients {
                         multi_linear_layer.update_parameters();
                     }
                     gradient = Some(gradient_batch);

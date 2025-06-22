@@ -4,6 +4,7 @@ use std::sync::Mutex;
 
 use actix_web::web::Form;
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
+use neural_networks::neural_networks::network_types::transformer::test_transformer::test_train_transformer;
 use neural_networks::neural_networks::network_types::transformer::transformer_network::predict_by_text;
 use neural_networks::neural_networks::training::train_transformer::train_transformer_from_dataset;
 use neural_networks::utils::string::fix_encoding;
@@ -42,6 +43,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "predict" => {
                 let input = read_input("Enter input text for prediction: ")?;
                 predict_by_text(&vec![input]);
+            }
+            "test" => {
+               test_train_transformer();
             }
             "server" => start_server().await?,
             _ => println!("Unrecognized argument: {}", arg1),
