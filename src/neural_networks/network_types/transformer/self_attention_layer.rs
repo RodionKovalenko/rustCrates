@@ -140,7 +140,6 @@ impl SelfAttentionLayer {
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
         // let input_batch = self.input_batch.as_ref().expect("Input batch not found in self-attention layer backward");
         let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient_batch.clone();
-        let mut previous_gradient = self.previous_gradient.as_ref().expect("no previous gradient in self attetion layer found");
 
         let mut gradient: Gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(previous_gradient_batch.clone());
