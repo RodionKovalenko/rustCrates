@@ -34,8 +34,8 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
 
     layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
     layers.push(LayerEnum::DiscreteWavelet(Box::new(DiscreteWaveletLayer::new())));
-    layers.push(LayerEnum::Norm(Box::new(NormalNormLayer::new(embedding_dim_compressed, 1e-8, learning_rate))));
     // layers.push(LayerEnum::Wavelet(Box::new(ComplexWaveletLayer::new())));
+    layers.push(LayerEnum::Norm(Box::new(NormalNormLayer::new(embedding_dim_compressed, 1e-8, learning_rate))));
     layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
 
     let rows: usize = embedding_dim_compressed;
@@ -59,10 +59,10 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
         }
 
         let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
+
         layers.push(LayerEnum::FeedForward(Box::new(ffn_layer)));
     }
     // Transformer block end
-
     let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
     let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode);
 

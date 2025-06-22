@@ -215,4 +215,92 @@ mod test_wavelet_discrete_layer {
         test_gradient_error_2d(&numerical_grad, &analytical_grad, epsilon_test);
         test_gradient_batch_error(&numerical_grad_batch, &analytical_grad_batch, epsilon_test);
     }
+
+    #[test]
+    fn test_separate_input_target() {
+        let batch_size = 1;
+        let input_dim = 3;
+        let output_dim = 10;
+
+        // input dim = target dim = 3
+        // Input = 5, Target = 3, no padding
+
+        let wavelet_layer: DiscreteWaveletLayer = DiscreteWaveletLayer::new();
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, input_dim, input_dim as u32);
+        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];
+
+        let input = &input_batch[0];
+        let target_ids = &target_token_id_batch[0];
+        let padding_mask = &padding_mask_batch[0];
+
+        let (input_s, target_s, padding_input_s) = wavelet_layer.separate_input_target(input, target_ids, padding_mask);
+
+        // println!("\n input separated: {:?}", input_s);
+        // println!("\n target separated: {:?}", target_s);
+        // println!("\n padding mask separated: {:?}", padding_input_s);
+
+        for i in 0..input_s.len() {
+            assert_eq!(input_s[i], input[i]);
+        }
+        for i in 0..target_s.len() {
+            assert_eq!(target_s[i], input[input_s.len() + i]);
+        }
+
+        assert_eq!(input_s.len(), input.len() - input_dim);
+        assert_eq!(padding_input_s.len(), input.len() - input_dim);
+        assert_eq!(target_s.len(), target_ids.len());
+
+        // Padding mask
+        // Padding length = 2
+        let padding_mask: Vec<u32> = vec![1, 1, 1, 1, 1, 1, 1, 1, 0, 0];
+        let (input_s, target_s, padding_input_s) = wavelet_layer.separate_input_target(input, target_ids, &padding_mask);
+
+        println!("\n input original: {:?}", input);
+        println!("\n padding mask original: {:?}", padding_mask_batch);
+
+        println!("\n input separated: {:?}", input_s);
+        println!("\n target separated: {:?}", target_s);
+        println!("\n padding mask separated: {:?}", padding_input_s);
+
+        assert_eq!(input_s.len(), input.len() - input_dim);
+        assert_eq!(padding_input_s.len(), input.len() - input_dim);
+        assert_eq!(target_s.len(), target_ids.len());
+
+        for i in 0..input_s.len() - 2 {
+            assert_eq!(input_s[i], input[i]);
+        }
+
+        let mut i_t = 0;
+        for i in input_s.len()..input.len() {
+            assert_eq!(target_s[i_t], input[i]);
+            i_t += 1;
+        }
+
+        // Padding mask
+        // Padding length = 2
+        let padding_mask: Vec<u32> = vec![1, 1, 1, 1, 1, 0, 0, 1, 1, 1];
+        let (input_s, target_s, padding_input_s) = wavelet_layer.separate_input_target(input, target_ids, &padding_mask);
+
+        println!("\n input original: {:?}", input);
+        println!("\n padding mask original: {:?}", padding_mask_batch);
+
+        println!("\n input separated: {:?}", input_s);
+        println!("\n target separated: {:?}", target_s);
+        println!("\n padding mask separated: {:?}", padding_input_s);
+
+        assert_eq!(input_s.len(), input.len() - input_dim);
+        assert_eq!(padding_input_s.len(), input.len() - input_dim);
+        assert_eq!(target_s.len(), target_ids.len());
+
+        for i in 0..input_s.len() - 2 {
+            assert_eq!(input_s[i], input[i]);
+        }
+
+        let mut i_t = 0;
+        for i in input_s.len()..input.len() {
+            assert_eq!(target_s[i_t], input[i]);
+            i_t += 1;
+        }
+    }
 }

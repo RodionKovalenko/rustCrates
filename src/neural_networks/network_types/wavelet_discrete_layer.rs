@@ -60,7 +60,7 @@ impl DiscreteWaveletLayer {
             gradient: None,
             output_batch: None,
             time_step: 0,
-            wavelet: DiscreteWaletetType::DB2,
+            wavelet: DiscreteWaletetType::DB1,
             wavelet_mode: WaveletMode::SYMMETRIC,
             is_full_mode: false,
             details_batch: None,
@@ -198,41 +198,69 @@ impl DiscreteWaveletLayer {
     pub fn separate_input_target(&self, input: &Vec<Vec<Complex<f64>>>, target_ids: &Vec<u32>, padding_mask: &Vec<u32>) -> (Vec<Vec<Complex<f64>>>, Vec<Vec<Complex<f64>>>, Vec<u32>) {
         let mut input_without_target: Vec<Vec<Complex<f64>>> = vec![];
         let mut target: Vec<Vec<Complex<f64>>> = vec![];
-        let padding_len = padding_mask.iter().filter(|x| **x == 0).count();
-        let input_end = input.len() - target_ids.len() - padding_len;
-        let mut padding_input_mask: Vec<u32> = vec![1; input_end];
+        let mut padding_input_mask: Vec<u32> = vec![];
 
-        // only input
-        for i in 0..input_end {
-            input_without_target.push(input[i].clone());
-        }
-        // padding added to input
-        let mut pad_ind_end = 0;
+        let total_len = input.len();
+        let target_len = target_ids.len();
+        let padding_len = padding_mask.iter().filter(|&&x| x == 0).count();
 
-        for i in 0..padding_mask.len() {
-            if padding_mask[i] == 0 {
-                input_without_target.push(input[i].clone());
-                padding_input_mask.push(0);
+        assert_eq!(padding_mask.len(), total_len);
+        assert_eq!(target_len + padding_len <= total_len, true);
 
-                pad_ind_end = i;
+        // Heuristic: if target comes after padding (input + padding + target)
+        // the last `target_len` items in the input (excluding padding) are target
+        let non_padded_indices: Vec<usize> = padding_mask.iter().enumerate().filter_map(|(i, &m)| if m == 1 { Some(i) } else { None }).collect();
+
+        // If the last `target_len` non-padded elements are at the end, it's input + padding + target
+        let expected_target_indices: Vec<usize> = non_padded_indices.iter().rev().take(target_len).cloned().collect();
+
+        let mut is_input_padding_target = true;
+        for &idx in &expected_target_indices {
+            if idx >= total_len - target_len {
+                continue;
+            } else {
+                is_input_padding_target = false;
+                break;
             }
         }
 
-        if pad_ind_end == 0 {
-            pad_ind_end = input_end;
-        }
-
-        for i in pad_ind_end..padding_mask.len() {
-            if padding_mask[i] == 1 {
+        if is_input_padding_target {
+            // Case: input + padding + target
+            for i in 0..total_len {
+                if padding_mask[i] == 1 {
+                    if non_padded_indices[non_padded_indices.len() - target_len..].contains(&i) {
+                        target.push(input[i].clone());
+                    } else {
+                        input_without_target.push(input[i].clone());
+                        padding_input_mask.push(1);
+                    }
+                } else {
+                    input_without_target.push(input[i].clone());
+                    padding_input_mask.push(0);
+                }
+            }
+        } else {
+            // Case: input + target + padding
+            let input_len = total_len - target_len - padding_len;
+            for i in 0..input_len {
+                input_without_target.push(input[i].clone());
+                padding_input_mask.push(1);
+            }
+            for i in input_len..input_len + padding_len {
+                input_without_target.push(input[i].clone());
+                padding_input_mask.push(0);
+            }
+            for i in input_len + padding_len..total_len {
                 target.push(input[i].clone());
             }
         }
 
-        assert_eq!(target.len() + input_without_target.len(), input.len());
+        assert_eq!(input_without_target.len() + target.len(), input.len());
         assert_eq!(padding_input_mask.len(), input.len() - target.len());
 
         (input_without_target, target, padding_input_mask)
     }
+
     pub fn compress_partial(&self, input: &[Vec<Complex<f64>>]) -> (Vec<Vec<Complex<f64>>>, Vec<Vec<Complex<f64>>>, Vec<usize>) {
         let mut trend = input.to_vec();
         let mut details = Vec::new();
@@ -258,7 +286,6 @@ impl DiscreteWaveletLayer {
         let gradient_without_target = grad_output[..seq_len.saturating_sub(target_len)].to_vec();
         let mut gradient_transp = transpose(&gradient_without_target);
 
-        println!("decompression _________________________________");
         for _l in (0.._compression_dim.len()).rev() {
             let seq_len = gradient_transp[0].len();
 
@@ -266,12 +293,10 @@ impl DiscreteWaveletLayer {
                 gradient_transp[i].extend_from_slice(&vec![Complex::new(0.0, 0.0); seq_len]);
             }
             gradient_transp = grad_dwt_2d_partial(&gradient_transp, &self.wavelet, &self.wavelet_mode);
-            println!("gradient trans after grad dwt partial {:?} {}", gradient_transp.len(), gradient_transp[0].len());
         }
 
         let gradient_transposed = transpose(&gradient_transp);
 
-        println!("gradient trans: {:?} {}", gradient_transposed.len(), gradient_transposed[0].len());
         gradient_transposed
     }
     // pub fn compress_partial(&self, input: &Vec<Vec<Complex<f64>>>) -> (Vec<Vec<Complex<f64>>>, Vec<Vec<Complex<f64>>>) {
@@ -324,9 +349,6 @@ impl DiscreteWaveletLayer {
         let mut result = Vec::with_capacity(gradient.len());
 
         // assert_eq!(gradient.len(), input.len());
-        println!("gradient decompr len: {} {}", gradient_decompr.len(), gradient_decompr[0].len());
-        println!("gradient len: {} {}", gradient.len(), gradient[0].len());
-        println!("input len: {} {}", input.len(), input[0].len());
 
         // Copy the first (input_rows - 1) rows
         for i in 0..(input_rows - 1) {

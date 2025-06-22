@@ -5,10 +5,10 @@ use num_traits::NumCast;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 // use std::ffi::c_void;
+use std::ffi::c_char;
 use std::fmt::Debug;
 use std::ops::{Add, Mul, Sub};
 use std::sync::{Arc, Mutex};
-use std::ffi::c_char;
 
 extern "C" {
     fn zgemm_(transa: *const c_char, transb: *const c_char, m: *const i64, n: *const i64, k: *const i64, alpha: *const Complex<f64>, a: *const Complex<f64>, lda: *const i64, b: *const Complex<f64>, ldb: *const i64, beta: *const Complex<f64>, c: *mut Complex<f64>, ldc: *const i64);
@@ -591,6 +591,30 @@ pub fn add_matrix_3d<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<Vec<Vec<
             for k in 0..matrix_a[i][j].len() {
                 matrix_result[i][j][k] = matrix_result[i][j][k].clone() + matrix_b[i % matrix_b.len()][j % matrix_b[0].len()][k % matrix_b[0][0].len()].clone();
             }
+        }
+    }
+
+    matrix_result
+}
+
+pub fn add_matrix_1d_c(matrix_a: &Vec<Complex<f64>>, matrix_b: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
+    let mut matrix_result: Vec<Complex<f64>> = matrix_a.clone();
+
+    for i in 0..matrix_a.len() {
+        let val = matrix_result[i].clone() + matrix_b[i % matrix_b.len()].clone();
+        matrix_result[i] = Complex::new(val.re, 0.0);
+    }
+
+    matrix_result
+}
+
+pub fn add_matrix_2d_c(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    let mut matrix_result: Vec<Vec<Complex<f64>>> = matrix_a.clone();
+
+    for i in 0..matrix_a.len() {
+        for j in 0..matrix_a[i].len() {
+            let val = matrix_result[i][j].clone() + matrix_b[i % matrix_b.len()][j % matrix_b[0].len()].clone();
+            matrix_result[i][j] = Complex::new(val.re, 0.0);
         }
     }
 

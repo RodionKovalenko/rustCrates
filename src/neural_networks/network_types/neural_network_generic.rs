@@ -28,6 +28,7 @@ pub struct NeuralNetwork {
     pub number_of_hidden_layers: usize,
     pub number_of_hidden_neurons: usize,
     pub minibatch_size: usize,
+    pub time_step: usize,
 }
 
 // Provide more flexible methods for getting properties of the network
@@ -43,6 +44,9 @@ impl NeuralNetwork {
     }
     pub fn get_number_of_hidden_layers(&self) -> usize {
         self.number_of_hidden_layers
+    }
+    pub fn get_time_step(&self) -> usize {
+        self.time_step
     }
     pub fn get_minibatch_size(&self) -> usize {
         self.minibatch_size
@@ -82,6 +86,7 @@ pub fn create(number_inputs: usize, number_outputs: usize, number_of_hidden_laye
         number_of_hidden_layers,
         number_of_hidden_neurons,
         minibatch_size,
+        time_step: 0
     };
 
     feed_net

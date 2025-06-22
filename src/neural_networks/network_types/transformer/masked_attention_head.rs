@@ -383,6 +383,9 @@ impl MaskedAttentionHead {
             prev_m_weights_v = previous_gradient.get_prev_m_weigths_v();
             prev_v_weights_v = previous_gradient.get_prev_v_weigths_v();
 
+            prev_m_bias_pos = previous_gradient.get_prev_m_bias_pos();
+            prev_v_bias_pos = previous_gradient.get_prev_v_bias_pos();
+
             self.weights_q = calculate_adam_w(&self.weights_q, &grad_w_q, &mut prev_m_weights_q, &mut prev_v_weights_q, learning_rate, time_step);
             self.weights_k = calculate_adam_w(&self.weights_k, &grad_w_k, &mut prev_m_weights_k, &mut prev_v_weights_k, learning_rate, time_step);
             self.weights_v = calculate_adam_w(&self.weights_v, &grad_w_v, &mut prev_m_weights_v, &mut prev_v_weights_v, learning_rate, time_step);
