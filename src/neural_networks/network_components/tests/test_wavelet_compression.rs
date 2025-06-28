@@ -92,4 +92,81 @@ mod test_wavelet_compression {
         // println!("matrix: {:?}", matrix_restored);
         test_gradient_error_2d(&matrix_1, &matrix_restored, 1e-6);
     }
+
+    #[test]
+    fn test_complex_multilevel_wavelet_partial() {
+        let seq_len = 20;
+        let dim = 4;
+        let compr_levels = 10;
+        let wavelet_type = &DiscreteWaletetType::DB4;
+
+        let matrix_1: Vec<Vec<Complex<f64>>> = transpose(&generate_random_complex_2d(seq_len, dim));
+
+        let mut wav_trans_1 = matrix_1.clone();
+        for _i in 0..compr_levels {
+            wav_trans_1 = dwt_2d_partial(&wav_trans_1, wavelet_type, &WaveletMode::SYMMETRIC);
+            println!("\n wav_trans at {}: dim: {} {}", _i, wav_trans_1.len(), wav_trans_1[0].len());
+        }
+
+        let mut matrix_restored = wav_trans_1.clone();
+        for _i in 0..compr_levels {
+            matrix_restored = inverse_dwt_2d_partial(&matrix_restored, wavelet_type, &WaveletMode::SYMMETRIC, 0);
+        }
+
+        println!("original matrix: {:?}", matrix_1);
+        println!("\n matrix 1: dim: {} {}", matrix_1.len(), matrix_1[0].len());
+
+        println!("restored original matrix: {:?}", matrix_restored);
+        println!("restored original matrix dim: {} {}", matrix_restored.len(), matrix_restored[0].len());
+
+        test_gradient_error_2d(&matrix_1, &matrix_restored, 1e-6);
+    }
+
+    #[test]
+    fn test_complex_multilevel_compressed_wavelet_partial() {
+        let seq_len = 75;
+        let dim = 4;
+        let compr_levels = 5;
+        let wavelet_type = &DiscreteWaletetType::DB6;
+
+        let matrix_1: Vec<Vec<Complex<f64>>> = transpose(&generate_random_complex_2d(seq_len, dim));
+        let mut details_coeffs: Vec<Vec<Vec<Complex<f64>>>> = vec![];
+
+        let mut wav_trans_1: Vec<Vec<Complex<f64>>> = matrix_1.clone();
+        for _i in 0..compr_levels {
+            wav_trans_1 = dwt_2d_partial(&wav_trans_1, wavelet_type, &WaveletMode::SYMMETRIC);
+
+            let ll_hh: Vec<Vec<Vec<Complex<f64>>>> = get_ll_hh(&wav_trans_1);
+            wav_trans_1 = ll_hh[0].clone();
+            details_coeffs.push(ll_hh[1].clone());
+            println!("details coeff at index: {}, {} {}", _i, ll_hh[1].len(), ll_hh[1][0].len());
+            println!("\n wav_trans at {}: dim: {} {}", _i, wav_trans_1.len(), wav_trans_1[0].len());
+        }
+
+        let mut matrix_restored: Vec<Vec<Complex<f64>>> = wav_trans_1.clone();
+        for _i in (0..compr_levels).rev() {
+            println!("index i in decompression: {}", _i);
+
+            println!("matrix restored before extend: {} {}", matrix_restored.len(), matrix_restored[0].len());
+            for j in 0..matrix_restored.len() {
+                if matrix_restored[j].len() != details_coeffs[_i][j].len() {
+                    let min_len = matrix_restored[j].len().min(details_coeffs[_i][j].len());
+                    matrix_restored[j].truncate(min_len);
+                    details_coeffs[_i][j].truncate(min_len);
+                }
+                matrix_restored[j].extend_from_slice(&details_coeffs[_i][j]);
+            }
+            println!("matrix restored after extend: {} {}", matrix_restored.len(), matrix_restored[0].len());
+            matrix_restored = inverse_dwt_2d_partial(&matrix_restored, wavelet_type, &WaveletMode::SYMMETRIC, 0);
+            println!("matrix restored after dwt inv.: {} {}", matrix_restored.len(), matrix_restored[0].len());
+        }
+
+        // println!("\n original matrix: {:?}", matrix_1);
+        println!("\n matrix 1: dim: {} {}", matrix_1.len(), matrix_1[0].len());
+
+        // println!("\n restored original matrix: {:?}", matrix_restored);
+        println!("\n restored original matrix dim: {} {}", matrix_restored.len(), matrix_restored[0].len());
+
+        test_gradient_error_2d(&matrix_1, &matrix_restored, 1e-6);
+    }
 }

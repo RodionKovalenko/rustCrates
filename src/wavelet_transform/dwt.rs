@@ -87,6 +87,29 @@ where
     data_trans
 }
 
+// pub fn inverse_dwt_1d<T>(data: &Vec<T>, dw_type: &DiscreteWaletetType, _mode: &WaveletMode, _level: u32) -> Vec<T>
+// where
+//     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
+// {
+//     let ilp: Vec<f64> = get_inverse_low_pass_filter(dw_type);
+//     let ihp: Vec<f64> = get_inverse_high_pass_filter(dw_type);
+//     let filter_len = ilp.len();
+//     let n = data.len();
+//     let output_len = 2 * n; // Proper output size for reconstruction
+
+//     let mut output = vec![T::zero(); output_len];
+
+//     for i in 0..(n / 2) {
+//         for k in 0..filter_len {
+//             let idx = 2 * i + k;
+//             if idx < output_len {
+//                 output[idx] = output[idx] + data[i] * ilp[k] + data[i + n / 2] * ihp[k];
+//             }
+//         }
+//     }
+//     output
+// }
+
 pub fn inverse_dwt_1d<T>(data: &Vec<T>, dw_type: &DiscreteWaletetType, _mode: &WaveletMode, _level: u32) -> Vec<T>
 where
     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
@@ -95,6 +118,7 @@ where
     let inverse_high_pass_filter: Vec<f64> = get_inverse_high_pass_filter(dw_type);
 
     let middle_index = data.len() >> 1;
+    println!("data: {}", data.len());
     let l = data.len() - (inverse_high_pass_filter.len() - 2);
 
     let mut data_trans: Vec<T> = vec![T::zero(); l];
@@ -269,13 +293,26 @@ where
     }
 }
 
+pub fn upsample_with_zeros<T>(input: &Vec<T>) -> Vec<T>
+where
+    T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
+{
+    // let mut out = Vec::with_capacity(input.len() * 2);
+    // for x in input {
+    //     out.push(x.clone());
+    //     out.push(T::zero()); 
+    // }
+
+    let mut out = input.clone();
+    out.extend_from_slice(&vec![T::zero(); input.len()]);
+    out
+}
+
 pub fn grad_dwt_1d_trend<T>(grad_output: &Vec<T>, dw_type: &DiscreteWaletetType, _mode: &WaveletMode) -> Vec<T>
 where
     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
 {
-    //let mut grad_output_padded = grad_output.clone();
-    // grad_output_padded.extend_from_slice(&vec![T::zero(); grad_output.len()]);
-    let gradient_extended = inverse_dwt_1d(&grad_output, dw_type, _mode, 0);
+    let gradient_extended: Vec<T> = inverse_dwt_1d(&grad_output, dw_type, _mode, 0);
 
     gradient_extended
 }
