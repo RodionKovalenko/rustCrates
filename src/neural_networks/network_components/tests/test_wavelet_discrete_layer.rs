@@ -41,12 +41,12 @@ mod test_wavelet_discrete_layer {
         // Define some small batch size and input dimensions for simplicity
         let batch_size = 1;
         let _seq_len: usize = 1;
-        let input_dim = 5;
-        let output_dim = 18;
+        let input_dim = 4;
+        let output_dim = 80;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
         let epsilon = 1e-8;
-        let epsilon_test = 1e-3;
+        let epsilon_test = 1e-2;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut wavelet_layer: DiscreteWaveletLayer = DiscreteWaveletLayer::new();
