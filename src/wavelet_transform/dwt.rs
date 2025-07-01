@@ -118,7 +118,6 @@ where
     let inverse_high_pass_filter: Vec<f64> = get_inverse_high_pass_filter(dw_type);
 
     let middle_index = data.len() >> 1;
-    println!("data: {}", data.len());
     let l = data.len() - (inverse_high_pass_filter.len() - 2);
 
     let mut data_trans: Vec<T> = vec![T::zero(); l];
