@@ -312,8 +312,6 @@ impl DiscreteWaveletLayer {
         let gradient_without_target = grad_output[..seq_len.saturating_sub(target_len)].to_vec();
         let mut gradient_transp = transpose(&gradient_without_target);
 
-        println!("grad previous layer: {:?}", grad_output);
-
         for _l in (0.._compression_dim.len()).rev() {
             for i in 0..gradient_transp.len() {
                 let seq_len = gradient_transp[i].len();
@@ -329,7 +327,7 @@ impl DiscreteWaveletLayer {
 
             gradient_transp = grad_dwt_2d_partial(&gradient_transp, &self.wavelet, &self.wavelet_mode);
 
-            println!("grad restored at index {}: {} {}", _compression_dim[_l], gradient_transp.len(), gradient_transp[0].len());
+            // println!("grad restored at index {}: {} {}", _compression_dim[_l], gradient_transp.len(), gradient_transp[0].len());
         }
 
         let gradient_transposed = transpose(&gradient_transp);
@@ -399,7 +397,7 @@ impl DiscreteWaveletLayer {
 
         let mut result = vec![vec![Complex::new(0.0, 0.0); input_cols]; input_rows];
 
-        println!("gradient restored dim: {} {}", gradient_decompr.len(), gradient_decompr[0].len());
+        // println!("gradient restored dim: {} {}", gradient_decompr.len(), gradient_decompr[0].len());
 
         // Copy the first (input_rows - 1) rows
         for i in 0..input.len() {
@@ -418,7 +416,7 @@ impl DiscreteWaveletLayer {
         //     }
         // }
 
-        println!("grad aligned to input: {} {}", result.len(), result[0].len());
+        // println!("grad aligned to input: {} {}", result.len(), result[0].len());
 
         result
     }
