@@ -44,11 +44,11 @@ pub fn test_train_transformer() {
     let target_2: &str = "Berlin ist die Hauptstadt und ein Land der Bundesrepublik Deutschland.";
 
     let mut input: Vec<String> = Vec::new();
-    input.push(input_str1.to_string());
+    //input.push(input_str1.to_string());
     input.push(input_str2.to_string());
 
     let mut target: Vec<String> = Vec::new();
-    target.push(target_1.to_string());
+    //target.push(target_1.to_string());
     target.push(target_2.to_string());
 
     let dataset = Dataset::new(input, target);
