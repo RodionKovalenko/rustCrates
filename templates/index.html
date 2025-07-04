@@ -68,10 +68,11 @@
     <div id="training-status"></div>
 
     <h2>Run Inference</h2>
-    <form action="/api/predict" method="post">
+    <form action="/api/predict" method="post" accept-charset="UTF-8">
         <label for="prompt">Enter full text:</label><br />
-        <textarea name="prompt" id="prompt" placeholder="Paste or write your full input here..."
-            required>{% if prompt %}{{ prompt }}{% endif %}</textarea><br />
+        <textarea name="prompt" id="prompt" placeholder="Paste or write your full input here..." required>
+        {% if prompt %}{{ prompt }}{% endif %}
+    </textarea><br />
         <button type="submit">Submit</button>
     </form>
 

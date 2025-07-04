@@ -9,7 +9,7 @@ use crate::{
             activation::softmax_complex_padding_real,
             adam_w::calculate_adam_w,
             derivative::{backpropagate_softmax_masked_real, softmax_derivative_complex_jacobian},
-            matrix::{add_matrix, clip_gradients, conjugate_transpose, get_reduced_matrix, is_nan_or_inf, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
+            matrix::{add_matrix, add_matrix_3d, clip_gradients, conjugate_transpose, get_reduced_matrix, is_nan_or_inf, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
             weights_initializer::initialize_weights_complex,
         },
     },
@@ -34,10 +34,14 @@ pub struct MaskedAttentionHead {
     pub layer_type: LayerType,
     pub learning_rate: f64,
 
+    pub m1: Vec<Vec<Complex<f64>>>,
+    pub v1: Vec<Vec<Complex<f64>>>,
+
     #[serde(skip)]
     pub gradient: Option<Gradient>,
     #[serde(skip)]
     pub previous_gradient: Option<Gradient>,
+    #[serde(skip)]
     pub time_step: usize,
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
@@ -49,15 +53,12 @@ pub struct MaskedAttentionHead {
     pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     pub padding_mask_batch: Option<Vec<Vec<u32>>>,
-
     #[serde(skip)]
     pub k_cache: Option<Vec<Vec<Vec<Complex<f64>>>>>,
-
     #[serde(skip)]
     pub v_cache: Option<Vec<Vec<Vec<Complex<f64>>>>>,
-
-    pub m1: Vec<Vec<Complex<f64>>>,
-    pub v1: Vec<Vec<Complex<f64>>>,
+    #[serde(skip)]
+    pub batch_size: usize,
 }
 
 impl MaskedAttentionHead {
@@ -102,6 +103,7 @@ impl MaskedAttentionHead {
             m1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
             v1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
             time_step: 0,
+            batch_size: 0,
         }
     }
 
@@ -332,6 +334,21 @@ impl MaskedAttentionHead {
             gradient_input_batch[batch_ind] = add_matrix(&gradient_input_batch[batch_ind], &dl_dvx);
         }
 
+        if self.gradient.is_some() {
+            let previous_gradient = self.gradient.as_ref().expect("");
+            gradient_input_batch = add_matrix_3d(&gradient_input_batch, &previous_gradient.get_gradient_input_batch());
+            gradient_bias_pos_batch = add_matrix_3d(&gradient_bias_pos_batch, &&previous_gradient.get_gradient_bias_pos_batch());
+            gradient_v_batch = add_matrix_3d(&gradient_v_batch, &&previous_gradient.get_gradient_weights_v_batch());
+            gradient_q_batch = add_matrix_3d(&gradient_q_batch, &&previous_gradient.get_gradient_weights_q_batch());
+            gradient_k_batch = add_matrix_3d(&gradient_k_batch, &&previous_gradient.get_gradient_weights_k_batch());
+
+            if self.batch_size == 0 {
+                self.batch_size = 2;
+            } else {
+                self.batch_size += 1;
+            }
+        }
+
         // Compute the gradients for the parameters and store them
         let mut gradient = Gradient::new_default();
         gradient.set_gradient_weights_v_batch(gradient_v_batch);
@@ -350,7 +367,11 @@ impl MaskedAttentionHead {
 
         let input_batch = gradient.get_gradient_input_batch();
         let mut grad_bias_pos = gradient.get_gradient_bias_pos();
-        let batch_size = input_batch.len() as f64;
+        let mut batch_size = input_batch.len() as f64;
+
+        if self.batch_size > 0 {
+            batch_size = self.batch_size as f64;
+        }
 
         let threshold = 1.0;
         clip_gradients(&mut grad_w_q, threshold);
@@ -477,7 +498,6 @@ pub fn scale_attention_scores_f64(attention_scores: &Vec<Vec<f64>>, d_k: f64) ->
 
     scaled_scores
 }
-
 
 pub fn create_causal_mask(rows: usize) -> Vec<Vec<u8>> {
     let mut mask = vec![vec![0; rows]; rows]; // Initialize with zeros

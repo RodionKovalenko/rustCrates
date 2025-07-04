@@ -15,13 +15,16 @@ use serde::{Deserialize, Serialize};
 pub struct FeedForwardLayer {
     pub layers: Vec<LayerEnum>,
     pub norm_layer: Option<LayerEnum>,
+    pub gradient: Option<Gradient>,
     pub learning_rate: f64,
+
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     pub padding_mask_batch: Option<Vec<Vec<u32>>>,
+    #[serde(skip)]
     pub time_step: usize,
 }
 
@@ -41,6 +44,7 @@ impl FeedForwardLayer {
 
         Self {
             layers,
+            gradient: None,
             norm_layer: None,
             learning_rate,
             input_batch: None,
@@ -180,6 +184,7 @@ impl FeedForwardLayer {
         }
 
         gradient.set_gradient_input_batch(output_gradients);
+        self.gradient = Some(gradient.clone());
 
         gradient
     }
@@ -202,12 +207,24 @@ impl FeedForwardLayer {
         for layer in self.layers.iter_mut().rev() {
             match layer {
                 LayerEnum::Dense(dense_layer) => {
+                    let batch_size: usize = dense_layer.batch_size;
+                    let dense_gradient = dense_layer.gradient.clone();
+
                     let gradient = dense_layer.backward(&output_gradients);
                     output_gradients = gradient.get_gradient_input_batch();
+
+                    dense_layer.batch_size = batch_size;
+                    dense_layer.gradient = dense_gradient;
                 }
                 LayerEnum::Linear(linear_layer) => {
+                    let batch_size = linear_layer.batch_size;
+                    let linear_gradient = linear_layer.gradient.clone();
+
                     let gradient = linear_layer.backward(&gradient);
                     output_gradients = gradient.get_gradient_input_batch();
+
+                    linear_layer.batch_size = batch_size;
+                    linear_layer.gradient = linear_gradient;
                 }
                 _ => {}
             }

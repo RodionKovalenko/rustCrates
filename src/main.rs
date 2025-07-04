@@ -7,7 +7,7 @@ use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use neural_networks::neural_networks::network_types::transformer::test_transformer::test_train_transformer;
 use neural_networks::neural_networks::network_types::transformer::transformer_network::predict_by_text;
 use neural_networks::neural_networks::training::train_transformer::train_transformer_from_dataset;
-use neural_networks::utils::string::fix_encoding;
+use neural_networks::utils::string::maybe_fix_encoding;
 use serde::Deserialize;
 use tera::{Context, Tera};
 
@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 predict_by_text(&vec![input]);
             }
             "test" => {
-               test_train_transformer();
+                test_train_transformer();
             }
             "server" => start_server().await?,
             _ => println!("Unrecognized argument: {}", arg1),
@@ -140,7 +140,7 @@ async fn api_train_status(state: web::Data<AppState>) -> impl Responder {
 }
 
 async fn api_predict(form: Form<PredictForm>, tmpl: web::Data<Tera>) -> impl Responder {
-    let fixed_prompt = fix_encoding(&form.prompt);
+    let fixed_prompt = maybe_fix_encoding(&form.prompt);
     println!("fixed prompt: {:?}", &fixed_prompt);
 
     let output = predict_by_text(&vec![fixed_prompt]);

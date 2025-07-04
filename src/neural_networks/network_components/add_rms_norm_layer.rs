@@ -2,7 +2,10 @@ use core::fmt::Debug;
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::utils::{adam_w::calculate_adam_w_bias, matrix::{add_matrix, clip_gradients, is_nan_or_inf}};
+use crate::neural_networks::utils::{
+    adam_w::calculate_adam_w_bias,
+    matrix::{add_matrix, add_matrix_2d_c, add_matrix_3d, clip_gradients, is_nan_or_inf},
+};
 
 use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
 
@@ -11,17 +14,20 @@ pub const EPSILON: f64 = 0.0000000000000000000000001;
 // RMSNorm Layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RMSNormLayer {
-    gamma: Vec<Complex<f64>>, // Learnable scaling parameter (for each feature)
-    epsilon: f64,             // Small constant for numerical stability
+    pub gamma: Vec<Complex<f64>>, // Learnable scaling parameter (for each feature)
+    pub epsilon: f64,             // Small constant for numerical stability
     pub learning_rate: f64,       // Learning rate for gamma updates
 
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
-    gradient: Option<Gradient>,
+    pub gradient: Option<Gradient>,
     #[serde(skip)]
-    previous_gradient: Option<Gradient>,
-    time_step: usize,
+    pub previous_gradient: Option<Gradient>,
+    #[serde(skip)]
+    pub time_step: usize,
+    #[serde(skip)]
+    pub batch_size: usize,
 }
 
 impl RMSNormLayer {
@@ -35,6 +41,7 @@ impl RMSNormLayer {
             gradient: None,
             previous_gradient: None,
             time_step: 0,
+            batch_size: 0,
         }
     }
 
@@ -109,19 +116,31 @@ impl RMSNormLayer {
                 let rms = self.rms(&input_batch[b][s]);
                 let rms_cubed = rms.powf(3.0);
                 let dim_f64 = dim_len as f64;
-    
+
                 for d_i in 0..dim_len {
                     for d_j in 0..dim_len {
                         let grad = if d_i == d_j {
                             Complex::new(1.0, 0.0) / rms - (input_batch[b][s][d_i] * input_batch[b][s][d_j]) / (dim_f64 * rms_cubed)
                         } else {
-                            - (input_batch[b][s][d_i] * input_batch[b][s][d_j]) / (dim_f64 * rms_cubed)
+                            -(input_batch[b][s][d_i] * input_batch[b][s][d_j]) / (dim_f64 * rms_cubed)
                         };
                         input_batch_gradients[b][s][d_j] += grad.conj() * previous_gradient_batch[b][s][d_i];
                     }
-    
+
                     gradient_gamma_batch[b][d_i] += input_batch[b][s][d_i] / rms;
                 }
+            }
+        }
+
+        if self.gradient.is_some() {
+            let previous_gradient = self.gradient.as_ref().expect("");
+            input_batch_gradients = add_matrix_3d(&input_batch_gradients, &previous_gradient.get_gradient_input_batch());
+            gradient_gamma_batch = add_matrix_2d_c(&gradient_gamma_batch, &previous_gradient.get_gradient_gamma_batch());
+
+            if self.batch_size == 0 {
+                self.batch_size = 2;
+            } else {
+                self.batch_size += 1;
             }
         }
 
@@ -138,7 +157,11 @@ impl RMSNormLayer {
         let threshold = 1.0;
         clip_gradients(&mut gradient_gamma, threshold);
 
-        let batch_size = gradient_gamma.len() as f64;
+        let mut batch_size = gradient_gamma.len() as f64;
+
+        if self.batch_size > 0 {
+            batch_size = self.batch_size as f64;
+        }
 
         let mut prev_m_gamma: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); gradient_gamma[0].len()];
         let mut prev_v_gamma: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); gradient_gamma[0].len()];
@@ -148,7 +171,7 @@ impl RMSNormLayer {
             prev_m_gamma = previous_gradient.get_prev_m_gamma();
             prev_v_gamma = previous_gradient.get_prev_v_gamma();
 
-           self.gamma = calculate_adam_w_bias(&self.gamma, &gradient.get_gradient_gamma(), &mut prev_m_gamma, &mut prev_v_gamma, learning_rate, gradient.get_time_step());
+            self.gamma = calculate_adam_w_bias(&self.gamma, &gradient.get_gradient_gamma(), &mut prev_m_gamma, &mut prev_v_gamma, learning_rate, gradient.get_time_step());
         } else {
             for batch_ind in 0..gradient_gamma.len() {
                 for (i, value) in self.gamma.iter_mut().enumerate() {
@@ -158,7 +181,7 @@ impl RMSNormLayer {
                 }
             }
         }
-    
+
         gradient.set_prev_m_gamma(prev_m_gamma);
         gradient.set_prev_v_gamma(prev_v_gamma);
         self.previous_gradient = Some(gradient.clone());

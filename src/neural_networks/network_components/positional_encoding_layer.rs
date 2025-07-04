@@ -1,4 +1,4 @@
-use crate::neural_networks::network_components::layer_input_struct::LayerInput;
+use crate::neural_networks::{network_components::layer_input_struct::LayerInput, utils::matrix::add_matrix_3d};
 
 use super::gradient_struct::Gradient;
 use num::Complex;
@@ -15,6 +15,7 @@ pub static SCALING_FAKTOR: f64 = 1.0;
 pub struct PositionalEncodingLayer {
     pub embedding_dim: usize, // Store the embedding dimension
     pub base: f64,
+
     #[serde(skip)]
     pub gradient: Option<Gradient>,
     #[serde(skip)]
@@ -102,7 +103,7 @@ impl PositionalEncodingLayer {
         let mut gradient = Gradient::new_default();
         let input_batch = self.input_batch.as_ref().expect("Input batch is missing in positional encoding layer");
 
-        let input_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = input_batch
+        let mut input_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = input_batch
             .iter()
             .zip(previous_gradient_batch.iter())
             .map(|(input_sequence, grad_sequence)| {
@@ -136,6 +137,11 @@ impl PositionalEncodingLayer {
                     .collect()
             })
             .collect();
+
+        if self.gradient.is_some() {
+            let previous_gradient = self.gradient.as_ref().expect("");
+            input_gradient_batch = add_matrix_3d(&input_gradient_batch, &previous_gradient.get_gradient_input_batch());
+        }
 
         gradient.set_gradient_input_batch(input_gradient_batch);
         self.gradient = Some(gradient.clone());

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
     adam_w::calculate_adam_w_bias,
-    matrix::{add_matrix_3d_c, clip_gradient_1d, is_nan_or_inf},
+    matrix::{add_matrix_3d, add_matrix_3d_c, add_vectors, clip_gradient_1d, is_nan_or_inf},
 };
 
 use super::{
@@ -15,30 +15,33 @@ use super::{
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NormalNormLayer {
-    gamma: Vec<Complex<f64>>,
-    beta: Vec<Complex<f64>>,
-    epsilon: f64,
+    pub gamma: Vec<Complex<f64>>,
+    pub beta: Vec<Complex<f64>>,
+    pub epsilon: f64,
     pub learning_rate: f64,
 
     #[serde(skip)]
-    input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
-    input_batch_before: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub input_batch_before: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     pub previous_gradient_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
-    normalized_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub normalized_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
-    mean_batch: Option<Vec<Vec<Complex<f64>>>>,
+    pub mean_batch: Option<Vec<Vec<Complex<f64>>>>,
     #[serde(skip)]
-    var_batch: Option<Vec<Vec<Complex<f64>>>>,
+    pub var_batch: Option<Vec<Vec<Complex<f64>>>>,
     #[serde(skip)]
-    gradient: Option<Gradient>,
+    pub gradient: Option<Gradient>,
     #[serde(skip)]
-    previous_gradient: Option<Gradient>,
-    time_step: usize,
+    pub previous_gradient: Option<Gradient>,
     #[serde(skip)]
-    output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub time_step: usize,
+    #[serde(skip)]
+    pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
+    pub batch_size: usize,
 }
 
 impl NormalNormLayer {
@@ -58,6 +61,7 @@ impl NormalNormLayer {
             previous_gradient: None,
             output_batch: None,
             time_step: 0,
+            batch_size: 0,
         }
     }
 
@@ -250,6 +254,19 @@ impl NormalNormLayer {
             }
         }
 
+        if self.gradient.is_some() {
+            let previous_gradient = self.gradient.as_ref().expect("");
+            input_grads = add_matrix_3d(&input_grads, &previous_gradient.get_gradient_input_batch());
+            gamma_grad = add_vectors(&gamma_grad, &previous_gradient.get_gradient_gamma());
+            beta_grad = add_vectors(&beta_grad, &previous_gradient.get_gradient_beta());
+
+            if self.batch_size == 0 {
+                self.batch_size = 2;
+            } else {
+                self.batch_size += 1;
+            }
+        }
+
         let mut gradient = Gradient::new_default();
         gradient.set_time_step(self.time_step);
         gradient.set_gradient_input_batch(input_grads);
@@ -264,12 +281,18 @@ impl NormalNormLayer {
         let gradient = self.gradient.as_mut().expect("No gradient found in NormalNormLayer");
         let mut gradient_gamma = gradient.get_gradient_gamma();
         let mut gradient_beta = gradient.get_gradient_beta();
+        let input_batch = self.input_batch.as_ref().expect("no input batch in norm layer");
 
         let threshold = 1.0;
         clip_gradient_1d(&mut gradient_gamma, threshold);
         clip_gradient_1d(&mut gradient_beta, threshold);
 
-        let batch_size = gradient_gamma.len() as f64;
+        let mut batch_size = input_batch.len() as f64;
+
+        if self.batch_size > 0 {
+            batch_size = self.batch_size as f64;
+        }
+        
         let learning_rate = self.learning_rate;
 
         let mut prev_m_gamma = vec![Complex::new(0.0, 0.0); gradient_gamma.len()];

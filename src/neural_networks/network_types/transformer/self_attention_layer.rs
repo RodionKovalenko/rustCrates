@@ -213,7 +213,14 @@ impl SelfAttentionLayer {
         // Backpropagate gradients through each attention head
         for (head_ind, attention_head) in self.attention_heads.iter_mut().enumerate() {
             let previous_head_gradient_batch = previous_gradient_head_splitted[head_ind].clone();
+
+            let batch_size = attention_head.batch_size;
+            let attenth_gradient = attention_head.gradient.clone();
+
             let gradient = attention_head.backward(&previous_head_gradient_batch);
+
+            attention_head.batch_size = batch_size;
+            attention_head.gradient = attenth_gradient;
 
             gradient_input_batches.push(gradient.get_gradient_input_batch());
             // println!("gradient input head {:?}", &gradient.get_gradient_input_batch());

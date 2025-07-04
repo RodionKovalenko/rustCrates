@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     neural_networks::{
         network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
-        utils::matrix::transpose,
+        utils::matrix::{add_matrix_3d, transpose},
     },
     utils::array::unzip4,
     wavelet_transform::{
@@ -18,26 +18,28 @@ use crate::{
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscreteWaveletLayer {
-    #[serde(skip)]
-    input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
-    #[serde(skip)]
-    trend_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
-    #[serde(skip)]
-    input_only_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
-    #[serde(skip)]
-    pub previous_gradient_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
-    #[serde(skip)]
-    gradient: Option<Gradient>,
-    time_step: usize,
-    #[serde(skip)]
-    output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     pub wavelet: DiscreteWaletetType,
     pub wavelet_mode: WaveletMode,
     pub is_full_mode: bool,
+    pub wavelet_size: usize,
+    pub compression_levels: usize,
+
+    #[serde(skip)]
+    pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
+    pub trend_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
+    pub input_only_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
+    pub previous_gradient_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
+    pub gradient: Option<Gradient>,
+    #[serde(skip)]
+    pub time_step: usize,
+    #[serde(skip)]
+    pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     pub details_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
-    #[serde(skip)]
-    pub compression_levels: usize,
     #[serde(skip)]
     pub compression_dims: Option<Vec<Vec<usize>>>,
     #[serde(skip)]
@@ -48,23 +50,6 @@ pub struct DiscreteWaveletLayer {
     pub target_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     pub target_batch_ids: Option<Vec<Vec<u32>>>,
-    pub wavelet_size: usize,
-}
-
-pub trait ComparableMagnitude: Copy {
-    fn magnitude(&self) -> f64;
-}
-
-impl ComparableMagnitude for f64 {
-    fn magnitude(&self) -> f64 {
-        self.abs()
-    }
-}
-
-impl ComparableMagnitude for Complex<f64> {
-    fn magnitude(&self) -> f64 {
-        self.norm()
-    }
 }
 
 impl DiscreteWaveletLayer {
@@ -77,8 +62,8 @@ impl DiscreteWaveletLayer {
             gradient: None,
             output_batch: None,
             time_step: 0,
-            wavelet: DiscreteWaletetType::DB2,
-            wavelet_size: 4,
+            wavelet: DiscreteWaletetType::DB4,
+            wavelet_size: 16,
             compression_levels: 10,
             wavelet_mode: WaveletMode::SYMMETRIC,
             is_full_mode: false,
@@ -139,7 +124,7 @@ impl DiscreteWaveletLayer {
                     }
                     assert_eq!(comp_pad_mask_b.len(), trend.len());
 
-                    //println!("trend final compressed: {:?}", trend);
+                    // println!("trend final compressed: {:?}", trend.len());
 
                     (trend, input_only_separated, compression_dims, comp_pad_mask_b)
                 }
@@ -178,7 +163,7 @@ impl DiscreteWaveletLayer {
 
         assert_eq!(input_batch.len(), grad_output_batch.len(), "Input and gradient batch size mismatch");
 
-        let grad_input_batch: Vec<Vec<Vec<Complex<f64>>>> = grad_output_batch
+        let mut grad_input_batch: Vec<Vec<Vec<Complex<f64>>>> = grad_output_batch
             .par_iter()
             .enumerate()
             .map(|(batch_ind, grad_output)| {
@@ -206,6 +191,11 @@ impl DiscreteWaveletLayer {
                 }
             })
             .collect();
+
+        if self.gradient.is_some() {
+            let previous_gradient = self.gradient.as_ref().expect("");
+            grad_input_batch = add_matrix_3d(&grad_input_batch, &previous_gradient.get_gradient_input_batch());
+        }
 
         let mut gradient = Gradient::new_default();
         gradient.set_time_step(self.time_step);
