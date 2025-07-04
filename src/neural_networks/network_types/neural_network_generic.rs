@@ -86,7 +86,7 @@ pub fn create(number_inputs: usize, number_outputs: usize, number_of_hidden_laye
         number_of_hidden_layers,
         number_of_hidden_neurons,
         minibatch_size,
-        time_step: 0
+        time_step: 0,
     };
 
     feed_net
@@ -195,53 +195,102 @@ pub fn reset_previous_gradient(transformer: &mut NeuralNetwork) {
     for layer in transformer.layers.iter_mut() {
         match layer {
             LayerEnum::Embedding(embedding_layer) => {
-                embedding_layer.previous_gradient = None;
+                // embedding_layer.previous_gradient = None;
+                embedding_layer.gradient = None;
+                embedding_layer.batch_size = 0;
             }
-            LayerEnum::Norm(_norm_layer) => {}
-            LayerEnum::RMSNorm(_norm_layer) => {}
+            LayerEnum::Norm(_norm_layer) => {
+                // _norm_layer.previous_gradient = None;
+                _norm_layer.gradient = None;
+                _norm_layer.batch_size = 0;
+            }
+            LayerEnum::RMSNorm(_norm_layer) => {
+                // _norm_layer.previous_gradient = None;
+                _norm_layer.gradient = None;
+                _norm_layer.batch_size = 0;
+            }
             LayerEnum::Dense(dense_layer) => {
-                dense_layer.previous_gradient = None;
+                // dense_layer.previous_gradient = None;
+                dense_layer.gradient = None;
+                dense_layer.batch_size = 0;
             }
             LayerEnum::SelfAttention(self_attention_layer) => {
                 for attention_head in self_attention_layer.attention_heads.iter_mut() {
-                    attention_head.previous_gradient = None;
+                    // attention_head.previous_gradient = None;
+                    attention_head.gradient = None;
+                    attention_head.batch_size = 0;
                 }
                 if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
                     match norm_layer {
-                        LayerEnum::RMSNorm(_rms_norm_layer) => {}
-                        LayerEnum::Norm(_norm_layer) => {}
+                        LayerEnum::RMSNorm(_norm_layer) => {
+                            //_norm_layer.previous_gradient = None;
+                            _norm_layer.gradient = None;
+                            _norm_layer.batch_size = 0;
+                        }
+                        LayerEnum::Norm(_norm_layer) => {
+                            //_norm_layer.previous_gradient = None;
+                            _norm_layer.gradient = None;
+                            _norm_layer.batch_size = 0;
+                        }
                         _ => {}
                     }
                 }
             }
             LayerEnum::FeedForward(ffn_layer) => {
+                ffn_layer.gradient = None;
                 for layer in ffn_layer.layers.iter_mut() {
                     match layer {
                         LayerEnum::Dense(dense_layer) => {
-                            dense_layer.previous_gradient = None;
+                            // dense_layer.previous_gradient = None;
+                            dense_layer.gradient = None;
+                            dense_layer.batch_size = 0;
                         }
                         LayerEnum::Linear(linear_layer) => {
-                            linear_layer.previous_gradient = None;
+                            // linear_layer.previous_gradient = None;
+                            linear_layer.gradient = None;
+                            linear_layer.batch_size = 0;
                         }
                         _ => {}
                     }
                 }
                 if let Some(norm_layer) = ffn_layer.norm_layer.as_mut() {
                     match norm_layer {
-                        LayerEnum::RMSNorm(_rms_norm_layer) => {}
-                        LayerEnum::Norm(_norm_layer) => {}
+                        LayerEnum::RMSNorm(_rms_norm_layer) => {
+                            // _rms_norm_layer.previous_gradient = None;
+                            _rms_norm_layer.gradient = None;
+                            _rms_norm_layer.batch_size = 0;
+                        }
+                        LayerEnum::Norm(_norm_layer) => {
+                            // _norm_layer.previous_gradient = None;
+                            _norm_layer.gradient = None;
+                            _norm_layer.batch_size = 0;
+                        }
                         _ => {}
                     }
                 }
             }
             LayerEnum::Linear(linear_layer) => {
-                linear_layer.previous_gradient = None;
+                // linear_layer.previous_gradient = None;
+                linear_layer.gradient = None;
+                linear_layer.batch_size = 0;
             }
-            LayerEnum::MultiLinear(_linear_layer) => {}
-            LayerEnum::Wavelet(_wavelet_layer) => {}
-            LayerEnum::DiscreteWavelet(_wavelet_layer) => {}
-            LayerEnum::Softmax(_softmax_layer) => {}
-            LayerEnum::PositionalEncoding(_positional_encoding_layer) => {}
+            LayerEnum::MultiLinear(_linear_layer) => {
+                // _linear_layer.previous_gradient = None;
+                _linear_layer.gradient = None;
+                _linear_layer.batch_size = 0;
+            }
+            LayerEnum::Wavelet(_wavelet_layer) => {
+                _wavelet_layer.gradient = None;
+            }
+            LayerEnum::DiscreteWavelet(_wavelet_layer) => {
+                _wavelet_layer.gradient = None;
+            }
+            LayerEnum::Softmax(_softmax_layer) => {
+                _softmax_layer.gradient = None;
+            }
+            LayerEnum::PositionalEncoding(_positional_encoding_layer) => {
+                _positional_encoding_layer.gradient = None;
+            }
         }
     }
 }

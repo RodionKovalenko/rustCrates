@@ -1,11 +1,13 @@
 use crate::neural_networks::{
-    network_components::multi_linear_layer::MultiLinearLayer, network_types::{feedforward_layer::FeedForwardLayer, transformer::self_attention_layer::SelfAttentionLayer, wavelet_complex_layer::ComplexWaveletLayer, wavelet_discrete_layer::DiscreteWaveletLayer}, utils::{
+    network_components::multi_linear_layer::MultiLinearLayer,
+    network_types::{feedforward_layer::FeedForwardLayer, transformer::self_attention_layer::SelfAttentionLayer, wavelet_complex_layer::ComplexWaveletLayer, wavelet_discrete_layer::DiscreteWaveletLayer},
+    utils::{
         activation::activate_output_complex_padding,
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         derivative::get_gradient_complex,
-        matrix::{add_vector, apply_padding_mask_batch, clip_gradient_1d, clip_gradients, conjugate_transpose, hadamard_product_2d_c, is_nan_or_inf, multiply_complex, transpose},
+        matrix::{add_matrix, add_matrix_3d, add_vector, apply_padding_mask_batch, clip_gradient_1d, clip_gradients, conjugate_transpose, hadamard_product_2d_c, is_nan_or_inf, multiply_complex, transpose},
         weights_initializer::initialize_weights_complex,
-    }
+    },
 };
 use core::fmt::Debug;
 use num::Complex;
@@ -94,6 +96,7 @@ pub struct Layer {
     pub bias: Vec<Complex<f64>>,
     pub activation_type: ActivationType,
     pub layer_type: LayerType,
+    pub learning_rate: f64,
 
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
@@ -105,10 +108,12 @@ pub struct Layer {
     pub gradient: Option<Gradient>,
     #[serde(skip)]
     pub previous_gradient: Option<Gradient>,
-    pub learning_rate: f64,
     #[serde(skip)]
     pub padding_mask_batch: Option<Vec<Vec<u32>>>,
+    #[serde(skip)]
     pub time_step: usize,
+    #[serde(skip)]
+    pub batch_size: usize,
 }
 
 // Helper function to determine the type of layer
@@ -201,6 +206,19 @@ impl Layer {
             input_gradient_batch[batch_ind] = multiply_complex(&input_gradient_batch[batch_ind], &conjugate_transpose(&self.weights));
         }
 
+        if self.gradient.is_some() {
+            let previous_gradient = self.gradient.as_ref().expect("");
+            input_gradient_batch = add_matrix_3d(&input_gradient_batch, &previous_gradient.get_gradient_input_batch());
+            weight_gradients = add_matrix_3d(&weight_gradients, &previous_gradient.get_gradient_weight_batch());
+            bias_gradients = add_matrix(&bias_gradients, &previous_gradient.get_gradient_bias_batch());
+
+            if self.batch_size == 0 {
+                self.batch_size = 2;
+            } else {
+                self.batch_size += 1;
+            }
+        }
+
         gradient.set_gradient_input_batch(input_gradient_batch);
         gradient.set_gradient_weight_batch(weight_gradients);
         gradient.set_gradient_bias_batch(bias_gradients);
@@ -214,7 +232,11 @@ impl Layer {
         let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
 
         let input_batch = gradient.get_gradient_input_batch();
-        let batch_size = input_batch.len() as f64;
+        let mut batch_size = input_batch.len() as f64;
+
+        if self.batch_size > 0 {
+            batch_size = self.batch_size as f64;
+        }
 
         let threshold = 1.0;
         clip_gradients(&mut weight_gradients, threshold);
@@ -283,6 +305,7 @@ impl Layer {
             learning_rate: *learning_rate,
             padding_mask_batch: None,
             time_step: 0,
+            batch_size: 0,
         }
     }
 }

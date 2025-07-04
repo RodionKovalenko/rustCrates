@@ -3,7 +3,7 @@ use num::Complex;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::network_components::linear_layer::LinearLayer;
+use crate::neural_networks::{network_components::linear_layer::LinearLayer, utils::matrix::add_matrix_3d};
 
 use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
 
@@ -17,7 +17,10 @@ pub struct MultiLinearLayer {
     pub gradient: Option<Gradient>,
     #[serde(skip)]
     pub previous_gradient: Option<Gradient>,
+    #[serde(skip)]
     pub time_step: usize,
+    #[serde(skip)]
+    pub batch_size: usize,
 }
 
 impl MultiLinearLayer {
@@ -37,6 +40,7 @@ impl MultiLinearLayer {
             gradient: None,
             previous_gradient: None,
             time_step: 0,
+            batch_size: 0,
         }
     }
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
@@ -103,7 +107,19 @@ impl MultiLinearLayer {
             }
         });
 
+        if self.gradient.is_some() {
+            let previous_gradient = self.gradient.as_ref().expect("");
+            gradient_input_batch = add_matrix_3d(&gradient_input_batch, &previous_gradient.get_gradient_input_batch());
+
+            if self.batch_size == 0 {
+                self.batch_size = 2;
+            } else {
+                self.batch_size += 1;
+            }
+        }
+
         gradient.set_gradient_input_batch(gradient_input_batch);
+        self.gradient = Some(gradient.clone());
 
         gradient
     }

@@ -13,17 +13,17 @@ use super::gradient_struct::Gradient;
 // RMSNorm Layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SoftmaxLayer {
-    learning_rate: f64,
+    pub learning_rate: f64,
     pub operation_mode: OperationMode,
 
     #[serde(skip)]
-    softmax_output_batch: Option<Vec<Vec<Vec<f64>>>>,
+    pub softmax_output_batch: Option<Vec<Vec<Vec<f64>>>>,
     #[serde(skip)]
-    input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
-    gradient: Option<Gradient>,
+    pub gradient: Option<Gradient>,
     #[serde(skip)]
-    padding_mask_batch: Option<Vec<Vec<u32>>>,
+    pub padding_mask_batch: Option<Vec<Vec<u32>>>,
 }
 
 impl SoftmaxLayer {

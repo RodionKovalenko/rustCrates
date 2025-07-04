@@ -511,10 +511,12 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
     // Backward pass
 
     let mut gradient: Option<Gradient> = None;
-    // let batch_size = transformer_network.get_minibatch_size();
-    // let time_step = transformer_network.get_time_step();
-    //let update_gradients: bool = time_step % batch_size == 0 && update_params;
-    let update_gradients: bool = update_params;
+    let batch_size = transformer_network.get_minibatch_size();
+    let time_step = transformer_network.get_time_step();
+    let update_gradients: bool = time_step % batch_size == 0 && update_params;
+
+    // println!("time step: {:?}", time_step);
+    // println!("update gradient: {:?}", update_gradients);
 
     for layer in transformer_network.layers.iter_mut().rev() {
         match layer {
@@ -638,6 +640,10 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             }
             _ => {}
         }
+    }
+
+    if update_gradients {
+        reset_previous_gradient(transformer_network);
     }
 
     gradient

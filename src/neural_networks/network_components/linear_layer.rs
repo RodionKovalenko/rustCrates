@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
     adam_w::{calculate_adam_w, calculate_adam_w_bias},
-    matrix::{add_vector, clip_gradient_1d, clip_gradients, conjugate_transpose, is_nan_or_inf, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
+    matrix::{add_matrix_2d_c, add_matrix_3d, add_vector, clip_gradient_1d, clip_gradients, conjugate_transpose, is_nan_or_inf, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
     weights_initializer::initialize_weights_complex,
 };
 
@@ -18,19 +18,23 @@ use super::{
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinearLayer {
     pub weights: Vec<Vec<Complex<f64>>>,
+    pub learning_rate: f64,
     pub bias: Vec<Complex<f64>>,
+
     #[serde(skip)]
     pub gradients: Vec<Vec<Complex<f64>>>,
     #[serde(skip)]
     pub gradients_bias: Vec<Vec<Complex<f64>>>,
-    pub learning_rate: f64,
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     pub gradient: Option<Gradient>,
     #[serde(skip)]
     pub previous_gradient: Option<Gradient>,
+    #[serde(skip)]
     pub time_step: usize,
+    #[serde(skip)]
+    pub batch_size: usize,
 }
 
 impl LinearLayer {
@@ -50,6 +54,7 @@ impl LinearLayer {
             gradient: None,
             previous_gradient: None,
             time_step: 0,
+            batch_size: 0,
         }
     }
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
@@ -119,9 +124,24 @@ impl LinearLayer {
             }
         }
 
+        if self.gradient.is_some() {
+            let previous_gradient = self.gradient.as_ref().expect("");
+            gradient_input_batch = add_matrix_3d(&gradient_input_batch, &previous_gradient.get_gradient_input_batch());
+            weight_gradients = add_matrix_3d(&weight_gradients, &previous_gradient.get_gradient_weight_batch());
+            bias_gradients = add_matrix_2d_c(&bias_gradients, &previous_gradient.get_gradient_bias_batch());
+
+            if self.batch_size == 0 {
+                self.batch_size = 2;
+            } else {
+                self.batch_size += 1;
+            }
+        }
+        //  println!("batch size in linear layer: {}", self.batch_size);
+
         gradient.set_gradient_input_batch(gradient_input_batch.clone());
         gradient.set_gradient_weight_batch(weight_gradients);
         gradient.set_gradient_bias_batch(bias_gradients);
+
         self.gradient = Some(gradient.clone());
 
         gradient
@@ -132,7 +152,11 @@ impl LinearLayer {
         let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
 
         let input_batch = gradient.get_gradient_input_batch();
-        let batch_size = input_batch.len() as f64;
+        let mut batch_size = input_batch.len() as f64;
+
+        if self.batch_size > 0 {
+            batch_size = self.batch_size as f64;
+        }
 
         let threshold = 1.0;
         clip_gradients(&mut weight_gradients, threshold);

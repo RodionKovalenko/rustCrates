@@ -648,6 +648,16 @@ pub fn add_vector<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<Vec<T>>, ma
     matrix_result
 }
 
+pub fn add_vectors<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<T>, matrix_b: &Vec<T>) -> Vec<T> {
+    let mut matrix_result: Vec<T> = matrix_a.clone();
+
+    for i in 0..matrix_a.len() {
+        matrix_result[i] = matrix_result[i].clone() + matrix_b[i].clone();
+    }
+
+    matrix_result
+}
+
 pub fn multiply_scalar_with_matrix<T>(scalar: T, matrix: &Vec<Vec<T>>) -> Vec<Vec<T>>
 where
     T: Mul<Output = T> + Clone, // T must implement multiplication and cloning

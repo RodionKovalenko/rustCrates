@@ -4,7 +4,10 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    neural_networks::network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+    neural_networks::{
+        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+        utils::matrix::add_matrix_3d,
+    },
     wavelet_transform::{
         cwt_complex::{cwt_2d, cwt_2d_full, get_wavelet_derivative, get_wavelet_derivative_full, wavefun_complex, CWTComplex},
         cwt_types::ContinuousWaletetType,
@@ -13,17 +16,19 @@ use crate::{
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComplexWaveletLayer {
+    pub wavelet: CWTComplex,
+    pub is_full_mode: bool,
+
     #[serde(skip)]
     input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     pub previous_gradient_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
-    gradient: Option<Gradient>,
-    time_step: usize,
+    pub gradient: Option<Gradient>,
     #[serde(skip)]
-    output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
-    pub wavelet: CWTComplex,
-    pub is_full_mode: bool,
+    pub time_step: usize,
+    #[serde(skip)]
+    pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
 }
 
 impl ComplexWaveletLayer {
@@ -86,7 +91,7 @@ impl ComplexWaveletLayer {
 
         let wavefun_result: Vec<Vec<Complex<f64>>> = wavefun_complex(&10, &self.wavelet);
 
-        let input_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient
+        let mut input_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient
             .get_gradient_input_batch()
             .iter()
             .zip(input_batch)
@@ -98,6 +103,11 @@ impl ComplexWaveletLayer {
                 }
             })
             .collect();
+
+        if self.gradient.is_some() {
+            let previous_gradient = self.gradient.as_ref().expect("");
+            input_gradient_batch = add_matrix_3d(&input_gradient_batch, &previous_gradient.get_gradient_input_batch());
+        }
 
         let mut gradient = Gradient::new_default();
         gradient.set_time_step(self.time_step);
