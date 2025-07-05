@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
     adam_w::{calculate_adam_w, calculate_adam_w_bias},
-    matrix::{add_matrix_2d_c, add_matrix_3d, add_vector, clip_gradient_1d, clip_gradients, conjugate_transpose, is_nan_or_inf, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
+    matrix::{add_matrix_2d_c, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_gradient_1d, clip_gradients, conjugate_transpose, is_nan_or_inf, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
     weights_initializer::initialize_weights_complex,
 };
 
@@ -172,11 +172,11 @@ impl LinearLayer {
         let time_step = self.time_step;
 
         if let Some(previous_gradient) = &mut self.previous_gradient {
-            prev_m_bias = previous_gradient.get_prev_m_bias();
-            prev_v_bias = previous_gradient.get_prev_v_bias();
+            prev_m_bias = average_vector_by_scalar(&previous_gradient.get_prev_m_bias(), batch_size);
+            prev_v_bias = average_vector_by_scalar(&previous_gradient.get_prev_v_bias(), batch_size);
 
-            prev_m_weights = previous_gradient.get_prev_m_weights();
-            prev_v_weights = previous_gradient.get_prev_v_weights();
+            prev_m_weights = average_matrix_by_scalar(&previous_gradient.get_prev_m_weights(), batch_size);
+            prev_v_weights = average_matrix_by_scalar(&previous_gradient.get_prev_v_weights(), batch_size);
 
             self.bias = calculate_adam_w_bias(&self.bias, &gradient.get_gradient_bias(), &mut prev_m_bias, &mut prev_v_bias, learning_rate, time_step);
             self.weights = calculate_adam_w(&self.weights, &gradient.get_gradient_weights(), &mut prev_m_weights, &mut prev_v_weights, learning_rate, time_step);

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
     adam_w::calculate_adam_w_bias,
-    matrix::{add_matrix_3d, add_matrix_3d_c, add_vectors, clip_gradient_1d, is_nan_or_inf},
+    matrix::{add_matrix_3d, add_matrix_3d_c, add_vectors, average_vector_by_scalar, clip_gradient_1d, is_nan_or_inf},
 };
 
 use super::{
@@ -292,7 +292,7 @@ impl NormalNormLayer {
         if self.batch_size > 0 {
             batch_size = self.batch_size as f64;
         }
-        
+
         let learning_rate = self.learning_rate;
 
         let mut prev_m_gamma = vec![Complex::new(0.0, 0.0); gradient_gamma.len()];
@@ -302,11 +302,11 @@ impl NormalNormLayer {
         let mut prev_v_beta = vec![Complex::new(0.0, 0.0); gradient_gamma.len()];
 
         if let Some(previous_gradient) = &mut self.previous_gradient {
-            prev_m_gamma = previous_gradient.get_prev_m_gamma();
-            prev_v_gamma = previous_gradient.get_prev_v_gamma();
+            prev_m_gamma = average_vector_by_scalar(&previous_gradient.get_prev_m_gamma(), batch_size);
+            prev_v_gamma = average_vector_by_scalar(&previous_gradient.get_prev_v_gamma(), batch_size);
 
-            prev_m_beta = previous_gradient.get_prev_m_beta();
-            prev_v_beta = previous_gradient.get_prev_v_beta();
+            prev_m_beta = average_vector_by_scalar(&previous_gradient.get_prev_m_beta(), batch_size);
+            prev_v_beta = average_vector_by_scalar(&previous_gradient.get_prev_v_beta(), batch_size);
 
             self.gamma = calculate_adam_w_bias(&self.gamma, &gradient.get_gradient_gamma(), &mut prev_m_gamma, &mut prev_v_gamma, learning_rate, gradient.get_time_step());
             self.beta = calculate_adam_w_bias(&self.beta, &gradient.get_gradient_beta(), &mut prev_m_beta, &mut prev_v_beta, learning_rate, gradient.get_time_step());

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
     adam_w::calculate_adam_w_bias,
-    matrix::{add_matrix, add_matrix_2d_c, add_matrix_3d, clip_gradients, is_nan_or_inf},
+    matrix::{add_matrix, add_matrix_2d_c, add_matrix_3d, average_vector_by_scalar, clip_gradients, is_nan_or_inf},
 };
 
 use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
@@ -168,8 +168,8 @@ impl RMSNormLayer {
         let learning_rate = self.learning_rate;
 
         if let Some(previous_gradient) = &mut self.previous_gradient {
-            prev_m_gamma = previous_gradient.get_prev_m_gamma();
-            prev_v_gamma = previous_gradient.get_prev_v_gamma();
+            prev_m_gamma = average_vector_by_scalar(&previous_gradient.get_prev_m_gamma(), batch_size);
+            prev_v_gamma = average_vector_by_scalar(&previous_gradient.get_prev_v_gamma(), batch_size);
 
             self.gamma = calculate_adam_w_bias(&self.gamma, &gradient.get_gradient_gamma(), &mut prev_m_gamma, &mut prev_v_gamma, learning_rate, gradient.get_time_step());
         } else {
