@@ -7,6 +7,7 @@ use rayon::ThreadPoolBuilder;
 // use std::ffi::c_void;
 use std::ffi::c_char;
 use std::fmt::Debug;
+use std::ops::Div;
 use std::ops::{Add, Mul, Sub};
 use std::sync::{Arc, Mutex};
 
@@ -656,6 +657,27 @@ pub fn add_vectors<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<T>, matrix
     }
 
     matrix_result
+}
+
+pub fn average_vector_by_scalar<T>(matrix_a: &Vec<T>, scalar: f64) -> Vec<T>
+where
+    T: Debug + Clone + Div<f64, Output = T>,
+{
+    matrix_a.iter().map(|val| val.clone() / scalar).collect()
+}
+
+pub fn average_matrix_by_scalar<T>(matrix_a: &Vec<Vec<T>>, scalar: f64) -> Vec<Vec<T>>
+where
+    T: Debug + Clone + Div<f64, Output = T>,
+{
+    matrix_a.iter().map(|val| average_vector_by_scalar(val, scalar)).collect()
+}
+
+pub fn average_matrix_3d_by_scalar<T>(matrix_a: &Vec<Vec<Vec<T>>>, scalar: f64) -> Vec<Vec<Vec<T>>>
+where
+    T: Debug + Clone + Div<f64, Output = T>,
+{
+    matrix_a.iter().map(|val| average_matrix_by_scalar(val, scalar)).collect()
 }
 
 pub fn multiply_scalar_with_matrix<T>(scalar: T, matrix: &Vec<Vec<T>>) -> Vec<Vec<T>>

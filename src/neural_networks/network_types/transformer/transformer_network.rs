@@ -34,7 +34,7 @@ pub const CONTEXT_OVERLAPPING: usize = 450;
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize, batch_size: usize) {
     let mut total_loss: Complex<f64>;
-    let loss_threshold: f64 = 0.004;
+    let loss_threshold: f64 = 0.04;
     let now = Instant::now();
     let mut previous_last_losses: Vec<f64> = Vec::new();
     let mut total_loss_exp_ma = 0.0;
@@ -148,7 +148,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                     }
                 }
 
-                if loss_increasing_count > 2 && epoch_processed != epoch {
+                if loss_increasing_count > 5 && epoch_processed != epoch {
                     println!("loss is increasing too much, reducing learning rate");
                     transformer_network.decay_learning_rate(0.5); // e.g., reduce LR by half
                     reset_previous_gradient(transformer_network);
