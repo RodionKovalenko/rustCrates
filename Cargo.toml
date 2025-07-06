@@ -54,9 +54,10 @@ num_cpus = "1.17"
 actix-web = "4"
 tera = "1.17"
 encoding_rs = "0.8"
+colored = "3.0.0"
 # cuda-sys = "0.2"
 cc = "1.0"
-pyo3 = { version = "0.20", features = ["extension-module", "abi3-py37"] }
+pyo3 = { version = "0.22.6", features = ["extension-module", "abi3-py37"] }
 ndarray = { version = "0.16.0", features = ["blas"] }
 openblas-src = { version = "0.10", features = ["system"] }
 
