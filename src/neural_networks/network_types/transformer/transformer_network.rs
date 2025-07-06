@@ -369,6 +369,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
             LayerEnum::Norm(norm_layer) => {
                 if let Some(previous_output) = &output {
                     layer_input.set_input_batch(previous_output.clone());
+                    layer_input.set_input_batch_before(previous_output.clone());
 
                     //println!("forward norm");
                     //let seconds_elapsed = now.elapsed();
