@@ -20,6 +20,7 @@ mod test_transformer {
             },
             utils::{
                 derivative::{global_relative_error_2d_l2, numerical_gradient_input, numerical_gradient_weights, test_gradient_error_2d},
+                random_arrays::generate_random_u32_batch,
                 tokenizer::tokenize_batch,
             },
         },
@@ -170,7 +171,7 @@ mod test_transformer {
         let embedding_dim_original: usize = 512;
         let base_2: i32 = 2;
         let embedding_dim_compressed = (embedding_dim_original as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize;
-        let vocab_size: usize = 50254;
+        let vocab_size: usize = 50;
         let rows: usize = 16;
 
         let mut embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
@@ -184,21 +185,18 @@ mod test_transformer {
         let hidden_dim = 16;
         let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
 
+        let batch_size = 1;
         let num_attention_heads: usize = 4;
         let rows: usize = 16;
         let cols: usize = embedding_dim_compressed;
+        let input_len = 15;
+        let target_len = 6;
 
         let mut attention_layer_1: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
         let mut attention_layer_2: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
 
-        let input_str1: &str = "Hallo, wie geht es dir?";
-        let input_batch_str: Vec<String> = vec![input_str1.to_string()];
-
-        let target_str1: &str = "Mir geht es gut";
-        let target_batch_str: Vec<String> = vec![target_str1.to_string()];
-
-        let (_tokens, batch_ids) = tokenize_batch(&input_batch_str, false).unwrap();
-        let (_tokens, target_token_id_batch) = tokenize_batch(&target_batch_str, true).unwrap();
+        let batch_ids = generate_random_u32_batch(batch_size, input_len, input_len as u32);
+        let target_token_id_batch = generate_random_u32_batch(batch_size, target_len, target_len as u32);
 
         let concat_batch_ids = concat_batches(&batch_ids, &target_token_id_batch);
 
@@ -242,14 +240,13 @@ mod test_transformer {
         let gradient_attention_layer_2: Gradient = attention_layer_2.backward(&gradient_attention_layer_1.get_gradient_input_batch());
         let pos_enc_gradient = positional_encoding_layer.backward(&gradient_attention_layer_2.get_gradient_input_batch());
         let norm_layer_gradient = norm_layer.backward(&pos_enc_gradient);
-        let discrete_layer_gradient = discrete_wavelet_layer.backward(&norm_layer_gradient);
+        let _discrete_layer_gradient = discrete_wavelet_layer.backward(&norm_layer_gradient);
 
         let weights: Vec<Vec<Complex<f64>>> = match ffn_layer.layers.get(0) {
             Some(LayerEnum::Dense(dense_layer)) => dense_layer.weights.clone(),
             _ => vec![],
         };
 
-        let analytical_discrete_wavelet_gradient: Vec<Vec<Complex<f64>>> = pos_enc_gradient.get_gradient_input();
         let analytical_gradient_batch_weight: Vec<Vec<Complex<f64>>> = gradient_ffn.get_gradient_weights();
 
         println!("padding mask batch in test transformer: {:?}", &padding_mask_batch);
@@ -311,34 +308,262 @@ mod test_transformer {
         println!("\n dim nanalytical gradient {:?}, {}", analytical_gradient_batch_weight.len(), analytical_gradient_batch_weight[0].len());
 
         test_gradient_error_2d(&numerical_grad_weight_batch, &analytical_gradient_batch_weight, 1e-3);
+    }
 
-        match ffn_layer.layers.get_mut(0) {
-            Some(LayerEnum::Dense(dense_layer)) => dense_layer.weights = weights,
-            _ => {}
+    #[test]
+    #[ignore]
+    fn test_transformer_self_attention_layer_backward() {
+        let learning_rate: f64 = 0.01;
+        let epsilon = 1e-7;
+
+        let embedding_dim_original: usize = 512;
+        let base_2: i32 = 2;
+        let embedding_dim_compressed = (embedding_dim_original as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize;
+        let vocab_size: usize = 50;
+        let rows: usize = 16;
+
+        let mut embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
+        let mut positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
+        let mut discrete_wavelet_layer = DiscreteWaveletLayer::new();
+        let mut norm_layer = NormalNormLayer::new(embedding_dim_compressed, 1e-8, learning_rate);
+        let mut linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
+        let mut softmax_layer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING);
+
+        let rows: usize = 16;
+        let hidden_dim = 16;
+        let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
+
+        let batch_size = 1;
+        let num_attention_heads: usize = 1;
+        let rows: usize = 16;
+        let cols: usize = embedding_dim_compressed;
+        let input_len = 15;
+        let target_len = 6;
+
+        let mut attention_layer_1: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
+        //let mut attention_layer_2: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
+
+        let input_token_ids = generate_random_u32_batch(batch_size, input_len, input_len as u32);
+        let target_token_ids = generate_random_u32_batch(batch_size, target_len, target_len as u32);
+
+        let concat_batch_ids = concat_batches(&input_token_ids, &target_token_ids);
+
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_batch_ids(concat_batch_ids.clone());
+        layer_input.set_calculate_gradient(true);
+        layer_input.set_forward_only(false);
+        layer_input.set_target_batch_ids(target_token_ids.clone());
+
+        // forward
+        let (embeddings, padding_mask_batch) = embedding_layer.forward(&layer_input);
+        layer_input.set_input_batch(embeddings.clone());
+        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+
+        let discrete_wavelet_output = discrete_wavelet_layer.forward(&layer_input);
+        layer_input.set_input_batch(discrete_wavelet_output.get_output_batch());
+        layer_input.set_padding_mask_batch(discrete_wavelet_output.get_padding_mask_batch());
+
+        let norm_layer_output = norm_layer.forward(&layer_input);
+        layer_input.set_input_batch(norm_layer_output.get_output_batch());
+
+        let positional_encoding_output = positional_encoding_layer.forward(&layer_input);
+        layer_input.set_input_batch(positional_encoding_output.clone());
+
+        let output_attention_1 = attention_layer_1.forward(&layer_input);
+        layer_input.set_input_batch(output_attention_1.get_output_batch());
+
+        // let output_attention_2 = attention_layer_2.forward(&layer_input);
+        // layer_input.set_input_batch(output_attention_2.get_output_batch());
+
+        let output_ffn = ffn_layer.forward(&layer_input);
+        layer_input.set_input_batch(output_ffn.get_output_batch());
+
+        let output_linear = linear_layer.forward(&layer_input);
+        let _output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()));
+
+        // backward
+        let gradient_softmax: Gradient = softmax_layer.backward(&target_token_ids);
+        let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
+        let gradient_ffn: Gradient = ffn_layer.backward(&gradient_linear.get_gradient_input_batch());
+        // let gradient_attention_layer_2: Gradient = attention_layer_2.backward(&gradient_ffn.get_gradient_input_batch());
+        let gradient_attention_layer_1: Gradient = attention_layer_1.backward(&gradient_ffn.get_gradient_input_batch());
+        let pos_enc_gradient = positional_encoding_layer.backward(&gradient_attention_layer_1.get_gradient_input_batch());
+        let norm_layer_gradient = norm_layer.backward(&pos_enc_gradient);
+        let _discrete_layer_gradient = discrete_wavelet_layer.backward(&norm_layer_gradient);
+
+        let weights: Vec<Vec<Complex<f64>>> = match ffn_layer.layers.get(0) {
+            Some(LayerEnum::Dense(dense_layer)) => dense_layer.weights.clone(),
+            _ => vec![],
         };
+
+        let analytical_self_attention_layer_gradient: Vec<Vec<Complex<f64>>> = gradient_attention_layer_1.get_gradient_input();
+
+        println!("padding mask batch in test transformer: {:?}", &padding_mask_batch);
+        println!("target tokens ids: {:?}", &target_token_ids);
+        println!("weights dim: {} {}", weights.len(), weights[0].len());
+        println!("final output dim: {} {} {}", _output_softmax.len(), _output_softmax[0].len(), _output_softmax[0][0].len());
 
         // Define the loss function
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
-            // layer_input.set_batch_ids(concat_batch_ids.clone());
-            // let (embeddings, padding_mask_batch) = embedding_layer.forward(&layer_input);
-            // layer_input.set_input_batch(embeddings);
-            // layer_input.set_padding_mask_batch(padding_mask_batch.clone());
-
-            // let discrete_wavelet_output = discrete_wavelet_layer.forward(&layer_input);
-            // layer_input.set_input_batch(discrete_wavelet_output.get_output_batch());
-
-            // let norm_layer_output = norm_layer.forward(&layer_input);
-            // layer_input.set_input_batch(norm_layer_output.get_output_batch());
-
-            // let positional_encoding_output = positional_encoding_layer.forward(&layer_input);
-            // layer_input.set_input_batch(positional_encoding_output.clone());
-
             layer_input.set_input_batch(input.clone());
+
             let output_attention_1 = attention_layer_1.forward(&layer_input);
             layer_input.set_input_batch(output_attention_1.get_output_batch());
 
-            let output_attention_2 = attention_layer_2.forward(&layer_input);
-            layer_input.set_input_batch(output_attention_2.get_output_batch());
+            // let output_attention_2 = attention_layer_2.forward(&layer_input);
+            // layer_input.set_input_batch(output_attention_2.get_output_batch());
+
+            let output_ffn = ffn_layer.forward(&layer_input);
+            layer_input.set_input_batch(output_ffn.get_output_batch());
+
+            let output_linear = linear_layer.forward(&layer_input);
+            let output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()));
+
+            let loss = cross_entropy_loss_batch(&output_softmax, &target_token_ids, &padding_mask_batch);
+
+            loss
+        };
+
+        let numerical_grad_input_batch: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, positional_encoding_output.clone(), epsilon);
+
+        let seq_len = numerical_grad_input_batch.len() - 1;
+        let numerical_grad_input_batch = numerical_grad_input_batch[..seq_len.saturating_sub(target_token_ids[0].len())].to_vec();
+        let seq_len = analytical_self_attention_layer_gradient.len() - 1;
+        let analytical_self_attention_layer_gradient = analytical_self_attention_layer_gradient[..seq_len.saturating_sub(target_token_ids[0].len())].to_vec();
+
+        let global_error = global_relative_error_2d_l2(&numerical_grad_input_batch, &analytical_self_attention_layer_gradient);
+        println!("\n\n global relative gradient error: {:?}", &global_error);
+
+        println!("\n numerical gradient input batch self attention layer {:?}", numerical_grad_input_batch);
+        println!("\n dim numerical gradient {:?}, {}", numerical_grad_input_batch.len(), numerical_grad_input_batch[0].len());
+
+        println!("\n analytical gradientinput self attention layer {:?}", analytical_self_attention_layer_gradient);
+        println!("\n dim analytical gradient {:?}, {}", analytical_self_attention_layer_gradient.len(), analytical_self_attention_layer_gradient[0].len());
+
+        for (i, numerical_grad_input) in numerical_grad_input_batch.iter().enumerate() {
+            let row_sum_numeric: Complex<f64> = numerical_grad_input.iter().sum();
+            let row_sum_analytic: Complex<f64> = analytical_self_attention_layer_gradient[i].iter().sum();
+
+            println!("row_sum numerical: {:?}, {:?}", row_sum_numeric.re, row_sum_numeric.im);
+            println!("row sum analytical: {:?}, {:?}", row_sum_analytic.re, row_sum_analytic.im);
+        }
+
+        test_gradient_error_2d(&numerical_grad_input_batch, &analytical_self_attention_layer_gradient, 1e-3);
+    }
+
+    #[test]
+    #[ignore]
+    fn test_transformer_discrete_wavelet_separate_backward() {
+        let learning_rate: f64 = 0.01;
+        let epsilon = 1e-7;
+
+        let embedding_dim_original: usize = 512;
+        let base_2: i32 = 2;
+        let embedding_dim_compressed = (embedding_dim_original as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize;
+        let vocab_size: usize = 50;
+        let rows: usize = 16;
+
+        let mut embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
+        let mut positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
+        let mut discrete_wavelet_layer = DiscreteWaveletLayer::new();
+        let mut norm_layer = NormalNormLayer::new(embedding_dim_compressed, 1e-8, learning_rate);
+        let mut linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
+        let mut softmax_layer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING);
+
+        let rows: usize = 16;
+        let hidden_dim = 16;
+        let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
+
+        let batch_size = 1;
+        let num_attention_heads: usize = 4;
+        let rows: usize = 16;
+        let cols: usize = embedding_dim_compressed;
+        let input_len = 15;
+        let target_len = 6;
+
+        let mut attention_layer_1: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
+        // let mut attention_layer_2: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
+
+        let batch_ids = generate_random_u32_batch(batch_size, input_len, input_len as u32);
+        let target_token_id_batch = generate_random_u32_batch(batch_size, target_len, target_len as u32);
+
+        let concat_batch_ids = concat_batches(&batch_ids, &target_token_id_batch);
+
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_batch_ids(concat_batch_ids.clone());
+        layer_input.set_calculate_gradient(true);
+        layer_input.set_forward_only(false);
+        layer_input.set_target_batch_ids(target_token_id_batch.clone());
+
+        // forward
+        let (embeddings, padding_mask_batch) = embedding_layer.forward(&layer_input);
+        layer_input.set_input_batch(embeddings.clone());
+        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+
+        let discrete_wavelet_output = discrete_wavelet_layer.forward(&layer_input);
+        layer_input.set_input_batch(discrete_wavelet_output.get_output_batch());
+        layer_input.set_input_batch_before(discrete_wavelet_output.get_output_batch());
+
+        let norm_layer_output = norm_layer.forward(&layer_input);
+        layer_input.set_input_batch(norm_layer_output.get_output_batch());
+
+        let positional_encoding_output = positional_encoding_layer.forward(&layer_input);
+        layer_input.set_input_batch(positional_encoding_output.clone());
+
+        let output_attention_1 = attention_layer_1.forward(&layer_input);
+        layer_input.set_input_batch(output_attention_1.get_output_batch());
+
+        // let output_attention_2 = attention_layer_2.forward(&layer_input);
+        // layer_input.set_input_batch(output_attention_2.get_output_batch());
+
+        let output_ffn = ffn_layer.forward(&layer_input);
+        layer_input.set_input_batch(output_ffn.get_output_batch());
+
+        let output_linear = linear_layer.forward(&layer_input);
+        let _output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()));
+
+        // backward
+        let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
+        let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
+        let gradient_ffn: Gradient = ffn_layer.backward(&gradient_linear.get_gradient_input_batch());
+        let gradient_attention_layer_1: Gradient = attention_layer_1.backward(&gradient_ffn.get_gradient_input_batch());
+        // let gradient_attention_layer_2: Gradient = attention_layer_2.backward(&gradient_attention_layer_1.get_gradient_input_batch());
+        let pos_enc_gradient = positional_encoding_layer.backward(&gradient_attention_layer_1.get_gradient_input_batch());
+        let norm_layer_gradient = norm_layer.backward(&pos_enc_gradient);
+        let _discrete_layer_gradient = discrete_wavelet_layer.backward(&norm_layer_gradient);
+
+        let weights: Vec<Vec<Complex<f64>>> = match ffn_layer.layers.get(0) {
+            Some(LayerEnum::Dense(dense_layer)) => dense_layer.weights.clone(),
+            _ => vec![],
+        };
+
+        let analytical_discrete_wavelet_gradient: Vec<Vec<Complex<f64>>> = _discrete_layer_gradient.get_gradient_input();
+
+        println!("padding mask batch in test transformer: {:?}", &padding_mask_batch);
+        println!("target tokens ids: {:?}", &target_token_id_batch);
+        println!("weights dim: {} {}", weights.len(), weights[0].len());
+        println!("final output dim: {} {} {}", _output_softmax.len(), _output_softmax[0].len(), _output_softmax[0][0].len());
+
+        // Define the loss function
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
+            layer_input.set_input_batch(input.clone());
+            layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+
+            let discrete_wavelet_output = discrete_wavelet_layer.forward(&layer_input);
+            layer_input.set_input_batch(discrete_wavelet_output.get_output_batch());
+            // layer_input.set_input_batch_before(discrete_wavelet_output.get_output_batch());
+
+            let norm_layer_output = norm_layer.forward(&layer_input);
+            layer_input.set_input_batch(norm_layer_output.get_output_batch());
+
+            let positional_encoding_output = positional_encoding_layer.forward(&layer_input);
+            layer_input.set_input_batch(positional_encoding_output.clone());
+
+            let output_attention_1 = attention_layer_1.forward(&layer_input);
+            layer_input.set_input_batch(output_attention_1.get_output_batch());
+
+            // let output_attention_2 = attention_layer_2.forward(&layer_input);
+            // layer_input.set_input_batch(output_attention_2.get_output_batch());
 
             let output_ffn = ffn_layer.forward(&layer_input);
             layer_input.set_input_batch(output_ffn.get_output_batch());
@@ -351,7 +576,12 @@ mod test_transformer {
             loss
         };
 
-        let numerical_grad_input_batch: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, positional_encoding_output.clone(), epsilon);
+        let numerical_grad_input_batch: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, embeddings.clone(), epsilon);
+
+        let seq_len = numerical_grad_input_batch.len() - 1;
+        let numerical_grad_input_batch = numerical_grad_input_batch[..seq_len.saturating_sub(target_token_id_batch[0].len())].to_vec();
+        let seq_len = analytical_discrete_wavelet_gradient.len() - 1;
+        let analytical_discrete_wavelet_gradient = analytical_discrete_wavelet_gradient[..seq_len.saturating_sub(target_token_id_batch[0].len())].to_vec();
 
         let global_error = global_relative_error_2d_l2(&numerical_grad_input_batch, &analytical_discrete_wavelet_gradient);
         println!("\n\n global relative gradient error: {:?}", &global_error);
@@ -362,6 +592,299 @@ mod test_transformer {
         println!("\n analytical gradientinput batch discrete wavelet {:?}", analytical_discrete_wavelet_gradient);
         println!("\n dim analytical gradient {:?}, {}", analytical_discrete_wavelet_gradient.len(), analytical_discrete_wavelet_gradient[0].len());
 
+        for (i, numerical_grad_input) in numerical_grad_input_batch.iter().enumerate() {
+            let row_sum_numeric: Complex<f64> = numerical_grad_input.iter().sum();
+            let row_sum_analytic: Complex<f64> = analytical_discrete_wavelet_gradient[i].iter().sum();
+
+            println!("row_sum numerical: {:?}, {:?}", row_sum_numeric.re, row_sum_numeric.im);
+            println!("row sum analytical: {:?}, {:?}", row_sum_analytic.re, row_sum_analytic.im);
+        }
+
         test_gradient_error_2d(&numerical_grad_input_batch, &analytical_discrete_wavelet_gradient, 1e-3);
+    }
+
+    #[test]
+    #[ignore]
+    fn test_transformer_norm_layer_separate_backward() {
+        let learning_rate: f64 = 0.01;
+        let epsilon = 1e-7;
+
+        let embedding_dim_original: usize = 512;
+        let base_2: i32 = 2;
+        let embedding_dim_compressed = (embedding_dim_original as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize;
+        let vocab_size: usize = 50;
+        let rows: usize = 16;
+
+        let mut embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
+        let mut positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
+        let mut discrete_wavelet_layer = DiscreteWaveletLayer::new();
+        let mut norm_layer = NormalNormLayer::new(embedding_dim_compressed, 1e-8, learning_rate);
+        let mut linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
+        let mut softmax_layer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING);
+
+        let rows: usize = 16;
+        let hidden_dim = 16;
+        let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
+
+        let batch_size = 1;
+        let num_attention_heads: usize = 4;
+        let rows: usize = 16;
+        let cols: usize = embedding_dim_compressed;
+        let input_len = 15;
+        let target_len = 6;
+
+        let mut attention_layer_1: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
+        // let mut attention_layer_2: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
+
+        let input_token_ids = generate_random_u32_batch(batch_size, input_len, input_len as u32);
+        let target_token_ids = generate_random_u32_batch(batch_size, target_len, target_len as u32);
+
+        let concat_batch_ids = concat_batches(&input_token_ids, &target_token_ids);
+
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_batch_ids(concat_batch_ids.clone());
+        layer_input.set_calculate_gradient(true);
+        layer_input.set_forward_only(false);
+        layer_input.set_target_batch_ids(target_token_ids.clone());
+
+        // forward
+        let (embeddings, padding_mask_batch) = embedding_layer.forward(&layer_input);
+        layer_input.set_input_batch(embeddings.clone());
+        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+
+        let discrete_wavelet_output = discrete_wavelet_layer.forward(&layer_input);
+        layer_input.set_input_batch(discrete_wavelet_output.get_output_batch());
+        layer_input.set_input_batch_before(discrete_wavelet_output.get_output_batch());
+
+        let norm_layer_output = norm_layer.forward(&layer_input);
+        layer_input.set_input_batch(norm_layer_output.get_output_batch());
+
+        let positional_encoding_output = positional_encoding_layer.forward(&layer_input);
+        layer_input.set_input_batch(positional_encoding_output.clone());
+
+        let output_attention_1 = attention_layer_1.forward(&layer_input);
+        layer_input.set_input_batch(output_attention_1.get_output_batch());
+
+        // let output_attention_2 = attention_layer_2.forward(&layer_input);
+        // layer_input.set_input_batch(output_attention_2.get_output_batch());
+
+        let output_ffn = ffn_layer.forward(&layer_input);
+        layer_input.set_input_batch(output_ffn.get_output_batch());
+
+        let output_linear = linear_layer.forward(&layer_input);
+        let _output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()));
+
+        // backward
+        let gradient_softmax: Gradient = softmax_layer.backward(&target_token_ids);
+        let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
+        let gradient_ffn: Gradient = ffn_layer.backward(&gradient_linear.get_gradient_input_batch());
+        let gradient_attention_layer_1: Gradient = attention_layer_1.backward(&gradient_ffn.get_gradient_input_batch());
+        // let gradient_attention_layer_2: Gradient = attention_layer_2.backward(&gradient_attention_layer_1.get_gradient_input_batch());
+        let pos_enc_gradient = positional_encoding_layer.backward(&gradient_attention_layer_1.get_gradient_input_batch());
+        let norm_layer_gradient = norm_layer.backward(&pos_enc_gradient);
+        let _discrete_layer_gradient = discrete_wavelet_layer.backward(&norm_layer_gradient);
+
+        let analytical_norm_gradient: Vec<Vec<Complex<f64>>> = norm_layer_gradient.get_gradient_input();
+
+        println!("padding mask batch in test transformer: {:?}", &padding_mask_batch);
+        println!("target tokens ids: {:?}", &target_token_ids);
+        println!("final output dim: {} {} {}", _output_softmax.len(), _output_softmax[0].len(), _output_softmax[0][0].len());
+
+        // Define the loss function
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
+            layer_input.set_input_batch(input.clone());
+            // layer_input.set_input_batch_before(input.clone());
+
+            let norm_layer_output = norm_layer.forward(&layer_input);
+            layer_input.set_input_batch(norm_layer_output.get_output_batch());
+
+            let positional_encoding_output = positional_encoding_layer.forward(&layer_input);
+            layer_input.set_input_batch(positional_encoding_output.clone());
+
+            let output_attention_1 = attention_layer_1.forward(&layer_input);
+            layer_input.set_input_batch(output_attention_1.get_output_batch());
+
+            // let output_attention_2 = attention_layer_2.forward(&layer_input);
+            // layer_input.set_input_batch(output_attention_2.get_output_batch());
+
+            let output_ffn = ffn_layer.forward(&layer_input);
+            layer_input.set_input_batch(output_ffn.get_output_batch());
+
+            let output_linear = linear_layer.forward(&layer_input);
+            let output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()));
+
+            let loss = cross_entropy_loss_batch(&output_softmax, &target_token_ids, &padding_mask_batch);
+
+            loss
+        };
+
+        let numerical_grad_input_batch: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, discrete_wavelet_output.get_output_batch(), epsilon);
+
+        let seq_len = numerical_grad_input_batch.len() - 1;
+        let numerical_grad_input_batch = numerical_grad_input_batch[..seq_len.saturating_sub(target_token_ids[0].len())].to_vec();
+        let seq_len = analytical_norm_gradient.len() - 1;
+        let analytical_norm_gradient = analytical_norm_gradient[..seq_len.saturating_sub(target_token_ids[0].len())].to_vec();
+
+        let global_error = global_relative_error_2d_l2(&numerical_grad_input_batch, &analytical_norm_gradient);
+        println!("\n\n global relative gradient error: {:?}", &global_error);
+
+        println!("\n numerical gradient input batch norm {:?}", numerical_grad_input_batch);
+        println!("\n dim numerical gradient {:?}, {}", numerical_grad_input_batch.len(), numerical_grad_input_batch[0].len());
+
+        println!("\n analytical gradientinput batch norm {:?}", analytical_norm_gradient);
+        println!("\n dim analytical gradient {:?}, {}", analytical_norm_gradient.len(), analytical_norm_gradient[0].len());
+
+        for (i, numerical_grad_input) in numerical_grad_input_batch.iter().enumerate() {
+            let row_sum_numeric: Complex<f64> = numerical_grad_input.iter().sum();
+            let row_sum_analytic: Complex<f64> = analytical_norm_gradient[i].iter().sum();
+
+            println!("row_sum numerical: {:?}, {:?}", row_sum_numeric.re, row_sum_numeric.im);
+            println!("row sum analytical: {:?}, {:?}", row_sum_analytic.re, row_sum_analytic.im);
+        }
+
+        test_gradient_error_2d(&numerical_grad_input_batch, &analytical_norm_gradient, 1e-3);
+    }
+
+    
+    #[test]
+    #[ignore]
+    fn test_transformer_two_self_attention_layers_backward() {
+        let learning_rate: f64 = 0.01;
+        let epsilon = 1e-7;
+
+        let embedding_dim_original: usize = 512;
+        let base_2: i32 = 2;
+        let embedding_dim_compressed = (embedding_dim_original as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize;
+        let vocab_size: usize = 50;
+        let rows: usize = 16;
+
+        let mut embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
+        let mut positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
+        let mut discrete_wavelet_layer = DiscreteWaveletLayer::new();
+        let mut norm_layer = NormalNormLayer::new(embedding_dim_compressed, 1e-8, learning_rate);
+        let mut linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
+        let mut softmax_layer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING);
+
+        let rows: usize = 16;
+        let hidden_dim = 16;
+        let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
+
+        let batch_size = 1;
+        let num_attention_heads: usize = 4;
+        let rows: usize = 16;
+        let cols: usize = embedding_dim_compressed;
+        let input_len = 15;
+        let target_len = 6;
+
+        let mut attention_layer_1: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
+        let mut attention_layer_2: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
+
+        let input_token_ids = generate_random_u32_batch(batch_size, input_len, input_len as u32);
+        let target_token_ids = generate_random_u32_batch(batch_size, target_len, target_len as u32);
+
+        let concat_batch_ids = concat_batches(&input_token_ids, &target_token_ids);
+
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_batch_ids(concat_batch_ids.clone());
+        layer_input.set_calculate_gradient(true);
+        layer_input.set_forward_only(false);
+        layer_input.set_target_batch_ids(target_token_ids.clone());
+
+        // forward
+        let (embeddings, padding_mask_batch) = embedding_layer.forward(&layer_input);
+        layer_input.set_input_batch(embeddings.clone());
+        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+
+        let discrete_wavelet_output = discrete_wavelet_layer.forward(&layer_input);
+        layer_input.set_input_batch(discrete_wavelet_output.get_output_batch());
+        layer_input.set_input_batch_before(discrete_wavelet_output.get_output_batch());
+
+        let norm_layer_output = norm_layer.forward(&layer_input);
+        layer_input.set_input_batch(norm_layer_output.get_output_batch());
+
+        let positional_encoding_output = positional_encoding_layer.forward(&layer_input);
+        layer_input.set_input_batch(positional_encoding_output.clone());
+
+        let output_attention_1 = attention_layer_1.forward(&layer_input);
+        layer_input.set_input_batch(output_attention_1.get_output_batch());
+
+        let output_attention_2 = attention_layer_2.forward(&layer_input);
+        layer_input.set_input_batch(output_attention_2.get_output_batch());
+
+        let output_ffn = ffn_layer.forward(&layer_input);
+        layer_input.set_input_batch(output_ffn.get_output_batch());
+
+        let output_linear = linear_layer.forward(&layer_input);
+        let _output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()));
+
+        // backward
+        let gradient_softmax: Gradient = softmax_layer.backward(&target_token_ids);
+        let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
+        let gradient_ffn: Gradient = ffn_layer.backward(&gradient_linear.get_gradient_input_batch());
+        let gradient_attention_layer_1: Gradient = attention_layer_1.backward(&gradient_ffn.get_gradient_input_batch());
+        let gradient_attention_layer_2: Gradient = attention_layer_2.backward(&gradient_attention_layer_1.get_gradient_input_batch());
+        let pos_enc_gradient = positional_encoding_layer.backward(&gradient_attention_layer_2.get_gradient_input_batch());
+        let norm_layer_gradient = norm_layer.backward(&pos_enc_gradient);
+        let _discrete_layer_gradient = discrete_wavelet_layer.backward(&norm_layer_gradient);
+
+        let analytical_norm_gradient: Vec<Vec<Complex<f64>>> = norm_layer_gradient.get_gradient_input();
+
+        println!("padding mask batch in test transformer: {:?}", &padding_mask_batch);
+        println!("target tokens ids: {:?}", &target_token_ids);
+        println!("final output dim: {} {} {}", _output_softmax.len(), _output_softmax[0].len(), _output_softmax[0][0].len());
+
+        // Define the loss function
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
+            layer_input.set_input_batch(input.clone());
+            // layer_input.set_input_batch_before(input.clone());
+
+            let norm_layer_output = norm_layer.forward(&layer_input);
+            layer_input.set_input_batch(norm_layer_output.get_output_batch());
+
+            let positional_encoding_output = positional_encoding_layer.forward(&layer_input);
+            layer_input.set_input_batch(positional_encoding_output.clone());
+
+            let output_attention_1 = attention_layer_1.forward(&layer_input);
+            layer_input.set_input_batch(output_attention_1.get_output_batch());
+
+            let output_attention_2 = attention_layer_2.forward(&layer_input);
+            layer_input.set_input_batch(output_attention_2.get_output_batch());
+
+            let output_ffn = ffn_layer.forward(&layer_input);
+            layer_input.set_input_batch(output_ffn.get_output_batch());
+
+            let output_linear = linear_layer.forward(&layer_input);
+            let output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()));
+
+            let loss = cross_entropy_loss_batch(&output_softmax, &target_token_ids, &padding_mask_batch);
+
+            loss
+        };
+
+        let numerical_grad_input_batch: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, discrete_wavelet_output.get_output_batch(), epsilon);
+
+        let seq_len = numerical_grad_input_batch.len() - 1;
+        let numerical_grad_input_batch = numerical_grad_input_batch[..seq_len.saturating_sub(target_token_ids[0].len())].to_vec();
+        let seq_len = analytical_norm_gradient.len() - 1;
+        let analytical_norm_gradient = analytical_norm_gradient[..seq_len.saturating_sub(target_token_ids[0].len())].to_vec();
+
+        let global_error = global_relative_error_2d_l2(&numerical_grad_input_batch, &analytical_norm_gradient);
+        println!("\n\n global relative gradient error: {:?}", &global_error);
+
+        println!("\n numerical gradient input batch norm {:?}", numerical_grad_input_batch);
+        println!("\n dim numerical gradient {:?}, {}", numerical_grad_input_batch.len(), numerical_grad_input_batch[0].len());
+
+        println!("\n analytical gradientinput batch norm {:?}", analytical_norm_gradient);
+        println!("\n dim analytical gradient {:?}, {}", analytical_norm_gradient.len(), analytical_norm_gradient[0].len());
+
+        for (i, numerical_grad_input) in numerical_grad_input_batch.iter().enumerate() {
+            let row_sum_numeric: Complex<f64> = numerical_grad_input.iter().sum();
+            let row_sum_analytic: Complex<f64> = analytical_norm_gradient[i].iter().sum();
+
+            println!("row_sum numerical: {:?}, {:?}", row_sum_numeric.re, row_sum_numeric.im);
+            println!("row sum analytical: {:?}, {:?}", row_sum_analytic.re, row_sum_analytic.im);
+        }
+
+        test_gradient_error_2d(&numerical_grad_input_batch, &analytical_norm_gradient, 1e-3);
     }
 }

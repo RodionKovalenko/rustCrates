@@ -53,41 +53,6 @@ mod test_norm_layer {
         let gradient_norm = norm_layer.backward(&linear_gradient);
         let analytical_gradient_input_norm = gradient_norm.get_gradient_input_batch();
 
-        // //TEST 1: gradient of input batch before
-        // let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
-        //     //layer_input.set_input_batch(input.clone());
-        //     layer_input.set_input_batch_before(input.clone());
-        //     let norm_output = norm_layer.forward(&layer_input);
-        //     let norm_output_batch = norm_output.get_output_batch();
-
-        //     let softmax_batch_output = softmax_layer.forward(&norm_output_batch, Some(padding_mask_batch.clone()));
-
-        //     let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
-
-        //     loss
-        // };
-
-        // let numerical_grad_input_norm: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch(&mut loss_fn, input_batch_before.clone(), epsilon);
-
-        // println!("\nnumerical gradient norm: {:?}", &numerical_grad_input_norm);
-        // println!("\nanalytical gradient norm: {:?}", &analytical_gradient_input_norm);
-
-        // // for b in 0..analytical_gradient_input_norm.len() {
-        // //     for s in 0..analytical_gradient_input_norm[b].len() {
-        // //         let analytical_row_sum: Complex<f64> = analytical_gradient_input_norm[b][s].iter().sum();
-        // //         let numerical_row_sum: Complex<f64> = numerical_grad_input_norm[b][s].iter().sum();
-
-        // //         println!("analytical row sum: {:?}", analytical_row_sum);
-        // //         println!("numerical row sum: {:?}", numerical_row_sum);
-        // //     }
-        // // }
-
-        // let global_error = global_relative_error_l2(&numerical_grad_input_norm, &analytical_gradient_input_norm);
-
-        // println!("\n\nglobal relative gradient error: {:?}", &global_error);
-
-        // test_gradient_batch_error(&numerical_grad_input_norm, &analytical_gradient_input_norm, 1e-5);
-
         //TEST 2: input batch itself
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             layer_input.set_input_batch(input.clone());
