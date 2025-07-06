@@ -1,5 +1,5 @@
 use std::time::Instant;
-
+use colored::*;
 use num::Complex;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
@@ -124,7 +124,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
         total_loss_exp_ma = alpha * total_loss.re + (1.0 - alpha) * total_loss_exp_ma;
 
         if epoch % 5 == 0 || total_loss.norm() <= loss_threshold {
-            println!("Epoch: {:?}, TOTAL LOSS: {:?}", epoch, total_loss);
+            println!("Epoch: {}, TOTAL LOSS: {}", epoch.to_string().blue().bold(), total_loss.re.to_string().red().bold());
             println!("Epoch: {:?}, EXPONENTIAL MOVING AVARAGE LOSS: {:?}", epoch, total_loss_exp_ma);
         }
 
