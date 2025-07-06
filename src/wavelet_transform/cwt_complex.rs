@@ -231,7 +231,7 @@ pub fn get_wavelet_derivative(
     full_grad.splice(limit_down..(limit_down + grad_output.len()), grad_output.clone());
 
     // Adjoint of finite difference operation
-    let scaled_sqrt = -scale.sqrt();
+    let scaled_sqrt = -scale.sqrt() * -1.0;
     let mut grad_convolved = vec![Complex::new(0.0, 0.0); convolved.len()];
     for i in 0..full_grad.len() {
         if i < grad_convolved.len() - 1 {
