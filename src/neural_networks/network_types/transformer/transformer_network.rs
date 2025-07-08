@@ -34,7 +34,7 @@ pub const CONTEXT_OVERLAPPING: usize = 450;
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize, batch_size: usize) {
     let mut total_loss: Complex<f64>;
-    let loss_threshold: f64 = 0.04;
+    let loss_threshold: f64 = 0.004;
     let now = Instant::now();
     let mut previous_last_losses: Vec<f64> = Vec::new();
     let mut total_loss_exp_ma = 0.0;
@@ -44,7 +44,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
     'outer: for epoch in 0..num_epochs {
         total_loss = Complex::new(0.0, 0.0);
-        for batch_dataset in dataset.split_into_batches(1) {
+        for (record_ind, batch_dataset) in dataset.split_into_batches(1).iter().enumerate() {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
 
             let seconds_elapsed = now.elapsed();
@@ -76,6 +76,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             layer_input.set_forward_only(false);
             layer_input.set_calculate_gradient(true);
             layer_input.set_target_batch_ids(target_ids.clone());
+            layer_input.set_record_index(record_ind);
 
             transformer_network.minibatch_size = batch_size;
             transformer_network.time_step = epoch;
@@ -101,7 +102,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                 println!("time elapsed for forward pass in seconds: {:?}", seconds);
             }
 
-            backward(transformer_network, &target_ids, true);
+            backward(transformer_network, &target_ids, &layer_input, true);
 
             if epoch > 0 && epoch % 10 == 0 {
                 let seconds_elapsed_end = now.elapsed();
@@ -508,13 +509,13 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
     layer_output
 }
 
-pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<Vec<u32>>, update_params: bool) -> Option<Gradient> {
+pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<Vec<u32>>, layer_input: &LayerInput, update_params: bool) -> Option<Gradient> {
     // Backward pass
 
     let mut gradient: Option<Gradient> = None;
     let batch_size = transformer_network.get_minibatch_size();
-    let time_step = transformer_network.get_time_step();
-    let update_gradients: bool = time_step % batch_size == 0 && update_params;
+    let record_ind = layer_input.get_record_index();
+    let update_gradients: bool = record_ind % batch_size == 0 && update_params;
 
     // println!("time step: {:?}", time_step);
     // println!("update gradient: {:?}", update_gradients);
