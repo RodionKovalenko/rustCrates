@@ -126,8 +126,8 @@ mod test_wavelet_compression {
     fn test_complex_multilevel_compressed_wavelet_partial() {
         let seq_len = 75;
         let dim = 4;
-        let compr_levels = 5;
-        let wavelet_type = &DiscreteWaletetType::DB6;
+        let compr_levels = 10;
+        let wavelet_type = &DiscreteWaletetType::DB4;
 
         let matrix_1: Vec<Vec<Complex<f64>>> = transpose(&generate_random_complex_2d(seq_len, dim));
         let mut details_coeffs: Vec<Vec<Vec<Complex<f64>>>> = vec![];

@@ -16,6 +16,7 @@ pub struct LayerInput {
     time_step: usize,
     forward_only: bool,
     calculate_gradient: bool,
+    record_ind: usize,
 }
 
 impl LayerInput {
@@ -32,6 +33,7 @@ impl LayerInput {
             target_tokens_len: 0,
             forward_only: false,
             calculate_gradient: true,
+            record_ind: 0,
             batch_size: 25,
         }
     }
@@ -64,6 +66,9 @@ impl LayerInput {
     }
     pub fn set_batch_size(&mut self, batch_size: usize) {
         self.batch_size = batch_size;
+    }
+    pub fn set_record_index(&mut self, record_ind: usize) {
+        self.record_ind = record_ind;
     }
     pub fn set_calculate_gradient(&mut self, calculate_gradient: bool) {
         self.calculate_gradient = calculate_gradient;
@@ -107,5 +112,8 @@ impl LayerInput {
     }
     pub fn get_batch_size(&self) -> usize {
         self.batch_size
+    }
+    pub fn get_record_index(&self) -> usize {
+        self.record_ind
     }
 }

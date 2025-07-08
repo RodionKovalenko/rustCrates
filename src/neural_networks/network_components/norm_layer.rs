@@ -115,7 +115,6 @@ impl NormalNormLayer {
         }
 
         self.input_batch = Some(input_batch.clone());
-        //self.input_batch = Some(layer_input.get_input_batch());
         self.input_batch_before = Some(input_batch_before.clone());
         self.normalized_batch = Some(normalized_batch);
         self.mean_batch = Some(mean_batch);
@@ -139,6 +138,7 @@ impl NormalNormLayer {
         let normalized_batch = self.normalized_batch.as_ref().expect("Normalized batch not found");
         let mean_batch = self.mean_batch.as_ref().expect("Mean not found");
         let var_batch = self.var_batch.as_ref().expect("Variance not found");
+        let previous_gradient_input_batch = self.previous_gradient_input_batch.as_mut().expect("Previous gradient input batch not found");
 
         let previous_gradient_batch = if !previous_gradient.get_gradient_input_batch().is_empty() {
             GradientBatch::Complex(previous_gradient.get_gradient_input_batch())
@@ -160,6 +160,9 @@ impl NormalNormLayer {
 
         match previous_gradient_batch {
             GradientBatch::Complex(previous_gradient) => {
+                if previous_gradient_input_batch.is_empty() {
+                    *previous_gradient_input_batch = previous_gradient.clone();
+                }
                 for b in 0..batch_size {
                     //previous_gradient_input_batch[b] = transpose(&previous_gradient_input_batch[b]);
                     for s in 0..seq_len {
@@ -200,7 +203,7 @@ impl NormalNormLayer {
 
                             for j in 0..feature_dim {
                                 let _identity: f64 = if j == f { 1.0 } else { 0.0 };
-                                input_grads[b][s][j] += Complex::new((gradient * _identity + gradient * previous_gradient[b][s][j]).re, 0.0);
+                                input_grads[b][s][j] += Complex::new((gradient * _identity + gradient * previous_gradient_input_batch[b][s][j]).re, 0.0);
                             }
                         }
                     }
@@ -246,7 +249,7 @@ impl NormalNormLayer {
 
                             for j in 0..feature_dim {
                                 let _identity: f64 = if j == f { 1.0 } else { 0.0 };
-                                input_grads[b][s][j] += gradient * _identity + gradient * previous_gradient[b][s][j];
+                                input_grads[b][s][j] += gradient * _identity + gradient * previous_gradient_input_batch[b][s][j];
                             }
                         }
                     }
