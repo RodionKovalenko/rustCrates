@@ -45,7 +45,7 @@ impl FeedForwardLayer {
         Self {
             layers,
             gradient: None,
-            norm_layer: _norm_layer,
+            norm_layer: None,
             learning_rate,
             input_batch: None,
             output_batch: None,
@@ -98,34 +98,25 @@ impl FeedForwardLayer {
         }
 
         self.output_batch = Some(output.clone());
-        let mut previous_gradient_input_batch = vec![];
+
+        let mut layer_input = input.clone();
+        layer_input.set_input_batch(output.clone());
+        layer_input.set_input_batch_before(input_batch.clone());
 
         if input.get_calculate_gradient() {
-            previous_gradient_input_batch = self.calculate_input_gradient_batch();
+            layer_input.set_previous_gradient_input_batch(self.calculate_input_gradient_batch());
         }
 
         // Apply the RMS normalization layer
         if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
             match norm_layer_enum {
                 LayerEnum::RMSNorm(rms_norm_layer) => {
-                    let mut rms_input_layer = LayerInput::new_default();
-                    rms_input_layer.set_input_batch(output.clone());
-                    rms_input_layer.set_input_batch_before(input_batch.clone());
-                    rms_input_layer.set_time_step(self.time_step);
-                    rms_input_layer.set_previous_gradient_input_batch(previous_gradient_input_batch);
-
-                    let rms_output = rms_norm_layer.forward(&rms_input_layer);
+                    let rms_output = rms_norm_layer.forward(&layer_input);
                     output = rms_output.get_output_batch();
                     //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
                 }
                 LayerEnum::Norm(norm_layer) => {
-                    let mut norm_input_layer = LayerInput::new_default();
-                    norm_input_layer.set_input_batch(output.clone());
-                    norm_input_layer.set_input_batch_before(input_batch.clone());
-                    norm_input_layer.set_time_step(self.time_step);
-                    norm_input_layer.set_previous_gradient_input_batch(previous_gradient_input_batch);
-
-                    let layer_output = norm_layer.forward(&norm_input_layer);
+                    let layer_output = norm_layer.forward(&layer_input);
                     output = layer_output.get_output_batch();
 
                     //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
@@ -190,11 +181,7 @@ impl FeedForwardLayer {
     }
 
     pub fn calculate_input_gradient_batch(&mut self) -> Vec<Vec<Vec<Complex<f64>>>> {
-        let linear_layer = match self.layers.get(1) {
-            Some(LayerEnum::Linear(linear_layer)) => linear_layer,
-            _ => &Box::new(LinearLayer::new(0.01, 2, 3)),
-        };
-
+        let linear_layer = self.layers.iter().find_map(|layer| if let LayerEnum::Linear(ref linear_layer) = layer { Some(linear_layer) } else { None }).expect("No LinearLayer found in layers");
         let input_batch = linear_layer.input_batch.as_ref().expect("no input batch found in ");
 
         let mut output_gradients = vec![vec![vec![Complex::new(1.0, 0.0); linear_layer.weights[0].len()]; input_batch[0].len()]; input_batch.len()];

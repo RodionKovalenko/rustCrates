@@ -797,25 +797,21 @@ mod test_transformer {
 
         let discrete_wavelet_output = discrete_wavelet_layer.forward(&layer_input);
         layer_input.set_input_batch(discrete_wavelet_output.get_output_batch());
-        layer_input.set_input_batch_before(discrete_wavelet_output.get_output_batch());
-
-        let norm_layer_output = norm_layer.forward(&layer_input);
-        layer_input.set_input_batch(norm_layer_output.get_output_batch());
+        // layer_input.set_input_batch_before(discrete_wavelet_output.get_output_batch());
 
         let positional_encoding_output = positional_encoding_layer.forward(&layer_input);
         layer_input.set_input_batch(positional_encoding_output.clone());
 
-        let input_att1 = positional_encoding_output.clone();
-        println!("input att1: {} {} {}", input_att1.len(), input_att1[0].len(), input_att1[0][0].len());
-
         let output_attention_1 = attention_layer_1.forward(&layer_input);
         layer_input.set_input_batch(output_attention_1.get_output_batch());
+        layer_input.set_input_batch_before(positional_encoding_output.clone());
+        layer_input.set_previous_gradient_input_batch(attention_layer_1.calculate_input_gradient_batch());
+
+        let norm_layer_output = norm_layer.forward(&layer_input);
+        layer_input.set_input_batch(norm_layer_output.get_output_batch());
 
         let output_ffn = ffn_layer_1.forward(&layer_input);
         layer_input.set_input_batch(output_ffn.get_output_batch());
-
-        let input_att1 = output_ffn.get_output_batch();
-        println!("input att2: {} {} {}", input_att1.len(), input_att1[0].len(), input_att1[0][0].len());
 
         // let output_attention_2 = attention_layer_2.forward(&layer_input);
         // layer_input.set_input_batch(output_attention_2.get_output_batch());
@@ -830,12 +826,13 @@ mod test_transformer {
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_ids);
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
         // let ffn_gradient_2 = ffn_layer_2.backward(&gradient_linear.get_gradient_input_batch());
-        // let gradient_attention_layer_2: Gradient = attention_layer_2.backward(&ffn_gradient_2.get_gradient_input_batch());
+        //let gradient_attention_layer_2: Gradient = attention_layer_2.backward(&gradient_linear.get_gradient_input_batch());
         let gradient_ffn: Gradient = ffn_layer_1.backward(&gradient_linear.get_gradient_input_batch());
-        let gradient_attention_layer_1: Gradient = attention_layer_1.backward(&gradient_ffn.get_gradient_input_batch());
+        let norm_layer_gradient = norm_layer.backward(&gradient_ffn);
+        let gradient_attention_layer_1: Gradient = attention_layer_1.backward(&norm_layer_gradient.get_gradient_input_batch());
         let pos_enc_gradient = positional_encoding_layer.backward(&gradient_attention_layer_1.get_gradient_input_batch());
-        let norm_layer_gradient = norm_layer.backward(&pos_enc_gradient);
-        let _discrete_layer_gradient = discrete_wavelet_layer.backward(&norm_layer_gradient);
+        //let norm_layer_gradient = norm_layer.backward(&pos_enc_gradient);
+        let _discrete_layer_gradient = discrete_wavelet_layer.backward(&pos_enc_gradient);
 
         let analytical_norm_gradient: Vec<Vec<Complex<f64>>> = pos_enc_gradient.get_gradient_input();
 
@@ -849,17 +846,20 @@ mod test_transformer {
             // layer_input.set_input_batch_before(discrete_wavelet_output.get_output_batch());
             layer_input.set_calculate_gradient(false);
 
-            // let norm_layer_output = norm_layer.forward(&layer_input);
-            // layer_input.set_input_batch(norm_layer_output.get_output_batch());
-
             let positional_encoding_output = positional_encoding_layer.forward(&layer_input);
             layer_input.set_input_batch(positional_encoding_output.clone());
 
             let output_attention_1 = attention_layer_1.forward(&layer_input);
             layer_input.set_input_batch(output_attention_1.get_output_batch());
+            layer_input.set_input_batch_before(positional_encoding_output.clone());
+            layer_input.set_previous_gradient_input_batch(attention_layer_1.calculate_input_gradient_batch());
+
+            let norm_layer_output = norm_layer.forward(&layer_input);
+            layer_input.set_input_batch(norm_layer_output.get_output_batch());
 
             let output_ffn = ffn_layer_1.forward(&layer_input);
             layer_input.set_input_batch(output_ffn.get_output_batch());
+            // layer_input.set_input_batch(add_matrix_3d_c(&output_attention_1.get_output_batch(), &output_ffn.get_output_batch()));
 
             // let output_attention_2 = attention_layer_2.forward(&layer_input);
             // layer_input.set_input_batch(output_attention_2.get_output_batch());
@@ -875,7 +875,7 @@ mod test_transformer {
             loss
         };
 
-        let numerical_grad_input_batch: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, norm_layer_output.get_output_batch(), epsilon);
+        let numerical_grad_input_batch: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, discrete_wavelet_output.get_output_batch(), epsilon);
 
         let seq_len = numerical_grad_input_batch.len() - 1;
         let numerical_grad_input_batch = numerical_grad_input_batch[..seq_len.saturating_sub(target_token_ids[0].len())].to_vec();
