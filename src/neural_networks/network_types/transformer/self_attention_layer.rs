@@ -43,7 +43,7 @@ impl SelfAttentionLayer {
         Self {
             attention_heads,
             activated_output: vec![],
-            norm_layer: _norm_layer,
+            norm_layer: None,
             input_batch: None,
             output_batch: None,
             time_step: 0,
