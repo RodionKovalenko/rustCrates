@@ -903,6 +903,7 @@ mod test_transformer {
         let rows: usize = 16;
         let hidden_dim = 16;
         let mut ffn_layer_1: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
+        let mut ffn_layer_2: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
 
         let batch_size = 1;
         let num_attention_heads: usize = 4;
@@ -912,6 +913,7 @@ mod test_transformer {
         let target_len = 6;
 
         let mut attention_layer_1: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
+        let mut attention_layer_2: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
 
         let input_token_ids = generate_random_u32_batch(batch_size, input_len, input_len as u32);
         let target_token_ids = generate_random_u32_batch(batch_size, target_len, target_len as u32);
@@ -941,15 +943,21 @@ mod test_transformer {
         let output_ffn = ffn_layer_1.forward(&layer_input);
         layer_input.set_input_batch(output_ffn.get_output_batch());
 
+        let output_attention_2 = attention_layer_2.forward(&layer_input);
+        layer_input.set_input_batch(output_attention_2.get_output_batch());
+
+        let output_ffn_2 = ffn_layer_2.forward(&layer_input);
+        layer_input.set_input_batch(output_ffn_2.get_output_batch());
+
         let output_linear = linear_layer.forward(&layer_input);
         let _output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()));
 
         // backward
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_ids);
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
-        // let ffn_gradient_2 = ffn_layer_2.backward(&gradient_linear.get_gradient_input_batch());
-        //let gradient_attention_layer_2: Gradient = attention_layer_2.backward(&gradient_linear.get_gradient_input_batch());
-        let gradient_ffn: Gradient = ffn_layer_1.backward(&gradient_linear.get_gradient_input_batch());
+        let ffn_gradient_2 = ffn_layer_2.backward(&gradient_linear.get_gradient_input_batch());
+        let gradient_attention_layer_2: Gradient = attention_layer_2.backward(&ffn_gradient_2.get_gradient_input_batch());
+        let gradient_ffn: Gradient = ffn_layer_1.backward(&gradient_attention_layer_2.get_gradient_input_batch());
         let gradient_attention_layer_1: Gradient = attention_layer_1.backward(&gradient_ffn.get_gradient_input_batch());
         let pos_enc_gradient = positional_encoding_layer.backward(&gradient_attention_layer_1.get_gradient_input_batch());
         let _discrete_layer_gradient = discrete_wavelet_layer.backward(&pos_enc_gradient);
@@ -976,6 +984,12 @@ mod test_transformer {
 
             let output_ffn = ffn_layer_1.forward(&layer_input);
             layer_input.set_input_batch(output_ffn.get_output_batch());
+
+            let output_attention_2 = attention_layer_2.forward(&layer_input);
+            layer_input.set_input_batch(output_attention_2.get_output_batch());
+
+            let output_ffn_2 = ffn_layer_2.forward(&layer_input);
+            layer_input.set_input_batch(output_ffn_2.get_output_batch());
 
             let output_linear = linear_layer.forward(&layer_input);
             let output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()));
