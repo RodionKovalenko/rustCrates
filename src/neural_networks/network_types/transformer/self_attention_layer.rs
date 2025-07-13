@@ -104,9 +104,9 @@ impl SelfAttentionLayer {
 
         self.output_batch = Some(batch_output.clone());
 
-        if layer_input.get_calculate_gradient() {
-            layer_input.set_previous_gradient_input_batch(self.calculate_input_gradient_batch());
-        }
+        // if layer_input.get_calculate_gradient() {
+        //     layer_input.set_previous_gradient_input_batch(self.calculate_input_gradient_batch());
+        // }
 
         // Process the dense layers
         if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
