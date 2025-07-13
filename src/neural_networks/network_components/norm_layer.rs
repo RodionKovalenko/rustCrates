@@ -23,7 +23,7 @@ pub struct NormalNormLayer {
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
-    pub input_batch_before: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub residual_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     pub previous_gradient_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
@@ -42,6 +42,8 @@ pub struct NormalNormLayer {
     pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     pub batch_size: usize,
+    #[serde(skip)]
+    pub is_residual_input_present: bool,
 }
 
 impl NormalNormLayer {
@@ -52,13 +54,14 @@ impl NormalNormLayer {
             epsilon,
             learning_rate,
             input_batch: None,
-            input_batch_before: None,
+            residual_input_batch: None,
             previous_gradient_input_batch: None,
             normalized_batch: None,
             mean_batch: None,
             var_batch: None,
             gradient: None,
             previous_gradient: None,
+            is_residual_input_present: false,
             output_batch: None,
             time_step: 0,
             batch_size: 0,
@@ -93,8 +96,14 @@ impl NormalNormLayer {
         let mut mean_batch: Vec<Vec<Complex<f64>>> = Vec::new();
         let mut var_batch: Vec<Vec<Complex<f64>>> = Vec::new();
 
-        if !&input_batch_before.is_empty() {
+        if self.gamma.len() != input_batch[0][0].len() {
+            self.gamma = vec![Complex::new(1.0, 0.0); input_batch[0][0].len()];
+            self.beta = vec![Complex::new(0.0, 0.0); input_batch[0][0].len()];
+        }
+
+        if !input_batch_before.is_empty() {
             input_batch = add_matrix_3d_c(&input_batch, &input_batch_before);
+            self.is_residual_input_present = true;
         }
 
         for input in input_batch.iter() {
@@ -115,16 +124,12 @@ impl NormalNormLayer {
         }
 
         self.input_batch = Some(input_batch.clone());
-        self.input_batch_before = Some(input_batch_before.clone());
+        self.residual_input_batch = Some(input_batch_before.clone());
         self.normalized_batch = Some(normalized_batch);
         self.mean_batch = Some(mean_batch);
         self.var_batch = Some(var_batch);
         self.time_step = layer_input.get_time_step();
         self.output_batch = Some(output_batch.clone());
-
-        if !layer_input.get_forward_only() {
-            self.previous_gradient_input_batch = Some(layer_input.get_previous_gradient_input_batch());
-        }
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(output_batch);
@@ -134,11 +139,14 @@ impl NormalNormLayer {
 
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
         let input_batch = self.input_batch.as_ref().expect("Input batch not found");
-        let _input_batch_before = self.input_batch_before.as_ref().expect("Input batch before not found");
         let normalized_batch = self.normalized_batch.as_ref().expect("Normalized batch not found");
         let mean_batch = self.mean_batch.as_ref().expect("Mean not found");
         let var_batch = self.var_batch.as_ref().expect("Variance not found");
-        let previous_gradient_input_batch = self.previous_gradient_input_batch.as_mut().expect("Previous gradient input batch not found");
+
+        // check if residual_input_batch is present
+        let residual_input_present: bool = self.residual_input_batch.as_ref().map(|r| !r.is_empty()).unwrap_or(false);
+
+        println!("residual input present: {:?}", residual_input_present);
 
         let previous_gradient_batch = if !previous_gradient.get_gradient_input_batch().is_empty() {
             GradientBatch::Complex(previous_gradient.get_gradient_input_batch())
@@ -160,9 +168,6 @@ impl NormalNormLayer {
 
         match previous_gradient_batch {
             GradientBatch::Complex(previous_gradient) => {
-                if previous_gradient_input_batch.is_empty() {
-                    *previous_gradient_input_batch = previous_gradient.clone();
-                }
                 for b in 0..batch_size {
                     //previous_gradient_input_batch[b] = transpose(&previous_gradient_input_batch[b]);
                     for s in 0..seq_len {
@@ -203,7 +208,8 @@ impl NormalNormLayer {
 
                             for j in 0..feature_dim {
                                 let _identity: f64 = if j == f { 1.0 } else { 0.0 };
-                                input_grads[b][s][j] += Complex::new((gradient * _identity ).re, 0.0);
+
+                                input_grads[b][s][j] += Complex::new((gradient * _identity).re, 0.0);
                             }
                         }
                     }
@@ -249,12 +255,16 @@ impl NormalNormLayer {
 
                             for j in 0..feature_dim {
                                 let _identity: f64 = if j == f { 1.0 } else { 0.0 };
-                                input_grads[b][s][j] += gradient * _identity + gradient * previous_gradient_input_batch[b][s][j];
+                                input_grads[b][s][j] += gradient * _identity;
                             }
                         }
                     }
                 }
             }
+        }
+
+        if !self.is_residual_input_present {
+            input_grads = add_matrix_3d(&input_grads, &input_grads);
         }
 
         if self.gradient.is_some() {
