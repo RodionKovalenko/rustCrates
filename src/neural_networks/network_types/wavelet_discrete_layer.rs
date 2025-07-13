@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     neural_networks::{
-        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+        network_components::{gradient_struct::Gradient, layer::LayerEnum, layer_input_struct::LayerInput, layer_output_struct::LayerOutput, norm_layer::NormalNormLayer},
         utils::matrix::{add_matrix_3d, transpose},
     },
     utils::array::unzip4,
@@ -23,6 +23,7 @@ pub struct DiscreteWaveletLayer {
     pub is_full_mode: bool,
     pub wavelet_size: usize,
     pub compression_levels: usize,
+    pub norm_layer: Option<LayerEnum>,
 
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
@@ -54,6 +55,8 @@ pub struct DiscreteWaveletLayer {
 
 impl DiscreteWaveletLayer {
     pub fn new() -> Self {
+        let _norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(16, 1e-10, 0.001))));
+
         Self {
             input_batch: None,
             trend_input_batch: None,
@@ -73,6 +76,7 @@ impl DiscreteWaveletLayer {
             padding_mask_batch: None,
             target_batch: None,
             target_batch_ids: None,
+            norm_layer: _norm_layer,
         }
     }
 
@@ -133,6 +137,30 @@ impl DiscreteWaveletLayer {
 
         let (trend_batch, input_only, compression_dims, comp_pad_mask_b) = unzip4(results);
 
+        let mut layer_input = layer_input.clone();
+        layer_input.set_input_batch(trend_batch.clone());
+        layer_input.set_input_batch_before(trend_batch.clone());
+
+        let mut trend_batch: Vec<Vec<Vec<Complex<f64>>>> = trend_batch.clone();
+
+        // Apply the RMS normalization layer
+        if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
+            match norm_layer_enum {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    let rms_output = rms_norm_layer.forward(&layer_input);
+                    trend_batch = rms_output.get_output_batch();
+                    //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
+                }
+                LayerEnum::Norm(norm_layer) => {
+                    let layer_output = norm_layer.forward(&layer_input);
+                    trend_batch = layer_output.get_output_batch();
+
+                    //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
+                }
+                _ => {}
+            }
+        }
+
         self.input_batch = Some(input_batch.clone());
         self.input_only_batch = Some(input_only);
         self.trend_input_batch = Some(trend_batch.clone());
@@ -158,10 +186,34 @@ impl DiscreteWaveletLayer {
         let input_batch = self.input_batch.as_ref().expect("Input batch not found");
         let target_batch_ids = self.target_batch_ids.as_ref().expect("no target_batch_ids found");
         let input_only_batch = self.input_only_batch.as_ref().expect("no input only batch found");
-        let grad_output_batch = previous_gradient.get_gradient_input_batch();
+        let mut grad_output_batch = previous_gradient.get_gradient_input_batch();
         let compression_dims = self.compression_dims.as_ref().expect("no compression dwt found");
 
         assert_eq!(input_batch.len(), grad_output_batch.len(), "Input and gradient batch size mismatch");
+
+        let mut output_gradient_norm = vec![];
+
+        let mut gradient = Gradient::new_default();
+        gradient.set_gradient_input_batch(grad_output_batch.clone());
+
+        //Apply RMSNorm backpropagation if it's present
+        if let Some(norm_layer) = &mut self.norm_layer {
+            match norm_layer {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    gradient = rms_norm_layer.backward(&grad_output_batch);
+                    grad_output_batch = gradient.get_gradient_input_batch();
+                    output_gradient_norm = grad_output_batch.clone();
+                    // println!("FFN, gradient from RMS Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
+                }
+                LayerEnum::Norm(norm_layer) => {
+                    gradient = norm_layer.backward(&gradient);
+                    grad_output_batch = gradient.get_gradient_input_batch();
+                    output_gradient_norm = grad_output_batch.clone();
+                    //println!("FFN, gradient from Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
+                }
+                _ => {}
+            }
+        }
 
         let mut grad_input_batch: Vec<Vec<Vec<Complex<f64>>>> = grad_output_batch
             .par_iter()
@@ -191,6 +243,10 @@ impl DiscreteWaveletLayer {
                 }
             })
             .collect();
+
+        if !output_gradient_norm.is_empty() {
+            grad_input_batch = add_matrix_3d(&grad_input_batch, &grad_input_batch);
+        }
 
         if self.gradient.is_some() {
             let previous_gradient = self.gradient.as_ref().expect("");
