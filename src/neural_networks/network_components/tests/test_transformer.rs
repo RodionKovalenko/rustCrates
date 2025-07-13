@@ -19,9 +19,7 @@ mod test_transformer {
                 wavelet_network::DECOMPOSITION_LEVELS,
             },
             utils::{
-                derivative::{global_relative_error_2d_l2, numerical_gradient_input, numerical_gradient_weights, test_gradient_error_2d},
-                random_arrays::generate_random_u32_batch,
-                tokenizer::tokenize_batch,
+                derivative::{global_relative_error_2d_l2, numerical_gradient_input, numerical_gradient_weights, test_gradient_error_2d}, matrix::add_matrix_3d, random_arrays::generate_random_u32_batch, tokenizer::tokenize_batch
             },
         },
         utils::data_converter::convert_to_c_f64_3d,
@@ -941,16 +939,8 @@ mod test_transformer {
         layer_input.set_input_batch(output_attention_1.get_output_batch());
 
         let output_ffn = ffn_layer_1.forward(&layer_input);
-
-        let output_ffn_full = output_ffn.get_output_batch();
-        let output_attention_layer = output_attention_1.get_output_batch();
-
-        // set imaginary part to zero
-        let output_ffn_cut: Vec<Vec<Vec<Complex<f64>>>> = output_ffn_full.iter().map(|row| row.iter().map(|val| val.iter().map(|v| Complex::new(v.re, 0.0)).collect()).collect()).collect();
-        // let output_attention_layer_cut: Vec<Vec<Vec<Complex<f64>>>> = output_attention_layer.iter().map(|row| row.iter().map(|val| val.iter().map(|v| Complex::new(v.re, 0.0)).collect()).collect()).collect();
-
-        layer_input.set_input_batch(output_ffn_cut);
-        layer_input.set_input_batch_before(output_attention_layer);
+        layer_input.set_input_batch(output_ffn.get_output_batch());
+        layer_input.set_input_batch_before(output_attention_1.get_output_batch());
 
         let norm_layer_output = norm_layer.forward(&layer_input);
         layer_input.set_input_batch(norm_layer_output.get_output_batch());
@@ -964,7 +954,9 @@ mod test_transformer {
         // let ffn_gradient_2 = ffn_layer_2.backward(&gradient_linear.get_gradient_input_batch());
         //let gradient_attention_layer_2: Gradient = attention_layer_2.backward(&gradient_linear.get_gradient_input_batch());
         let norm_layer_gradient = norm_layer.backward(&gradient_linear);
-        let gradient_ffn: Gradient = ffn_layer_1.backward(&norm_layer_gradient.get_gradient_input_batch());
+        let mut gradient_ffn: Gradient = ffn_layer_1.backward(&norm_layer_gradient.get_gradient_input_batch());
+
+        gradient_ffn.set_gradient_input_batch(add_matrix_3d(&gradient_ffn.get_gradient_input_batch(), &norm_layer_gradient.get_gradient_input_batch()));
         let gradient_attention_layer_1: Gradient = attention_layer_1.backward(&gradient_ffn.get_gradient_input_batch());
         let pos_enc_gradient = positional_encoding_layer.backward(&gradient_attention_layer_1.get_gradient_input_batch());
         //let norm_layer_gradient = norm_layer.backward(&pos_enc_gradient);
@@ -989,17 +981,8 @@ mod test_transformer {
             layer_input.set_input_batch(output_attention_1.get_output_batch());
 
             let output_ffn = ffn_layer_1.forward(&layer_input);
-
-            let output_ffn_full = output_ffn.get_output_batch();
-            let output_attention_layer = output_attention_1.get_output_batch();
-
-            // set imaginary part to zero
-            let output_ffn_cut: Vec<Vec<Vec<Complex<f64>>>> = output_ffn_full.iter().map(|row| row.iter().map(|val| val.iter().map(|v| Complex::new(v.re, 0.0)).collect()).collect()).collect();
-            // let output_attention_layer_cut: Vec<Vec<Vec<Complex<f64>>>> = output_attention_layer.iter().map(|row| row.iter().map(|val| val.iter().map(|v| Complex::new(v.re, 0.0)).collect()).collect()).collect();
-
-            layer_input.set_input_batch(output_ffn_cut);
-            layer_input.set_input_batch_before(output_attention_layer);
-            //layer_input.set_previous_gradient_input_batch(ffn_layer_1.calculate_input_gradient_batch());
+            layer_input.set_input_batch(output_ffn.get_output_batch());
+            layer_input.set_input_batch_before(output_attention_1.get_output_batch());
 
             let norm_layer_output = norm_layer.forward(&layer_input);
             layer_input.set_input_batch(norm_layer_output.get_output_batch());

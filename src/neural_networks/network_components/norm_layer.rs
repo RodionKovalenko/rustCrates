@@ -203,7 +203,7 @@ impl NormalNormLayer {
 
                             for j in 0..feature_dim {
                                 let _identity: f64 = if j == f { 1.0 } else { 0.0 };
-                                input_grads[b][s][j] += Complex::new((gradient * _identity + gradient * previous_gradient_input_batch[b][s][j]).re, 0.0);
+                                input_grads[b][s][j] += Complex::new((gradient * _identity ).re, 0.0);
                             }
                         }
                     }
