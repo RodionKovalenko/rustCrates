@@ -143,11 +143,6 @@ impl NormalNormLayer {
         let mean_batch = self.mean_batch.as_ref().expect("Mean not found");
         let var_batch = self.var_batch.as_ref().expect("Variance not found");
 
-        // check if residual_input_batch is present
-        let residual_input_present: bool = self.residual_input_batch.as_ref().map(|r| !r.is_empty()).unwrap_or(false);
-
-        println!("residual input present: {:?}", residual_input_present);
-
         let previous_gradient_batch = if !previous_gradient.get_gradient_input_batch().is_empty() {
             GradientBatch::Complex(previous_gradient.get_gradient_input_batch())
         } else {
