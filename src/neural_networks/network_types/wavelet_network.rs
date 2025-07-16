@@ -6,7 +6,7 @@ use crate::wavelet_transform::cwt::cwt;
 use crate::wavelet_transform::cwt_complex::CWTComplex;
 use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
 use crate::wavelet_transform::dwt::{dwt_1d, dwt_2d_full, get_ll_hl_lh_hh};
-use crate::wavelet_transform::dwt_types::DiscreteWaletetType;
+use crate::wavelet_transform::dwt_types::DiscreteWaveletType;
 use crate::wavelet_transform::modes::WaveletMode;
 use num_complex::Complex;
 
@@ -16,7 +16,7 @@ pub fn get_pixels_rgba(image_path: &str) -> Vec<Vec<Vec<f64>>> {
     get_pixel_separate_rgba(image_path)
 }
 
-pub fn apply_wavelet_positional_emb(input: &Vec<f64>, dw_type: DiscreteWaletetType, dw_mode: WaveletMode, decomposition_levels: usize, position: usize, seq_len: usize, emb_len: usize) -> Vec<f64> {
+pub fn apply_wavelet_positional_emb(input: &Vec<f64>, dw_type: DiscreteWaveletType, dw_mode: WaveletMode, decomposition_levels: usize, position: usize, seq_len: usize, emb_len: usize) -> Vec<f64> {
     // encode with wavelet transform
     let mut input_decomposed: Vec<f64> = vec![0.0; input.len()];
 
@@ -40,7 +40,7 @@ pub fn apply_wavelet_positional_emb(input: &Vec<f64>, dw_type: DiscreteWaletetTy
 }
 
 pub fn decompose_in_wavelet_2d_default<T: ArrayType>(input: &T) -> Vec<Vec<Vec<Complex<f64>>>> {
-    let wavelet_type = DiscreteWaletetType::DB1;
+    let wavelet_type = DiscreteWaveletType::DB1;
     let wavelet_mode = WaveletMode::SYMMETRIC;
 
     let cw_type = ContinuousWaletetType::CMOR;
@@ -66,7 +66,7 @@ pub fn decompose_in_wavelet_2d_default<T: ArrayType>(input: &T) -> Vec<Vec<Vec<C
 /**
  * return wavelel transformed pixels in 4 D <complex<f64>>
  */
-pub fn decompose_in_wavelets<T: ArrayType>(input_data: &T, dw_type: &DiscreteWaletetType, dw_mode: &WaveletMode, cwt_complex_wavelet: &mut CWTComplex, min_height: &usize, min_width: &usize, dec_levels: &i32) -> Vec<Vec<Vec<Complex<f64>>>> {
+pub fn decompose_in_wavelets<T: ArrayType>(input_data: &T, dw_type: &DiscreteWaveletType, dw_mode: &WaveletMode, cwt_complex_wavelet: &mut CWTComplex, min_height: &usize, min_width: &usize, dec_levels: &i32) -> Vec<Vec<Vec<Complex<f64>>>> {
     let num_dim = input_data.dimension();
     let mut pixels: Vec<Vec<Vec<f64>>> = Vec::new();
 

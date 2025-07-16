@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 // types used for Discrete Wavelet Transform
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum DiscreteWaletetType {
+pub enum DiscreteWaveletType {
     DB1,
     DB2,
     DB3,

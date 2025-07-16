@@ -1,110 +1,110 @@
 use crate::wavelet_transform::dwt_coeffients::*;
 use crate::wavelet_transform::dwt_inverse_coeffients::*;
-use crate::wavelet_transform::dwt_types::DiscreteWaletetType;
+use crate::wavelet_transform::dwt_types::DiscreteWaveletType;
 
 // Return a Low Pass Filter, a filter of moving averages for a specific discrete wavelet type
-pub fn get_low_pass_filter(dw_type: &DiscreteWaletetType) -> Vec<f64> {
+pub fn get_low_pass_filter(dw_type: &DiscreteWaveletType) -> Vec<f64> {
     match dw_type {
-        DiscreteWaletetType::DB1 => DB_1.to_vec(),
-        DiscreteWaletetType::DB2 => DB_2.to_vec(),
-        DiscreteWaletetType::DB3 => DB_3.to_vec(),
-        DiscreteWaletetType::DB4 => DB_4.to_vec(),
-        DiscreteWaletetType::DB5 => DB_5.to_vec(),
-        DiscreteWaletetType::DB6 => DB_6.to_vec(),
-        DiscreteWaletetType::DB7 => DB_7.to_vec(),
-        DiscreteWaletetType::DB8 => DB_8.to_vec(),
-        DiscreteWaletetType::DB9 => DB_9.to_vec(),
-        DiscreteWaletetType::DB10 => DB_10.to_vec(),
-        DiscreteWaletetType::DB11 => DB_11.to_vec(),
-        DiscreteWaletetType::DB12 => DB_12.to_vec(),
-        DiscreteWaletetType::DB13 => DB_13.to_vec(),
-        DiscreteWaletetType::DB14 => DB_14.to_vec(),
-        DiscreteWaletetType::DB15 => DB_15.to_vec(),
-        DiscreteWaletetType::DB16 => DB_16.to_vec(),
-        DiscreteWaletetType::DB17 => DB_17.to_vec(),
-        DiscreteWaletetType::DB18 => DB_18.to_vec(),
-        DiscreteWaletetType::DB19 => DB_19.to_vec(),
-        DiscreteWaletetType::DB20 => DB_20.to_vec(),
-        DiscreteWaletetType::DB21 => DB_21.to_vec(),
-        DiscreteWaletetType::DB22 => DB_22.to_vec(),
-        DiscreteWaletetType::DB23 => DB_23.to_vec(),
-        DiscreteWaletetType::DB24 => DB_24.to_vec(),
-        DiscreteWaletetType::DB25 => DB_25.to_vec(),
-        DiscreteWaletetType::DB26 => DB_26.to_vec(),
-        DiscreteWaletetType::DB27 => DB_27.to_vec(),
-        DiscreteWaletetType::DB28 => DB_28.to_vec(),
-        DiscreteWaletetType::DB29 => DB_29.to_vec(),
-        DiscreteWaletetType::DB30 => DB_30.to_vec(),
-        DiscreteWaletetType::DB31 => DB_31.to_vec(),
-        DiscreteWaletetType::DB32 => DB_32.to_vec(),
-        DiscreteWaletetType::DB33 => DB_33.to_vec(),
-        DiscreteWaletetType::DB34 => DB_34.to_vec(),
-        DiscreteWaletetType::DB35 => DB_35.to_vec(),
-        DiscreteWaletetType::DB36 => DB_36.to_vec(),
-        DiscreteWaletetType::DB37 => DB_37.to_vec(),
-        DiscreteWaletetType::DB38 => DB_38.to_vec(),
-        DiscreteWaletetType::SYM2 => SYM_2.to_vec(),
-        DiscreteWaletetType::SYM3 => SYM_3.to_vec(),
-        DiscreteWaletetType::SYM4 => SYM_4.to_vec(),
-        DiscreteWaletetType::SYM5 => SYM_5.to_vec(),
-        DiscreteWaletetType::SYM6 => SYM_6.to_vec(),
-        DiscreteWaletetType::SYM7 => SYM_7.to_vec(),
-        DiscreteWaletetType::SYM8 => SYM_8.to_vec(),
-        DiscreteWaletetType::SYM9 => SYM_9.to_vec(),
-        DiscreteWaletetType::SYM10 => SYM_10.to_vec(),
-        DiscreteWaletetType::SYM11 => SYM_11.to_vec(),
-        DiscreteWaletetType::SYM12 => SYM_12.to_vec(),
-        DiscreteWaletetType::SYM13 => SYM_13.to_vec(),
-        DiscreteWaletetType::SYM14 => SYM_14.to_vec(),
-        DiscreteWaletetType::SYM15 => SYM_15.to_vec(),
-        DiscreteWaletetType::SYM16 => SYM_16.to_vec(),
-        DiscreteWaletetType::SYM17 => SYM_17.to_vec(),
-        DiscreteWaletetType::SYM18 => SYM_18.to_vec(),
-        DiscreteWaletetType::SYM19 => SYM_19.to_vec(),
-        DiscreteWaletetType::SYM20 => SYM_20.to_vec(),
-        DiscreteWaletetType::COIF1 => COIF_1.to_vec(),
-        DiscreteWaletetType::COIF2 => COIF_2.to_vec(),
-        DiscreteWaletetType::COIF3 => COIF_3.to_vec(),
-        DiscreteWaletetType::COIF4 => COIF_4.to_vec(),
-        DiscreteWaletetType::COIF6 => COIF_6.to_vec(),
-        DiscreteWaletetType::COIF7 => COIF_7.to_vec(),
-        DiscreteWaletetType::COIF8 => COIF_8.to_vec(),
-        DiscreteWaletetType::COIF9 => COIF_9.to_vec(),
-        DiscreteWaletetType::COIF10 => COIF_10.to_vec(),
-        DiscreteWaletetType::COIF11 => COIF_11.to_vec(),
-        DiscreteWaletetType::COIF12 => COIF_12.to_vec(),
-        DiscreteWaletetType::COIF13 => COIF_13.to_vec(),
-        DiscreteWaletetType::COIF14 => COIF_14.to_vec(),
-        DiscreteWaletetType::COIF15 => COIF_15.to_vec(),
-        DiscreteWaletetType::COIF16 => COIF_16.to_vec(),
-        DiscreteWaletetType::COIF17 => COIF_17.to_vec(),
-        DiscreteWaletetType::BIOR10 => BIOR_1_0.to_vec(),
-        DiscreteWaletetType::BIOR11 => BIOR_1_1.to_vec(),
-        DiscreteWaletetType::BIOR13 => BIOR_1_3.to_vec(),
-        DiscreteWaletetType::BIOR15 => BIOR_1_5.to_vec(),
-        DiscreteWaletetType::BIOR20 => BIOR_2_0.to_vec(),
-        DiscreteWaletetType::BIOR22 => BIOR_2_2.to_vec(),
-        DiscreteWaletetType::BIOR24 => BIOR_2_4.to_vec(),
-        DiscreteWaletetType::BIOR26 => BIOR_2_6.to_vec(),
-        DiscreteWaletetType::BIOR28 => BIOR_2_8.to_vec(),
-        DiscreteWaletetType::BIOR30 => BIOR_3_0.to_vec(),
-        DiscreteWaletetType::BIOR31 => BIOR_3_1.to_vec(),
-        DiscreteWaletetType::BIOR33 => BIOR_3_3.to_vec(),
-        DiscreteWaletetType::BIOR35 => BIOR_3_5.to_vec(),
-        DiscreteWaletetType::BIOR37 => BIOR_3_7.to_vec(),
-        DiscreteWaletetType::BIOR39 => BIOR_3_9.to_vec(),
-        DiscreteWaletetType::BIOR40 => BIOR_4_0.to_vec(),
-        DiscreteWaletetType::BIOR44 => BIOR_4_4.to_vec(),
-        DiscreteWaletetType::BIOR50 => BIOR_5_0.to_vec(),
-        DiscreteWaletetType::BIOR55 => BIOR_5_5.to_vec(),
-        DiscreteWaletetType::BIOR60 => BIOR_6_0.to_vec(),
-        DiscreteWaletetType::BIOR68 => BIOR_6_8.to_vec(),
-        DiscreteWaletetType::DMEY => DMEY.to_vec()
+        DiscreteWaveletType::DB1 => DB_1.to_vec(),
+        DiscreteWaveletType::DB2 => DB_2.to_vec(),
+        DiscreteWaveletType::DB3 => DB_3.to_vec(),
+        DiscreteWaveletType::DB4 => DB_4.to_vec(),
+        DiscreteWaveletType::DB5 => DB_5.to_vec(),
+        DiscreteWaveletType::DB6 => DB_6.to_vec(),
+        DiscreteWaveletType::DB7 => DB_7.to_vec(),
+        DiscreteWaveletType::DB8 => DB_8.to_vec(),
+        DiscreteWaveletType::DB9 => DB_9.to_vec(),
+        DiscreteWaveletType::DB10 => DB_10.to_vec(),
+        DiscreteWaveletType::DB11 => DB_11.to_vec(),
+        DiscreteWaveletType::DB12 => DB_12.to_vec(),
+        DiscreteWaveletType::DB13 => DB_13.to_vec(),
+        DiscreteWaveletType::DB14 => DB_14.to_vec(),
+        DiscreteWaveletType::DB15 => DB_15.to_vec(),
+        DiscreteWaveletType::DB16 => DB_16.to_vec(),
+        DiscreteWaveletType::DB17 => DB_17.to_vec(),
+        DiscreteWaveletType::DB18 => DB_18.to_vec(),
+        DiscreteWaveletType::DB19 => DB_19.to_vec(),
+        DiscreteWaveletType::DB20 => DB_20.to_vec(),
+        DiscreteWaveletType::DB21 => DB_21.to_vec(),
+        DiscreteWaveletType::DB22 => DB_22.to_vec(),
+        DiscreteWaveletType::DB23 => DB_23.to_vec(),
+        DiscreteWaveletType::DB24 => DB_24.to_vec(),
+        DiscreteWaveletType::DB25 => DB_25.to_vec(),
+        DiscreteWaveletType::DB26 => DB_26.to_vec(),
+        DiscreteWaveletType::DB27 => DB_27.to_vec(),
+        DiscreteWaveletType::DB28 => DB_28.to_vec(),
+        DiscreteWaveletType::DB29 => DB_29.to_vec(),
+        DiscreteWaveletType::DB30 => DB_30.to_vec(),
+        DiscreteWaveletType::DB31 => DB_31.to_vec(),
+        DiscreteWaveletType::DB32 => DB_32.to_vec(),
+        DiscreteWaveletType::DB33 => DB_33.to_vec(),
+        DiscreteWaveletType::DB34 => DB_34.to_vec(),
+        DiscreteWaveletType::DB35 => DB_35.to_vec(),
+        DiscreteWaveletType::DB36 => DB_36.to_vec(),
+        DiscreteWaveletType::DB37 => DB_37.to_vec(),
+        DiscreteWaveletType::DB38 => DB_38.to_vec(),
+        DiscreteWaveletType::SYM2 => SYM_2.to_vec(),
+        DiscreteWaveletType::SYM3 => SYM_3.to_vec(),
+        DiscreteWaveletType::SYM4 => SYM_4.to_vec(),
+        DiscreteWaveletType::SYM5 => SYM_5.to_vec(),
+        DiscreteWaveletType::SYM6 => SYM_6.to_vec(),
+        DiscreteWaveletType::SYM7 => SYM_7.to_vec(),
+        DiscreteWaveletType::SYM8 => SYM_8.to_vec(),
+        DiscreteWaveletType::SYM9 => SYM_9.to_vec(),
+        DiscreteWaveletType::SYM10 => SYM_10.to_vec(),
+        DiscreteWaveletType::SYM11 => SYM_11.to_vec(),
+        DiscreteWaveletType::SYM12 => SYM_12.to_vec(),
+        DiscreteWaveletType::SYM13 => SYM_13.to_vec(),
+        DiscreteWaveletType::SYM14 => SYM_14.to_vec(),
+        DiscreteWaveletType::SYM15 => SYM_15.to_vec(),
+        DiscreteWaveletType::SYM16 => SYM_16.to_vec(),
+        DiscreteWaveletType::SYM17 => SYM_17.to_vec(),
+        DiscreteWaveletType::SYM18 => SYM_18.to_vec(),
+        DiscreteWaveletType::SYM19 => SYM_19.to_vec(),
+        DiscreteWaveletType::SYM20 => SYM_20.to_vec(),
+        DiscreteWaveletType::COIF1 => COIF_1.to_vec(),
+        DiscreteWaveletType::COIF2 => COIF_2.to_vec(),
+        DiscreteWaveletType::COIF3 => COIF_3.to_vec(),
+        DiscreteWaveletType::COIF4 => COIF_4.to_vec(),
+        DiscreteWaveletType::COIF6 => COIF_6.to_vec(),
+        DiscreteWaveletType::COIF7 => COIF_7.to_vec(),
+        DiscreteWaveletType::COIF8 => COIF_8.to_vec(),
+        DiscreteWaveletType::COIF9 => COIF_9.to_vec(),
+        DiscreteWaveletType::COIF10 => COIF_10.to_vec(),
+        DiscreteWaveletType::COIF11 => COIF_11.to_vec(),
+        DiscreteWaveletType::COIF12 => COIF_12.to_vec(),
+        DiscreteWaveletType::COIF13 => COIF_13.to_vec(),
+        DiscreteWaveletType::COIF14 => COIF_14.to_vec(),
+        DiscreteWaveletType::COIF15 => COIF_15.to_vec(),
+        DiscreteWaveletType::COIF16 => COIF_16.to_vec(),
+        DiscreteWaveletType::COIF17 => COIF_17.to_vec(),
+        DiscreteWaveletType::BIOR10 => BIOR_1_0.to_vec(),
+        DiscreteWaveletType::BIOR11 => BIOR_1_1.to_vec(),
+        DiscreteWaveletType::BIOR13 => BIOR_1_3.to_vec(),
+        DiscreteWaveletType::BIOR15 => BIOR_1_5.to_vec(),
+        DiscreteWaveletType::BIOR20 => BIOR_2_0.to_vec(),
+        DiscreteWaveletType::BIOR22 => BIOR_2_2.to_vec(),
+        DiscreteWaveletType::BIOR24 => BIOR_2_4.to_vec(),
+        DiscreteWaveletType::BIOR26 => BIOR_2_6.to_vec(),
+        DiscreteWaveletType::BIOR28 => BIOR_2_8.to_vec(),
+        DiscreteWaveletType::BIOR30 => BIOR_3_0.to_vec(),
+        DiscreteWaveletType::BIOR31 => BIOR_3_1.to_vec(),
+        DiscreteWaveletType::BIOR33 => BIOR_3_3.to_vec(),
+        DiscreteWaveletType::BIOR35 => BIOR_3_5.to_vec(),
+        DiscreteWaveletType::BIOR37 => BIOR_3_7.to_vec(),
+        DiscreteWaveletType::BIOR39 => BIOR_3_9.to_vec(),
+        DiscreteWaveletType::BIOR40 => BIOR_4_0.to_vec(),
+        DiscreteWaveletType::BIOR44 => BIOR_4_4.to_vec(),
+        DiscreteWaveletType::BIOR50 => BIOR_5_0.to_vec(),
+        DiscreteWaveletType::BIOR55 => BIOR_5_5.to_vec(),
+        DiscreteWaveletType::BIOR60 => BIOR_6_0.to_vec(),
+        DiscreteWaveletType::BIOR68 => BIOR_6_8.to_vec(),
+        DiscreteWaveletType::DMEY => DMEY.to_vec()
     }
 }
 
 // Return a High Pass Filter, a filter of moving difference for a specific discrete wavelet type
-pub fn get_high_pass_filter(dw_type: &DiscreteWaletetType) -> Vec<f64> {
+pub fn get_high_pass_filter(dw_type: &DiscreteWaveletType) -> Vec<f64> {
     let low_pass_filter = get_high_pass_filter_non_symmetric(&dw_type);
     let mut high_pass_filter: Vec<f64> = Vec::new();
 
@@ -123,7 +123,7 @@ pub fn get_high_pass_filter(dw_type: &DiscreteWaletetType) -> Vec<f64> {
 }
 
 // Return a Inverse Low Pass Filter, a filter of moving difference for a specific discrete wavelet type
-pub fn get_inverse_low_pass_filter(dw_type: &DiscreteWaletetType) -> Vec<f64> {
+pub fn get_inverse_low_pass_filter(dw_type: &DiscreteWaveletType) -> Vec<f64> {
     let low_pass_filter = get_high_pass_filter_non_symmetric(&dw_type);
     let mut high_pass_filter = Vec::new();
 
@@ -138,17 +138,17 @@ pub fn get_inverse_low_pass_filter(dw_type: &DiscreteWaletetType) -> Vec<f64> {
 }
 
 // Return a Inverse High Pass Filter, a filter of moving difference for a specific discrete wavelet type
-pub fn get_inverse_high_pass_filter(dw_type: &DiscreteWaletetType) -> Vec<f64> {
+pub fn get_inverse_high_pass_filter(dw_type: &DiscreteWaveletType) -> Vec<f64> {
     let high_pass_filter_coef;
     let mut high_pass_filter: Vec<f64> = Vec::new();
     let mut is_default: bool = false;
 
     high_pass_filter_coef = match dw_type {
-        DiscreteWaletetType::BIOR11 | DiscreteWaletetType::BIOR13 | DiscreteWaletetType::BIOR15
-        | DiscreteWaletetType::BIOR22 | DiscreteWaletetType::BIOR24 | DiscreteWaletetType::BIOR26
-        | DiscreteWaletetType::BIOR28 | DiscreteWaletetType::BIOR31 | DiscreteWaletetType::BIOR33
-        | DiscreteWaletetType::BIOR35 | DiscreteWaletetType::BIOR37 | DiscreteWaletetType::BIOR39
-        | DiscreteWaletetType::BIOR44 | DiscreteWaletetType::BIOR55 | DiscreteWaletetType::BIOR68
+        DiscreteWaveletType::BIOR11 | DiscreteWaveletType::BIOR13 | DiscreteWaveletType::BIOR15
+        | DiscreteWaveletType::BIOR22 | DiscreteWaveletType::BIOR24 | DiscreteWaveletType::BIOR26
+        | DiscreteWaveletType::BIOR28 | DiscreteWaveletType::BIOR31 | DiscreteWaveletType::BIOR33
+        | DiscreteWaveletType::BIOR35 | DiscreteWaveletType::BIOR37 | DiscreteWaveletType::BIOR39
+        | DiscreteWaveletType::BIOR44 | DiscreteWaveletType::BIOR55 | DiscreteWaveletType::BIOR68
         => get_low_pass_filter(dw_type),
         _ => {
             is_default = true;
@@ -170,23 +170,23 @@ pub fn get_inverse_high_pass_filter(dw_type: &DiscreteWaletetType) -> Vec<f64> {
     high_pass_filter
 }
 
-pub fn get_high_pass_filter_non_symmetric(dw_type: &DiscreteWaletetType) -> Vec<f64> {
+pub fn get_high_pass_filter_non_symmetric(dw_type: &DiscreteWaveletType) -> Vec<f64> {
     let high_pass_filter: Vec<f64> = match dw_type {
-        DiscreteWaletetType::BIOR11 => INVERSE_BIOR_1_1.to_vec().into_iter().rev().collect(),
-        DiscreteWaletetType::BIOR13 => INVERSE_BIOR_1_3.to_vec().into_iter().rev().collect(),
-        DiscreteWaletetType::BIOR15 => INVERSE_BIOR_1_5.to_vec().into_iter().rev().collect(),
-        DiscreteWaletetType::BIOR22 => INVERSE_BIOR_2_2.to_vec().into_iter().rev().collect(),
-        DiscreteWaletetType::BIOR24 => INVERSE_BIOR_2_4.to_vec().into_iter().rev().collect(),
-        DiscreteWaletetType::BIOR26 => INVERSE_BIOR_2_6.to_vec().into_iter().rev().collect(),
-        DiscreteWaletetType::BIOR28 => INVERSE_BIOR_2_8.to_vec().into_iter().rev().collect(),
-        DiscreteWaletetType::BIOR31 => INVERSE_BIOR_3_1.to_vec().into_iter().rev().collect(),
-        DiscreteWaletetType::BIOR33 => INVERSE_BIOR_3_3.to_vec().into_iter().rev().collect(),
-        DiscreteWaletetType::BIOR35 => INVERSE_BIOR_3_5.to_vec().into_iter().rev().collect(),
-        DiscreteWaletetType::BIOR37 => INVERSE_BIOR_3_7.to_vec().into_iter().rev().collect(),
-        DiscreteWaletetType::BIOR39 => INVERSE_BIOR_3_9.to_vec().into_iter().rev().collect(),
-        DiscreteWaletetType::BIOR44 => INVERSE_BIOR_4_4.to_vec().into_iter().rev().collect(),
-        DiscreteWaletetType::BIOR55 => INVERSE_BIOR_5_5.to_vec().into_iter().rev().collect(),
-        DiscreteWaletetType::BIOR68 => INVERSE_BIOR_6_8.to_vec().into_iter().rev().collect(),
+        DiscreteWaveletType::BIOR11 => INVERSE_BIOR_1_1.to_vec().into_iter().rev().collect(),
+        DiscreteWaveletType::BIOR13 => INVERSE_BIOR_1_3.to_vec().into_iter().rev().collect(),
+        DiscreteWaveletType::BIOR15 => INVERSE_BIOR_1_5.to_vec().into_iter().rev().collect(),
+        DiscreteWaveletType::BIOR22 => INVERSE_BIOR_2_2.to_vec().into_iter().rev().collect(),
+        DiscreteWaveletType::BIOR24 => INVERSE_BIOR_2_4.to_vec().into_iter().rev().collect(),
+        DiscreteWaveletType::BIOR26 => INVERSE_BIOR_2_6.to_vec().into_iter().rev().collect(),
+        DiscreteWaveletType::BIOR28 => INVERSE_BIOR_2_8.to_vec().into_iter().rev().collect(),
+        DiscreteWaveletType::BIOR31 => INVERSE_BIOR_3_1.to_vec().into_iter().rev().collect(),
+        DiscreteWaveletType::BIOR33 => INVERSE_BIOR_3_3.to_vec().into_iter().rev().collect(),
+        DiscreteWaveletType::BIOR35 => INVERSE_BIOR_3_5.to_vec().into_iter().rev().collect(),
+        DiscreteWaveletType::BIOR37 => INVERSE_BIOR_3_7.to_vec().into_iter().rev().collect(),
+        DiscreteWaveletType::BIOR39 => INVERSE_BIOR_3_9.to_vec().into_iter().rev().collect(),
+        DiscreteWaveletType::BIOR44 => INVERSE_BIOR_4_4.to_vec().into_iter().rev().collect(),
+        DiscreteWaveletType::BIOR55 => INVERSE_BIOR_5_5.to_vec().into_iter().rev().collect(),
+        DiscreteWaveletType::BIOR68 => INVERSE_BIOR_6_8.to_vec().into_iter().rev().collect(),
         _ => {
             get_low_pass_filter(&dw_type)
         }

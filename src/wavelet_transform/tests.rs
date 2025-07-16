@@ -10,7 +10,7 @@ mod tests {
     use crate::wavelet_transform::cwt_complex::CWTComplex;
     use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
     use crate::wavelet_transform::dwt::{get_ll_hl_lh_hh, insert_padding_after, insert_padding_before, dwt_2d_full};
-    use crate::wavelet_transform::dwt_types::DiscreteWaletetType;
+    use crate::wavelet_transform::dwt_types::DiscreteWaveletType;
     use crate::wavelet_transform::fft::{fft_real1_d, fft_real2_d};
     use crate::wavelet_transform::modes::WaveletMode;
 
@@ -531,7 +531,7 @@ mod tests {
     fn test_dwt() {
         let data_2d = vec![vec![1.0, 2.0, 3.0, 4.0, 5.0], vec![6.0, 7.0, 8.0, 9.0, 10.0]];
 
-        let dwt_type = DiscreteWaletetType::DB1;
+        let dwt_type = DiscreteWaveletType::DB1;
         let transformed = dwt_2d_full(&data_2d, &dwt_type, &WaveletMode::CONSTANT);
 
         assert_eq!(transformed, [[8.0, 12.000000000000004, 15.000000000000004, -0.9999999999999998, -1.0000000000000004, 0.0],
@@ -546,7 +546,7 @@ mod tests {
                        [[-4.440892098500626e-16, 3.3306690738754696e-16, 0.0]]]);
 
         let data_2d = vec![vec![1.15, 2.22, 3.36, 4.45, 5.59], vec![6.61, 7.72, 8.83, 9.94, 10.17]];
-        let dwt_type = DiscreteWaletetType::DB2;
+        let dwt_type = DiscreteWaveletType::DB2;
         let transformed = dwt_2d_full(&data_2d, &dwt_type, &WaveletMode::CONSTANT);
         let llhllhhh: Vec<Vec<Vec<f64>>> = get_ll_hl_lh_hh(&transformed);
 
@@ -558,7 +558,7 @@ mod tests {
             [[0.009330127018921996, 0.007287658773652618, 0.15413538968048013, 4.2895723697048124e-16],
                 [-0.0025000000000000022, -0.0019527222831138048, -0.04130045318994102, -1.1493874523372615e-16]]]);
 
-        let dwt_type = DiscreteWaletetType::DB3;
+        let dwt_type = DiscreteWaveletType::DB3;
         let transformed = dwt_2d_full(&data_2d, &dwt_type, &WaveletMode::CONSTANT);
         let llhllhhh: Vec<Vec<Vec<f64>>> = get_ll_hl_lh_hh(&transformed);
 
@@ -582,7 +582,7 @@ mod tests {
                            vec![6.616161616161616161, 7.7272727272727272, 8.818181818181818181, 9.9191919191919191, 10.1313131313131313]];
 
 
-        let dwt_type = DiscreteWaletetType::DB4;
+        let dwt_type = DiscreteWaveletType::DB4;
         let mode = WaveletMode::SYMMETRIC;
         let transformed = dwt_2d_full(&data_2d, &dwt_type, &mode);
         assert_eq!(transformed, [
@@ -596,7 +596,7 @@ mod tests {
             [0.561186275034653, 0.6325057608365241, 0.6315826560435309, 0.6445024733556043, 0.5870088706940066, 0.561186275034653, 0.003155456999984693, -0.0005643363680388411, -0.03686020256019374, 0.05032550121063137, -0.016056419282383626, 0.003155456999984693]]);
 
 
-        let dwt_type = DiscreteWaletetType::DB3;
+        let dwt_type = DiscreteWaveletType::DB3;
         let mode = WaveletMode::ANTISYMMETRIC;
         let transformed = dwt_2d_full(&data_2d, &dwt_type, &mode);
 
@@ -610,7 +610,7 @@ mod tests {
 
         let data_2d = vec![vec![1.1515151515151515, 2.2626262626262626, 3.36363636363636363636, 4.0, 5.0, 6.0],
                            vec![6.616161616161616161, 7.7272727272727272, 8.818181818181818181, 9.0, 10.0, 11.0]];
-        let dwt_type = DiscreteWaletetType::DB3;
+        let dwt_type = DiscreteWaveletType::DB3;
         let mode = WaveletMode::REFLECT;
         let transformed = dwt_2d_full(&data_2d, &dwt_type, &mode);
 
@@ -633,7 +633,7 @@ mod tests {
                            vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0]];
 
 
-        let dwt_type = DiscreteWaletetType::DB3;
+        let dwt_type = DiscreteWaveletType::DB3;
         let mode = WaveletMode::ANTIREFLECT;
         let transformed = dwt_2d_full(&data_2d, &dwt_type, &mode);
 
@@ -683,7 +683,7 @@ mod tests {
         let now = Instant::now();
         let pixels: Vec<Vec<Vec<f64>>> = get_pixel_separate_rgba("training_data/1.jpg");
 
-        let wavelet_type = DiscreteWaletetType::DB1;
+        let wavelet_type = DiscreteWaveletType::DB1;
         let cw_type = ContinuousWaletetType::CMOR;
         let scales: Vec<f64> = vec![2.0, 4.0, 8.0, 16.0];
         let wavelet_mode = WaveletMode::SYMMETRIC;
