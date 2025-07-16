@@ -87,29 +87,6 @@ where
     data_trans
 }
 
-// pub fn inverse_dwt_1d<T>(data: &Vec<T>, dw_type: &DiscreteWaletetType, _mode: &WaveletMode, _level: u32) -> Vec<T>
-// where
-//     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
-// {
-//     let ilp: Vec<f64> = get_inverse_low_pass_filter(dw_type);
-//     let ihp: Vec<f64> = get_inverse_high_pass_filter(dw_type);
-//     let filter_len = ilp.len();
-//     let n = data.len();
-//     let output_len = 2 * n; // Proper output size for reconstruction
-
-//     let mut output = vec![T::zero(); output_len];
-
-//     for i in 0..(n / 2) {
-//         for k in 0..filter_len {
-//             let idx = 2 * i + k;
-//             if idx < output_len {
-//                 output[idx] = output[idx] + data[i] * ilp[k] + data[i + n / 2] * ihp[k];
-//             }
-//         }
-//     }
-//     output
-// }
-
 pub fn inverse_dwt_1d<T>(data: &Vec<T>, dw_type: &DiscreteWaveletType, _mode: &WaveletMode, _level: u32) -> Vec<T>
 where
     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
@@ -144,30 +121,6 @@ where
     }
 
     data_trans
-}
-
-pub fn inverse_dwt_2d_partial<T>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaveletType, mode: &WaveletMode, level: u32) -> Vec<Vec<T>>
-where
-    T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
-{
-    let mut data_trans: Vec<Vec<T>> = Vec::new();
-
-    for r in data.iter() {
-        data_trans.push(inverse_dwt_1d(&r, &dw_type, mode, level.clone()));
-    }
-
-    data_trans
-}
-
-pub fn inverse_dwt_2d_full<T>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaveletType, mode: &WaveletMode, level: u32) -> Vec<Vec<T>>
-where
-    T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
-{
-    let mut data_trans: Vec<Vec<T>> = inverse_dwt_2d_partial(&data, &dw_type, &mode, level);
-
-    data_trans = transpose(&data_trans);
-
-    transpose(&inverse_dwt_2d_partial(&data_trans, &dw_type, &mode, level.clone()))
 }
 
 pub fn insert_padding_before<T>(data_trans: &mut Vec<T>, mode: &WaveletMode, size: usize)
@@ -292,6 +245,29 @@ where
     }
 }
 
+pub fn inverse_dwt_2d_partial<T>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaveletType, mode: &WaveletMode, level: u32) -> Vec<Vec<T>>
+where
+    T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
+{
+    let mut data_trans: Vec<Vec<T>> = Vec::new();
+
+    for r in data.iter() {
+        data_trans.push(inverse_dwt_1d(&r, &dw_type, mode, level.clone()));
+    }
+
+    data_trans
+}
+
+pub fn inverse_dwt_2d_full<T>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaveletType, mode: &WaveletMode, level: u32) -> Vec<Vec<T>>
+where
+    T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
+{
+    let mut data_trans: Vec<Vec<T>> = inverse_dwt_2d_partial(&data, &dw_type, &mode, level);
+
+    data_trans = transpose(&data_trans);
+
+    transpose(&inverse_dwt_2d_partial(&data_trans, &dw_type, &mode, level.clone()))
+}
 pub fn upsample_with_zeros<T>(input: &Vec<T>) -> Vec<T>
 where
     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
