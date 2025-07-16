@@ -1,11 +1,11 @@
 use crate::wavelet_transform::dwt_type_resolver::{get_high_pass_filter, get_inverse_high_pass_filter, get_inverse_low_pass_filter, get_low_pass_filter};
-use crate::wavelet_transform::dwt_types::DiscreteWaletetType;
+use crate::wavelet_transform::dwt_types::DiscreteWaveletType;
 use crate::wavelet_transform::modes::WaveletMode;
 use num_traits::Num;
 use std::fmt::Debug;
 use std::ops::{Add, Mul, Neg, Sub};
 
-pub fn dwt_2d_partial<T>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<Vec<T>>
+pub fn dwt_2d_partial<T>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaveletType, mode: &WaveletMode) -> Vec<Vec<T>>
 where
     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
 {
@@ -18,7 +18,7 @@ where
     data_trans
 }
 
-pub fn dwt_2d_full<T>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<Vec<T>>
+pub fn dwt_2d_full<T>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaveletType, mode: &WaveletMode) -> Vec<Vec<T>>
 where
     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
 {
@@ -33,7 +33,7 @@ where
     transpose(&data_trans)
 }
 
-pub fn dwt_1d<T>(data: &Vec<T>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<T>
+pub fn dwt_1d<T>(data: &Vec<T>, dw_type: &DiscreteWaveletType, mode: &WaveletMode) -> Vec<T>
 where
     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
 {
@@ -110,7 +110,7 @@ where
 //     output
 // }
 
-pub fn inverse_dwt_1d<T>(data: &Vec<T>, dw_type: &DiscreteWaletetType, _mode: &WaveletMode, _level: u32) -> Vec<T>
+pub fn inverse_dwt_1d<T>(data: &Vec<T>, dw_type: &DiscreteWaveletType, _mode: &WaveletMode, _level: u32) -> Vec<T>
 where
     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
 {
@@ -146,7 +146,7 @@ where
     data_trans
 }
 
-pub fn inverse_dwt_2d_partial<T>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode, level: u32) -> Vec<Vec<T>>
+pub fn inverse_dwt_2d_partial<T>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaveletType, mode: &WaveletMode, level: u32) -> Vec<Vec<T>>
 where
     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
 {
@@ -159,7 +159,7 @@ where
     data_trans
 }
 
-pub fn inverse_dwt_2d_full<T>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode, level: u32) -> Vec<Vec<T>>
+pub fn inverse_dwt_2d_full<T>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaveletType, mode: &WaveletMode, level: u32) -> Vec<Vec<T>>
 where
     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
 {
@@ -307,7 +307,7 @@ where
     out
 }
 
-pub fn grad_dwt_1d_trend<T>(grad_output: &Vec<T>, dw_type: &DiscreteWaletetType, _mode: &WaveletMode) -> Vec<T>
+pub fn grad_dwt_1d_trend<T>(grad_output: &Vec<T>, dw_type: &DiscreteWaveletType, _mode: &WaveletMode) -> Vec<T>
 where
     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
 {
@@ -316,14 +316,14 @@ where
     gradient_extended
 }
 
-pub fn grad_dwt_1d_full<T>(grad_output: &Vec<T>, dw_type: &DiscreteWaletetType, _mode: &WaveletMode) -> Vec<T>
+pub fn grad_dwt_1d_full<T>(grad_output: &Vec<T>, dw_type: &DiscreteWaveletType, _mode: &WaveletMode) -> Vec<T>
 where
     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
 {
     inverse_dwt_1d(&grad_output, dw_type, _mode, 0)
 }
 
-pub fn grad_dwt_2d<T>(grad_output: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<Vec<T>>
+pub fn grad_dwt_2d<T>(grad_output: &Vec<Vec<T>>, dw_type: &DiscreteWaveletType, mode: &WaveletMode) -> Vec<Vec<T>>
 where
     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
 {
@@ -334,7 +334,7 @@ where
     grad_dwt_2d_partial(&grad_trans, dw_type, mode)
 }
 
-pub fn grad_dwt_2d_partial<T>(grad_output: &Vec<Vec<T>>, dw_type: &DiscreteWaletetType, mode: &WaveletMode) -> Vec<Vec<T>>
+pub fn grad_dwt_2d_partial<T>(grad_output: &Vec<Vec<T>>, dw_type: &DiscreteWaveletType, mode: &WaveletMode) -> Vec<Vec<T>>
 where
     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
 {
