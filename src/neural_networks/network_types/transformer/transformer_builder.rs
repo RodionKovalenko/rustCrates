@@ -37,7 +37,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
 
     let rows: usize = embedding_dim_compressed;
     // Transformer block start
-    let num_self_attention_layer: usize = 1;
+    let num_self_attention_layer: usize = 2;
     for i in 0..num_self_attention_layer {
         let mut num_attention_heads: usize = 4;
 
