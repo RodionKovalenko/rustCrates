@@ -33,94 +33,83 @@ where
     transpose(&data_trans)
 }
 
-pub fn dwt_1d<T>(data: &Vec<T>, dw_type: &DiscreteWaveletType, mode: &WaveletMode) -> Vec<T>
+pub fn dwt_1d<T>(data: &[T], dw_type: &DiscreteWaveletType, mode: &WaveletMode) -> Vec<T>
 where
     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
 {
-    let low_pass_filter: Vec<f64> = get_low_pass_filter(dw_type);
-    let high_pass_filter: Vec<f64> = get_high_pass_filter(dw_type);
+    let low_pass = get_low_pass_filter(dw_type);
+    let high_pass = get_high_pass_filter(dw_type);
+    let pad_before = high_pass.len().saturating_sub(2);
 
-    let mut data_clone = data.clone();
+    // Clone and pad before
+    let mut buf = data.to_vec();
+    insert_padding_before(&mut buf, mode, pad_before);
 
-    let mut ind_transform: usize = 0;
-    let padding_size_before: usize = high_pass_filter.len() - 2;
-
-    insert_padding_before(&mut data_clone, mode, padding_size_before);
-
-    let mut n = data_clone.len();
-    let mut middle_index = n >> 1;
-
-    let mut padding_size_after = high_pass_filter.len() - (data_clone.len() % high_pass_filter.len()) + 1;
-
-    if data_clone.len() % high_pass_filter.len() != 0 {
-        padding_size_after = high_pass_filter.len() - (data_clone.len() % high_pass_filter.len()) + 2;
+    // Compute padding after to align to filter length
+    let mut n = buf.len();
+    let mut middle = n >> 1;
+    let mut pad_after = high_pass.len() - (buf.len() % high_pass.len()) + 1;
+    if buf.len() % high_pass.len() != 0 {
+        pad_after = high_pass.len() - (buf.len() % high_pass.len()) + 2;
     }
+    insert_padding_after(&mut buf, mode, pad_after, pad_before);
 
-    insert_padding_after(&mut data_clone, mode, padding_size_after, padding_size_before);
-
+    // For odd original data length, adjust output size
     if data.len() % 2 != 0 {
         n += 1;
-        middle_index = n >> 1;
+        middle = n >> 1;
     }
 
-    let mut data_trans: Vec<T> = vec![T::zero(); n];
+    let mut out = vec![T::zero(); n];
+    let mut ind = 0;
 
+    // Convolution + downsampling
     for i in (0..n).step_by(2) {
-        let mut value_low = T::zero();
-        let mut value_high = T::zero();
-
-        for (l_p_ind, &low_p_f_value) in low_pass_filter.iter().enumerate() {
-            let index = (i + l_p_ind) % data_clone.len();
-
-            value_low = value_low + data_clone[index] * low_p_f_value;
-            value_high = value_high + data_clone[index] * high_pass_filter[l_p_ind];
+        let (mut low, mut high) = (T::zero(), T::zero());
+        for (j, &lpv) in low_pass.iter().enumerate() {
+            let idx = (i + j) % buf.len();
+            low = low + buf[idx] * lpv;
+            high = high + buf[idx] * high_pass[j];
         }
-
-        let index_high = ind_transform + middle_index;
-
-        set_value(&mut data_trans, value_low, &ind_transform);
-        set_value(&mut data_trans, value_high, &index_high);
-
-        ind_transform += 1;
+        let idx_high = ind + middle;
+        out[ind] = low;
+        out[idx_high] = high;
+        ind += 1;
     }
 
-    data_trans
+    out
 }
 
-pub fn inverse_dwt_1d<T>(data: &Vec<T>, dw_type: &DiscreteWaveletType, _mode: &WaveletMode, _level: u32) -> Vec<T>
+pub fn inverse_dwt_1d<T>(data: &[T], dw_type: &DiscreteWaveletType, _mode: &WaveletMode, _level: u32) -> Vec<T>
 where
     T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
 {
-    let inverse_low_pass_filter: Vec<f64> = get_inverse_low_pass_filter(dw_type);
-    let inverse_high_pass_filter: Vec<f64> = get_inverse_high_pass_filter(dw_type);
+    let ilp = get_inverse_low_pass_filter(dw_type);
+    let ihp = get_inverse_high_pass_filter(dw_type);
+    let middle = data.len() >> 1;
+    let recon_len = data.len() - (ihp.len().saturating_sub(2));
 
-    let middle_index = data.len() >> 1;
-    let l = data.len() - (inverse_high_pass_filter.len() - 2);
+    let mut out = vec![T::zero(); recon_len];
+    let mut ind = 0;
 
-    let mut data_trans: Vec<T> = vec![T::zero(); l];
-    let mut ind_transform = 0;
-
-    for i in 0..(l >> 1) {
-        let mut value_low = T::zero();
-        let mut value_high = T::zero();
-
-        for l_p_ind in (0..inverse_low_pass_filter.len()).step_by(2) {
-            let index_low = (l_p_ind + 1) % inverse_low_pass_filter.len();
-            let ind_trend = (l_p_ind / 2 + i) % data.len();
-            let index_high = (ind_trend + middle_index) % data.len();
-
-            value_low = value_low + data[ind_trend] * inverse_low_pass_filter[index_low] + data[index_high] * inverse_high_pass_filter[index_low];
-
-            value_high = value_high + data[ind_trend] * inverse_low_pass_filter[l_p_ind] + data[index_high] * inverse_high_pass_filter[l_p_ind];
+    // Upsample + convolution
+    for i in 0..(recon_len >> 1) {
+        let mut low = T::zero();
+        let mut high = T::zero();
+        for j in (0..ilp.len()).step_by(2) {
+            let idx_low = (j + 1) % ilp.len();
+            let idx = (j / 2 + i) % data.len();
+            let idx_high = (idx + middle) % data.len();
+            low = low + data[idx] * ilp[idx_low] + data[idx_high] * ihp[idx_low];
+            high = high + data[idx] * ilp[j] + data[idx_high] * ihp[j];
         }
-
-        data_trans[ind_transform] = value_low;
-        ind_transform += 1;
-        data_trans[ind_transform] = value_high;
-        ind_transform += 1;
+        out[ind] = low;
+        ind += 1;
+        out[ind] = high;
+        ind += 1;
     }
 
-    data_trans
+    out
 }
 
 pub fn insert_padding_before<T>(data_trans: &mut Vec<T>, mode: &WaveletMode, size: usize)
@@ -275,7 +264,7 @@ where
     // let mut out = Vec::with_capacity(input.len() * 2);
     // for x in input {
     //     out.push(x.clone());
-    //     out.push(T::zero()); 
+    //     out.push(T::zero());
     // }
 
     let mut out = input.clone();

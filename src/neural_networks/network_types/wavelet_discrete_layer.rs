@@ -65,9 +65,9 @@ impl DiscreteWaveletLayer {
             gradient: None,
             output_batch: None,
             time_step: 0,
-            wavelet: DiscreteWaveletType::DB2,
+            wavelet: DiscreteWaveletType::DB5,
             wavelet_size: 4,
-            compression_levels: 1,
+            compression_levels: 2,
             wavelet_mode: WaveletMode::ZERO,
             is_full_mode: false,
             details_batch: None,
@@ -276,9 +276,9 @@ impl DiscreteWaveletLayer {
             trend = transpose(&ll_hh[0]);
             details = transpose(&ll_hh[1]);
 
-            if trend.len() % self.wavelet_size != 0 {
-                //trend.resize(trend.len() + (self.wavelet_size - (trend.len() % self.wavelet_size)), vec![Complex::new(0.0, 0.0); trend[0].len()]);
-            }
+            // if trend.len() % self.wavelet_size != 0 {
+            //     //trend.resize(trend.len() + (self.wavelet_size - (trend.len() % self.wavelet_size)), vec![Complex::new(0.0, 0.0); trend[0].len()]);
+            // }
 
             // println!("\n compression dim at index {}: {}", _i,  trend.len());
             compression_dim.push(details.len());
@@ -295,11 +295,11 @@ impl DiscreteWaveletLayer {
 
         for _l in (0.._compression_dim.len()).rev() {
             for i in 0..gradient_transp.len() {
-                 let mut detail_extension: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); _compression_dim[_l]];
+                 let detail_extension: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); gradient_transp[i].len()];
 
-                if gradient_transp[i].len() < _compression_dim[_l] {
-                    self.align_vectors(&mut gradient_transp[i], &mut detail_extension);
-                }
+                // if gradient_transp[i].len() < _compression_dim[_l] {
+                //    // self.align_vectors(&mut gradient_transp[i], &mut detail_extension);
+                // }
                
                 gradient_transp[i].extend_from_slice(&detail_extension);
             }
@@ -334,9 +334,9 @@ impl DiscreteWaveletLayer {
             let wav_hh_ll: Vec<Vec<f64>> = get_ll_hh_1d(&dwt);
             dwt_partial = wav_hh_ll[0].clone(); // Approximation (LL)
 
-            if dwt_partial.len() % self.wavelet_size != 0 {
-                // dwt_partial.resize(dwt_partial.len() + (self.wavelet_size - (dwt_partial.len() % self.wavelet_size)), 1.0);
-            }
+            // if dwt_partial.len() % self.wavelet_size != 0 {
+            //     // dwt_partial.resize(dwt_partial.len() + (self.wavelet_size - (dwt_partial.len() % self.wavelet_size)), 1.0);
+            // }
         }
 
         // Step 4: Threshold the approximation to get new mask

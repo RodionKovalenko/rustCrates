@@ -4,9 +4,7 @@ mod test_transformer {
 
     use crate::{
         neural_networks::{
-            network_components::{
-                embedding_layer::EmbeddingLayer, gradient_struct::Gradient, input::concat_batches, layer::LayerEnum, layer_input_struct::LayerInput, linear_layer::LinearLayer, norm_layer::NormalNormLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer,
-            },
+            network_components::{embedding_layer::EmbeddingLayer, gradient_struct::Gradient, input::concat_batches, layer::LayerEnum, layer_input_struct::LayerInput, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
             network_types::{
                 feedforward_layer::FeedForwardLayer,
                 neural_network_generic::{create, NeuralNetwork, OperationMode},
