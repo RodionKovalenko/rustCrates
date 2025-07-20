@@ -169,4 +169,28 @@ mod test_wavelet_compression {
 
         test_gradient_error_2d(&matrix_1, &matrix_restored, 1e-6);
     }
+
+    #[test]
+    fn test_complex_multilevel_compression_db4() {
+        let compr_levels = 10;
+        let wavelet_type = &DiscreteWaveletType::DB4;
+
+        let matrix_1: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.5, 0.0), Complex::new(0.1, 0.0), Complex::new(0.2, 0.0), Complex::new(0.3, 0.0), Complex::new(0.4, 0.0)]];
+        let mut details_coeffs: Vec<Vec<Vec<Complex<f64>>>> = vec![];
+
+        let mut wav_trans_1: Vec<Vec<Complex<f64>>> = matrix_1.clone();
+        for _i in 0..compr_levels {
+            wav_trans_1 = dwt_2d_partial(&wav_trans_1, wavelet_type, &WaveletMode::ZERO);
+
+            let ll_hh: Vec<Vec<Vec<Complex<f64>>>> = get_ll_hh(&wav_trans_1);
+            wav_trans_1 = ll_hh[0].clone();
+            details_coeffs.push(ll_hh[1].clone());
+            println!("details coeff at {}: dim {} {}", _i, ll_hh[1].len(), ll_hh[1][0].len());
+            println!("\n wav_trans at {}: dim: {} {}", _i, wav_trans_1.len(), wav_trans_1[0].len());
+            println!("\n wav_trans at {}: {:?}", _i, wav_trans_1);
+        }
+
+        println!("\n original matrix: {:?}", matrix_1);
+        println!("\n final wavelet transformed: {:?}", wav_trans_1);
+    }
 }
