@@ -65,9 +65,9 @@ impl DiscreteWaveletLayer {
             gradient: None,
             output_batch: None,
             time_step: 0,
-            wavelet: DiscreteWaveletType::DB5,
-            wavelet_size: 4,
-            compression_levels: 2,
+            wavelet: DiscreteWaveletType::DB6,
+            wavelet_size: 32,
+            compression_levels: 5,
             wavelet_mode: WaveletMode::ZERO,
             is_full_mode: false,
             details_batch: None,
@@ -76,7 +76,7 @@ impl DiscreteWaveletLayer {
             padding_mask_batch: None,
             target_batch: None,
             target_batch_ids: None,
-            norm_layer: _norm_layer,
+            norm_layer: None,
         }
     }
 
@@ -295,12 +295,12 @@ impl DiscreteWaveletLayer {
 
         for _l in (0.._compression_dim.len()).rev() {
             for i in 0..gradient_transp.len() {
-                 let detail_extension: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); gradient_transp[i].len()];
+                let detail_extension: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); gradient_transp[i].len()];
 
                 // if gradient_transp[i].len() < _compression_dim[_l] {
                 //    // self.align_vectors(&mut gradient_transp[i], &mut detail_extension);
                 // }
-               
+
                 gradient_transp[i].extend_from_slice(&detail_extension);
             }
 

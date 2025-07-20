@@ -67,6 +67,9 @@ where
     for i in (0..n).step_by(2) {
         let (mut low, mut high) = (T::zero(), T::zero());
         for (j, &lpv) in low_pass.iter().enumerate() {
+            if (i + j) >= buf.len() {
+                break;
+            }
             let idx = (i + j) % buf.len();
             low = low + buf[idx] * lpv;
             high = high + buf[idx] * high_pass[j];
@@ -97,9 +100,20 @@ where
         let mut low = T::zero();
         let mut high = T::zero();
         for j in (0..ilp.len()).step_by(2) {
+            if j + 1 >= ihp.len() {
+                break;
+            }
+            if j / 2 + i >= data.len() {
+                break;
+            }
+
             let idx_low = (j + 1) % ilp.len();
             let idx = (j / 2 + i) % data.len();
             let idx_high = (idx + middle) % data.len();
+
+            if idx + middle >= data.len() {
+                break;
+            }
             low = low + data[idx] * ilp[idx_low] + data[idx_high] * ihp[idx_low];
             high = high + data[idx] * ilp[j] + data[idx_high] * ihp[j];
         }
