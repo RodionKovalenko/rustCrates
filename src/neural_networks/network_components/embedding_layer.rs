@@ -243,10 +243,10 @@ impl EmbeddingLayer {
         let gradient: &Gradient = self.gradient.as_ref().expect("Output batch is missing in dense layer");
         let mut previous_gradients: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_input_batch();
 
-        let mut batch_size = (previous_gradients.len() * self.vocab_size) as f64;
+        let mut batch_size = previous_gradients.len() as f64;
 
         if self.batch_size > 0 {
-            batch_size = (self.batch_size * self.vocab_size) as f64;
+            batch_size = self.batch_size as f64;
         }
 
         // let max = previous_gradients.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
