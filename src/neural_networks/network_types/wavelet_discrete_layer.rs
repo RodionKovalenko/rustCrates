@@ -67,7 +67,7 @@ impl DiscreteWaveletLayer {
             time_step: 0,
             wavelet: DiscreteWaveletType::DB6,
             wavelet_size: 32,
-            compression_levels: 5,
+            compression_levels: 6,
             wavelet_mode: WaveletMode::ZERO,
             is_full_mode: false,
             details_batch: None,
@@ -76,7 +76,7 @@ impl DiscreteWaveletLayer {
             padding_mask_batch: None,
             target_batch: None,
             target_batch_ids: None,
-            norm_layer: None,
+            norm_layer: _norm_layer,
         }
     }
 
@@ -273,8 +273,11 @@ impl DiscreteWaveletLayer {
             //println!("trend dim: {} {}", trend.len(), trend[0].len());
             let dwt_partial = dwt_2d_partial(&transpose(&trend), &self.wavelet, &self.wavelet_mode);
             let ll_hh = get_ll_hh(&dwt_partial);
+
             trend = transpose(&ll_hh[0]);
             details = transpose(&ll_hh[1]);
+
+            //trend = add_matrix_2d_c(&trend, &details);
 
             // if trend.len() % self.wavelet_size != 0 {
             //     //trend.resize(trend.len() + (self.wavelet_size - (trend.len() % self.wavelet_size)), vec![Complex::new(0.0, 0.0); trend[0].len()]);
@@ -296,10 +299,6 @@ impl DiscreteWaveletLayer {
         for _l in (0.._compression_dim.len()).rev() {
             for i in 0..gradient_transp.len() {
                 let detail_extension: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); gradient_transp[i].len()];
-
-                // if gradient_transp[i].len() < _compression_dim[_l] {
-                //    // self.align_vectors(&mut gradient_transp[i], &mut detail_extension);
-                // }
 
                 gradient_transp[i].extend_from_slice(&detail_extension);
             }
@@ -340,7 +339,12 @@ impl DiscreteWaveletLayer {
         }
 
         // Step 4: Threshold the approximation to get new mask
-        let compressed_mask: Vec<u32> = dwt_partial.iter().map(|&val| if val > 0.99 { 1 } else { 0 }).collect();
+
+        //  println!("original dwt: {:?}", dwt_partial);
+        let compressed_mask: Vec<u32> = vec![1; dwt_partial.len()];
+
+        // println!("original padding_mask: {:?}", padding_mask);
+        // println!("compressed mask: {:?}", compressed_mask);
         compressed_mask
     }
     pub fn align_gradient_rows_complex(&self, input: &Vec<Vec<Complex<f64>>>, gradient_decompr: &Vec<Vec<Complex<f64>>>, gradient: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
