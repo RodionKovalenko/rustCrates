@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     neural_networks::{
         network_components::{gradient_struct::Gradient, layer::LayerEnum, layer_input_struct::LayerInput, layer_output_struct::LayerOutput, norm_layer::NormalNormLayer},
-        utils::matrix::{add_matrix_3d, transpose},
+        utils::matrix::{add_matrix_2d_c, add_matrix_3d, transpose},
     },
-    utils::array::unzip4,
+    utils::array::unzip5,
     wavelet_transform::{
         dwt::{dwt_1d, dwt_2d_full, dwt_2d_partial, get_ll_hh, get_ll_hh_1d, get_ll_hl_lh_hh, grad_dwt_2d, grad_dwt_2d_partial},
         dwt_types::DiscreteWaveletType,
@@ -27,8 +27,7 @@ pub struct DiscreteWaveletLayer {
 
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
-    #[serde(skip)]
-    pub trend_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+
     #[serde(skip)]
     pub input_only_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
@@ -39,6 +38,8 @@ pub struct DiscreteWaveletLayer {
     pub time_step: usize,
     #[serde(skip)]
     pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
+    pub trend_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     pub details_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
@@ -67,7 +68,7 @@ impl DiscreteWaveletLayer {
             time_step: 0,
             wavelet: DiscreteWaveletType::DB6,
             wavelet_size: 32,
-            compression_levels: 6,
+            compression_levels: 3,
             wavelet_mode: WaveletMode::ZERO,
             is_full_mode: false,
             details_batch: None,
@@ -94,7 +95,7 @@ impl DiscreteWaveletLayer {
                 if self.is_full_mode {
                     let dwt_full = dwt_2d_full(input, &self.wavelet, &self.wavelet_mode);
                     let ll_hl_lh_hh = get_ll_hl_lh_hh(&dwt_full);
-                    (ll_hl_lh_hh[0].to_vec(), vec![], vec![], vec![]) // No detail saved in full mode
+                    (ll_hl_lh_hh[0].to_vec(), vec![], vec![], vec![], vec![]) // No detail saved in full mode
                 } else {
                     let padding_mask = &padding_mask_batch[batch_ind];
                     let mut target_ids: &Vec<u32> = &vec![];
@@ -104,6 +105,7 @@ impl DiscreteWaveletLayer {
                     }
 
                     let mut trend: Vec<Vec<Complex<f64>>> = input.clone();
+                    let mut details: Vec<Vec<Complex<f64>>> = vec![];
                     let mut input_only_separated = input.clone();
                     let mut target_emb: Vec<Vec<Complex<f64>>> = vec![];
                     let mut comp_pad_mask_b: Vec<u32> = padding_mask.clone();
@@ -118,6 +120,7 @@ impl DiscreteWaveletLayer {
                         input_only_separated = input_only;
 
                         trend = new_trend;
+                        details = _new_details;
                         target_emb = target;
                     }
 
@@ -130,12 +133,12 @@ impl DiscreteWaveletLayer {
 
                     // println!("trend final compressed: {:?}", trend.len());
 
-                    (trend, input_only_separated, compression_dims, comp_pad_mask_b)
+                    (trend, details, input_only_separated, compression_dims, comp_pad_mask_b)
                 }
             })
             .collect();
 
-        let (trend_batch, input_only, compression_dims, comp_pad_mask_b) = unzip4(results);
+        let (trend_batch, details_batch, input_only, compression_dims, comp_pad_mask_b) = unzip5(results);
 
         let mut layer_input = layer_input.clone();
         layer_input.set_input_batch(trend_batch.clone());
@@ -164,6 +167,7 @@ impl DiscreteWaveletLayer {
         self.input_batch = Some(input_batch.clone());
         self.input_only_batch = Some(input_only);
         self.trend_input_batch = Some(trend_batch.clone());
+        self.details_batch = Some(details_batch.clone());
         self.time_step = layer_input.get_time_step();
         self.output_batch = Some(trend_batch.clone());
         self.target_batch_ids = Some(target_batch_ids);
@@ -264,31 +268,27 @@ impl DiscreteWaveletLayer {
     }
 
     pub fn compress_partial(&self, input: &[Vec<Complex<f64>>]) -> (Vec<Vec<Complex<f64>>>, Vec<Vec<Complex<f64>>>, Vec<usize>) {
-        let mut trend = input.to_vec();
+        let mut wav_out = input.to_vec();
         let mut details = Vec::new();
         let mut compression_dim: Vec<usize> = vec![];
 
         //  println!("compression_________________________________________________");
         for _i in 0..self.compression_levels {
             //println!("trend dim: {} {}", trend.len(), trend[0].len());
-            let dwt_partial = dwt_2d_partial(&transpose(&trend), &self.wavelet, &self.wavelet_mode);
+            let dwt_partial = dwt_2d_partial(&transpose(&wav_out), &self.wavelet, &self.wavelet_mode);
             let ll_hh = get_ll_hh(&dwt_partial);
 
-            trend = transpose(&ll_hh[0]);
+            let trend = transpose(&ll_hh[0]);
             details = transpose(&ll_hh[1]);
 
-            //trend = add_matrix_2d_c(&trend, &details);
+            // wav_out = trend.clone();
+            wav_out = add_matrix_2d_c(&trend, &details);
 
-            // if trend.len() % self.wavelet_size != 0 {
-            //     //trend.resize(trend.len() + (self.wavelet_size - (trend.len() % self.wavelet_size)), vec![Complex::new(0.0, 0.0); trend[0].len()]);
-            // }
-
-            // println!("\n compression dim at index {}: {}", _i,  trend.len());
-            compression_dim.push(details.len());
+            compression_dim.push(wav_out.len());
         }
 
         //println!("trend dim: {} {}", trend.len(), trend[0].len());
-        (trend, details, compression_dim)
+        (wav_out, details, compression_dim)
     }
 
     pub fn decompress_partial(&self, grad_output: &Vec<Vec<Complex<f64>>>, target_len: usize, _compression_dim: &Vec<usize>) -> Vec<Vec<Complex<f64>>> {
@@ -298,8 +298,8 @@ impl DiscreteWaveletLayer {
 
         for _l in (0.._compression_dim.len()).rev() {
             for i in 0..gradient_transp.len() {
-                let detail_extension: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); gradient_transp[i].len()];
-
+                // let detail_extension: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); gradient_transp[i].len()];
+                let detail_extension: Vec<Complex<f64>> = gradient_transp[i].to_vec();
                 gradient_transp[i].extend_from_slice(&detail_extension);
             }
 
