@@ -1,7 +1,7 @@
-use std::time::Instant;
 use colored::*;
 use num::Complex;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use std::time::Instant;
 
 use crate::{
     database::sled_db::SLED_DB_TRANSFORMER_V1,
@@ -23,10 +23,7 @@ use crate::{
             tokenizer::{detokenize, tokenize_batch},
         },
     },
-    utils::{
-        data_converter::convert_c_to_f64_3d,
-        sampling_methods::{get_target_predictions, greedy_decoding},
-    },
+    utils::{data_converter::convert_c_to_f64_3d, sampling_methods::greedy_decoding},
 };
 
 pub const MAX_CONTEXT_WINDOW_SIZE: usize = 512;
@@ -89,17 +86,17 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
             if epoch > 0 && epoch % 10 == 0 || loss.norm() <= loss_threshold {
                 println!("Epoch: {:?}, Loss: {:?}", epoch, loss);
-                let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = get_target_predictions(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
-                let sampled_tokens = greedy_decoding(&predicted_softmax_targets);
+                // let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = get_target_predictions(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
+                // let sampled_tokens = greedy_decoding(&predicted_softmax_targets);
 
-                let predicted_token_batch: Vec<String> = sampled_tokens.par_iter().map(|token_indices| detokenize(token_indices, false).unwrap()).collect();
-                println!("Top-p tokens dim: {:?}", sampled_tokens[0].len() * sampled_tokens.len());
-                println!("predicted tokens: {:?}", predicted_token_batch);
+                // let predicted_token_batch: Vec<String> = sampled_tokens.par_iter().map(|token_indices| detokenize(token_indices, false).unwrap()).collect();
+                // println!("Top-p tokens dim: {:?}", sampled_tokens[0].len() * sampled_tokens.len());
+                // println!("predicted tokens: {:?}", predicted_token_batch);
 
-                let seconds_elapsed_end = now.elapsed();
-                let duration = seconds_elapsed_end - seconds_elapsed;
-                let seconds = duration.as_secs_f64();
-                println!("time elapsed for forward pass in seconds: {:?}", seconds);
+                // let seconds_elapsed_end = now.elapsed();
+                // let duration = seconds_elapsed_end - seconds_elapsed;
+                // let seconds = duration.as_secs_f64();
+                // println!("time elapsed for forward pass in seconds: {:?}", seconds);
             }
 
             backward(transformer_network, &target_ids, &layer_input, true);
@@ -501,9 +498,9 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
     layer_output.set_output_batch_f64(output_softmax.unwrap());
     layer_output.set_padding_mask_batch(padding_mask.unwrap());
 
-    if !forward_only {
-        println!("time elapsed in forward pass in predict: {:?}", (now.elapsed() - _start).as_secs_f64());
-    }
+    // if !forward_only {
+    //     println!("time elapsed in forward pass in predict: {:?}", (now.elapsed() - _start).as_secs_f64());
+    // }
 
     //println!("forward pass end ----------------------------------------------------------------------");
     layer_output
