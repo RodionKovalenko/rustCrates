@@ -3,7 +3,7 @@ use crate::neural_networks::{
     network_types::{feedforward_layer::FeedForwardLayer, transformer::self_attention_layer::SelfAttentionLayer, wavelet_complex_layer::ComplexWaveletLayer, wavelet_discrete_layer::DiscreteWaveletLayer},
     utils::{
         activation::activate_output_complex_padding,
-        adam_w::{calculate_adam_w, calculate_adam_w_bias},
+        adam_w::{average_gradient_polar, average_gradient_polar_1d, calculate_adam_w, calculate_adam_w_bias},
         derivative::get_gradient_complex,
         matrix::{add_matrix, add_matrix_3d, add_vector, apply_padding_mask_batch, average_matrix_by_scalar, average_vector_by_scalar, clip_gradient_1d, clip_gradients, conjugate_transpose, hadamard_product_2d_c, is_nan_or_inf, multiply_complex, transpose},
         weights_initializer::initialize_weights_complex,
@@ -257,6 +257,12 @@ impl Layer {
 
             prev_m_weights = average_matrix_by_scalar(&previous_gradient.get_prev_m_weights(), batch_size);
             prev_v_weights = average_matrix_by_scalar(&previous_gradient.get_prev_v_weights(), batch_size);
+
+            // prev_m_bias = average_gradient_polar_1d(&previous_gradient.get_prev_m_bias(), batch_size);
+            // prev_v_bias = average_gradient_polar_1d(&previous_gradient.get_prev_v_bias(), batch_size);
+
+            // prev_m_weights = average_gradient_polar(&previous_gradient.get_prev_m_weights(), batch_size);
+            // prev_v_weights = average_gradient_polar(&previous_gradient.get_prev_v_weights(), batch_size);
 
             self.bias = calculate_adam_w_bias(&self.bias, &gradient.get_gradient_bias(), &mut prev_m_bias, &mut prev_v_bias, learning_rate, time_step);
             self.weights = calculate_adam_w(&self.weights, &gradient.get_gradient_weights(), &mut prev_m_weights, &mut prev_v_weights, learning_rate, time_step);

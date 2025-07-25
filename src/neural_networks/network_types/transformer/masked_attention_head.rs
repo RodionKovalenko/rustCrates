@@ -7,7 +7,7 @@ use crate::{
         network_components::{gradient_struct::Gradient, layer::LayerType, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
         utils::{
             activation::softmax_complex_padding_real,
-            adam_w::calculate_adam_w,
+            adam_w::{average_gradient_polar, calculate_adam_w},
             derivative::{backpropagate_softmax_masked_real, softmax_derivative_complex_jacobian},
             matrix::{add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_gradients, conjugate_transpose, get_reduced_matrix, is_nan_or_inf, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
             weights_initializer::initialize_weights_complex,
@@ -404,6 +404,16 @@ impl MaskedAttentionHead {
             prev_m_weights_v = average_matrix_by_scalar(&previous_gradient.get_prev_m_weigths_v(), batch_size);
             prev_v_weights_v = average_matrix_by_scalar(&previous_gradient.get_prev_v_weigths_v(), batch_size);
 
+            // prev_m_weights_q = average_gradient_polar(&previous_gradient.get_prev_m_weigths_q(), batch_size);
+            // prev_v_weights_q = average_gradient_polar(&previous_gradient.get_prev_v_weigths_q(), batch_size);
+
+            // prev_m_weights_k = average_gradient_polar(&previous_gradient.get_prev_m_weigths_k(), batch_size);
+            // prev_v_weights_k = average_gradient_polar(&previous_gradient.get_prev_v_weigths_k(), batch_size);
+
+            // prev_m_weights_v = average_gradient_polar(&previous_gradient.get_prev_m_weigths_v(), batch_size);
+            // prev_v_weights_v = average_gradient_polar(&previous_gradient.get_prev_v_weigths_v(), batch_size);
+
+
             self.weights_q = calculate_adam_w(&self.weights_q, &grad_w_q, &mut prev_m_weights_q, &mut prev_v_weights_q, learning_rate, time_step);
             self.weights_k = calculate_adam_w(&self.weights_k, &grad_w_k, &mut prev_m_weights_k, &mut prev_v_weights_k, learning_rate, time_step);
             self.weights_v = calculate_adam_w(&self.weights_v, &grad_w_v, &mut prev_m_weights_v, &mut prev_v_weights_v, learning_rate, time_step);
@@ -411,7 +421,7 @@ impl MaskedAttentionHead {
             let seq_len = grad_bias_pos.len();
             let bias_pos_slice: Vec<Vec<Complex<f64>>> = self.bias_pos[0..seq_len].iter().map(|row| row[0..seq_len].to_vec()).collect();
             let updated_slice = calculate_adam_w(&bias_pos_slice, &grad_bias_pos, &mut prev_m_bias_pos, &mut prev_v_bias_pos, learning_rate, time_step);
-            let updated_slice_averaged = average_matrix_by_scalar(&updated_slice, batch_size);
+            let updated_slice_averaged = average_gradient_polar(&updated_slice, batch_size);
 
             for i in 0..seq_len {
                 for j in 0..seq_len {

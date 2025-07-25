@@ -101,3 +101,50 @@ pub fn calculate_adam_w_bias(bias: &[Complex<f64>], gradient: &[Complex<f64>], p
 
     updated_bias
 }
+
+pub fn average_gradient_polar(gradients: &Vec<Vec<Complex<f64>>>, batch_size: f64) -> Vec<Vec<Complex<f64>>> {
+    let rows = gradients.len();
+    let cols = gradients[0].len();
+
+    let mut averaged: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
+
+    for i in 0..rows {
+        for j in 0..cols {
+            let mut sum_magnitude = 0.0;
+            let mut sum_angle = 0.0;
+
+            let grad = gradients[i][j];
+            sum_magnitude += grad.norm();
+            sum_angle += grad.arg();
+
+            let mean_magnitude = sum_magnitude / batch_size;
+            let mean_angle = sum_angle / batch_size;
+
+            averaged[i][j] = Complex::from_polar(mean_magnitude, mean_angle);
+        }
+    }
+
+    averaged
+}
+
+pub fn average_gradient_polar_1d(gradients: &Vec<Complex<f64>>, batch_size: f64) -> Vec<Complex<f64>> {
+    let rows = gradients.len();
+
+    let mut averaged: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); rows];
+
+    for i in 0..rows {
+        let mut sum_magnitude = 0.0;
+        let mut sum_angle = 0.0;
+
+        let grad = gradients[i];
+        sum_magnitude += grad.norm();
+        sum_angle += grad.arg();
+
+        let mean_magnitude = sum_magnitude / batch_size;
+        let mean_angle = sum_angle / batch_size;
+
+        averaged[i] = Complex::from_polar(mean_magnitude, mean_angle);
+    }
+
+    averaged
+}
