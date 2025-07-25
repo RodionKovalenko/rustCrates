@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
-    adam_w::{calculate_adam_w, calculate_adam_w_bias},
+    adam_w::{average_gradient_polar, average_gradient_polar_1d, calculate_adam_w, calculate_adam_w_bias},
     matrix::{add_matrix_2d_c, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_gradient_1d, clip_gradients, conjugate_transpose, is_nan_or_inf, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
     weights_initializer::initialize_weights_complex,
 };
@@ -177,6 +177,12 @@ impl LinearLayer {
 
             prev_m_weights = average_matrix_by_scalar(&previous_gradient.get_prev_m_weights(), batch_size);
             prev_v_weights = average_matrix_by_scalar(&previous_gradient.get_prev_v_weights(), batch_size);
+
+            // prev_m_bias = average_gradient_polar_1d(&previous_gradient.get_prev_m_bias(), batch_size);
+            // prev_v_bias = average_gradient_polar_1d(&previous_gradient.get_prev_v_bias(), batch_size);
+
+            // prev_m_weights = average_gradient_polar(&previous_gradient.get_prev_m_weights(), batch_size);
+            // prev_v_weights = average_gradient_polar(&previous_gradient.get_prev_v_weights(), batch_size);
 
             self.bias = calculate_adam_w_bias(&self.bias, &gradient.get_gradient_bias(), &mut prev_m_bias, &mut prev_v_bias, learning_rate, time_step);
             self.weights = calculate_adam_w(&self.weights, &gradient.get_gradient_weights(), &mut prev_m_weights, &mut prev_v_weights, learning_rate, time_step);
