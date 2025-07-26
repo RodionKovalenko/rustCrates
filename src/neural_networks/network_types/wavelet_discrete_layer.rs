@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     neural_networks::{
         network_components::{gradient_struct::Gradient, layer::LayerEnum, layer_input_struct::LayerInput, layer_output_struct::LayerOutput, norm_layer::NormalNormLayer},
-        utils::matrix::{add_matrix_2d_c, add_matrix_3d, transpose},
+        utils::matrix::{add_matrix_3d, transpose},
     },
     utils::array::unzip5,
     wavelet_transform::{
@@ -68,7 +68,7 @@ impl DiscreteWaveletLayer {
             time_step: 0,
             wavelet: DiscreteWaveletType::DB6,
             wavelet_size: 32,
-            compression_levels: 3,
+            compression_levels: 1,
             wavelet_mode: WaveletMode::ZERO,
             is_full_mode: false,
             details_batch: None,
@@ -281,10 +281,10 @@ impl DiscreteWaveletLayer {
             let trend = transpose(&ll_hh[0]);
             details = transpose(&ll_hh[1]);
 
-            // wav_out = trend.clone();
-            wav_out = add_matrix_2d_c(&trend, &details);
+            wav_out = trend.clone();
+            //wav_out = add_matrix_2d_c(&trend, &details);
 
-            compression_dim.push(wav_out.len());
+            compression_dim.push(details.len());
         }
 
         //println!("trend dim: {} {}", trend.len(), trend[0].len());
@@ -298,8 +298,8 @@ impl DiscreteWaveletLayer {
 
         for _l in (0.._compression_dim.len()).rev() {
             for i in 0..gradient_transp.len() {
-                // let detail_extension: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); gradient_transp[i].len()];
-                let detail_extension: Vec<Complex<f64>> = gradient_transp[i].to_vec();
+                let detail_extension: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); gradient_transp[i].len()];
+                //let detail_extension: Vec<Complex<f64>> = gradient_transp[i].to_vec();
                 gradient_transp[i].extend_from_slice(&detail_extension);
             }
 

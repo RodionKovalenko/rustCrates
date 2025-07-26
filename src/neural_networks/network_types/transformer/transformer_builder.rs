@@ -36,7 +36,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
 
     let rows: usize = embedding_dim_compressed;
     // Transformer block start
-    let num_self_attention_layer: usize = 2;
+    let num_self_attention_layer: usize = 4;
     for i in 0..num_self_attention_layer {
         let num_attention_heads: usize = 4;
 
@@ -48,7 +48,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
 
         let mut hidden_dim = 1024;
         if i > 0 {
-            hidden_dim = 1024;
+            hidden_dim = 5096;
         }
 
         let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
