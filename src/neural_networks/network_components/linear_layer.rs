@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
-    adam_w::{average_gradient_polar, average_gradient_polar_1d, calculate_adam_w, calculate_adam_w_bias},
+    adam_w::{calculate_adam_w, calculate_adam_w_bias},
     matrix::{add_matrix_2d_c, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_gradient_1d, clip_gradients, conjugate_transpose, is_nan_or_inf, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
     weights_initializer::initialize_weights_complex,
 };

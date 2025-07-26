@@ -3,7 +3,7 @@ use crate::neural_networks::{
     network_types::{feedforward_layer::FeedForwardLayer, transformer::self_attention_layer::SelfAttentionLayer, wavelet_complex_layer::ComplexWaveletLayer, wavelet_discrete_layer::DiscreteWaveletLayer},
     utils::{
         activation::activate_output_complex_padding,
-        adam_w::{average_gradient_polar, average_gradient_polar_1d, calculate_adam_w, calculate_adam_w_bias},
+        adam_w::{calculate_adam_w, calculate_adam_w_bias},
         derivative::get_gradient_complex,
         matrix::{add_matrix, add_matrix_3d, add_vector, apply_padding_mask_batch, average_matrix_by_scalar, average_vector_by_scalar, clip_gradient_1d, clip_gradients, conjugate_transpose, hadamard_product_2d_c, is_nan_or_inf, multiply_complex, transpose},
         weights_initializer::initialize_weights_complex,

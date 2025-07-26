@@ -756,21 +756,74 @@ pub fn get_reduced_matrix(matrix: &Vec<Vec<Complex<f64>>>, num_rows: usize, num_
         .collect()
 }
 
-pub fn clip_gradients(gradients: &mut Vec<Vec<Complex<f64>>>, threshold: f64) {
+pub fn clip_gradients(gradients: &mut Vec<Vec<Complex<f64>>>, _threshold: f64) {
+    let threshold = 0.5; // Define a threshold for clipping
     for row in gradients.iter_mut() {
         clip_gradient_1d(row, threshold);
     }
 }
 
-pub fn clip_gradient_1d(gradients: &mut Vec<Complex<f64>>, threshold: f64) {
+pub fn clip_gradient_1d(gradients: &mut Vec<Complex<f64>>, _threshold: f64) {
+    let threshold = 0.5;
     for val in gradients.iter_mut() {
         let norm = val.norm();
-
         if norm > threshold {
-            *val *= threshold / norm; // Scale down to threshold
+            *val *= threshold / norm;
         }
     }
 }
+
+pub fn clip_gradients_by_global_norm(weight_gradients: &mut Vec<Vec<Complex<f64>>>, max_norm: f64) {
+    // Calculate total gradient norm across ALL parameters
+    let mut total_norm_squared = 0.0;
+
+    // Sum weight gradient norms
+    for layer in weight_gradients.iter() {
+        for grad in layer.iter() {
+            total_norm_squared += grad.norm_sqr();
+        }
+    }
+
+    let total_norm = total_norm_squared.sqrt();
+
+    // Only clip if norm exceeds threshold
+    if total_norm > max_norm {
+        let clip_coeff = max_norm / total_norm;
+
+        // Scale ALL gradients by the same factor
+        for layer in weight_gradients.iter_mut() {
+            for grad in layer.iter_mut() {
+                *grad *= clip_coeff;
+            }
+        }
+
+        //println!("Clipped gradients: norm {:.3e} -> {:.3e}", total_norm, max_norm);
+    }
+}
+
+pub fn clip_gradients_bias_by_global_norm(bias_gradients: &mut Vec<Complex<f64>>, max_norm: f64) {
+    // Calculate total gradient norm across ALL parameters
+    let mut total_norm_squared = 0.0;
+
+    // Sum bias gradient norms
+    for grad in bias_gradients.iter() {
+        total_norm_squared += grad.norm_sqr();
+    }
+
+    let total_norm = total_norm_squared.sqrt();
+
+    // Only clip if norm exceeds threshold
+    if total_norm > max_norm {
+        let clip_coeff = max_norm / total_norm;
+
+        for grad in bias_gradients.iter_mut() {
+            *grad *= clip_coeff;
+        }
+
+        //println!("Clipped gradients: norm {:.3e} -> {:.3e}", total_norm, max_norm);
+    }
+}
+
 pub fn is_nan_or_inf(z: &Complex<f64>) -> bool {
     z.re.is_nan() || z.re.is_infinite() || z.im.is_nan() || z.im.is_infinite()
 }
