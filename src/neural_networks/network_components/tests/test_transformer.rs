@@ -13,6 +13,7 @@ mod test_transformer {
                     self_attention_layer::SelfAttentionLayer,
                     transformer_network::{backward, cross_entropy_loss_batch, predict},
                 },
+                wavelet_complex_layer::ComplexWaveletLayer,
                 wavelet_discrete_layer::DiscreteWaveletLayer,
                 wavelet_network::DECOMPOSITION_LEVELS,
             },
@@ -176,6 +177,7 @@ mod test_transformer {
         let mut embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
         let mut positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
         let mut discrete_wavelet_layer = DiscreteWaveletLayer::new();
+        let mut complex_wavelet_layer = ComplexWaveletLayer::new();
         let mut linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
         let mut softmax_layer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING);
 
@@ -213,6 +215,9 @@ mod test_transformer {
         let discrete_wavelet_output = discrete_wavelet_layer.forward(&layer_input);
         layer_input.set_input_batch(discrete_wavelet_output.get_output_batch());
 
+        let complex_wavelet_output = complex_wavelet_layer.forward(&layer_input);
+        layer_input.set_input_batch(complex_wavelet_output.get_output_batch());
+
         let positional_encoding_output = positional_encoding_layer.forward(&layer_input);
         layer_input.set_input_batch(positional_encoding_output.clone());
 
@@ -239,7 +244,8 @@ mod test_transformer {
         let gradient_ffn: Gradient = ffn_layer_1.backward(&gradient_attention_layer_2.get_gradient_input_batch());
         let gradient_attention_layer_1: Gradient = attention_layer_1.backward(&gradient_ffn.get_gradient_input_batch());
         let pos_enc_gradient = positional_encoding_layer.backward(&gradient_attention_layer_1.get_gradient_input_batch());
-        let _discrete_layer_gradient = discrete_wavelet_layer.backward(&pos_enc_gradient);
+        let _complex_layer_gradient = complex_wavelet_layer.backward(&pos_enc_gradient);
+        let _discrete_layer_gradient = discrete_wavelet_layer.backward(&_complex_layer_gradient);
 
         let analytical_norm_gradient: Vec<Vec<Complex<f64>>> = _discrete_layer_gradient.get_gradient_input();
 
@@ -254,6 +260,9 @@ mod test_transformer {
 
             let discrete_wavelet_output = discrete_wavelet_layer.forward(&layer_input);
             layer_input.set_input_batch(discrete_wavelet_output.get_output_batch());
+
+            let complex_wavelet_output = complex_wavelet_layer.forward(&layer_input);
+            layer_input.set_input_batch(complex_wavelet_output.get_output_batch());
 
             let positional_encoding_output = positional_encoding_layer.forward(&layer_input);
             layer_input.set_input_batch(positional_encoding_output.clone());

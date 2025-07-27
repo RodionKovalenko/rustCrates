@@ -91,7 +91,7 @@ impl SoftmaxLayer {
             // let seq_end = _sequence_len_unpadded - 1;
 
             let seq_ind_start = softmax_output.len() - target_len - 1;
-            let seq_end =  softmax_output.len() - 1;
+            let seq_end = softmax_output.len() - 1;
 
             let mut target_len_unpadded = 0.0;
             for (_t, &target_class) in target_tokens.iter().enumerate() {
