@@ -757,20 +757,11 @@ pub fn get_reduced_matrix(matrix: &Vec<Vec<Complex<f64>>>, num_rows: usize, num_
 }
 
 pub fn clip_gradients(gradients: &mut Vec<Vec<Complex<f64>>>, _threshold: f64) {
-    let threshold = 0.5; // Define a threshold for clipping
-    for row in gradients.iter_mut() {
-        clip_gradient_1d(row, threshold);
-    }
+    clip_gradients_by_global_norm(gradients, 2.0);
 }
 
 pub fn clip_gradient_1d(gradients: &mut Vec<Complex<f64>>, _threshold: f64) {
-    let threshold = 0.5;
-    for val in gradients.iter_mut() {
-        let norm = val.norm();
-        if norm > threshold {
-            *val *= threshold / norm;
-        }
-    }
+    clip_gradients_bias_by_global_norm(gradients, 2.0);
 }
 
 pub fn clip_gradients_by_global_norm(weight_gradients: &mut Vec<Vec<Complex<f64>>>, max_norm: f64) {

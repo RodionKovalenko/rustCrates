@@ -7,7 +7,7 @@ use crate::{
         network_components::{gradient_struct::Gradient, layer::LayerType, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
         utils::{
             activation::softmax_complex_padding_real,
-            adam_w::calculate_adam_w,
+            adam_w::{calculate_adam_w},
             derivative::{backpropagate_softmax_masked_real, softmax_derivative_complex_jacobian},
             matrix::{add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_gradients, conjugate_transpose, get_reduced_matrix, is_nan_or_inf, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
             weights_initializer::initialize_weights_complex,

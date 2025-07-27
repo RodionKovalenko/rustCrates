@@ -102,49 +102,37 @@ pub fn calculate_adam_w_bias(bias: &[Complex<f64>], gradient: &[Complex<f64>], p
     updated_bias
 }
 
-pub fn average_gradient_polar(gradients: &Vec<Vec<Complex<f64>>>, batch_size: f64) -> Vec<Vec<Complex<f64>>> {
-    let rows = gradients.len();
-    let cols = gradients[0].len();
+pub fn average_gradient_polar(sums: &[Vec<Complex<f64>>], batch_size: f64) -> Vec<Vec<Complex<f64>>> {
+    let rows = sums.len();
+    let cols = sums[0].len();
 
-    let mut averaged: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
+    let mut out = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
 
     for i in 0..rows {
         for j in 0..cols {
-            let mut sum_magnitude = 0.0;
-            let mut sum_angle = 0.0;
-
-            let grad = gradients[i][j];
-            sum_magnitude += grad.norm();
-            sum_angle += grad.arg();
-
-            let mean_magnitude = sum_magnitude / batch_size;
-            let mean_angle = sum_angle / batch_size;
-
-            averaged[i][j] = Complex::from_polar(mean_magnitude, mean_angle);
+            let s = sums[i][j];
+            // 1) Cartesian mean:
+            let mean_re = s.re / batch_size;
+            let mean_im = s.im / batch_size;
+            // 2) Polar conversion:
+            let mag = (mean_re.powi(2) + mean_im.powi(2)).sqrt();
+            let ang = mean_im.atan2(mean_re);
+            out[i][j] = Complex::from_polar(mag, ang);
         }
     }
 
-    averaged
+    out
 }
 
-pub fn average_gradient_polar_1d(gradients: &Vec<Complex<f64>>, batch_size: f64) -> Vec<Complex<f64>> {
-    let rows = gradients.len();
-
-    let mut averaged: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); rows];
-
-    for i in 0..rows {
-        let mut sum_magnitude = 0.0;
-        let mut sum_angle = 0.0;
-
-        let grad = gradients[i];
-        sum_magnitude += grad.norm();
-        sum_angle += grad.arg();
-
-        let mean_magnitude = sum_magnitude / batch_size;
-        let mean_angle = sum_angle / batch_size;
-
-        averaged[i] = Complex::from_polar(mean_magnitude, mean_angle);
-    }
-
-    averaged
+/// 1D version: same thing but for a flat Vec of summed gradients.
+pub fn average_gradient_polar_1d(sums: &[Complex<f64>], batch_size: f64) -> Vec<Complex<f64>> {
+    sums.iter()
+        .map(|&s| {
+            let mean_re = s.re / batch_size;
+            let mean_im = s.im / batch_size;
+            let mag = (mean_re.powi(2) + mean_im.powi(2)).sqrt();
+            let ang = mean_im.atan2(mean_re);
+            Complex::from_polar(mag, ang)
+        })
+        .collect()
 }

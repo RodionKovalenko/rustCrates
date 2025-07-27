@@ -23,7 +23,10 @@ use crate::{
             tokenizer::{detokenize, tokenize_batch},
         },
     },
-    utils::{data_converter::convert_c_to_f64_3d, sampling_methods::{get_target_predictions, greedy_decoding}},
+    utils::{
+        data_converter::convert_c_to_f64_3d,
+        sampling_methods::{get_target_predictions, greedy_decoding},
+    },
 };
 
 pub const MAX_CONTEXT_WINDOW_SIZE: usize = 512;
