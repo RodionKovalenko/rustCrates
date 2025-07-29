@@ -24,6 +24,7 @@ pub struct DiscreteWaveletLayer {
     pub wavelet_size: usize,
     pub compression_levels: usize,
     pub norm_layer: Option<LayerEnum>,
+    pub add_details: bool,
 
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
@@ -68,8 +69,9 @@ impl DiscreteWaveletLayer {
             time_step: 0,
             wavelet: DiscreteWaveletType::DB6,
             wavelet_size: 32,
-            compression_levels: 3,
+            compression_levels: 6,
             wavelet_mode: WaveletMode::ZERO,
+            add_details: true,
             is_full_mode: false,
             details_batch: None,
             compression_dims: None,
@@ -281,8 +283,11 @@ impl DiscreteWaveletLayer {
             let trend = transpose(&ll_hh[0]);
             details = transpose(&ll_hh[1]);
 
-            wav_out = trend.clone();
-            //wav_out = add_matrix_2d_c(&trend, &details);
+            if self.add_details {
+                wav_out = add_matrix_2d_c(&trend, &details);
+            } else {
+                wav_out = trend.clone();
+            }
 
             compression_dim.push(trend.len());
         }
@@ -298,8 +303,14 @@ impl DiscreteWaveletLayer {
 
         for _l in (0.._compression_dim.len()).rev() {
             for i in 0..gradient_transp.len() {
-                let detail_extension: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); _compression_dim[_l]];
-                //let detail_extension: Vec<Complex<f64>> = gradient_transp[i].to_vec();
+                let detail_extension: Vec<Complex<f64>>;
+
+                if self.add_details {
+                    detail_extension = gradient_transp[i].to_vec();
+                } else {
+                    detail_extension = vec![Complex::new(0.0, 0.0); _compression_dim[_l]];
+                }
+
                 gradient_transp[i].extend_from_slice(&detail_extension);
             }
 

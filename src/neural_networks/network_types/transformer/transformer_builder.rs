@@ -1,7 +1,10 @@
 use crate::neural_networks::{
     network_components::{embedding_layer::EmbeddingLayer, layer::LayerEnum, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
     network_types::{
-        feedforward_layer::FeedForwardLayer, neural_network_generic::{create, NeuralNetwork, OperationMode}, wavelet_complex_layer::ComplexWaveletLayer, wavelet_discrete_layer::DiscreteWaveletLayer, wavelet_network::DECOMPOSITION_LEVELS
+        feedforward_layer::FeedForwardLayer,
+        neural_network_generic::{create, NeuralNetwork, OperationMode},
+        wavelet_discrete_layer::DiscreteWaveletLayer,
+        wavelet_network::DECOMPOSITION_LEVELS,
     },
 };
 
@@ -31,14 +34,15 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
 
     layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
     layers.push(LayerEnum::DiscreteWavelet(Box::new(DiscreteWaveletLayer::new())));
-    // layers.push(LayerEnum::Wavelet(Box::new(ComplexWaveletLayer::new())));
+    //layers.push(LayerEnum::Wavelet(Box::new(ComplexWaveletLayer::new())));
     layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
 
     let rows: usize = embedding_dim_compressed;
     // Transformer block start
     let num_self_attention_layer: usize = 1;
+    let origin_hidden_dim = 1024;
     for _i in 0..num_self_attention_layer {
-        let num_attention_heads: usize = 2;
+        let num_attention_heads: usize = 4;
 
         // Colums are divided into number of heads
         let cols: usize = embedding_dim_compressed;
@@ -46,7 +50,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
         let attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
         layers.push(LayerEnum::SelfAttention(Box::new(attention_layer)));
 
-        let hidden_dim = 5096;
+        let hidden_dim = origin_hidden_dim * (_i + 1);
 
         let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
         layers.push(LayerEnum::FeedForward(Box::new(ffn_layer)));
