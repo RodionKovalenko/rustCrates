@@ -29,7 +29,7 @@ use crate::{
     },
 };
 
-pub const MAX_CONTEXT_WINDOW_SIZE: usize = 512;
+pub const MAX_CONTEXT_WINDOW_SIZE: usize = 5120;
 pub const CONTEXT_OVERLAPPING: usize = 450;
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize, batch_size: usize) {
