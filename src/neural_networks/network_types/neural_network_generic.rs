@@ -64,7 +64,7 @@ impl NeuralNetwork {
 
         update_learning_rate(self, new_learning_rate);
 
-        if epoch % step_size == 0 {
+        if epoch % step_size == 0 && epoch > 0 {
             println!("initial learning rate is: {:?}", self.learning_rate);
             println!("new learning rate is: {:?}", new_learning_rate);
         }

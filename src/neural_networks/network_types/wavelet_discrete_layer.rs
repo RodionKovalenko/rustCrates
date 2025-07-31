@@ -114,7 +114,11 @@ impl DiscreteWaveletLayer {
                     let mut compression_dims: Vec<usize> = vec![];
 
                     if !forward_only || (forward_only && time_step == 0) {
-                        let (input_only, target, pad_inp_mask) = self.separate_input_target(input, target_ids, padding_mask);
+                        let (mut input_only, target, pad_inp_mask) = self.separate_input_target(input, target_ids, padding_mask);
+
+                        if input_only.is_empty() {
+                            input_only = input.clone();
+                        }
                         let (new_trend, _new_details, compression_dim) = self.compress_partial(&input_only);
 
                         compression_dims = compression_dim;
