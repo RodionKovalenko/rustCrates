@@ -3,6 +3,7 @@ use crate::neural_networks::{
     network_types::{
         feedforward_layer::FeedForwardLayer,
         neural_network_generic::{create, NeuralNetwork, OperationMode},
+        wavelet_complex_layer::ComplexWaveletLayer,
         wavelet_discrete_layer::DiscreteWaveletLayer,
         wavelet_network::DECOMPOSITION_LEVELS,
     },
@@ -34,12 +35,12 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
 
     layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
     layers.push(LayerEnum::DiscreteWavelet(Box::new(DiscreteWaveletLayer::new())));
-    //layers.push(LayerEnum::Wavelet(Box::new(ComplexWaveletLayer::new())));
     layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
+    layers.push(LayerEnum::Wavelet(Box::new(ComplexWaveletLayer::new())));
 
     let rows: usize = embedding_dim_compressed;
     // Transformer block start
-    let num_self_attention_layer: usize = 1;
+    let num_self_attention_layer: usize = 4;
     let origin_hidden_dim = 1024;
     for _i in 0..num_self_attention_layer {
         let num_attention_heads: usize = 4;
@@ -54,8 +55,10 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
 
         let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
         layers.push(LayerEnum::FeedForward(Box::new(ffn_layer)));
+        layers.push(LayerEnum::Wavelet(Box::new(ComplexWaveletLayer::new())));
     }
     // Transformer block end
+
     let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
     let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode);
 
