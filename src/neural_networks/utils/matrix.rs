@@ -661,23 +661,90 @@ pub fn add_vectors<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<T>, matrix
 
 pub fn average_vector_by_scalar<T>(matrix_a: &Vec<T>, scalar: f64) -> Vec<T>
 where
-    T: Debug + Clone + Div<f64, Output = T>,
+    T: PolarConvertible + Debug + Clone + Div<f64, Output = T>,
 {
-    matrix_a.iter().map(|val| val.clone() / scalar).collect()
+   matrix_a.iter().map(|val| val.clone() / scalar).collect()
+   //average_gradient_polar_1d_generic(matrix_a, scalar)
 }
 
 pub fn average_matrix_by_scalar<T>(matrix_a: &Vec<Vec<T>>, scalar: f64) -> Vec<Vec<T>>
 where
-    T: Debug + Clone + Div<f64, Output = T>,
+    T: PolarConvertible + Debug + Clone + Div<f64, Output = T>,
 {
-    matrix_a.iter().map(|val| average_vector_by_scalar(val, scalar)).collect()
+    matrix_a.iter().map(|val| average_vector_by_scalar(val, scalar * matrix_a.len() as f64)).collect()
+    //average_gradient_polar_generic(matrix_a, scalar)
 }
 
 pub fn average_matrix_3d_by_scalar<T>(matrix_a: &Vec<Vec<Vec<T>>>, scalar: f64) -> Vec<Vec<Vec<T>>>
 where
-    T: Debug + Clone + Div<f64, Output = T>,
+    T: PolarConvertible + Debug + Clone + Div<f64, Output = T>,
 {
     matrix_a.iter().map(|val| average_matrix_by_scalar(val, scalar)).collect()
+}
+
+pub trait PolarConvertible: Clone {
+    fn re(&self) -> f64;
+    fn im(&self) -> f64;
+    fn from_polar(magnitude: f64, angle: f64) -> Self;
+}
+
+impl PolarConvertible for Complex<f64> {
+    fn re(&self) -> f64 {
+        self.re
+    }
+
+    fn im(&self) -> f64 {
+        self.im
+    }
+
+    fn from_polar(magnitude: f64, angle: f64) -> Self {
+        Complex::from_polar(magnitude, angle)
+    }
+}
+
+impl PolarConvertible for f64 {
+    fn re(&self) -> f64 {
+        *self
+    }
+
+    fn im(&self) -> f64 {
+        0.0
+    }
+
+    fn from_polar(magnitude: f64, angle: f64) -> Self {
+        Complex::from_polar(magnitude, angle).re
+    }
+}
+
+pub fn average_gradient_polar_generic<T: PolarConvertible>(sums: &[Vec<T>], batch_size: f64) -> Vec<Vec<T>> {
+    let rows = sums.len();
+    let cols = sums[0].len();
+    let mut out = vec![vec![]; rows];
+
+    for i in 0..rows {
+        for j in 0..cols {
+            let s = &sums[i][j];
+            let mean_re = s.re() / batch_size;
+            let mean_im = s.im() / batch_size;
+            let mag = (mean_re.powi(2) + mean_im.powi(2)).sqrt();
+            let ang = mean_im.atan2(mean_re);
+            out[i].push(T::from_polar(mag, ang));
+        }
+    }
+
+    out
+}
+
+pub fn average_gradient_polar_1d_generic<T: PolarConvertible>(sums: &[T], batch_size: f64) -> Vec<T> {
+    sums.iter()
+        .map(|s| {
+            let mean_re = s.re() / batch_size;
+            let mean_im = s.im() / batch_size;
+            let mag = (mean_re.powi(2) + mean_im.powi(2)).sqrt();
+            let ang = mean_im.atan2(mean_re);
+            T::from_polar(mag, ang)
+        })
+        .collect()
 }
 
 pub fn multiply_scalar_with_matrix<T>(scalar: T, matrix: &Vec<Vec<T>>) -> Vec<Vec<T>>
@@ -757,11 +824,11 @@ pub fn get_reduced_matrix(matrix: &Vec<Vec<Complex<f64>>>, num_rows: usize, num_
 }
 
 pub fn clip_gradients(gradients: &mut Vec<Vec<Complex<f64>>>, _threshold: f64) {
-    clip_gradients_by_global_norm(gradients, 2.0);
+    clip_gradients_by_global_norm(gradients, 1250.0);
 }
 
 pub fn clip_gradient_1d(gradients: &mut Vec<Complex<f64>>, _threshold: f64) {
-    clip_gradients_bias_by_global_norm(gradients, 2.0);
+    clip_gradients_bias_by_global_norm(gradients, 1250.0);
 }
 
 pub fn clip_gradients_by_global_norm(weight_gradients: &mut Vec<Vec<Complex<f64>>>, max_norm: f64) {
