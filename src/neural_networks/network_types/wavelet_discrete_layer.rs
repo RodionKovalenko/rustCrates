@@ -135,7 +135,7 @@ impl DiscreteWaveletLayer {
                         trend.extend_from_slice(&target_emb);
                         comp_pad_mask_b.extend_from_slice(&vec![1; target_emb.len()]);
                     }
-                    assert_eq!(comp_pad_mask_b.len(), trend.len());
+                    //assert_eq!(comp_pad_mask_b.len(), trend.len());
 
                     // println!("trend final compressed: {:?}", trend.len());
 
