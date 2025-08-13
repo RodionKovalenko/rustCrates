@@ -65,7 +65,7 @@ mod test_norm_layer {
 
             let softmax_batch_output = softmax_layer.forward(&linear_layer_output.get_output_batch(), Some(padding_mask_batch.clone()));
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, _batch_size);
 
             loss
         };

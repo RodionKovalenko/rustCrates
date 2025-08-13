@@ -55,26 +55,18 @@ impl SelfAttentionLayer {
 impl SelfAttentionLayer {
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
         let input_batch = layer_input.get_input_batch();
-        let padding_mask_batch = layer_input.get_padding_mask_batch();
-        let forward_only = layer_input.get_forward_only();
-        let calculate_gradient = layer_input.get_calculate_gradient();
 
         self.input_batch = Some(input_batch.clone());
         self.time_step = layer_input.get_time_step();
 
         let batch_size = input_batch.len();
         let sequence_size = input_batch[0].len();
-        let target_batch_ids = layer_input.get_target_batch_ids();
 
         let mut batch_output: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![]; sequence_size]; batch_size];
+        let batch_size = layer_input.get_batch_size();
+
         // Apply the attention mechanism for each head
-        let mut layer_input = LayerInput::new_default();
-        layer_input.set_forward_only(forward_only);
-        layer_input.set_time_step(self.time_step);
-        layer_input.set_input_batch(input_batch.clone());
-        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
-        layer_input.set_target_batch_ids(target_batch_ids);
-        layer_input.set_calculate_gradient(calculate_gradient);
+        let mut layer_input = layer_input.clone();
 
         //println!("padding mask batch: {:?}", &padding_mask_batch);
         let attention_head_outputs: Vec<_> = self

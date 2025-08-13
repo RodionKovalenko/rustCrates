@@ -62,7 +62,7 @@ pub mod test_ffn_layer {
 
             let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, input.len());
 
             loss
         };
@@ -95,7 +95,7 @@ pub mod test_ffn_layer {
             let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, input.len());
 
             loss
         };
@@ -158,7 +158,7 @@ pub mod test_ffn_layer {
 
             let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, input.len());
 
             loss
         };
@@ -215,7 +215,7 @@ pub mod test_ffn_layer {
 
             let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, input.len());
 
             loss
         };
@@ -255,7 +255,7 @@ pub mod test_ffn_layer {
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
             let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, input.len());
 
             loss
         };

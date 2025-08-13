@@ -71,7 +71,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             }
 
             layer_input.set_batch_ids(batch_ids);
-            layer_input.set_time_step(epoch);
+            layer_input.set_time_step(epoch + 1);
             layer_input.set_batch_size(batch_size);
             layer_input.set_forward_only(false);
             layer_input.set_calculate_gradient(true);
@@ -79,12 +79,12 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             layer_input.set_record_index(record_ind);
 
             transformer_network.minibatch_size = batch_size;
-            transformer_network.time_step = epoch;
+            transformer_network.time_step = epoch + 1;
 
             let network_output = predict(transformer_network, &layer_input);
             let (predicted_softmax_batch, padding_mask_batch) = (network_output.get_output_batch_f64(), network_output.get_padding_mask_batch());
 
-            let loss = cross_entropy_loss_batch(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
+            let loss = cross_entropy_loss_batch(&predicted_softmax_batch, &target_ids, &padding_mask_batch, transformer_network.get_minibatch_size());
             total_loss += loss;
 
             if epoch > 0 && epoch == (num_epochs - 1) || loss.norm() <= loss_threshold {
@@ -631,11 +631,16 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     //println!("backward linear start");
                     let gradient_batch: Gradient = wavelet_layer.backward(&previous_gradient);
                     gradient = Some(gradient_batch);
+
+                    if update_gradients {
+                        wavelet_layer.update_parameters();
+                    }
                 } else {
                     println!("No previous gradient in Linear Layer");
                 }
             }
             LayerEnum::Softmax(softmax_layer) => {
+                softmax_layer.batch_size = batch_size;
                 //println!("backward softmax start");
                 let gradient_batch: Gradient = softmax_layer.backward(target_batch_ids);
                 gradient = Some(gradient_batch);
@@ -679,8 +684,8 @@ pub fn cross_entropy_loss_batch(
     predicted_softmax_batch: &Vec<Vec<Vec<f64>>>, // Complex-valued softmax output
     targets: &Vec<Vec<u32>>,
     padding_mask: &Vec<Vec<u32>>,
+    batch_size: usize,
 ) -> Complex<f64> {
-    let batch_len = predicted_softmax_batch.len() as f64;
     let mut total_loss: Complex<f64> = Complex::new(0.0, 0.0);
 
     // println!("softmax batch inside function cross entropy batch: {:?}", &predicted_softmax_batch);
@@ -688,7 +693,7 @@ pub fn cross_entropy_loss_batch(
         total_loss += cross_entropy_loss(prediction, &targets[batch_ind], &padding_mask[batch_ind]);
     }
 
-    total_loss / batch_len
+    total_loss / batch_size as f64
 }
 
 fn cross_entropy_loss(predictions: &Vec<Vec<f64>>, target_tokens: &Vec<u32>, padding_mask: &Vec<u32>) -> f64 {

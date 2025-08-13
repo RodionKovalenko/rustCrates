@@ -663,8 +663,8 @@ pub fn average_vector_by_scalar<T>(matrix_a: &Vec<T>, scalar: f64) -> Vec<T>
 where
     T: PolarConvertible + Debug + Clone + Div<f64, Output = T>,
 {
-   matrix_a.iter().map(|val| val.clone() / scalar).collect()
-   //average_gradient_polar_1d_generic(matrix_a, scalar)
+    matrix_a.iter().map(|val| val.clone() / scalar).collect()
+    //average_gradient_polar_1d_generic(matrix_a, scalar)
 }
 
 pub fn average_matrix_by_scalar<T>(matrix_a: &Vec<Vec<T>>, scalar: f64) -> Vec<Vec<T>>
@@ -823,62 +823,40 @@ pub fn get_reduced_matrix(matrix: &Vec<Vec<Complex<f64>>>, num_rows: usize, num_
         .collect()
 }
 
-pub fn clip_gradients(gradients: &mut Vec<Vec<Complex<f64>>>, _threshold: f64) {
-    clip_gradients_by_global_norm(gradients, 1250.0);
-}
+pub fn clip_gradients(_gradients: &mut Vec<Vec<Complex<f64>>>, _threshold: f64) {}
 
-pub fn clip_gradient_1d(gradients: &mut Vec<Complex<f64>>, _threshold: f64) {
-    clip_gradients_bias_by_global_norm(gradients, 1250.0);
-}
+pub fn clip_gradient_1d(_gradients: &mut Vec<Complex<f64>>, _threshold: f64) {}
 
-pub fn clip_gradients_by_global_norm(weight_gradients: &mut Vec<Vec<Complex<f64>>>, max_norm: f64) {
-    // Calculate total gradient norm across ALL parameters
-    let mut total_norm_squared = 0.0;
+pub fn compute_global_norm(grads: &Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Complex<f64>>) -> f64 {
+    let mut total_norm = 0.0;
 
-    // Sum weight gradient norms
-    for layer in weight_gradients.iter() {
-        for grad in layer.iter() {
-            total_norm_squared += grad.norm_sqr();
+    for g in grads {
+        for row in g.iter() {
+            for val in row.iter() {
+                total_norm += val.norm_sqr();
+            }
         }
     }
 
-    let total_norm = total_norm_squared.sqrt();
+    for val in bias.iter() {
+        total_norm += val.norm_sqr();
+    }
 
-    // Only clip if norm exceeds threshold
+    total_norm.sqrt()
+}
+
+pub fn clip_all_gradients_by_global_norm_2d(grads: &mut Vec<Vec<Vec<Complex<f64>>>>, bias: &mut Vec<Complex<f64>>, total_norm: f64, max_norm: f64) {
     if total_norm > max_norm {
-        let clip_coeff = max_norm / total_norm;
-
-        // Scale ALL gradients by the same factor
-        for layer in weight_gradients.iter_mut() {
-            for grad in layer.iter_mut() {
-                *grad *= clip_coeff;
+        let scale = max_norm / total_norm;
+        for g in grads {
+            for row in g.iter_mut() {
+                for val in row.iter_mut() {
+                    *val *= scale;
+                }
             }
         }
 
-        //println!("Clipped gradients: norm {:.3e} -> {:.3e}", total_norm, max_norm);
-    }
-}
-
-pub fn clip_gradients_bias_by_global_norm(bias_gradients: &mut Vec<Complex<f64>>, max_norm: f64) {
-    // Calculate total gradient norm across ALL parameters
-    let mut total_norm_squared = 0.0;
-
-    // Sum bias gradient norms
-    for grad in bias_gradients.iter() {
-        total_norm_squared += grad.norm_sqr();
-    }
-
-    let total_norm = total_norm_squared.sqrt();
-
-    // Only clip if norm exceeds threshold
-    if total_norm > max_norm {
-        let clip_coeff = max_norm / total_norm;
-
-        for grad in bias_gradients.iter_mut() {
-            *grad *= clip_coeff;
-        }
-
-        //println!("Clipped gradients: norm {:.3e} -> {:.3e}", total_norm, max_norm);
+        bias.iter_mut().for_each(|val| *val *= scale);
     }
 }
 

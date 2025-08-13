@@ -1,12 +1,15 @@
-use crate::neural_networks::{network_components::{
-    add_rms_norm_layer::RMSNormLayer,
-    gradient_struct::Gradient,
-    layer::{ActivationType, Layer, LayerEnum, LayerType},
-    layer_input_struct::LayerInput,
-    layer_output_struct::LayerOutput,
-    linear_layer::LinearLayer,
-    norm_layer::NormalNormLayer,
-}, utils::matrix::add_matrix_3d};
+use crate::neural_networks::{
+    network_components::{
+        add_rms_norm_layer::RMSNormLayer,
+        gradient_struct::Gradient,
+        layer::{ActivationType, Layer, LayerEnum, LayerType},
+        layer_input_struct::LayerInput,
+        layer_output_struct::LayerOutput,
+        linear_layer::LinearLayer,
+        norm_layer::NormalNormLayer,
+    },
+    utils::matrix::add_matrix_3d,
+};
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +29,8 @@ pub struct FeedForwardLayer {
     pub padding_mask_batch: Option<Vec<Vec<u32>>>,
     #[serde(skip)]
     pub time_step: usize,
+    #[serde(skip)]
+    pub batch_size: usize,
 }
 
 impl FeedForwardLayer {
@@ -51,6 +56,7 @@ impl FeedForwardLayer {
             output_batch: None,
             padding_mask_batch: None,
             time_step: 0,
+            batch_size: 0,
         }
     }
 }
@@ -59,6 +65,7 @@ impl FeedForwardLayer {
 impl FeedForwardLayer {
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
         let input_batch = input.get_input_batch();
+        self.batch_size = input.get_batch_size();
 
         self.input_batch = Some(input_batch.clone());
         self.time_step = input.get_time_step();
@@ -79,6 +86,7 @@ impl FeedForwardLayer {
                     dense_layer_input.set_input_batch(output.clone());
                     dense_layer_input.set_padding_mask_batch(padding_mask_batch.clone());
                     dense_layer_input.set_time_step(self.time_step);
+                    dense_layer_input.set_batch_size(self.batch_size);
 
                     let output_dense = dense_layer.forward(&dense_layer_input);
                     output = output_dense.get_output_batch();
@@ -88,6 +96,7 @@ impl FeedForwardLayer {
                     let mut linear_layer_input = LayerInput::new_default();
                     linear_layer_input.set_input_batch(output.clone());
                     linear_layer_input.set_time_step(self.time_step);
+                    linear_layer_input.set_batch_size(self.batch_size);
 
                     let output_linear = linear_layer.forward(&linear_layer_input);
                     output = output_linear.get_output_batch();
@@ -134,7 +143,7 @@ impl FeedForwardLayer {
         let mut gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(prev_gradients.clone());
 
-        let mut output_gradient_norm =  vec![];
+        let mut output_gradient_norm = vec![];
 
         //Apply RMSNorm backpropagation if it's present
         if let Some(norm_layer) = &mut self.norm_layer {

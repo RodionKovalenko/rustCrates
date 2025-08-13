@@ -47,6 +47,7 @@ impl MultiLinearLayer {
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = input.get_input_batch();
         self.input_batch = Some(input_batch.clone());
         self.time_step = input.get_time_step();
+        self.batch_size = input.get_batch_size();
 
         let batch_size = input_batch.len();
         let seq_len = input_batch[0].len();
@@ -110,12 +111,6 @@ impl MultiLinearLayer {
         if self.gradient.is_some() {
             let previous_gradient = self.gradient.as_ref().expect("");
             gradient_input_batch = add_matrix_3d(&gradient_input_batch, &previous_gradient.get_gradient_input_batch());
-
-            if self.batch_size == 0 {
-                self.batch_size = 2;
-            } else {
-                self.batch_size += 1;
-            }
         }
 
         gradient.set_gradient_input_batch(gradient_input_batch);

@@ -142,7 +142,7 @@ mod test_transformer {
             let network_output = predict(&mut transformer_network, &layer_input);
             let (softmax_batch_output, padding_mask_batch) = (network_output.get_output_batch_f64(), network_output.get_padding_mask_batch());
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_ids, &padding_mask_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_ids, &padding_mask_batch, batch_ids.len());
 
             loss
         };
@@ -282,7 +282,7 @@ mod test_transformer {
             let output_linear = linear_layer.forward(&layer_input);
             let output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()));
 
-            let loss = cross_entropy_loss_batch(&output_softmax, &target_token_ids, &padding_mask_batch);
+            let loss = cross_entropy_loss_batch(&output_softmax, &target_token_ids, &padding_mask_batch, batch_size);
 
             loss
         };

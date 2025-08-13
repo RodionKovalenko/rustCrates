@@ -3,7 +3,6 @@ use crate::neural_networks::{
     network_types::{
         feedforward_layer::FeedForwardLayer,
         neural_network_generic::{create, NeuralNetwork, OperationMode},
-        wavelet_complex_layer::ComplexWaveletLayer,
         wavelet_discrete_layer::DiscreteWaveletLayer,
         wavelet_network::DECOMPOSITION_LEVELS,
     },
@@ -17,7 +16,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let number_of_hidden_layers: usize = 1;
     let number_of_hidden_neurons: usize = 32;
     let minibatch_size: usize = 50;
-    let learning_rate: f64 = 0.01;
+    let learning_rate: f64 = 0.001;
 
     let mut transformer_network: NeuralNetwork = create(number_inputs, number_outputs, number_of_hidden_layers, number_of_hidden_neurons, minibatch_size, learning_rate);
 
@@ -35,12 +34,12 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
 
     layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
     layers.push(LayerEnum::DiscreteWavelet(Box::new(DiscreteWaveletLayer::new())));
+    //layers.push(LayerEnum::Wavelet(Box::new(ComplexWaveletLayer::new())));
     layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
-    layers.push(LayerEnum::Wavelet(Box::new(ComplexWaveletLayer::new())));
 
     let rows: usize = embedding_dim_compressed;
     // Transformer block start
-    let num_self_attention_layer: usize = 4;
+    let num_self_attention_layer: usize = 2;
     let origin_hidden_dim = 1024;
     for _i in 0..num_self_attention_layer {
         let num_attention_heads: usize = 4;
@@ -48,6 +47,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
         // Colums are divided into number of heads
         let cols: usize = embedding_dim_compressed;
 
+        //layers.push(LayerEnum::Wavelet(Box::new(ComplexWaveletLayer::new())));
         let attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
         layers.push(LayerEnum::SelfAttention(Box::new(attention_layer)));
 
@@ -55,7 +55,6 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
 
         let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
         layers.push(LayerEnum::FeedForward(Box::new(ffn_layer)));
-        layers.push(LayerEnum::Wavelet(Box::new(ComplexWaveletLayer::new())));
     }
     // Transformer block end
 

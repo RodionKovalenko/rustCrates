@@ -84,7 +84,7 @@ mod test_wavelet_discrete_layer {
             let wavelet_output = wavelet_layer.forward(&layer_input);
 
             let softmax_batch_output = softmax_layer.forward(&wavelet_output.get_output_batch(), Some(padding_mask_batch.clone()));
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
 
             loss
         };
@@ -167,7 +167,7 @@ mod test_wavelet_discrete_layer {
             let linear_output = linear_layer.forward(&layer_input);
 
             let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
 
             loss
         };

@@ -1,6 +1,8 @@
 use std::fmt::Debug;
 
 use crate::neural_networks::training::xquad_structs::{load_data_xquad_de, XQuADDataset};
+use rand::rng;
+use rand::seq::SliceRandom;
 
 // Define a generic trait for the Data structure
 pub trait DataTrait<T: Debug + Clone, O: Debug + Clone> {
@@ -40,19 +42,28 @@ impl<T: Debug + Clone, O: Debug + Clone> Dataset<T, O> {
 
     // Split the dataset into batches
     pub fn split_into_batches(&self, batch_size: usize) -> Vec<Dataset<T, O>> {
+        let mut indices: Vec<usize> = (0..self.input.len()).collect();
+        let mut rng = rng();
+        indices.shuffle(&mut rng);
+
+        let mut shuffled_input: Vec<T> = Vec::with_capacity(self.input.len());
+        let mut shuffled_target: Vec<O> = Vec::with_capacity(self.target.len());
+        for &i in &indices {
+            shuffled_input.push(self.input[i].clone());
+            shuffled_target.push(self.target[i].clone());
+        }
+
         let mut batches = Vec::new();
-        let num_batches = (self.input.len() + batch_size - 1) / batch_size; // Round up division
+        let num_batches = (shuffled_input.len() + batch_size - 1) / batch_size;
 
         for batch_idx in 0..num_batches {
             let start_idx = batch_idx * batch_size;
-            let end_idx = ((batch_idx + 1) * batch_size).min(self.input.len());
+            let end_idx = ((batch_idx + 1) * batch_size).min(shuffled_input.len());
 
-            let batch_input: Vec<T> = self.input[start_idx..end_idx].to_vec();
-            let batch_target: Vec<O> = self.target[start_idx..end_idx].to_vec();
+            let batch_input: Vec<T> = shuffled_input[start_idx..end_idx].to_vec();
+            let batch_target: Vec<O> = shuffled_target[start_idx..end_idx].to_vec();
 
             let batch = Dataset::new(batch_input, batch_target);
-
-            //println!("batch dataset: {:?}", &batch);
             batches.push(batch);
         }
 
