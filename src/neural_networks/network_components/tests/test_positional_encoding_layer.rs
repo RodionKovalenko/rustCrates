@@ -108,7 +108,7 @@ mod test_positional_encoding_layer {
             let wavelet_output = positional_enc_layer.forward(&layer_input);
 
             let softmax_batch_output = softmax_layer.forward(&wavelet_output, Some(padding_mask_batch.clone()));
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
 
             loss
         };

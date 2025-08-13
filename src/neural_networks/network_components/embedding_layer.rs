@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use crate::database::sled_db::{get_db_embedding, get_storage_path_embedding_db};
 use crate::neural_networks::network_types::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
-use crate::neural_networks::utils::matrix::{add_matrix_3d, clip_gradients, is_nan_or_inf};
+use crate::neural_networks::utils::matrix::{add_matrix_3d, clip_all_gradients_by_global_norm_2d, compute_global_norm, is_nan_or_inf};
 use crate::utils::normalization::normalize;
 
 use super::gradient_struct::Gradient;
@@ -25,6 +25,8 @@ pub struct EmbeddingLayer {
     pub vocab_size: usize,
     pub embedding_dim: usize,
     pub learning_rate: f64,
+    pub smoothing: f64,
+    pub ema: f64,
 
     #[serde(skip)]
     pub gradient: Option<Gradient>,
@@ -62,6 +64,8 @@ impl EmbeddingLayer {
             previous_gradient: None,
             time_step: 0,
             batch_size: 0,
+            smoothing: 0.99,
+            ema: 0.0,
             cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -89,6 +93,8 @@ impl EmbeddingLayer {
             learning_rate: 0.001,
             time_step: 0,
             batch_size: 0,
+            smoothing: 0.99,
+            ema: 0.0,
             cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -165,6 +171,7 @@ impl EmbeddingLayer {
         let target_batch_ids = layer_input.get_target_batch_ids();
         let db: &Db = get_db_embedding();
         self.time_step = layer_input.get_time_step();
+        self.batch_size = token_input_ids.len();
 
         let (token_input_batch_padded, _padding_mask) = EmbeddingLayer::apply_padding_to_batch(&token_input_ids, &target_batch_ids);
         let embedding_dim = self.embedding_dim;
@@ -223,12 +230,6 @@ impl EmbeddingLayer {
         if self.gradient.is_some() {
             let previous_gradient = self.gradient.as_ref().expect("");
             previous_grads = add_matrix_3d(&previous_grads, &previous_gradient.get_gradient_input_batch());
-
-            if self.batch_size == 0 {
-                self.batch_size = 2;
-            } else {
-                self.batch_size += 1;
-            }
         }
 
         gradient.set_gradient_input_batch(previous_grads);
@@ -249,13 +250,16 @@ impl EmbeddingLayer {
             batch_size = self.batch_size as f64;
         }
 
+        let global_norm = compute_global_norm(&previous_gradients, &vec![]);
+        self.ema = self.smoothing * self.ema + (1.0 - self.smoothing) * global_norm;
+        let max_norm = self.ema * 1.2;
+        clip_all_gradients_by_global_norm_2d(&mut previous_gradients, &mut vec![], global_norm, max_norm);
+
         // let max = previous_gradients.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
         // println!("max in backward embedding layer gradient batch: {:?}", max);
         // println!("min in backward embedding layer gradient batch: {:?}", min);
 
         for (batch_idx, token_ids) in token_id_batches.iter().enumerate() {
-            clip_gradients(&mut previous_gradients[batch_idx], 1.0);
-
             for (i, &token_id) in token_ids.iter().enumerate() {
                 let mut token_embedding: Vec<Complex<f64>> = Self::get_embedding(&db, token_id).unwrap();
 
@@ -305,6 +309,8 @@ impl EmbeddingLayer {
             learning_rate: 0.001,
             time_step: 0,
             batch_size: 0,
+            smoothing: 0.99,
+            ema: 0.0,
             cache: Arc::new(RwLock::new(HashMap::new())),
         };
         let serialized: Vec<u8> = bincode::serialize(&embedding_layer_meta).expect("Failed to serialize");

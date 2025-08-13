@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
     adam_w::{calculate_adam_w, calculate_adam_w_bias},
-    matrix::{add_matrix_2d_c, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_gradient_1d, clip_gradients, conjugate_transpose, is_nan_or_inf, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
+    matrix::{add_matrix_2d_c, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm, conjugate_transpose, is_nan_or_inf, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
     weights_initializer::initialize_weights_complex,
 };
 
@@ -20,6 +20,8 @@ pub struct LinearLayer {
     pub weights: Vec<Vec<Complex<f64>>>,
     pub learning_rate: f64,
     pub bias: Vec<Complex<f64>>,
+    pub smoothing: f64,
+    pub ema: f64,
 
     #[serde(skip)]
     pub gradients: Vec<Vec<Complex<f64>>>,
@@ -55,12 +57,15 @@ impl LinearLayer {
             previous_gradient: None,
             time_step: 0,
             batch_size: 0,
+            smoothing: 0.99,
+            ema: 0.0,
         }
     }
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = input.get_input_batch();
         self.input_batch = Some(input_batch.clone());
         self.time_step = input.get_time_step();
+        self.batch_size = input.get_batch_size();
 
         let output_batch = input_batch
             .par_iter() // Use a parallel iterator to process inputs in parallel
@@ -129,12 +134,6 @@ impl LinearLayer {
             gradient_input_batch = add_matrix_3d(&gradient_input_batch, &previous_gradient.get_gradient_input_batch());
             weight_gradients = add_matrix_3d(&weight_gradients, &previous_gradient.get_gradient_weight_batch());
             bias_gradients = add_matrix_2d_c(&bias_gradients, &previous_gradient.get_gradient_bias_batch());
-
-            if self.batch_size == 0 {
-                self.batch_size = 2;
-            } else {
-                self.batch_size += 1;
-            }
         }
         //  println!("batch size in linear layer: {}", self.batch_size);
 
@@ -149,18 +148,23 @@ impl LinearLayer {
 
     pub fn update_parameters(&mut self) {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("No Gradient found in linear layer");
-        let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
+        let (weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
 
         let input_batch = gradient.get_gradient_input_batch();
         let mut batch_size = input_batch.len() as f64;
+        let mut all_gradients = vec![weight_gradients];
+        let global_norm = compute_global_norm(&all_gradients, &bias_gradients);
+        self.ema = self.smoothing * self.ema + (1.0 - self.smoothing) * global_norm;
+        let max_norm = self.ema * 1.2;
+        clip_all_gradients_by_global_norm_2d(&mut all_gradients, &mut bias_gradients, global_norm, max_norm);
 
         if self.batch_size > 0 {
             batch_size = self.batch_size as f64;
         }
+        let weight_gradients: &Vec<Vec<Complex<f64>>> = &all_gradients[0];
 
-        let threshold = 1.0;
-        clip_gradients(&mut weight_gradients, threshold);
-        clip_gradient_1d(&mut bias_gradients, threshold);
+        gradient.set_gradient_weights(weight_gradients.clone());
+        gradient.set_gradient_bias(bias_gradients.clone());
 
         let mut prev_m_bias: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); self.bias.len()];
         let mut prev_v_bias: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); self.bias.len()];
@@ -185,7 +189,7 @@ impl LinearLayer {
             // prev_v_weights = average_gradient_polar(&previous_gradient.get_prev_v_weights(), batch_size);
 
             self.bias = calculate_adam_w_bias(&self.bias, &gradient.get_gradient_bias(), &mut prev_m_bias, &mut prev_v_bias, learning_rate, time_step);
-            self.weights = calculate_adam_w(&self.weights, &gradient.get_gradient_weights(), &mut prev_m_weights, &mut prev_v_weights, learning_rate, time_step);
+            self.weights = calculate_adam_w(&mut self.weights, &gradient.get_gradient_weights(), &mut prev_m_weights, &mut prev_v_weights, learning_rate, time_step);
         } else {
             // Update weights and biases using gradient descent
             for (i, row) in self.weights.iter_mut().enumerate() {

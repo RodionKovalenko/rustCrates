@@ -7,7 +7,7 @@ use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer::LayerType, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     utils::{
         adam_w::calculate_adam_w,
-        matrix::{add_matrix, clip_gradients, is_nan_or_inf, multiply_complex},
+        matrix::{add_matrix, clip_all_gradients_by_global_norm_2d, compute_global_norm, is_nan_or_inf, multiply_complex},
         matrix_approximation::phi_stable,
         weights_initializer::initialize_weights_complex,
     },
@@ -30,6 +30,11 @@ pub struct MaskedAttentionHeadApproximation {
 
     pub layer_type: LayerType,
     pub learning_rate: f64,
+
+    pub smoothing: f64,
+    pub ema: f64,
+
+    pub batch_size: usize,
 
     #[serde(skip)]
     pub gradient: Option<Gradient>,
@@ -105,6 +110,9 @@ impl MaskedAttentionHeadApproximation {
 
             w,
             b,
+            smoothing: 0.99,
+            ema: 0.0,
+            batch_size: 0,
 
             gradient: None,
             previous_gradient: None,
@@ -403,17 +411,26 @@ impl MaskedAttentionHeadApproximation {
     }
     pub fn update_parameters(&mut self) {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("Gradient is missing in attention head layer");
-        let (mut grad_w_q, mut grad_w_v, mut grad_w_k) = (gradient.get_gradient_weights_q(), gradient.get_gradient_weights_v(), gradient.get_gradient_weights_k());
+        let (grad_w_q, grad_w_v, grad_w_k) = (gradient.get_gradient_weights_q(), gradient.get_gradient_weights_v(), gradient.get_gradient_weights_k());
 
         let input_batch = gradient.get_gradient_input_batch();
-        let mut grad_bias_pos = gradient.get_gradient_bias_pos();
-        let batch_size = input_batch.len() as f64;
+        let grad_bias_pos = gradient.get_gradient_bias_pos();
+        let mut batch_size = input_batch.len() as f64;
 
-        let threshold = 1.0;
-        clip_gradients(&mut grad_w_q, threshold);
-        clip_gradients(&mut grad_w_v, threshold);
-        clip_gradients(&mut grad_w_k, threshold);
-        clip_gradients(&mut grad_bias_pos, threshold);
+         if self.batch_size > 0 {
+            batch_size = self.batch_size as f64;
+        }
+
+        let mut all_gradients = vec![grad_w_q, grad_w_v, grad_w_k, grad_bias_pos];
+        let global_norm = compute_global_norm(&all_gradients, &vec![]);
+        self.ema = self.smoothing * self.ema + (1.0 - self.smoothing) * global_norm;
+        let max_norm = self.ema * 1.2;
+        clip_all_gradients_by_global_norm_2d(&mut all_gradients, &mut vec![], global_norm, max_norm);
+
+        let grad_w_q = &all_gradients[0];
+        let grad_w_v = &all_gradients[1];
+        let grad_w_k = &all_gradients[2];
+        let grad_bias_pos = &all_gradients[3];
 
         let mut prev_m_weights_q: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()];
         let mut prev_v_weights_q: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()];
@@ -440,13 +457,13 @@ impl MaskedAttentionHeadApproximation {
             prev_m_weights_v = previous_gradient.get_prev_m_weigths_v();
             prev_v_weights_v = previous_gradient.get_prev_v_weigths_v();
 
-            self.weights_q = calculate_adam_w(&self.weights_q, &grad_w_q, &mut prev_m_weights_q, &mut prev_v_weights_q, learning_rate, time_step);
-            self.weights_k = calculate_adam_w(&self.weights_k, &grad_w_k, &mut prev_m_weights_k, &mut prev_v_weights_k, learning_rate, time_step);
-            self.weights_v = calculate_adam_w(&self.weights_v, &grad_w_v, &mut prev_m_weights_v, &mut prev_v_weights_v, learning_rate, time_step);
+            self.weights_q = calculate_adam_w(&mut self.weights_q, &grad_w_q, &mut prev_m_weights_q, &mut prev_v_weights_q, learning_rate, time_step);
+            self.weights_k = calculate_adam_w(&mut self.weights_k, &grad_w_k, &mut prev_m_weights_k, &mut prev_v_weights_k, learning_rate, time_step);
+            self.weights_v = calculate_adam_w(&mut self.weights_v, &grad_w_v, &mut prev_m_weights_v, &mut prev_v_weights_v, learning_rate, time_step);
 
             let seq_len = grad_bias_pos.len();
-            let bias_pos_slice: Vec<Vec<Complex<f64>>> = self.bias_pos[0..seq_len].iter().map(|row| row[0..seq_len].to_vec()).collect();
-            let updated_slice = calculate_adam_w(&bias_pos_slice, &grad_bias_pos, &mut prev_m_bias_pos, &mut prev_v_bias_pos, learning_rate, time_step);
+            let mut bias_pos_slice: Vec<Vec<Complex<f64>>> = self.bias_pos[0..seq_len].iter().map(|row| row[0..seq_len].to_vec()).collect();
+            let updated_slice = calculate_adam_w(&mut bias_pos_slice, &grad_bias_pos, &mut prev_m_bias_pos, &mut prev_v_bias_pos, learning_rate, time_step);
 
             for i in 0..seq_len {
                 for j in 0..seq_len {

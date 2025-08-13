@@ -483,4 +483,19 @@ impl DiscreteWaveletLayer {
 
         result
     }
+
+    pub fn update_parameters(&mut self) {
+         // Apply RMSNorm backpropagation if it's present
+        if let Some(layer_enum) = &mut self.norm_layer {
+            match layer_enum {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    rms_norm_layer.update_parameters();
+                }
+                LayerEnum::Norm(norm_layer) => {
+                    norm_layer.update_parameters();
+                }
+                _ => {}
+            }
+        }
+    }
 }

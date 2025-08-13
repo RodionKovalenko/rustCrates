@@ -24,6 +24,10 @@ pub struct SoftmaxLayer {
     pub gradient: Option<Gradient>,
     #[serde(skip)]
     pub padding_mask_batch: Option<Vec<Vec<u32>>>,
+    #[serde(skip)]
+    pub time_step: usize,
+    #[serde(skip)]
+    pub batch_size: usize,
 }
 
 impl SoftmaxLayer {
@@ -35,6 +39,8 @@ impl SoftmaxLayer {
             input_batch: None,
             gradient: None,
             padding_mask_batch: None,
+            time_step: 0,
+            batch_size: 1,
         }
     }
     pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>, padding_mask_option: Option<Vec<Vec<u32>>>) -> Vec<Vec<Vec<f64>>> {
@@ -69,10 +75,14 @@ impl SoftmaxLayer {
         let _input_batch: &Vec<Vec<Vec<Complex<f64>>>> = self.input_batch.as_ref().expect("Input batch is missing in softmax layer");
         let padding_mask_batch = self.padding_mask_batch.as_ref().expect("Input batch is missing in softmax layer");
 
-        let batch_size = softmax_output_batch.len();
+        let mut batch_size = self.batch_size;
         let seq_len = softmax_output_batch[0].len();
         let vocab_dim = softmax_output_batch[0][0].len();
         let mut softmax_gradient;
+
+        if softmax_output_batch.len() > batch_size {
+            batch_size = softmax_output_batch.len();
+        }
 
         let mut gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); vocab_dim]; seq_len]; batch_size];
 

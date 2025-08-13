@@ -362,7 +362,7 @@ pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
                 println!("wavelet layer,  {:?}", &_wavelet_layer.wavelet);
             }
             LayerEnum::DiscreteWavelet(_wavelet_layer) => {
-                println!("discrete wavelet layer,  {:?}", &_wavelet_layer.wavelet);
+                println!("discrete wavelet layer,  {:?}", &_wavelet_layer);
             }
             LayerEnum::Softmax(_softmax_layer) => {
                 println!("softmax layer");

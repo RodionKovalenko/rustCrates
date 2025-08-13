@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
     adam_w::calculate_adam_w_bias,
-    matrix::{add_matrix_3d, add_matrix_3d_c, add_vectors, average_vector_by_scalar, clip_gradient_1d, is_nan_or_inf},
+    matrix::{add_matrix_3d, add_matrix_3d_c, add_vectors, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm, is_nan_or_inf},
 };
 
 use super::{
@@ -19,6 +19,8 @@ pub struct NormalNormLayer {
     pub beta: Vec<Complex<f64>>,
     pub epsilon: f64,
     pub learning_rate: f64,
+    pub smoothing: f64,
+    pub ema: f64,
 
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
@@ -65,6 +67,8 @@ impl NormalNormLayer {
             output_batch: None,
             time_step: 0,
             batch_size: 0,
+            smoothing: 0.99,
+            ema: 0.0,
         }
     }
 
@@ -95,6 +99,8 @@ impl NormalNormLayer {
         let mut normalized_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
         let mut mean_batch: Vec<Vec<Complex<f64>>> = Vec::new();
         let mut var_batch: Vec<Vec<Complex<f64>>> = Vec::new();
+    
+        self.batch_size = layer_input.get_batch_size();
 
         if self.gamma.len() != input_batch[0][0].len() {
             self.gamma = vec![Complex::new(1.0, 0.0); input_batch[0][0].len()];
@@ -267,12 +273,6 @@ impl NormalNormLayer {
             input_grads = add_matrix_3d(&input_grads, &previous_gradient.get_gradient_input_batch());
             gamma_grad = add_vectors(&gamma_grad, &previous_gradient.get_gradient_gamma());
             beta_grad = add_vectors(&beta_grad, &previous_gradient.get_gradient_beta());
-
-            if self.batch_size == 0 {
-                self.batch_size = 2;
-            } else {
-                self.batch_size += 1;
-            }
         }
 
         let mut gradient = Gradient::new_default();
@@ -291,9 +291,16 @@ impl NormalNormLayer {
         let mut gradient_beta = gradient.get_gradient_beta();
         let input_batch = self.input_batch.as_ref().expect("no input batch in norm layer");
 
-        let threshold = 1.0;
-        clip_gradient_1d(&mut gradient_gamma, threshold);
-        clip_gradient_1d(&mut gradient_beta, threshold);
+        let all_bias = add_vectors(&gradient_gamma, &gradient_beta);
+        let global_norm = compute_global_norm(&vec![], &all_bias);
+        self.ema = self.smoothing * self.ema + (1.0 - self.smoothing) * global_norm;
+        let max_norm = self.ema * 1.2;
+
+        clip_all_gradients_by_global_norm_2d(&mut vec![], &mut gradient_gamma, global_norm, max_norm);
+        clip_all_gradients_by_global_norm_2d(&mut vec![], &mut gradient_beta, global_norm, max_norm);
+
+        gradient.set_gradient_beta(gradient_beta.clone());
+        gradient.set_gradient_gamma(gradient_gamma.clone());
 
         let mut batch_size = input_batch.len() as f64;
 

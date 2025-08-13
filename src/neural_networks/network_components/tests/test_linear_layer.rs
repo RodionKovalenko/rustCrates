@@ -52,7 +52,7 @@ mod test_linear_layer {
             let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
 
             loss
         };
@@ -78,7 +78,7 @@ mod test_linear_layer {
             let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
 
             loss
         };
@@ -134,7 +134,7 @@ mod test_linear_layer {
             let linear_output = linear_layer.forward(&layer_input);
             let softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
 
             loss
         };
@@ -161,7 +161,7 @@ mod test_linear_layer {
             let linear_output = linear_layer.forward(&layer_input);
             let softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
 
             loss
         };

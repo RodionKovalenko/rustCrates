@@ -53,7 +53,7 @@ mod test_softmax_layer {
             let softmax_batch_output = softmax_layer.forward(&input, None);
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch);
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
 
             loss
         };
