@@ -1,11 +1,16 @@
 use crate::neural_networks::{
     network_components::multi_linear_layer::MultiLinearLayer,
-    network_types::{feedforward_layer::FeedForwardLayer, transformer::self_attention_layer::SelfAttentionLayer, wavelet_complex_layer::ComplexWaveletLayer, wavelet_discrete_layer::DiscreteWaveletLayer},
+    network_types::{
+        feedforward_layer::FeedForwardLayer,
+        transformer::{self_attention_layer::SelfAttentionLayer, transformer_network::EMA_SCALER},
+        wavelet_complex_layer::ComplexWaveletLayer,
+        wavelet_discrete_layer::DiscreteWaveletLayer,
+    },
     utils::{
         activation::activate_output_complex_padding,
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         derivative::get_gradient_complex,
-        matrix::{add_matrix, add_matrix_3d, add_vector, apply_padding_mask_batch, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm, conjugate_transpose, hadamard_product_2d_c, is_nan_or_inf, multiply_complex, transpose},
+        matrix::{add_matrix, add_matrix_3d, add_vector, apply_padding_mask_batch, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm, conjugate_transpose, hadamard_product_2d_c, multiply_complex, transpose},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -238,48 +243,34 @@ impl Layer {
         let mut all_gradients = vec![weight_gradients];
         let global_norm = compute_global_norm(&all_gradients, &bias_gradients);
         self.ema = self.smoothing * self.ema + (1.0 - self.smoothing) * global_norm;
-        let max_norm = self.ema * 1.2;
+        let max_norm = self.ema * EMA_SCALER;
         clip_all_gradients_by_global_norm_2d(&mut all_gradients, &mut bias_gradients, global_norm, max_norm);
 
-        let weight_gradients: &Vec<Vec<Complex<f64>>> = &all_gradients[0];
+        let mut weight_gradients: Vec<Vec<Complex<f64>>> = all_gradients[0].clone();
+
+        weight_gradients = average_matrix_by_scalar(&weight_gradients, batch_size);
+        bias_gradients = average_vector_by_scalar(&bias_gradients, batch_size);
 
         gradient.set_gradient_weights(weight_gradients.clone());
         gradient.set_gradient_bias(bias_gradients.clone());
 
-        let mut prev_m_bias: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); self.bias.len()];
-        let mut prev_v_bias: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); self.bias.len()];
-
-        let mut prev_m_weights: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()];
-        let mut prev_v_weights: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()];
-
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
 
-        if let Some(previous_gradient) = &mut self.previous_gradient {
-            prev_m_bias = average_vector_by_scalar(&previous_gradient.get_prev_m_bias(), batch_size);
-            prev_v_bias = average_vector_by_scalar(&previous_gradient.get_prev_v_bias(), batch_size);
-
-            prev_m_weights = average_matrix_by_scalar(&previous_gradient.get_prev_m_weights(), batch_size);
-            prev_v_weights = average_matrix_by_scalar(&previous_gradient.get_prev_v_weights(), batch_size);
-
-            self.bias = calculate_adam_w_bias(&self.bias, &gradient.get_gradient_bias(), &mut prev_m_bias, &mut prev_v_bias, learning_rate, time_step);
-            self.weights = calculate_adam_w(&mut self.weights, &gradient.get_gradient_weights(), &mut prev_m_weights, &mut prev_v_weights, learning_rate, time_step);
+        let (mut prev_m_bias, mut prev_v_bias, mut prev_m_weights, mut prev_v_weights) = if let Some(previous_gradient) = &mut self.previous_gradient {
+            (previous_gradient.get_prev_m_bias(), previous_gradient.get_prev_v_bias(), previous_gradient.get_prev_m_weights(), previous_gradient.get_prev_v_weights())
         } else {
-            // Update weights and biases using gradient descent
-            for (i, row) in self.weights.iter_mut().enumerate() {
-                for (j, weight_value) in row.iter_mut().enumerate() {
-                    if !is_nan_or_inf(&weight_gradients[i][j]) {
-                        *weight_value -= self.learning_rate * (weight_gradients[i][j] / batch_size);
-                    }
-                }
-            }
+            // Initialize to zeros on first step
+            (
+                vec![Complex::new(0.0, 0.0); self.bias.len()],
+                vec![Complex::new(0.0, 0.0); self.bias.len()],
+                vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()],
+                vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()],
+            )
+        };
 
-            for (i, value) in self.bias.iter_mut().enumerate() {
-                if !is_nan_or_inf(&bias_gradients[i]) {
-                    *value -= self.learning_rate * (bias_gradients[i] / batch_size);
-                }
-            }
-        }
+        calculate_adam_w_bias(&mut self.bias, &gradient.get_gradient_bias(), &mut prev_m_bias, &mut prev_v_bias, learning_rate, time_step);
+        calculate_adam_w(&mut self.weights, &gradient.get_gradient_weights(), &mut prev_m_weights, &mut prev_v_weights, learning_rate, time_step);
 
         gradient.set_prev_m_bias(prev_m_bias);
         gradient.set_prev_v_bias(prev_v_bias);
