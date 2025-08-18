@@ -2,9 +2,16 @@ use num::Complex;
 
 pub static B_1: f64 = 0.9;
 pub static B_2: f64 = 0.999;
-pub static EPSILON: f64 = 1e-4;
-pub static WEIGHT_DECAY: f64 = 0.0001;
-pub static MAX_NORM: f64 = 3.0;
+pub static EPSILON: f64 = 1e-8;
+pub static WEIGHT_DECAY: f64 = 0.001;
+pub static MAX_NORM: f64 = 10.0;
+pub static WARMUP_STEPS: usize = 10;
+
+// Assume this helper function exists or add it
+pub fn is_nan_or_inf(c: &Complex<f64>) -> bool {
+    c.re.is_nan() || c.re.is_infinite() || c.im.is_nan() || c.im.is_infinite() || c.norm_sqr().is_nan() || c.norm_sqr().is_infinite() || c.norm_sqr() > 1e10
+    // Add threshold for very large values
+}
 
 // AdamW optimizer for complex weights (matrix)
 pub fn calculate_adam_w(
@@ -14,13 +21,18 @@ pub fn calculate_adam_w(
     prev_v: &mut Vec<Vec<Complex<f64>>>, // real part used, imag=0
     learning_rate: f64,
     t: usize,
-) -> Vec<Vec<Complex<f64>>> {
+) {
     let t = t.max(1) as i32;
+    let current_lr = get_current_learning_rate(learning_rate, t as usize);
 
     for i in 0..weights.len() {
         for j in 0..weights[i].len() {
             // 1️⃣ Gradient clipping (complex norm)
             let g_t = weight_gradients[i][j];
+
+            if is_nan_or_inf(&g_t) {
+                continue;
+            }
 
             // 2️⃣ First moment update
             prev_m[i][j] = prev_m[i][j] * B_1 + g_t * (1.0 - B_1);
@@ -36,14 +48,34 @@ pub fn calculate_adam_w(
 
             // 5️⃣ Adaptive learning rate (real scalar)
             let denom: f64 = v_hat.sqrt() + EPSILON;
-            let adaptive_lr: f64 = learning_rate / denom;
+            let adaptive_lr: f64 = current_lr / denom;
 
             // 6️⃣ AdamW update (with decoupled weight decay)
-            weights[i][j] = weights[i][j] * (1.0 - learning_rate * WEIGHT_DECAY) - m_hat * adaptive_lr;
+            weights[i][j] = weights[i][j] * (1.0 - current_lr * WEIGHT_DECAY) - m_hat * adaptive_lr;
+
+            // // Second moment update - treat real and imag separately
+            // let g_re_sq = g_t.re * g_t.re;
+            // let g_im_sq = g_t.im * g_t.im;
+            // let new_v_re = prev_v[i][j].re * B_2 + (1.0 - B_2) * g_re_sq;
+            // let new_v_im = prev_v[i][j].im * B_2 + (1.0 - B_2) * g_im_sq;
+            // prev_v[i][j] = Complex::new(new_v_re, new_v_im);
+
+            // // Bias corrections
+            // let m_hat_re = prev_m[i][j].re / (1.0 - B_1.powi(t));
+            // let m_hat_im = prev_m[i][j].im / (1.0 - B_1.powi(t));
+            // let v_hat_re = new_v_re / (1.0 - B_2.powi(t));
+            // let v_hat_im = new_v_im / (1.0 - B_2.powi(t));
+
+            // // Adaptive learning rate (separate for real and imag)
+            // let denom_re = v_hat_re.sqrt() + EPSILON;
+            // let denom_im = v_hat_im.sqrt() + EPSILON;
+
+            // // AdamW update (with decoupled weight decay)
+            // let weight_decay_factor = 1.0 - current_lr * WEIGHT_DECAY;
+            // weights[i][j].re = weights[i][j].re * weight_decay_factor - m_hat_re * (current_lr / denom_re);
+            // weights[i][j].im = weights[i][j].im * weight_decay_factor - m_hat_im * (current_lr / denom_im);
         }
     }
-
-    weights.clone()
 }
 
 // AdamW optimizer for complex biases (vector)
@@ -54,12 +86,17 @@ pub fn calculate_adam_w_bias(
     prev_v: &mut Vec<Complex<f64>>, // real part used, imag=0
     learning_rate: f64,
     time_step: usize,
-) -> Vec<Complex<f64>> {
+) {
     let mut bias = bias.to_vec();
     let t_i = time_step.max(1) as i32;
 
     for (i, b) in bias.iter_mut().enumerate() {
         let g_t = gradient[i];
+        let current_lr = get_current_learning_rate(learning_rate, t_i as usize);
+
+        if is_nan_or_inf(&g_t) {
+            continue;
+        }
 
         // 1️⃣ First moment update
         prev_m[i] = prev_m[i] * B_1 + g_t * (1.0 - B_1);
@@ -74,13 +111,43 @@ pub fn calculate_adam_w_bias(
 
         // 4️⃣ Adaptive learning rate (real scalar)
         let denom: f64 = v_hat.sqrt() + EPSILON;
-        let adaptive_lr: f64 = learning_rate / denom;
+        let adaptive_lr: f64 = current_lr / denom;
 
         // 5️⃣ AdamW update (decoupled weight decay)
-        *b = *b * (1.0 - learning_rate * WEIGHT_DECAY) - m_hat * adaptive_lr;
-    }
+        *b = *b * (1.0 - current_lr * WEIGHT_DECAY) - m_hat * adaptive_lr;
 
-    bias
+        // // Second moment update - treat real and imag separately
+        // let g_re_sq = g_t.re * g_t.re;
+        // let g_im_sq = g_t.im * g_t.im;
+        // let new_v_re = prev_v[i].re * B_2 + (1.0 - B_2) * g_re_sq;
+        // let new_v_im = prev_v[i].im * B_2 + (1.0 - B_2) * g_im_sq;
+        // prev_v[i] = Complex::new(new_v_re, new_v_im);
+
+        // // Bias corrections
+        // let m_hat_re = prev_m[i].re / (1.0 - B_1.powi(t_i));
+        // let m_hat_im = prev_m[i].im / (1.0 - B_1.powi(t_i));
+        // let v_hat_re = new_v_re / (1.0 - B_2.powi(t_i));
+        // let v_hat_im = new_v_im / (1.0 - B_2.powi(t_i));
+
+        // // Adaptive learning rate (separate for real and imag)
+        // let denom_re = v_hat_re.sqrt() + EPSILON;
+        // let denom_im = v_hat_im.sqrt() + EPSILON;
+
+        // // AdamW update (with decoupled weight decay)
+        // let weight_decay_factor = 1.0 - current_lr * WEIGHT_DECAY;
+        // bias[i].re = bias[i].re * weight_decay_factor - m_hat_re * (current_lr / denom_re);
+        // bias[i].im = bias[i].im * weight_decay_factor - m_hat_im * (current_lr / denom_im);
+    }
+}
+
+pub fn get_current_learning_rate(base_lr: f64, step: usize) -> f64 {
+    if step < WARMUP_STEPS {
+        // Linear warmup
+        base_lr * (step as f64) / (WARMUP_STEPS as f64)
+    } else {
+        // Learning rate decay could be improved
+        base_lr * (step as f64).sqrt().recip()
+    }
 }
 
 pub fn sgd_weights(weights: &mut Vec<Vec<Complex<f64>>>, weight_gradients: &Vec<Vec<Complex<f64>>>, learning_rate: f64) -> Vec<Vec<Complex<f64>>> {
