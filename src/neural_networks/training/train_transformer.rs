@@ -29,7 +29,7 @@ pub fn train_transformer_from_dataset(num_epochs: usize, num_records: usize, bat
         }
     };
 
-    let learning_rate = 0.008;
+    let learning_rate = 0.001;
     let num_epochs = num_epochs;
     transformer.learning_rate = learning_rate;
     update_learning_rate(&mut transformer, learning_rate);

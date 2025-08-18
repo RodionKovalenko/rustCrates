@@ -5,11 +5,12 @@ use serde::{Deserialize, Serialize};
 use crate::{
     neural_networks::{
         network_components::{gradient_struct::Gradient, layer::LayerType, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+        network_types::transformer::transformer_network::EMA_SCALER,
         utils::{
             activation::softmax_complex_padding_real,
             adam_w::calculate_adam_w,
             derivative::{backpropagate_softmax_masked_real, softmax_derivative_complex_jacobian},
-            matrix::{add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm, conjugate_transpose, get_reduced_matrix, is_nan_or_inf, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
+            matrix::{add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm, conjugate_transpose, get_reduced_matrix, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
             weights_initializer::initialize_weights_complex,
         },
     },
@@ -377,100 +378,67 @@ impl MaskedAttentionHead {
         let mut all_gradients = vec![grad_w_q, grad_w_v, grad_w_k, grad_bias_pos];
         let global_norm = compute_global_norm(&all_gradients, &vec![]);
         self.ema = self.smoothing * self.ema + (1.0 - self.smoothing) * global_norm;
-        let max_norm = self.ema * 1.2;
+        let max_norm = self.ema * EMA_SCALER;
         clip_all_gradients_by_global_norm_2d(&mut all_gradients, &mut vec![], global_norm, max_norm);
 
-        let grad_w_q = &all_gradients[0];
-        let grad_w_v = &all_gradients[1];
-        let grad_w_k = &all_gradients[2];
-        let grad_bias_pos = &all_gradients[3];
+        let mut grad_w_q = all_gradients[0].clone();
+        let mut grad_w_v = all_gradients[1].clone();
+        let mut grad_w_k = all_gradients[2].clone();
+        let mut grad_bias_pos = all_gradients[3].clone();
 
-        let mut prev_m_weights_q: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()];
-        let mut prev_v_weights_q: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()];
-
-        let mut prev_m_weights_k: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); grad_w_k[0].len()]; grad_w_k.len()];
-        let mut prev_v_weights_k: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); grad_w_k[0].len()]; grad_w_k.len()];
-
-        let mut prev_m_weights_v: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()];
-        let mut prev_v_weights_v: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()];
-
-        let mut prev_m_bias_pos: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); grad_bias_pos[0].len()]; grad_bias_pos.len()];
-        let mut prev_v_bias_pos: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); grad_bias_pos[0].len()]; grad_bias_pos.len()];
+        grad_w_q = average_matrix_by_scalar(&grad_w_q, batch_size);
+        grad_w_v = average_matrix_by_scalar(&grad_w_v, batch_size);
+        grad_w_k = average_matrix_by_scalar(&grad_w_k, batch_size);
+        grad_bias_pos = average_matrix_by_scalar(&grad_bias_pos, batch_size);
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
 
-        if let Some(previous_gradient) = &mut self.previous_gradient {
-            prev_m_weights_q = average_matrix_by_scalar(&previous_gradient.get_prev_m_weigths_q(), batch_size);
-            prev_v_weights_q = average_matrix_by_scalar(&previous_gradient.get_prev_v_weigths_q(), batch_size);
-
-            prev_m_weights_k = average_matrix_by_scalar(&previous_gradient.get_prev_m_weigths_k(), batch_size);
-            prev_v_weights_k = average_matrix_by_scalar(&previous_gradient.get_prev_v_weigths_k(), batch_size);
-
-            prev_m_weights_v = average_matrix_by_scalar(&previous_gradient.get_prev_m_weigths_v(), batch_size);
-            prev_v_weights_v = average_matrix_by_scalar(&previous_gradient.get_prev_v_weigths_v(), batch_size);
-
-            self.weights_q = calculate_adam_w(&mut self.weights_q, &grad_w_q, &mut prev_m_weights_q, &mut prev_v_weights_q, learning_rate, time_step);
-            self.weights_k = calculate_adam_w(&mut self.weights_k, &grad_w_k, &mut prev_m_weights_k, &mut prev_v_weights_k, learning_rate, time_step);
-            self.weights_v = calculate_adam_w(&mut self.weights_v, &grad_w_v, &mut prev_m_weights_v, &mut prev_v_weights_v, learning_rate, time_step);
-
-            let seq_len = grad_bias_pos.len();
-            let mut bias_pos_slice: Vec<Vec<Complex<f64>>> = self.bias_pos[0..seq_len].iter().map(|row| row[0..seq_len].to_vec()).collect();
-            let updated_slice = calculate_adam_w(&mut bias_pos_slice, &grad_bias_pos, &mut prev_m_bias_pos, &mut prev_v_bias_pos, learning_rate, time_step);
-            let updated_slice_averaged = average_matrix_by_scalar(&updated_slice, batch_size);
-
-            for i in 0..seq_len {
-                for j in 0..seq_len {
-                    self.bias_pos[i][j] = updated_slice_averaged[i][j];
-                }
-            }
+        let (mut prev_m_weights_q, mut prev_v_weights_q, mut prev_m_weights_k, mut prev_v_weights_k, mut prev_m_weights_v, mut prev_v_weights_v, mut prev_m_bias_pos, mut prev_v_bias_pos) = if let Some(previous_gradient) = &mut self.previous_gradient {
+            (
+                previous_gradient.get_prev_m_weigths_q(),
+                previous_gradient.get_prev_v_weigths_q(),
+                previous_gradient.get_prev_m_weigths_k(),
+                previous_gradient.get_prev_v_weigths_k(),
+                previous_gradient.get_prev_m_weigths_v(),
+                previous_gradient.get_prev_v_weigths_v(),
+                vec![vec![Complex::new(0.0, 0.0); grad_bias_pos[0].len()]; grad_bias_pos.len()],
+                vec![vec![Complex::new(0.0, 0.0); grad_bias_pos[0].len()]; grad_bias_pos.len()],
+            )
         } else {
-            // Update weights q
-            for (i, row) in self.weights_q.iter_mut().enumerate() {
-                for (j, weight_value) in row.iter_mut().enumerate() {
-                    if !is_nan_or_inf(&grad_w_q[i][j]) {
-                        *weight_value -= self.learning_rate * (grad_w_q[i][j] / batch_size);
-                    }
-                }
-            }
+            // Initialize to zeros on first step
+            (
+                vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()],
+                vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()],
+                vec![vec![Complex::new(0.0, 0.0); grad_w_k[0].len()]; grad_w_k.len()],
+                vec![vec![Complex::new(0.0, 0.0); grad_w_k[0].len()]; grad_w_k.len()],
+                vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
+                vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
+                vec![vec![Complex::new(0.0, 0.0); grad_bias_pos[0].len()]; grad_bias_pos.len()],
+                vec![vec![Complex::new(0.0, 0.0); grad_bias_pos[0].len()]; grad_bias_pos.len()],
+            )
+        };
 
-            // Update weights v
-            for (i, row) in self.weights_v.iter_mut().enumerate() {
-                for (j, weight_value) in row.iter_mut().enumerate() {
-                    if !is_nan_or_inf(&grad_w_v[i][j]) {
-                        *weight_value -= self.learning_rate * (grad_w_v[i][j] / batch_size);
-                    }
-                }
-            }
+        calculate_adam_w(&mut self.weights_q, &grad_w_q, &mut prev_m_weights_q, &mut prev_v_weights_q, learning_rate, time_step);
+        calculate_adam_w(&mut self.weights_k, &grad_w_k, &mut prev_m_weights_k, &mut prev_v_weights_k, learning_rate, time_step);
+        calculate_adam_w(&mut self.weights_v, &grad_w_v, &mut prev_m_weights_v, &mut prev_v_weights_v, learning_rate, time_step);
 
-            // Update weights k
-            for (i, row) in self.weights_k.iter_mut().enumerate() {
-                for (j, weight_value) in row.iter_mut().enumerate() {
-                    if !is_nan_or_inf(&grad_w_k[i][j]) {
-                        *weight_value -= self.learning_rate * (grad_w_k[i][j] / batch_size);
-                    }
-                }
-            }
+        let seq_len = grad_bias_pos.len();
+        let mut bias_pos_slice: Vec<Vec<Complex<f64>>> = self.bias_pos[0..seq_len].iter().map(|row| row[0..seq_len].to_vec()).collect();
+        calculate_adam_w(&mut bias_pos_slice, &grad_bias_pos, &mut prev_m_bias_pos, &mut prev_v_bias_pos, learning_rate, time_step);
 
-            // Update bias pos
-            for (i, row) in self.bias_pos.iter_mut().enumerate() {
-                for (j, bias_pos_v) in row.iter_mut().enumerate() {
-                    if i < grad_bias_pos.len() && j < grad_bias_pos[i].len() && !is_nan_or_inf(&grad_bias_pos[i][j]) {
-                        *bias_pos_v -= self.learning_rate * (grad_bias_pos[i][j] / batch_size);
-                    }
-                }
+        for i in 0..seq_len {
+            for j in 0..seq_len {
+                self.bias_pos[i][j] = bias_pos_slice[i][j];
             }
         }
 
         gradient.set_prev_m_weights_q(prev_m_weights_q);
         gradient.set_prev_v_weights_q(prev_v_weights_q);
-
         gradient.set_prev_m_weights_k(prev_m_weights_k);
         gradient.set_prev_v_weights_k(prev_v_weights_k);
-
         gradient.set_prev_m_weights_v(prev_m_weights_v);
         gradient.set_prev_v_weights_v(prev_v_weights_v);
-
         gradient.set_prev_m_bias_pos(prev_m_bias_pos);
         gradient.set_prev_v_bias_pos(prev_v_bias_pos);
 

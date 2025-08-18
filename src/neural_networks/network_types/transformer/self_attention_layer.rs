@@ -63,7 +63,7 @@ impl SelfAttentionLayer {
         let sequence_size = input_batch[0].len();
 
         let mut batch_output: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![]; sequence_size]; batch_size];
-        let batch_size = layer_input.get_batch_size();
+        let batch_size = input_batch.len();
 
         // Apply the attention mechanism for each head
         let mut layer_input = layer_input.clone();
