@@ -42,6 +42,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
     let alpha = 0.2;
     let mut layer_input = LayerInput::new_default();
     let mut epoch_processed = 0;
+    let mut timestep = 0;
 
     'outer: for epoch in 0..num_epochs {
         total_loss = Complex::new(0.0, 0.0);
@@ -72,7 +73,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             }
 
             layer_input.set_batch_ids(batch_ids);
-            layer_input.set_time_step(epoch + 1);
+            layer_input.set_time_step(timestep + 1);
             layer_input.set_batch_size(batch_size);
             layer_input.set_forward_only(false);
             layer_input.set_calculate_gradient(true);
@@ -80,7 +81,11 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             layer_input.set_record_index(record_ind);
 
             transformer_network.minibatch_size = batch_size;
-            transformer_network.time_step = epoch + 1;
+            transformer_network.time_step = timestep + 1;
+
+            if record_ind % batch_size == 0 {
+                timestep += 1;
+            }
 
             let network_output = predict(transformer_network, &layer_input);
             let (predicted_softmax_batch, padding_mask_batch) = (network_output.get_output_batch_f64(), network_output.get_padding_mask_batch());
@@ -105,14 +110,14 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
             backward(transformer_network, &target_ids, &layer_input, true);
 
-            if epoch > 0 && epoch % 10 == 0 {
+            if epoch > 0 && epoch % 10 == 0 && record_ind == 0 {
                 let seconds_elapsed_end = now.elapsed();
                 let duration = seconds_elapsed_end - seconds_elapsed;
                 let seconds = duration.as_secs_f64();
                 println!("time elapsed for forward and backward pass in seconds: {:?}", seconds);
             }
 
-            transformer_network.update_step_lr_scheduler(epoch, 100, 0.9);
+            transformer_network.update_step_lr_scheduler(epoch, 500, 0.9);
         }
 
         if epoch % 10 == 0 {

@@ -1,11 +1,11 @@
 use num::Complex;
 
-pub static B_1: f64 = 0.9;
-pub static B_2: f64 = 0.999;
-pub static EPSILON: f64 = 1e-8;
-pub static WEIGHT_DECAY: f64 = 0.001;
+pub static B_1: f64 = 0.98;
+pub static B_2: f64 = 0.99;
+pub static EPSILON: f64 = 1e-6;
+pub static WEIGHT_DECAY: f64 = 0.01;
 pub static MAX_NORM: f64 = 10.0;
-pub static WARMUP_STEPS: usize = 10;
+pub static WARMUP_STEPS: usize = 4000;
 
 // Assume this helper function exists or add it
 pub fn is_nan_or_inf(c: &Complex<f64>) -> bool {
