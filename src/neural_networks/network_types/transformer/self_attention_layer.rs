@@ -1,12 +1,16 @@
 use super::masked_attention_head::MaskedAttentionHead;
-use crate::neural_networks::{network_components::{
-    add_rms_norm_layer::RMSNormLayer,
-    gradient_struct::Gradient,
-    layer::{LayerEnum, LayerType},
-    layer_input_struct::LayerInput,
-    layer_output_struct::LayerOutput,
-    norm_layer::NormalNormLayer,
-}, utils::matrix::add_matrix_3d};
+use crate::neural_networks::{
+    network_components::{
+        add_rms_norm_layer::RMSNormLayer,
+        gradient_struct::Gradient,
+        layer::{LayerEnum, LayerType},
+        layer_input_struct::LayerInput,
+        layer_output_struct::LayerOutput,
+        norm_layer::NormalNormLayer,
+    },
+    network_types::wavelet_discrete_layer::DiscreteWaveletLayer,
+    utils::matrix::add_matrix_3d,
+};
 use num::Complex;
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
@@ -17,6 +21,7 @@ pub struct SelfAttentionLayer {
     pub attention_heads: Vec<MaskedAttentionHead>,
     pub activated_output: Vec<Vec<Complex<f64>>>,
     pub norm_layer: Option<LayerEnum>,
+    pub discrete_wavelet_layer: Option<DiscreteWaveletLayer>,
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
@@ -39,11 +44,13 @@ impl SelfAttentionLayer {
         let epsilon: f64 = 0.000000000001;
         let _norm_layer_rms = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(cols, epsilon, learning_rate))));
         let _norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(cols, epsilon, learning_rate))));
+        let dwt_layer = Some(DiscreteWaveletLayer::new());
 
         Self {
             attention_heads,
             activated_output: vec![],
             norm_layer: _norm_layer,
+            discrete_wavelet_layer: dwt_layer,
             input_batch: None,
             output_batch: None,
             time_step: 0,
@@ -54,19 +61,30 @@ impl SelfAttentionLayer {
 // Implement BaseLayer for SelfAttentionLayer
 impl SelfAttentionLayer {
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        let input_batch = layer_input.get_input_batch();
+        let mut input_batch = layer_input.get_input_batch();
+        let mut padding_mask_batch = layer_input.get_padding_mask_batch();
+
+        // Apply DWT if the layer is present
+        if self.discrete_wavelet_layer.is_some() {
+            if let Some(dwt_layer) = self.discrete_wavelet_layer.as_mut() {
+                let dwt_output = dwt_layer.forward(&layer_input);
+                input_batch = dwt_output.get_output_batch();
+                padding_mask_batch = dwt_output.get_padding_mask_batch();
+            }
+        }
 
         self.input_batch = Some(input_batch.clone());
         self.time_step = layer_input.get_time_step();
 
         let batch_size = input_batch.len();
         let sequence_size = input_batch[0].len();
-
         let mut batch_output: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![]; sequence_size]; batch_size];
         let batch_size = input_batch.len();
 
         // Apply the attention mechanism for each head
         let mut layer_input = layer_input.clone();
+        layer_input.set_input_batch(input_batch.clone());
+        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
         //println!("padding mask batch: {:?}", &padding_mask_batch);
         let attention_head_outputs: Vec<_> = self
@@ -91,8 +109,16 @@ impl SelfAttentionLayer {
             }
         }
 
+        // Decompress Wavelet if the layer is present
+        if self.discrete_wavelet_layer.is_some() {
+            if let Some(dwt_layer) = self.discrete_wavelet_layer.as_mut() {
+                (batch_output, padding_mask_batch) = dwt_layer.decompress_partial_batch(&batch_output);
+            }
+        }
+
         layer_input.set_input_batch(batch_output.clone());
         layer_input.set_input_batch_before(input_batch.clone());
+        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
         self.output_batch = Some(batch_output.clone());
 
@@ -115,8 +141,6 @@ impl SelfAttentionLayer {
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(batch_output.clone());
         self.output_batch = Some(batch_output.clone());
-
-        // println!("output dim self attention: {} {}, {}", batch_output.len(), batch_output[0].len(), batch_output[0][0].len());
 
         layer_output
     }
@@ -144,6 +168,13 @@ impl SelfAttentionLayer {
                     output_gradient_norm = gradient_input_batch.clone();
                 }
                 _ => {}
+            }
+        }
+
+        // Apply DWT if the layer is present
+        if self.discrete_wavelet_layer.is_some() {
+            if let Some(dwt_layer) = self.discrete_wavelet_layer.as_mut() {
+                gradient_input_batch = dwt_layer.compress_partial_gradient(&gradient_input_batch);
             }
         }
 
@@ -184,6 +215,15 @@ impl SelfAttentionLayer {
 
         if !output_gradient_norm.is_empty() {
             combined_gradient_input_batch = add_matrix_3d(&combined_gradient_input_batch, &output_gradient_norm);
+        }
+
+        if self.discrete_wavelet_layer.is_some() {
+            if let Some(dwt_layer) = self.discrete_wavelet_layer.as_mut() {
+                gradient.set_gradient_input_batch(combined_gradient_input_batch.clone());
+
+                let dwt_gradient = dwt_layer.backward(&gradient);
+                combined_gradient_input_batch = dwt_gradient.get_gradient_input_batch();
+            }
         }
 
         // Return the final gradient

@@ -4,7 +4,6 @@ use crate::neural_networks::{
         feedforward_layer::FeedForwardLayer,
         neural_network_generic::{create, NeuralNetwork, OperationMode},
         wavelet_complex_layer::ComplexWaveletLayer,
-        wavelet_discrete_layer::DiscreteWaveletLayer,
         wavelet_network::DECOMPOSITION_LEVELS,
     },
 };
@@ -32,14 +31,10 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
 
     let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
     let positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
-    let positional_encoding_layer2 = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
 
     layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
     layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
     layers.push(LayerEnum::Wavelet(Box::new(ComplexWaveletLayer::new())));
-    layers.push(LayerEnum::DiscreteWavelet(Box::new(DiscreteWaveletLayer::new())));
-    layers.push(LayerEnum::Wavelet(Box::new(ComplexWaveletLayer::new())));
-    layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer2)));
 
     let rows: usize = embedding_dim_compressed;
     // Transformer block start
@@ -51,7 +46,6 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
         // Colums are divided into number of heads
         let cols: usize = embedding_dim_compressed;
 
-        layers.push(LayerEnum::Wavelet(Box::new(ComplexWaveletLayer::new())));
         let attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
         layers.push(LayerEnum::SelfAttention(Box::new(attention_layer)));
 
