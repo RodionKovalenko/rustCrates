@@ -16,24 +16,28 @@ mod test_wavelet_discrete_layer {
         // Define some small batch size and input dimensions for simplicity
         let batch_size = 1;
         let feature_dim = 5;
-        let seq_len = 8;
+        let seq_len = 15;
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let wavelet_discrete_layer: DiscreteWaveletLayer = DiscreteWaveletLayer::new();
+        let mut wavelet_discrete_layer: DiscreteWaveletLayer = DiscreteWaveletLayer::new();
 
         // Define a small input batch, [2][2][3]
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, seq_len, feature_dim);
         let input = &input_batch[0].clone();
 
         let (trend, _details, compression_dim) = wavelet_discrete_layer.compress_partial(input);
+        wavelet_discrete_layer.input_batch = Some(input_batch.clone());
+
         println!("input: {:?}", input);
         println!("input dim: {} {}", input.len(), input[0].len());
         println!("trend dim: {} {}", trend.len(), trend[0].len());
 
-        let decompresed = wavelet_discrete_layer.decompress_partial(&trend, 0, &compression_dim);
+        let decompresed = wavelet_discrete_layer.decompress_partial(&trend, &compression_dim, 0);
 
         println!("decompressed: {:?}", decompresed);
         println!("decomporessed dim: {} {}", decompresed.len(), decompresed[0].len());
+
+        test_gradient_error_2d(&input, &decompresed, 1e-8);
     }
 
     #[test]
@@ -91,10 +95,10 @@ mod test_wavelet_discrete_layer {
 
         let numerical_grad: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, input_batch.clone(), epsilon);
 
-        let seq_len = numerical_grad.len();
-        let numerical_grad = numerical_grad[..seq_len.saturating_sub(input_dim)].to_vec();
-        let seq_len = analytical_grad.len();
-        let analytical_grad = analytical_grad[..seq_len.saturating_sub(input_dim)].to_vec();
+        // let seq_len = numerical_grad.len();
+        // let numerical_grad = numerical_grad[..seq_len.saturating_sub(input_dim)].to_vec();
+        // let seq_len = analytical_grad.len();
+        // let analytical_grad = analytical_grad[..seq_len.saturating_sub(input_dim)].to_vec();
 
         // //Check if gradient batch dimensions match expected shapes
         println!("\n analytical grad: {:?}", analytical_grad);

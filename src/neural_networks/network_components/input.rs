@@ -19,6 +19,8 @@ pub trait DataTrait<T: Debug + Clone, O: Debug + Clone> {
 pub struct Dataset<T: Debug + Clone, O: Debug + Clone> {
     pub input: Vec<T>,  // List of tokens for input, flattened
     pub target: Vec<O>, // List of target labels, flattened
+    pub total_training_records_size: usize,
+    pub total_validation_records_size: usize,
 }
 
 impl<T: Debug + Clone, O: Debug + Clone> Dataset<T, O> {
@@ -97,7 +99,7 @@ pub fn concat_batches(a: &Vec<Vec<u32>>, b: &Vec<Vec<u32>>) -> Vec<Vec<u32>> {
 impl<T: Debug + Clone, O: Debug + Clone> DataTrait<T, O> for Dataset<T, O> {
     // Create a new instance of Dataset
     fn new(input: Vec<T>, target: Vec<O>) -> Self {
-        Dataset { input, target }
+        Dataset { input, target, total_training_records_size: 0, total_validation_records_size: 0 }
     }
 
     // Get a reference to the input data

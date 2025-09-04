@@ -1,7 +1,7 @@
 use num::Complex;
 
-pub static B_1: f64 = 0.98;
-pub static B_2: f64 = 0.99;
+pub static B_1: f64 = 0.9;
+pub static B_2: f64 = 0.999;
 pub static EPSILON: f64 = 1e-6;
 pub static WEIGHT_DECAY: f64 = 0.01;
 pub static MAX_NORM: f64 = 10.0;
@@ -145,8 +145,9 @@ pub fn get_current_learning_rate(base_lr: f64, step: usize) -> f64 {
         // Linear warmup
         base_lr * (step as f64) / (WARMUP_STEPS as f64)
     } else {
-        // Learning rate decay could be improved
-        base_lr * (step as f64).sqrt().recip()
+        let total_steps = 2000;
+        let progress = (step - WARMUP_STEPS) as f64 / (total_steps - WARMUP_STEPS) as f64;
+        base_lr * 0.5 * (1.0 + (std::f64::consts::PI * progress).cos())
     }
 }
 
