@@ -92,6 +92,9 @@ where
     let middle = data.len() >> 1;
     let recon_len = data.len() - (ihp.len().saturating_sub(2));
 
+    // println!("low pass filter for trend: {:?}", ilp);
+    // println!("high pass filter for details: {:?}", ihp);
+
     let mut out = vec![T::zero(); recon_len];
     let mut ind = 0;
 

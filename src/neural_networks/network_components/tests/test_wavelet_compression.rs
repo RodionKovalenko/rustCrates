@@ -170,6 +170,7 @@ mod test_wavelet_compression {
         test_gradient_error_2d(&matrix_1, &matrix_restored, 1e-6);
     }
 
+
     #[test]
     fn test_complex_batch_averaging() {
         let matrix_1: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.5, 0.5), Complex::new(0.1, 0.2), Complex::new(0.2, 0.6), Complex::new(0.3, 0.9), Complex::new(0.4, 0.5)]];
