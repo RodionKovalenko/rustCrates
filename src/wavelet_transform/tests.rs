@@ -9,7 +9,7 @@ mod tests {
     use crate::wavelet_transform::cwt::{cwt, cwt_1d, cwt_2d, cwt_3d, cwt_4d, cwt_5d};
     use crate::wavelet_transform::cwt_complex::CWTComplex;
     use crate::wavelet_transform::cwt_types::ContinuousWaletetType;
-    use crate::wavelet_transform::dwt::{get_ll_hl_lh_hh, insert_padding_after, insert_padding_before, dwt_2d_full};
+    use crate::wavelet_transform::dwt::{dwt_2d_full, dwt_2d_partial, get_ll_hh, get_ll_hl_lh_hh, insert_padding_after, insert_padding_before, inverse_dwt_2d_partial};
     use crate::wavelet_transform::dwt_types::DiscreteWaveletType;
     use crate::wavelet_transform::fft::{fft_real1_d, fft_real2_d};
     use crate::wavelet_transform::modes::WaveletMode;
@@ -748,5 +748,28 @@ mod tests {
 
         println!("seconds elapsed: {}",  now.elapsed().as_secs());
         println!("==================================================================");
+    }
+
+     #[test]
+    fn test_dwt_output() {
+        let data_2d = vec![vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]];
+
+        let dwt_type = DiscreteWaveletType::DB1;
+        let wavelet_mode = WaveletMode::ZERO;
+
+        let transformed = dwt_2d_partial(&data_2d, &dwt_type, &wavelet_mode);
+        println!("DWT: {:?}", transformed);
+
+        let transformed = inverse_dwt_2d_partial(&transformed, &dwt_type, &wavelet_mode, 0);
+        println!("Inverse DWT: {:?}", transformed);
+
+        let gradient_previous: Vec<Vec<f64>> = vec![vec![1.0; 8]; 1];
+        let dwt_partial = dwt_2d_partial(&gradient_previous, &dwt_type, &wavelet_mode);
+        let ll_hh = get_ll_hh(&dwt_partial);
+
+        let trend = ll_hh[0].clone();
+        let details = ll_hh[1].clone();
+        println!("Trend: {:?}", trend);
+        println!("Details: {:?}", details);
     }
 }

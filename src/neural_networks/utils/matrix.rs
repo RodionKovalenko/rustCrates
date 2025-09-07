@@ -615,7 +615,7 @@ pub fn add_matrix_2d_c(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Com
     for i in 0..matrix_a.len() {
         for j in 0..matrix_a[i].len() {
             let val = matrix_result[i][j].clone() + matrix_b[i % matrix_b.len()][j % matrix_b[0].len()].clone();
-            matrix_result[i][j] = Complex::new(val.re, 0.0);
+            matrix_result[i][j] = val;
         }
     }
 
