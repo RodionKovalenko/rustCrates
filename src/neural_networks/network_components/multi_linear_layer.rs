@@ -122,12 +122,13 @@ impl MultiLinearLayer {
                 grad_copy.set_gradient_input_batch(prev_chunk);
 
                 let grad_out = lin_layer.backward(&grad_copy);
+
                 grad_out.get_gradient_input_batch()
             })
             .collect();
 
         // 2. Initialize accumulator with zeros of correct size
-        let feature_dim = previous_input_gradient[0][0].len();
+        let feature_dim = gradient_input_batch_chunks[0][0][0].len();
         let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = (0..batch_size).map(|_| (0..seq_len).map(|_| vec![Complex::new(0.0, 0.0); feature_dim]).collect()).collect();
 
         // 3. Accumulate all chunks in-place

@@ -170,6 +170,7 @@ mod test_wavelet_layer {
 
         let mut layer_input = LayerInput::new_default();
         layer_input.set_input_batch(input_batch.clone());
+        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
         let wavelet_output = wavelet_layer.forward(&layer_input);
         layer_input.set_input_batch(wavelet_output.get_output_batch());

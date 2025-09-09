@@ -343,6 +343,9 @@ mod test_wavelet_discrete_layer {
         println!("input batch: {:?} {} {}", input_batch.len(), input_batch[0].len(), input_batch[0][0].len());
         println!("wavelet_dwt_inverse batch: {:?} {} {} ", wavelet_inverse.len(), wavelet_inverse[0].len(), wavelet_inverse[0][0].len());
 
+        println!("input batch: {:?}", input_batch);
+        println!("wavelet_dwt_inverse batch: {:?} ", wavelet_inverse);
+
         test_gradient_batch_error(&input_batch, &wavelet_inverse, 1e-8);
 
         // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]

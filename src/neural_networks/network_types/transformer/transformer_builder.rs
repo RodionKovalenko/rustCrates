@@ -1,5 +1,5 @@
 use crate::neural_networks::{
-    network_components::{embedding_layer::EmbeddingLayer, layer::LayerEnum, multi_linear_layer::MultiLinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
+    network_components::{embedding_layer::EmbeddingLayer, layer::LayerEnum, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
     network_types::{
         feedforward_layer::FeedForwardLayer,
         neural_network_generic::{create, NeuralNetwork, OperationMode},
@@ -55,11 +55,11 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     }
     // Transformer block end
 
-    // let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
-    let multi_linear_layer: MultiLinearLayer = MultiLinearLayer::new(learning_rate, rows, vocab_size, 15);
+    let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
+    // let multi_linear_layer: MultiLinearLayer = MultiLinearLayer::new(learning_rate, rows, vocab_size, 10);
     let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode);
 
-    layers.push(LayerEnum::MultiLinear(Box::new(multi_linear_layer)));
+    layers.push(LayerEnum::Linear(Box::new(linear_layer)));
     layers.push(LayerEnum::Softmax(Box::new(softmax_layer)));
 
     transformer_network.layers = layers;
