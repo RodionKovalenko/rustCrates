@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 // types used for Discrete Wavelet Transform
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DiscreteWaveletType {
+    OrthogonalParameterized { nums: usize },
     DB1,
     DB2,
     DB3,
@@ -96,5 +97,5 @@ pub enum DiscreteWaveletType {
     BIOR55,
     BIOR60,
     BIOR68,
-    DMEY
+    DMEY,
 }

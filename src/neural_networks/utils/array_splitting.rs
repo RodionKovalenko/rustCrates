@@ -49,3 +49,15 @@ pub fn sliding_window_chunks_matrix(tokens_batch: &Vec<Vec<u32>>, window_size: u
 
     (inputs, targets)
 }
+
+pub fn split_sizes(len: usize, n: usize) -> Vec<usize> {
+    let mut sizes = vec![len / n; n]; // all chunks start with base size
+    let remainder = len % n;
+
+    if remainder > 0 {
+        // Put the remainder in the last chunk
+        sizes.push(remainder);
+    }
+
+    sizes
+}

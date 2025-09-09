@@ -1,11 +1,14 @@
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use num::Complex;
 
     use crate::neural_networks::utils::{
         derivative::test_gradient_error_2d,
+        low_rank_approx::{low_rank_approx, reconstruction_error},
         matrix::{multiply, multiply_complex, multiply_complex_fear, transpose},
-        random_arrays::generate_random_complex_3d,
+        random_arrays::{generate_random_complex_2d, generate_random_complex_3d},
     };
 
     #[test]
@@ -127,10 +130,63 @@ mod tests {
             let matrix_multip_cuda = multiply_complex(x, w);
             let matrix_multip_fear = multiply_complex_fear(x, w);
 
-            println!("\n matrix cude: {:?}", matrix_multip_cuda);
+            println!("\n matrix cuda: {:?}", matrix_multip_cuda);
             println!("\n matrix fear: {:?}", matrix_multip_fear);
 
             test_gradient_error_2d(&matrix_multip_cuda, &matrix_multip_fear, 1e-8);
         }
+    }
+
+    #[test]
+    fn test_low_rank_approx() {
+        // Low-rank approximation
+        let m: Vec<Vec<Complex<f64>>> = generate_random_complex_2d(10, 5);
+        let rank = 6;
+        let (u, v) = low_rank_approx(&m, rank, 200, 1e-6);
+
+        println!("\n Rank: {}", rank);
+        println!("\n Original matrix: {:?}", m);
+        println!("\n U matrix: {:?}", u);
+        println!("\n V matrix: {:?}", v);
+
+        // Verify dimensions
+        assert_eq!(u.len(), m.len());
+        assert_eq!(u[0].len(), rank);
+        // reconstruct
+        let reconstructed = multiply_complex(&u, &v);
+        assert_eq!(reconstructed.len(), m.len());
+        assert_eq!(reconstructed[0].len(), m[0].len());
+
+        println!("\n Reconstructed matrix: {:?}", reconstructed);
+        let error = reconstruction_error(&m, &u, &v);
+        println!("\n Reconstruction error (Frobenius norm): {}", error);
+        assert!(error < 1e-5);
+    }
+    #[test]
+    fn test_input_multiplication_with_low_rank_approx() {
+        // Example input matrix (replace with your data)
+        let start = Instant::now();
+        let input: Vec<Vec<Complex<f64>>> = generate_random_complex_2d(450, 1024);
+        let m: Vec<Vec<Complex<f64>>> = generate_random_complex_2d(1024, 50515);
+        println!("\n Generating random arrays took: {:?}", start.elapsed().as_secs_f64());
+
+        // direkt multiplication
+        let start = Instant::now();
+        let matrix_result = multiply_complex(&input, &m);
+        println!("\n Direct multiplication took: {:?}", start.elapsed().as_secs_f64());
+
+        // Low-rank approximation
+        let start = Instant::now();
+        let rank = 16;
+        let (u, v) = low_rank_approx(&m, rank, 4, 1e-6);
+
+        println!("\n Rank: {}", rank);
+
+        // reconstruct
+        let result_1 = multiply_complex(&input, &u);
+        let result_2 = multiply_complex(&result_1, &v);
+        println!("\nLow-rank approximation took: {:?}", start.elapsed().as_secs_f64());
+
+        test_gradient_error_2d(&matrix_result, &result_2, 1e-5);
     }
 }

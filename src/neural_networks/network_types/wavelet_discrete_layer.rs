@@ -71,7 +71,7 @@ impl DiscreteWaveletLayer {
             gradient: None,
             output_batch: None,
             time_step: 0,
-            wavelet: DiscreteWaveletType::DB4,
+            wavelet: DiscreteWaveletType::OrthogonalParameterized { nums: 4},
             wavelet_size: 16,
             compression_levels: 8,
             wavelet_mode: WaveletMode::ZERO,
@@ -100,7 +100,7 @@ impl DiscreteWaveletLayer {
         let mut trend_batch = vec![];
         let mut details_batch = vec![];
         let mut compression_dims = vec![];
-        let mut comp_pad_mask_b: Vec<Vec<u32>> = padding_mask_batch.clone();
+        let mut comp_pad_mask_b: Vec<Vec<u32>> = vec![];
         let input_only = input_batch.clone();
 
         if !forward_only || (forward_only && time_step == 0) {

@@ -115,7 +115,7 @@ impl SelfAttentionLayer {
             if let Some(dwt_layer) = self.discrete_wavelet_layer.as_mut() {
                 layer_input.set_input_batch(batch_output.clone());
                 layer_input.set_padding_mask_batch(padding_mask_batch.clone());
-                
+
                 let wavelet_inverse_output = dwt_layer.forward_inverse(&layer_input);
 
                 batch_output = wavelet_inverse_output.get_output_batch();

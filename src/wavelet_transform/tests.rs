@@ -2,6 +2,7 @@
 mod tests {
     use std::time::Instant;
     use num::Complex;
+    use crate::neural_networks::utils::derivative::test_gradient_error_2d_f64;
     use crate::neural_networks::utils::image::{get_pixel_separate_rgba, save_image_from_pixels};
     use crate::uphold_api::file_utils::remove_dir_contents;
     use crate::utils::array::arange;
@@ -771,5 +772,21 @@ mod tests {
         let details = ll_hh[1].clone();
         println!("Trend: {:?}", trend);
         println!("Details: {:?}", details);
+    }
+    
+    #[test]
+    fn test_ortho_dwt() {
+        let data_2d = vec![vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 0.8]];
+
+        let dwt_type = DiscreteWaveletType::OrthogonalParameterized { nums: 4 };
+        let wavelet_mode = WaveletMode::ZERO;
+
+        let transformed = dwt_2d_partial(&data_2d, &dwt_type, &wavelet_mode);
+        println!("DWT: {:?}", transformed);
+
+        let transformed = inverse_dwt_2d_partial(&transformed, &dwt_type, &wavelet_mode, 0);
+        println!("Inverse DWT: {:?}", transformed);
+
+        test_gradient_error_2d_f64(&data_2d, &transformed, 1e-5);
     }
 }
