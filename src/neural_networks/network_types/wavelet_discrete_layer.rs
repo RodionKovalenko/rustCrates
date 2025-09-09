@@ -23,10 +23,12 @@ pub struct DiscreteWaveletLayer {
     pub compression_levels: usize,
     pub norm_layer: Option<LayerEnum>,
     pub add_details: bool,
+    pub is_linear_layer: bool,
 
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
-
+    #[serde(skip)]
+    pub compression_levels_used: usize,
     #[serde(skip)]
     pub input_only_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
@@ -71,12 +73,14 @@ impl DiscreteWaveletLayer {
             gradient: None,
             output_batch: None,
             time_step: 0,
-            wavelet: DiscreteWaveletType::OrthogonalParameterized { nums: 4},
+            wavelet: DiscreteWaveletType::OrthogonalParameterized { nums: 4 },
             wavelet_size: 16,
             compression_levels: 8,
+            compression_levels_used: 0,
             wavelet_mode: WaveletMode::ZERO,
             add_details: false,
             is_full_mode: false,
+            is_linear_layer: false,
             trend_batch_result: None,
             details_batch_result: None,
             trend_batch_coefficients: None,
@@ -94,7 +98,7 @@ impl DiscreteWaveletLayer {
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = layer_input.get_input_batch();
         let target_batch_ids: Vec<Vec<u32>> = layer_input.get_target_batch_ids();
         let forward_only = layer_input.get_forward_only();
-        let padding_mask_batch: Vec<Vec<u32>> = layer_input.get_padding_mask_batch();
+        let mut padding_mask_batch: Vec<Vec<u32>> = layer_input.get_padding_mask_batch();
         let time_step = layer_input.get_time_step();
 
         let mut trend_batch = vec![];
@@ -102,6 +106,10 @@ impl DiscreteWaveletLayer {
         let mut compression_dims = vec![];
         let mut comp_pad_mask_b: Vec<Vec<u32>> = vec![];
         let input_only = input_batch.clone();
+
+        if padding_mask_batch.is_empty() || padding_mask_batch[0].is_empty() {
+            padding_mask_batch = vec![vec![1; input_batch[0].len()]; input_batch.len()];
+        }
 
         if !forward_only || (forward_only && time_step == 0) {
             for (batch_ind, input) in input_batch.iter().enumerate() {
@@ -241,7 +249,7 @@ impl DiscreteWaveletLayer {
             let mut wav_out: Vec<Vec<Complex<f64>>> = transpose(&gradient_input.clone());
 
             // Apply multi-level DWT backward gradient propagation
-            for _ in 0..self.compression_levels {
+            for _ in 0..self.compression_levels_used {
                 // Forward DWT (adjoint of inverse DWT) applied to gradient tensor
                 let dwt_partial = dwt_2d_partial(&wav_out, &self.wavelet, &self.wavelet_mode);
                 let ll_hh = get_ll_hh(&dwt_partial);
@@ -286,9 +294,15 @@ impl DiscreteWaveletLayer {
             } else {
                 wav_out = trend.clone();
             }
-
             detail_coefficients.push(details.clone());
             compression_dims.push(trend.len());
+
+            if trend.len() <= 24 {
+                self.compression_levels_used = _i + 1;
+                break;
+            }
+
+            self.compression_levels_used = _i + 1;
         }
 
         if detail_coefficients.is_empty() {
@@ -374,7 +388,12 @@ impl DiscreteWaveletLayer {
                 if self.add_details {
                     detail_extension = gradient_transp[i].to_vec();
                 } else {
-                    detail_extension = detail_coefficients[_l][i].clone();
+                    let _detail_coeff_len = detail_coefficients[_l].len();
+                    detail_extension = detail_coefficients[_l][0].clone();
+
+                    if !self.is_linear_layer {
+                        detail_extension = detail_coefficients[_l][i % _detail_coeff_len].clone();
+                    }
                 }
 
                 self.align_vectors(&mut gradient_transp[i], &mut detail_extension);
@@ -418,7 +437,7 @@ impl DiscreteWaveletLayer {
         let input_f64: Vec<f64> = padding_mask.iter().map(|v| *v as f64).collect();
         let mut dwt_partial: Vec<f64> = input_f64.clone();
 
-        for _ in 0..self.compression_levels {
+        for _ in 0..self.compression_levels_used {
             let dwt = dwt_1d(&dwt_partial, &self.wavelet, &self.wavelet_mode);
             let wav_hh_ll: Vec<Vec<f64>> = get_ll_hh_1d(&dwt);
             dwt_partial = wav_hh_ll[0].clone(); // Approximation (LL)

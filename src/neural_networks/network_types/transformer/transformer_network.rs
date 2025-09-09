@@ -429,7 +429,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     let start = Instant::now();
                     let output_linear = linear_layer.forward(&layer_input);
 
-                    println!("time elapsed in seconds in linear layer: {:?}",  start.elapsed().as_secs_f64());
+                    println!("time elapsed in seconds in linear layer: {:?}", start.elapsed().as_secs_f64());
                     output = Some(output_linear.get_output_batch());
                 } else {
                     println!("No previous output for Dense layer");
@@ -440,10 +440,10 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     //println!("forward linear start");
                     layer_input.set_input_batch(previous_output.clone());
 
-                    //let seconds_elapsed = now.elapsed();
+                    let start = Instant::now();
                     let output_linear = multi_linear_layer.forward(&layer_input);
 
-                    //println!("time elapsed in seconds in MultiLinear layer: {:?}", (now.elapsed() - seconds_elapsed).as_secs_f64());
+                    println!("time elapsed in seconds in multilayer layer: {:?}", start.elapsed().as_secs_f64());
                     output = Some(output_linear.get_output_batch());
                 } else {
                     println!("No previous output for Multilinear layer");

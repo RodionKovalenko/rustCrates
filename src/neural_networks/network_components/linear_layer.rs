@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
-    network_types::transformer::transformer_network::EMA_SCALER,
+    network_types::{transformer::transformer_network::EMA_SCALER, wavelet_discrete_layer::DiscreteWaveletLayer},
     utils::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         matrix::{add_matrix_2d_c, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm, conjugate_transpose, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
@@ -25,6 +25,7 @@ pub struct LinearLayer {
     pub bias: Vec<Complex<f64>>,
     pub smoothing: f64,
     pub ema: f64,
+    pub discrete_wavelet_layer: Option<DiscreteWaveletLayer>,
 
     #[serde(skip)]
     pub gradients: Vec<Vec<Complex<f64>>>,
@@ -46,6 +47,8 @@ impl LinearLayer {
     pub fn new(learning_rate: f64, rows: usize, cols: usize) -> Self {
         let mut weights: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
         let bias: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
+        let mut _dwt_layer = DiscreteWaveletLayer::new();
+        _dwt_layer.is_linear_layer = true;
 
         initialize_weights_complex(rows, cols, &mut weights);
 
@@ -54,6 +57,7 @@ impl LinearLayer {
             bias,
             learning_rate,
             gradients: vec![],
+            discrete_wavelet_layer: Some(_dwt_layer),
             gradients_bias: vec![],
             input_batch: None,
             gradient: None,
@@ -65,12 +69,25 @@ impl LinearLayer {
         }
     }
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = input.get_input_batch();
-        self.input_batch = Some(input_batch.clone());
+        let mut input_batch: Vec<Vec<Vec<Complex<f64>>>> = input.get_input_batch();
+
         self.time_step = input.get_time_step();
         self.batch_size = input.get_batch_size();
 
-        let output_batch = input_batch
+        // println!("Input batch size in linear layer: {} {} {}", input_batch.len(), input_batch[0].len(), input_batch[0][0].len());
+
+        if self.discrete_wavelet_layer.is_some() {
+            if let Some(dwt_layer) = self.discrete_wavelet_layer.as_mut() {
+                let dwt_output = dwt_layer.forward(&input);
+                input_batch = dwt_output.get_output_batch();
+            }
+        }
+
+        self.input_batch = Some(input_batch.clone());
+
+        // println!("Input batch size in linear layer after dwt: {} {} {}", input_batch.len(), input_batch[0].len(), input_batch[0][0].len());
+
+        let mut output_batch: Vec<Vec<Vec<Complex<f64>>>> = input_batch
             .par_iter() // Use a parallel iterator to process inputs in parallel
             .map(|input| {
                 let mut output = multiply_complex(input, &self.weights);
@@ -80,6 +97,20 @@ impl LinearLayer {
                 output
             })
             .collect();
+
+        // println!("Output batch size in linear layer after forward: {} {} {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
+
+        // Decompress Wavelet if the layer is present
+        if self.discrete_wavelet_layer.is_some() {
+            if let Some(dwt_layer) = self.discrete_wavelet_layer.as_mut() {
+                let mut dwt_layer_input = LayerInput::new_default();
+                dwt_layer_input.set_input_batch(output_batch.clone());
+                let wavelet_inverse_output = dwt_layer.forward_inverse(&dwt_layer_input);
+                output_batch = wavelet_inverse_output.get_output_batch();
+            }
+        }
+
+        // println!("Output batch size in linear layer after dwt inverse:  {} {} {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(output_batch);
@@ -104,7 +135,18 @@ impl LinearLayer {
 
         match previous_gradient_batch {
             GradientBatch::Complex(previous_gradient_input_batch) => {
-                for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_input_batch).enumerate() {
+                let mut previous_gradient_input_batch_clone = previous_gradient_input_batch.clone();
+                // Apply DWT if the layer is present
+                if self.discrete_wavelet_layer.is_some() {
+                    if let Some(dwt_layer) = self.discrete_wavelet_layer.as_mut() {
+                        gradient.set_gradient_input_batch(previous_gradient_input_batch.clone());
+
+                        let gradient_inverse: Gradient = dwt_layer.backward_inverse(&gradient);
+                        previous_gradient_input_batch_clone = gradient_inverse.get_gradient_input_batch();
+                    }
+                }
+
+                for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_input_batch_clone).enumerate() {
                     weight_gradients[batch_ind] = multiply_complex(&conjugate_transpose(&input_sample), &previous_gradient);
                     //Accumulate gradients for biases
                     for grad_row in previous_gradient.iter() {
@@ -114,6 +156,15 @@ impl LinearLayer {
                     }
 
                     gradient_input_batch[batch_ind] = multiply_complex(&previous_gradient, &conjugate_transpose(&self.weights));
+                }
+
+                if self.discrete_wavelet_layer.is_some() {
+                    if let Some(dwt_layer) = self.discrete_wavelet_layer.as_mut() {
+                        gradient.set_gradient_input_batch(gradient_input_batch.clone());
+
+                        let dwt_gradient = dwt_layer.backward(&gradient);
+                        gradient_input_batch = dwt_gradient.get_gradient_input_batch();
+                    }
                 }
             }
             GradientBatch::Real(previous_gradient_input_batch) => {

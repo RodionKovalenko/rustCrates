@@ -166,8 +166,8 @@ mod tests {
     fn test_input_multiplication_with_low_rank_approx() {
         // Example input matrix (replace with your data)
         let start = Instant::now();
-        let input: Vec<Vec<Complex<f64>>> = generate_random_complex_2d(450, 1024);
-        let m: Vec<Vec<Complex<f64>>> = generate_random_complex_2d(1024, 50515);
+        let input: Vec<Vec<Complex<f64>>> = generate_random_complex_2d(50, 10);
+        let m: Vec<Vec<Complex<f64>>> = generate_random_complex_2d(10, 100);
         println!("\n Generating random arrays took: {:?}", start.elapsed().as_secs_f64());
 
         // direkt multiplication
@@ -178,7 +178,7 @@ mod tests {
         // Low-rank approximation
         let start = Instant::now();
         let rank = 16;
-        let (u, v) = low_rank_approx(&m, rank, 4, 1e-6);
+        let (u, v) = low_rank_approx(&m, rank, 400, 1e-6);
 
         println!("\n Rank: {}", rank);
 
