@@ -1,6 +1,7 @@
 use crate::wavelet_transform::dwt_coeffients::*;
 use crate::wavelet_transform::dwt_inverse_coeffients::*;
 use crate::wavelet_transform::dwt_types::DiscreteWaveletType;
+use std::f64::consts::TAU;
 
 // Return a Low Pass Filter, a filter of moving averages for a specific discrete wavelet type
 pub fn get_low_pass_filter(dw_type: &DiscreteWaveletType) -> Vec<f64> {
@@ -99,7 +100,11 @@ pub fn get_low_pass_filter(dw_type: &DiscreteWaveletType) -> Vec<f64> {
         DiscreteWaveletType::BIOR55 => BIOR_5_5.to_vec(),
         DiscreteWaveletType::BIOR60 => BIOR_6_0.to_vec(),
         DiscreteWaveletType::BIOR68 => BIOR_6_8.to_vec(),
-        DiscreteWaveletType::DMEY => DMEY.to_vec()
+        DiscreteWaveletType::DMEY => DMEY.to_vec(),
+        DiscreteWaveletType::OrthogonalParameterized { nums } => {
+            let (low_pass, _) = generate_orthogonal_wavelet_filters(nums);
+            low_pass
+        }
     }
 }
 
@@ -144,12 +149,25 @@ pub fn get_inverse_high_pass_filter(dw_type: &DiscreteWaveletType) -> Vec<f64> {
     let mut is_default: bool = false;
 
     high_pass_filter_coef = match dw_type {
-        DiscreteWaveletType::BIOR11 | DiscreteWaveletType::BIOR13 | DiscreteWaveletType::BIOR15
-        | DiscreteWaveletType::BIOR22 | DiscreteWaveletType::BIOR24 | DiscreteWaveletType::BIOR26
-        | DiscreteWaveletType::BIOR28 | DiscreteWaveletType::BIOR31 | DiscreteWaveletType::BIOR33
-        | DiscreteWaveletType::BIOR35 | DiscreteWaveletType::BIOR37 | DiscreteWaveletType::BIOR39
-        | DiscreteWaveletType::BIOR44 | DiscreteWaveletType::BIOR55 | DiscreteWaveletType::BIOR68
-        => get_low_pass_filter(dw_type),
+        DiscreteWaveletType::BIOR11
+        | DiscreteWaveletType::BIOR13
+        | DiscreteWaveletType::BIOR15
+        | DiscreteWaveletType::BIOR22
+        | DiscreteWaveletType::BIOR24
+        | DiscreteWaveletType::BIOR26
+        | DiscreteWaveletType::BIOR28
+        | DiscreteWaveletType::BIOR31
+        | DiscreteWaveletType::BIOR33
+        | DiscreteWaveletType::BIOR35
+        | DiscreteWaveletType::BIOR37
+        | DiscreteWaveletType::BIOR39
+        | DiscreteWaveletType::BIOR44
+        | DiscreteWaveletType::BIOR55
+        | DiscreteWaveletType::BIOR68 => get_low_pass_filter(dw_type),
+        DiscreteWaveletType::OrthogonalParameterized { nums } => {
+            let (low_pass, _) = generate_orthogonal_wavelet_filters(nums);
+            low_pass
+        }
         _ => {
             is_default = true;
             get_high_pass_filter(&dw_type)
@@ -187,12 +205,71 @@ pub fn get_high_pass_filter_non_symmetric(dw_type: &DiscreteWaveletType) -> Vec<
         DiscreteWaveletType::BIOR44 => INVERSE_BIOR_4_4.to_vec().into_iter().rev().collect(),
         DiscreteWaveletType::BIOR55 => INVERSE_BIOR_5_5.to_vec().into_iter().rev().collect(),
         DiscreteWaveletType::BIOR68 => INVERSE_BIOR_6_8.to_vec().into_iter().rev().collect(),
-        _ => {
-            get_low_pass_filter(&dw_type)
+        DiscreteWaveletType::OrthogonalParameterized { nums } => {
+            let (low_pass, _) = generate_orthogonal_wavelet_filters(nums);
+            low_pass
         }
+        _ => get_low_pass_filter(&dw_type),
     };
 
     high_pass_filter
+}
+
+/// Generate orthogonal wavelet filters of length 2^n using iterative rotations.
+/// `n` is the number of iteration steps (final filter length = 2^n).
+/// Returns (low_pass, high_pass) filters as Vec<f64>.
+pub fn generate_orthogonal_wavelet_filters(n: &usize) -> (Vec<f64>, Vec<f64>) {
+    assert!(*n > 0, "At least one rotation angle required");
+
+    let thetas: Vec<f64> = (0..*n)
+        .map(|i| TAU * (i as f64) / (*n as f64)) // evenly spaced angles
+        .collect();
+
+    fn rotate_pair(v0: f64, v1: f64, theta: f64) -> (f64, f64) {
+        let cos_t = theta.cos();
+        let sin_t = theta.sin();
+        (cos_t * v0 - sin_t * v1, sin_t * v0 + cos_t * v1)
+    }
+
+    // Initialize base wavelet psi(2)
+    let mut psi = vec![thetas[0].sin(), thetas[0].cos()];
+
+    // Iteratively upshift and rotate for each subsequent theta
+    for &theta in &thetas[1..] {
+        // Upshift: zeros at even indices, previous psi values at odd indices
+        let mut tmp = vec![0.0; psi.len() * 2];
+        for (i, &val) in psi.iter().enumerate() {
+            tmp[2 * i + 1] = val;
+        }
+
+        // Rotate every pair by R(theta)
+        let mut rotated = vec![0.0; tmp.len()];
+        for i in 0..(tmp.len() / 2) {
+            let idx = 2 * i;
+            let (r0, r1) = rotate_pair(tmp[idx], tmp[idx + 1], theta);
+            rotated[idx] = r0;
+            rotated[idx + 1] = r1;
+        }
+
+        psi = rotated;
+
+        // Normalize after every iteration to maintain numeric stability
+        let norm = psi.iter().map(|x| x * x).sum::<f64>().sqrt();
+        for coeff in psi.iter_mut() {
+            *coeff /= norm;
+        }
+    }
+
+    // Construct high-pass filter as reversed and alternating sign low-pass filter
+    let len = psi.len();
+    let high_pass = (0..len)
+        .map(|i| {
+            let sign = if i % 2 == 0 { 1.0 } else { -1.0 };
+            sign * psi[len - 1 - i]
+        })
+        .collect::<Vec<_>>();
+
+    (psi, high_pass)
 }
 
 pub fn fill_array_and_negate_odd(filter_coef: &Vec<f64>, data: &mut Vec<f64>) {

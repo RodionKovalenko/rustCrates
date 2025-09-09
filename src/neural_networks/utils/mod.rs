@@ -12,3 +12,4 @@ pub mod adam_w;
 pub mod dataset_loader;
 pub mod array_splitting;
 pub mod matrix_approximation;
+pub mod low_rank_approx;

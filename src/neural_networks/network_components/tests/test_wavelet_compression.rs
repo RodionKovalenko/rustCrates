@@ -127,7 +127,7 @@ mod test_wavelet_compression {
         let seq_len = 75;
         let dim = 4;
         let compr_levels = 10;
-        let wavelet_type = &DiscreteWaveletType::DB4;
+        let wavelet_type = &DiscreteWaveletType::OrthogonalParameterized { nums: 4 };
 
         let matrix_1: Vec<Vec<Complex<f64>>> = transpose(&generate_random_complex_2d(seq_len, dim));
         let mut details_coeffs: Vec<Vec<Vec<Complex<f64>>>> = vec![];
