@@ -57,7 +57,7 @@ impl LinearLayer {
             bias,
             learning_rate,
             gradients: vec![],
-            discrete_wavelet_layer: Some(_dwt_layer),
+            discrete_wavelet_layer: None,
             gradients_bias: vec![],
             input_batch: None,
             gradient: None,

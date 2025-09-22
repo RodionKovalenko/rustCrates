@@ -4,20 +4,23 @@ use num::Complex;
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
 
-// Feature map using real+imag parts and kernel
-pub fn phi_stable(x: &[Complex<f64>], w: &[Vec<f64>], b: &[f64]) -> Vec<f64> {
-    let x_concat: Vec<f64> = x.iter().flat_map(|c| [c.re, c.im]).collect();
-    let norm_x_sq: f64 = x_concat.iter().map(|xi| xi * xi).sum();
-    let r = w.len();
-    let mut features = Vec::with_capacity(r);
+/// Computes the Hermitian inner product a^H b = sum conj(a_i) * b_i
+fn hermitian_dot(a: &[Complex<f64>], b: &[Complex<f64>]) -> Complex<f64> {
+    assert_eq!(a.len(), b.len(), "vectors must have same length");
+    a.iter().zip(b.iter()).map(|(ai, bi)| ai.conj() * *bi).fold(Complex::new(0.0, 0.0), |acc, v| acc + v)
+}
 
-    for i in 0..r {
-        let dot = w[i].iter().zip(&x_concat).map(|(wi, xi)| wi * xi).sum::<f64>();
-        let val = (dot + b[i]).exp() * (-norm_x_sq / 2.0).exp();
-        features.push(val);
-    }
+/// Squared L2-norm: sum |x_i|^2
+fn complex_norm_sq(x: &[Complex<f64>]) -> f64 {
+    x.iter().map(|c| c.norm_sqr()).sum()
+}
 
-    features
+/// phi(x) = exp(omega^H x - ||x||^2 / 2)
+pub fn phi(x: &[Complex<f64>], omega: &[Complex<f64>]) -> Complex<f64> {
+    assert_eq!(x.len(), omega.len());
+    let dot = hermitian_dot(omega, x); // now equals omega^H x
+    let norm_sq = complex_norm_sq(x);
+    (dot - Complex::new(norm_sq / 2.0, 0.0)).exp()
 }
 
 pub fn generate_random_features(r: usize, d: usize) -> (Vec<Vec<f64>>, Vec<f64>) {
@@ -33,59 +36,16 @@ pub fn generate_random_features(r: usize, d: usize) -> (Vec<Vec<f64>>, Vec<f64>)
     (w, b)
 }
 
-fn mul_complex_real(a: Complex<f64>, b: f64) -> Complex<f64> {
-    Complex { re: a.re * b, im: a.im * b }
+fn herm_dot_real(a: &[f64], b: &[f64]) -> f64 {
+    a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }
 
-// Main Performer-style approximate attention with Option 3
-pub fn softmax_re_qk_approx_stable(q: &[Vec<Complex<f64>>], k: &[Vec<Complex<f64>>], v: &[Vec<Complex<f64>>], r: usize) -> Vec<Vec<Complex<f64>>> {
-    let d_k = k[0].len() as f64;
-    let scale = 1.0 / d_k.sqrt();
-    let d = k[0].len();
+fn norm_sq_real(x: &[f64]) -> f64 {
+    x.iter().map(|v| v * v).sum()
+}
 
-    let (w, b) = generate_random_features(r, d);
-
-    let phi_q: Vec<Vec<f64>> = q
-        .iter()
-        .map(|vec_q| {
-            let scaled_q: Vec<Complex<f64>> = vec_q.iter().map(|c| *c * scale).collect();
-            phi_stable(&scaled_q, &w, &b)
-        })
-        .collect();
-
-    let phi_k: Vec<Vec<f64>> = k
-        .iter()
-        .map(|vec_k| {
-            let scaled_k: Vec<Complex<f64>> = vec_k.iter().map(|c| *c * scale).collect();
-            phi_stable(&scaled_k, &w, &b)
-        })
-        .collect();
-
-    let n = q.len();
-    let m = k.len();
-    let d_v = v[0].len();
-    let mut result = vec![vec![Complex::new(0.0, 0.0); d_v]; n];
-
-    for i in 0..n {
-        let mut weighted_sum = vec![Complex::new(0.0, 0.0); d_v];
-        let mut weight_total = 0.0;
-
-        for j in 0..m {
-            // Real-valued attention weight
-            let weight = phi_q[i].iter().zip(&phi_k[j]).map(|(a, b)| a * b).sum::<f64>();
-
-            weight_total += weight;
-
-            for dv in 0..d_v {
-                weighted_sum[dv] += mul_complex_real(v[j][dv], weight);
-            }
-        }
-
-        let norm = weight_total.max(1e-8);
-        for dv in 0..d_v {
-            result[i][dv] = weighted_sum[dv] / norm;
-        }
-    }
-
-    result
+pub fn phi_real(x: &[f64], omega: &[f64]) -> f64 {
+    let dot = herm_dot_real(omega, x);
+    let n2 = norm_sq_real(x);
+    (dot - n2 * 0.5).exp()
 }
