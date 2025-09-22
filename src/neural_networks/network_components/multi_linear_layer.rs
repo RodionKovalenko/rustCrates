@@ -41,21 +41,28 @@ impl MultiLinearLayer {
         let col_chunks: Vec<usize> = split_sizes(cols, num_layers);
         let mut col_ranges: Vec<(usize, usize)> = Vec::with_capacity(num_layers);
 
+        // Initialize weights for the entire matrix first
         let mut weights = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
         initialize_weights_complex(rows, cols, &mut weights);
 
+        // Initialize bias for the entire output
+        let bias = vec![Complex::new(0.0, 0.0); cols];
+        
         let mut start_col = 0;
         for &chunk_size in &col_chunks {
             let end_col = start_col + chunk_size;
             col_ranges.push((start_col, end_col));
 
+            // Create linear layer with proper initialization
             let mut linear_layer = LinearLayer::new(learning_rate, rows, chunk_size);
+            
+            // Extract weights and bias for this chunk
             linear_layer.weights = weights.iter().map(|row| row[start_col..end_col].to_vec()).collect();
+            linear_layer.bias = bias[start_col..end_col].to_vec();
+            
             layers.push(linear_layer);
             start_col = end_col;
         }
-
-        println!("chunk sizes: {:?}", col_chunks);
 
         Self {
             layers,
@@ -72,51 +79,59 @@ impl MultiLinearLayer {
     }
 
     pub fn get_combined_weights(&self) -> (Vec<Vec<Complex<f64>>>, Vec<Complex<f64>>) {
-        let mut combined_weights = Vec::with_capacity(self.layers[0].weights.len());
-        let mut combined_bias = Vec::new();
+        let rows = self.layers[0].weights.len();
+        let total_cols: usize = self.layers.iter().map(|layer| layer.weights[0].len()).sum();
+        
+        let mut combined_weights = vec![vec![Complex::new(0.0, 0.0); total_cols]; rows];
+        let mut combined_bias = vec![Complex::new(0.0, 0.0); total_cols];
 
-        for (i, layer) in self.layers.iter().enumerate() {
-            let layer_weights = &layer.weights;
-            let layer_bias = &layer.bias;
-            if i == 0 {
-                combined_weights = layer_weights.clone();
-                combined_bias = layer_bias.clone();
-            } else {
-                for (row_ind, row) in layer_weights.iter().enumerate() {
-                    combined_weights[row_ind].extend_from_slice(row);
-                }
-                combined_bias.extend(layer_bias.iter().cloned());
+        let mut col_offset = 0;
+        for layer in &self.layers {
+            let chunk_size = layer.weights[0].len();
+            
+            // Copy weights
+            for (row_idx, row) in layer.weights.iter().enumerate() {
+                combined_weights[row_idx][col_offset..col_offset + chunk_size].copy_from_slice(row);
             }
+            
+            // Copy bias
+            combined_bias[col_offset..col_offset + chunk_size].copy_from_slice(&layer.bias);
+            
+            col_offset += chunk_size;
         }
 
         (combined_weights, combined_bias)
     }
 
     pub fn get_combined_gradients(&self) -> (Vec<Vec<Complex<f64>>>, Vec<Complex<f64>>) {
-        let mut combined_weights_gradients = Vec::with_capacity(self.layers[0].weights.len());
-        let mut combined_bias_gradients = Vec::new();
+        let rows = self.layers[0].weights.len();
+        let total_cols: usize = self.layers.iter().map(|layer| layer.weights[0].len()).sum();
+        
+        let mut combined_weights_gradients = vec![vec![Complex::new(0.0, 0.0); total_cols]; rows];
+        let mut combined_bias_gradients = vec![Complex::new(0.0, 0.0); total_cols];
 
-        for (i, layer) in self.layers.iter().enumerate() {
-            let layer_weights = &layer.weights;
-
+        let mut col_offset = 0;
+        for layer in &self.layers {
+            let chunk_size = layer.weights[0].len();
+            
             let layer_weight_gradients = layer.gradient
                 .as_ref()
                 .map(|g| g.get_gradient_weights())
-                .unwrap_or_else(|| vec![vec![Complex::new(0.0, 0.0); layer_weights[0].len()]; layer_weights.len()]);
+                .unwrap_or_else(|| vec![vec![Complex::new(0.0, 0.0); chunk_size]; rows]);
             let layer_bias_gradients = layer.gradient
                 .as_ref()
                 .map(|g| g.get_gradient_bias())
-                .unwrap_or_else(|| vec![Complex::new(0.0, 0.0); layer_weights.len()]);
+                .unwrap_or_else(|| vec![Complex::new(0.0, 0.0); chunk_size]);
 
-            if i == 0 {
-                combined_weights_gradients = layer_weight_gradients;
-                combined_bias_gradients = layer_bias_gradients;
-            } else {
-                for (row_ind, row) in layer_weight_gradients.iter().enumerate() {
-                    combined_weights_gradients[row_ind].extend_from_slice(row);
-                }
-                combined_bias_gradients.extend(layer_bias_gradients);
+            // Copy weight gradients
+            for (row_idx, row) in layer_weight_gradients.iter().enumerate() {
+                combined_weights_gradients[row_idx][col_offset..col_offset + chunk_size].copy_from_slice(row);
             }
+            
+            // Copy bias gradients
+            combined_bias_gradients[col_offset..col_offset + chunk_size].copy_from_slice(&layer_bias_gradients);
+            
+            col_offset += chunk_size;
         }
 
         (combined_weights_gradients, combined_bias_gradients)
@@ -131,6 +146,7 @@ impl MultiLinearLayer {
         let batch_size = input_batch.len();
         let seq_len = input_batch[0].len();
 
+        // Forward pass through each sublayer
         let lin_layer_output_chunks: Vec<_> = self.layers.iter_mut()
             .map(|lin_layer| lin_layer.forward(input).get_output_batch())
             .collect();
@@ -142,21 +158,21 @@ impl MultiLinearLayer {
             .map(|_| vec![vec![Complex::new(0.0, 0.0); output_feature_size]; seq_len])
             .collect();
 
-        // Parallelizing batch assembly
-        output_batch.iter_mut().enumerate().for_each(|(b, batch_row)| {
+        // Concatenate outputs from sublayers
+        for b in 0..batch_size {
             for i in 0..seq_len {
                 let mut offset = 0;
                 for lin_layer_output_chunk in &lin_layer_output_chunks {
-                    batch_row[i][offset..offset + lin_layer_output_chunk[b][i].len()]
+                    let chunk_size = lin_layer_output_chunk[b][i].len();
+                    output_batch[b][i][offset..offset + chunk_size]
                         .copy_from_slice(&lin_layer_output_chunk[b][i]);
-                    offset += lin_layer_output_chunk[b][i].len();
+                    offset += chunk_size;
                 }
             }
-        });
+        }
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(output_batch);
-
         layer_output
     }
 
@@ -177,33 +193,32 @@ impl MultiLinearLayer {
                         .collect())
                     .collect();
 
-                // Create a sliced Gradient with only needed input batch slice to avoid cloning entire previous_gradient
+                // Create a sliced Gradient with only needed input batch slice
                 let mut grad_sliced = Gradient::new_default();
                 grad_sliced.set_gradient_input_batch(prev_chunk);
 
                 lin_layer.backward(&grad_sliced).get_gradient_input_batch()
             }).collect();
 
-        // Infer feature dimension from first chunk
-        let feature_dim = gradient_input_batch_chunks[0][0][0].len();
+        // Infer feature dimension from input
+        let feature_dim = input_batch[0][0].len();
 
-        // Prepare empty gradient input batch to accumulate summed gradient inputs from chunks
-        let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = (0..batch_size)
-            .map(|_| (0..seq_len)
-                .map(|_| vec![Complex::new(0.0, 0.0); feature_dim])
-                .collect())
-            .collect();
+        // Initialize gradient input batch
+        let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![
+            vec![vec![Complex::new(0.0, 0.0); feature_dim]; seq_len]; 
+            batch_size
+        ];
 
-        // Parallel safe accumulation of gradient chunks into final input gradient batch
-        gradient_input_batch.iter_mut().enumerate().for_each(|(b, batch_row)| {
-            batch_row.iter_mut().enumerate().for_each(|(i, feature_vec)| {
+        // Accumulate gradient chunks into final input gradient batch
+        for b in 0..batch_size {
+            for i in 0..seq_len {
                 for chunk in &gradient_input_batch_chunks {
-                    for (dst, src) in feature_vec.iter_mut().zip(&chunk[b][i]) {
+                    for (dst, src) in gradient_input_batch[b][i].iter_mut().zip(&chunk[b][i]) {
                         *dst += *src;
                     }
                 }
-            });
-        });
+            }
+        }
 
         let mut gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(gradient_input_batch);
@@ -212,56 +227,123 @@ impl MultiLinearLayer {
     }
 
     pub fn update_parameters(&mut self) {
+        // First, ensure all sublayers have computed their gradients
+        for layer in &mut self.layers {
+            if layer.gradient.is_none() {
+                // Skip update if no gradient computed
+                return;
+            }
+        }
+
         let (weight_gradients, mut bias_gradients) = self.get_combined_gradients();
         let (mut combined_weights, mut combined_bias) = self.get_combined_weights();
-        let gradient: &mut Gradient = self.gradient.as_mut().expect("No Gradient found in linear layer");
-
-        let input_batch = gradient.get_gradient_input_batch();
-        let mut batch_size_num = input_batch.len() as f64;
+        
+        // Use batch size for averaging
+        let batch_size_num = if self.batch_size > 0 { 
+            self.batch_size as f64 
+        } else {
+            self.input_batch.as_ref().map(|batch| batch.len()).unwrap_or(1) as f64
+        };
+        
+        // Global gradient processing
         let mut all_gradients = vec![weight_gradients];
         let global_norm = compute_global_norm(&all_gradients, &bias_gradients);
+        
+        // Update EMA for gradient norm
         self.ema = self.smoothing * self.ema + (1.0 - self.smoothing) * global_norm;
         let max_norm = self.ema * EMA_SCALER;
+        
+        // Clip gradients
         clip_all_gradients_by_global_norm_2d(&mut all_gradients, &mut bias_gradients, global_norm, max_norm);
-        if self.batch_size > 0 {
-            batch_size_num = self.batch_size as f64;
-        }
+        
+        // Average gradients by batch size
         let mut weight_gradients: Vec<Vec<Complex<f64>>> = all_gradients[0].clone();
         weight_gradients = average_matrix_by_scalar(&weight_gradients, batch_size_num);
         bias_gradients = average_vector_by_scalar(&bias_gradients, batch_size_num);
-        gradient.set_gradient_weights(weight_gradients.clone());
-        gradient.set_gradient_bias(bias_gradients.clone());
+
+        // Update gradient in self for tracking
+        if let Some(gradient) = &mut self.gradient {
+            gradient.set_gradient_weights(weight_gradients.clone());
+            gradient.set_gradient_bias(bias_gradients.clone());
+        }
+
+        // Get previous optimizer states
+        let (mut prev_m_bias, mut prev_v_bias, mut prev_m_weights, mut prev_v_weights) = 
+            if let Some(previous_gradient) = &mut self.previous_gradient {
+                (
+                    previous_gradient.get_prev_m_bias(),
+                    previous_gradient.get_prev_v_bias(),
+                    previous_gradient.get_prev_m_weights(),
+                    previous_gradient.get_prev_v_weights(),
+                )
+            } else {
+                (
+                    vec![Complex::new(0.0, 0.0); bias_gradients.len()],
+                    vec![Complex::new(0.0, 0.0); bias_gradients.len()],
+                    vec![vec![Complex::new(0.0, 0.0); weight_gradients[0].len()]; weight_gradients.len()],
+                    vec![vec![Complex::new(0.0, 0.0); weight_gradients[0].len()]; weight_gradients.len()],
+                )
+            };
+
+        // Apply AdamW updates
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
-        let (mut prev_m_bias, mut prev_v_bias, mut prev_m_weights, mut prev_v_weights) = if let Some(previous_gradient) = &mut self.previous_gradient {
-            (
-                previous_gradient.get_prev_m_bias(),
-                previous_gradient.get_prev_v_bias(),
-                previous_gradient.get_prev_m_weights(),
-                previous_gradient.get_prev_v_weights(),
-            )
-        } else {
-            (
-                vec![Complex::new(0.0, 0.0); bias_gradients.len()],
-                vec![Complex::new(0.0, 0.0); bias_gradients.len()],
-                vec![vec![Complex::new(0.0, 0.0); weight_gradients[0].len()]; weight_gradients.len()],
-                vec![vec![Complex::new(0.0, 0.0); weight_gradients[0].len()]; weight_gradients.len()],
-            )
-        };
+        
         calculate_adam_w_bias(&mut combined_bias, &bias_gradients, &mut prev_m_bias, &mut prev_v_bias, learning_rate, time_step);
         calculate_adam_w(&mut combined_weights, &weight_gradients, &mut prev_m_weights, &mut prev_v_weights, learning_rate, time_step);
 
-        gradient.set_prev_m_bias(prev_m_bias);
-        gradient.set_prev_v_bias(prev_v_bias);
-        gradient.set_prev_m_weights(prev_m_weights);
-        gradient.set_prev_v_weights(prev_v_weights);
-        self.previous_gradient = Some(gradient.clone());
+        // Store updated optimizer states
+        if let Some(gradient) = &mut self.gradient {
+            gradient.set_prev_m_bias(prev_m_bias.clone());
+            gradient.set_prev_v_bias(prev_v_bias.clone());
+            gradient.set_prev_m_weights(prev_m_weights.clone());
+            gradient.set_prev_v_weights(prev_v_weights.clone());
+            self.previous_gradient = Some(gradient.clone());
+        }
 
-        // Update weights and biases back into sublayers with correct slicing
-        self.layers.iter_mut().enumerate().for_each(|(layer_ind, lin_layer)| {
-            let (start_col, end_col) = self.col_ranges[layer_ind];
-            lin_layer.weights = combined_weights.iter().map(|row| row[start_col..end_col].to_vec()).collect();
-            lin_layer.bias = combined_bias[start_col..end_col].to_vec();
-        });
+        // Distribute updated weights and biases back to sublayers
+        let mut col_offset = 0;
+        for layer in &mut self.layers {
+            let chunk_size = layer.weights[0].len();
+            
+            // Update weights
+            for (row_idx, row) in layer.weights.iter_mut().enumerate() {
+                row.copy_from_slice(&combined_weights[row_idx][col_offset..col_offset + chunk_size]);
+            }
+            
+            // Update bias
+            layer.bias.copy_from_slice(&combined_bias[col_offset..col_offset + chunk_size]);
+            
+            // Update sublayer optimizer states if needed
+            if let Some(layer_grad) = &mut layer.gradient {
+                // Extract the relevant portion of gradients for this sublayer
+                let layer_weight_grads: Vec<Vec<Complex<f64>>> = weight_gradients.iter()
+                    .map(|row| row[col_offset..col_offset + chunk_size].to_vec())
+                    .collect();
+                let layer_bias_grads = bias_gradients[col_offset..col_offset + chunk_size].to_vec();
+                
+                layer_grad.set_gradient_weights(layer_weight_grads);
+                layer_grad.set_gradient_bias(layer_bias_grads);
+                
+                // Set optimizer states for sublayer
+                let layer_prev_m_weights: Vec<Vec<Complex<f64>>> = prev_m_weights.iter()
+                    .map(|row| row[col_offset..col_offset + chunk_size].to_vec())
+                    .collect();
+                let layer_prev_v_weights: Vec<Vec<Complex<f64>>> = prev_v_weights.iter()
+                    .map(|row| row[col_offset..col_offset + chunk_size].to_vec())
+                    .collect();
+                let layer_prev_m_bias = prev_m_bias[col_offset..col_offset + chunk_size].to_vec();
+                let layer_prev_v_bias = prev_v_bias[col_offset..col_offset + chunk_size].to_vec();
+                
+                layer_grad.set_prev_m_weights(layer_prev_m_weights);
+                layer_grad.set_prev_v_weights(layer_prev_v_weights);
+                layer_grad.set_prev_m_bias(layer_prev_m_bias);
+                layer_grad.set_prev_v_bias(layer_prev_v_bias);
+                
+                layer.previous_gradient = Some(layer_grad.clone());
+            }
+            
+            col_offset += chunk_size;
+        }
     }
 }

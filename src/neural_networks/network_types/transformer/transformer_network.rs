@@ -19,7 +19,6 @@ use crate::{
         },
         utils::{
             array_splitting::sliding_window_chunks_matrix,
-            matrix::check_nan_or_inf_3d,
             tokenizer::{detokenize, tokenize_batch},
         },
     },
@@ -403,6 +402,22 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     println!("No previous output for Attention layer");
                 }
             }
+            LayerEnum::SelfAttentionApproximation(attention) => {
+                // Ensure there's an output from the previous layer before forwarding
+                if let (Some(previous_output), Some(padding_m)) = (&output, &padding_mask) {
+                    layer_input.set_input_batch(previous_output.clone());
+                    layer_input.set_padding_mask_batch(padding_m.clone());
+
+                    //println!("forward self-attention start");
+                    // let start = Instant::now();
+                    let output_attention = attention.forward(&layer_input);
+
+                    // println!("time elapsed in seconds in self attention layer: {:?}", start.elapsed().as_secs_f64());
+                    output = Some(output_attention.get_output_batch());
+                } else {
+                    println!("No previous output for Attention layer");
+                }
+            }
             LayerEnum::FeedForward(dense_layer) => {
                 if let Some(previous_output) = &output {
                     dense_layer.padding_mask_batch = padding_mask.clone();
@@ -410,13 +425,13 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     //println!("forward ffn start");
                     layer_input.set_input_batch(previous_output.to_vec());
 
-                    let start = Instant::now();
+                    //let start = Instant::now();
                     let layer_output = dense_layer.forward(&layer_input);
 
-                    println!("time elapsed in seconds in ffn layer: {:?}", start.elapsed().as_secs_f64());
+                    //println!("time elapsed in seconds in ffn layer: {:?}", start.elapsed().as_secs_f64());
                     output = Some(layer_output.get_output_batch());
 
-                    check_nan_or_inf_3d(&mut layer_output.get_output_batch(), "output ffn dense");
+                    //check_nan_or_inf_3d(&mut layer_output.get_output_batch(), "output ffn dense");
                 } else {
                     println!("No previous output for Dense layer");
                 }
@@ -426,10 +441,10 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     //println!("forward linear start");
                     layer_input.set_input_batch(previous_output.clone());
 
-                    let start = Instant::now();
+                    // let start = Instant::now();
                     let output_linear = linear_layer.forward(&layer_input);
 
-                    println!("time elapsed in seconds in linear layer: {:?}", start.elapsed().as_secs_f64());
+                    // println!("time elapsed in seconds in linear layer: {:?}", start.elapsed().as_secs_f64());
                     output = Some(output_linear.get_output_batch());
                 } else {
                     println!("No previous output for Dense layer");
@@ -440,10 +455,10 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     //println!("forward linear start");
                     layer_input.set_input_batch(previous_output.clone());
 
-                    let start = Instant::now();
+                    //let start = Instant::now();
                     let output_linear = multi_linear_layer.forward(&layer_input);
 
-                    println!("time elapsed in seconds in multilayer layer: {:?}", start.elapsed().as_secs_f64());
+                    //println!("time elapsed in seconds in multilayer layer: {:?}", start.elapsed().as_secs_f64());
                     output = Some(output_linear.get_output_batch());
                 } else {
                     println!("No previous output for Multilinear layer");
@@ -484,7 +499,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                 if let Some(previous_output) = &output {
                     //println!("forward softmax start");
 
-                    let start = Instant::now();
+                    //let start = Instant::now();
                     if !forward_only {
                         let softmax_result: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&previous_output, padding_mask.clone());
                         output_softmax = Some(softmax_result);
@@ -492,8 +507,8 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                         output_softmax = Some(convert_c_to_f64_3d(previous_output));
                     }
 
-                    let duration = start.elapsed();
-                    println!("time elapsed in seconds in softmax layer: {:?}", duration.as_secs_f64());
+                    //let duration = start.elapsed();
+                    //println!("time elapsed in seconds in softmax layer: {:?}", duration.as_secs_f64());
                     // println!("forward softmax end");
                 } else {
                     println!("No previous output for Dense layer");
@@ -512,7 +527,6 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
     // }
     let whole_duration_forward = now.elapsed();
     println!("Total time elapsed in seconds in forward pass: {:?}", whole_duration_forward.as_secs_f64());
-
     //println!("forward pass end ----------------------------------------------------------------------");
     layer_output
 }
@@ -568,6 +582,23 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                 }
             }
             LayerEnum::SelfAttention(attention_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    // println!("backward attention layer start");
+                    let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
+
+                    let gradient_batch: Gradient = attention_layer.backward(&previous_gradient_batch);
+                    // Update weights and biases
+                    if update_gradients {
+                        attention_layer.update_parameters();
+                    }
+                    // println!("backward attention layer end");
+
+                    gradient = Some(gradient_batch);
+                } else {
+                    println!("No previous gradient in Self Attention Layer");
+                }
+            }
+            LayerEnum::SelfAttentionApproximation(attention_layer) => {
                 if let Some(previous_gradient) = gradient {
                     // println!("backward attention layer start");
                     let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
