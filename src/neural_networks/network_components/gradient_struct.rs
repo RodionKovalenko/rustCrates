@@ -2,6 +2,8 @@ use core::fmt::Debug;
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
+use crate::neural_networks::network_components::adaptive_pooling::adaptive_avg_pool1d_layer::CompressionMetadata;
+
 #[derive(Debug, Clone)]
 pub enum GradientBatch {
     Complex(Vec<Vec<Vec<Complex<f64>>>>),
@@ -56,6 +58,7 @@ pub struct Gradient {
 
     prev_m_beta: Option<Vec<Complex<f64>>>,
     prev_v_beta: Option<Vec<Complex<f64>>>,
+    pooling_metadata: Option<CompressionMetadata>,
 
     time_step: Option<usize>,
 }
@@ -107,6 +110,7 @@ impl Gradient {
             prev_v_weights_k: None,
             prev_v_weights_q: None,
             prev_v_weights_v: None,
+            pooling_metadata: None,
         }
     }
     pub fn set_gradient_input_batch(&mut self, gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>>) {
@@ -142,6 +146,12 @@ impl Gradient {
     }
     pub fn set_gradient_beta(&mut self, gradient_beta: Vec<Complex<f64>>) {
         self.gradient_beta = Some(gradient_beta);
+    }
+    pub fn set_pooling_metadata(&mut self, metadata: CompressionMetadata) {
+        self.pooling_metadata = Some(metadata);
+    }
+    pub fn get_pooling_metadata(&self) -> Option<&CompressionMetadata> {
+        self.pooling_metadata.as_ref()
     }
 
     pub fn set_gradient_weights_q_batch(&mut self, gradient_weights_q_batch: Vec<Vec<Vec<Complex<f64>>>>) {

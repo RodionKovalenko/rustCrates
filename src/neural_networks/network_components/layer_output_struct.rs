@@ -2,6 +2,8 @@ use core::fmt::Debug;
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
+use crate::neural_networks::network_components::adaptive_pooling::adaptive_avg_pool1d_layer::CompressionMetadata;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LayerOutput {
     output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
@@ -10,6 +12,7 @@ pub struct LayerOutput {
     l2_regularization: Option<Vec<Vec<Complex<f64>>>>,
     input_gradient_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     padding_mask_batch: Option<Vec<Vec<u32>>>,
+    pooling_metadata: Option<CompressionMetadata>,
 }
 
 impl LayerOutput {
@@ -21,6 +24,7 @@ impl LayerOutput {
             l2_regularization: None,
             input_gradient_batch: None,
             padding_mask_batch: None,
+            pooling_metadata: None,
         }
     }
 
@@ -60,5 +64,11 @@ impl LayerOutput {
     }
     pub fn get_padding_mask_batch(&self) -> Vec<Vec<u32>> {
         self.padding_mask_batch.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn set_pooling_metadata(&mut self, pooling_metadata: CompressionMetadata) {
+        self.pooling_metadata = Some(pooling_metadata);
+    }
+    pub fn get_pooling_metadata(&self) -> Option<CompressionMetadata> {
+        self.pooling_metadata.clone()
     }
 }

@@ -121,6 +121,9 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
     // transformer.learning_rate = learning_rate;
     for layer in transformer.layers.iter_mut() {
         match layer {
+            LayerEnum::AdaptiveAvgPool1d(_adaptive_avg_pooling_layer) => {
+                // println!("adaptive avg pooling layer with output size: {:?}", &adaptive_avg_pooling_layer.output_size);
+            }
             LayerEnum::Embedding(embedding_layer) => {
                 embedding_layer.learning_rate = learning_rate;
             }
@@ -210,6 +213,9 @@ pub fn reset_previous_gradient(transformer: &mut NeuralNetwork) {
     // transformer.learning_rate = learning_rate;
     for layer in transformer.layers.iter_mut() {
         match layer {
+            LayerEnum::AdaptiveAvgPool1d(_adaptive_avg_pooling_layer) => {
+                // println!("adaptive avg pooling layer with output size: {:?}", &adaptive_avg_pooling_layer.output_size);
+            }
             LayerEnum::Embedding(embedding_layer) => {
                 // embedding_layer.previous_gradient = None;
                 embedding_layer.gradient = None;
@@ -337,6 +343,9 @@ pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
     // transformer.learning_rate = learning_rate;
     for layer in transformer.layers.iter_mut() {
         match layer {
+            LayerEnum::AdaptiveAvgPool1d(_adaptive_avg_pooling_layer) => {
+                // println!("adaptive avg pooling layer with output size: {:?}", &adaptive_avg_pooling_layer.output_size);
+            }
             LayerEnum::Embedding(embedding_layer) => {
                 println!("embedding layer: {:?}", &embedding_layer.learning_rate);
             }

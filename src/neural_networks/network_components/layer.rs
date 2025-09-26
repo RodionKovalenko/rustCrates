@@ -1,5 +1,5 @@
 use crate::neural_networks::{
-    network_components::multi_linear_layer::MultiLinearLayer,
+    network_components::{adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, multi_linear_layer::MultiLinearLayer},
     network_types::{
         feedforward_layer::FeedForwardLayer,
         transformer::{self_attention_layer::SelfAttentionLayer, self_attention_layer_approximation::SelfAttentionLayerApproximation, transformer_network::EMA_SCALER},
@@ -80,6 +80,7 @@ impl Default for LayerType {
 // Layer Enum
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LayerEnum {
+    AdaptiveAvgPool1d(Box<AdaptiveAvgPool1dLayer>),
     Embedding(Box<EmbeddingLayer>),
     PositionalEncoding(Box<PositionalEncodingLayer>),
     Dense(Box<Layer>),
