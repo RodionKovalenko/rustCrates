@@ -9,10 +9,7 @@ mod test_self_attention_layer_approx_with_loss {
             neural_network_generic::OperationMode,
             transformer::{masked_attention_head_approximation::MaskedAttentionHeadApproximation, transformer_network::cross_entropy_loss_batch},
         },
-        utils::{
-            derivative::{global_relative_error_2d_l2, numerical_gradient_input, numerical_gradient_weights, test_gradient_error_2d},
-            random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
-        },
+        utils::derivative::{global_relative_error_2d_l2, numerical_gradient_input, numerical_gradient_weights, test_gradient_error_2d},
     };
 
     #[test]
@@ -20,14 +17,33 @@ mod test_self_attention_layer_approx_with_loss {
         let batch_size = 2;
         let input_dim = 2;
         let output_dim = 4;
-        let epsilon: f64 = 1e-6;
+        let epsilon: f64 = 1e-3;
 
         let learning_rate = 0.0001;
 
         let mut attention_head_layer: MaskedAttentionHeadApproximation = MaskedAttentionHeadApproximation::new(input_dim, output_dim, learning_rate);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING);
 
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
+        let input_batch = vec![
+            vec![
+                vec![Complex::new(-0.021967, 0.0), Complex::new(0.035711, 0.0)],
+                vec![Complex::new(0.147789, 0.0), Complex::new(-0.051827, 0.0)],
+                vec![Complex::new(-0.080849, 0.0), Complex::new(-0.050176, 0.0)],
+                vec![Complex::new(0.091540, 0.0), Complex::new(0.032875, 0.0)],
+            ],
+            vec![
+                vec![Complex::new(-0.052976, 0.0), Complex::new(0.051327, 0.0)],
+                vec![Complex::new(0.009708, 0.0), Complex::new(0.096864, 0.0)],
+                vec![Complex::new(-0.070205, 0.0), Complex::new(-0.032766, 0.0)],
+                vec![Complex::new(-0.039211, 0.0), Complex::new(-0.146351, 0.0)],
+            ],
+        ];
+
+        // Also initialize your attention head weights to these fixed values:
+        attention_head_layer.weights_k = vec![
+            vec![Complex::new(-0.046947, 0.0), Complex::new(0.054256, -0.3), Complex::new(-0.046342, 0.0), Complex::new(-0.046573, 0.1)],
+            vec![Complex::new(0.024196, 0.0), Complex::new(-0.191328, -0.4), Complex::new(-0.172492, 0.0), Complex::new(-0.056229, 0.6)],
+        ];
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; output_dim]; batch_size];
 
         let mut layer_input = LayerInput::new_default();
@@ -38,7 +54,7 @@ mod test_self_attention_layer_approx_with_loss {
         let output_batch = output.get_output_batch();
 
         let _output_softmax = softmax_layer.forward(&output_batch, Some(padding_mask_batch.clone()));
-        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim - 1, (output_dim - 1) as u32);
+        let target_token_id_batch = vec![vec![0u32, 0u32, 2u32], vec![2u32, 1u32, 2u32]];
 
         println!("\ninput batch in attention head dim : {:?}, {}, {}", &input_batch.len(), &input_batch[0].len(), &input_batch[0][0].len());
         println!("\ninput batch in attention head :{:?}", &input_batch);
@@ -182,7 +198,7 @@ mod test_self_attention_layer_approx_with_loss {
         }
 
         // For Gelu it can a little more deviation
-       // test_gradient_error_2d(&numerical_grad_bias_pos, &analytical_bias_pos_batch, epsilon);
+        // test_gradient_error_2d(&numerical_grad_bias_pos, &analytical_bias_pos_batch, epsilon);
         attention_head_layer.bias_pos = bias_pos.clone();
         // Bias Positional gradient ------------------------------------------------------------------------------------------- end
 

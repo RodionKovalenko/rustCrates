@@ -11,8 +11,10 @@ pub mod test_sliding_window {
 
     #[test]
     fn test_sliding_window_for_training() {
-        let input: &str = "Context: Die Verteidigung der Panthers gab nur 308 Punkte ab und belegte den sechsten Platz in der Liga, während sie die NFL mit 24 Interceptions in dieser Kategorie anführte und sich mit vier Pro Bowl-Selektionen rühmen konnte. Pro Bowl Defensive Tackle Kawann Short führte das Team mit 11 Sacks an, erzwang zudem drei Fumbles und erzielte zwei Fumble Recoverys. Mario Addison, ebenfalls Lineman, addierte 6½ Sacks hinzu. Die Panthers-Line präsentierte auch den erfahrenen Defensive End Jared Allen, einen 5-fachen Pro-Bowler, der mit 136 Sacks der aktive Anführer in der NFL-Kategorie Karriere-Sacks war, sowie den Defensive End Kony Ealy, der 5 Sacks in nur 9 Starts erzielte. Nach ihnen wurden zwei der drei Linebacker der Panthers ausgewählt, um im Pro Bowl zu spielen: Thomas Davis und Luke Kuechly. Davis erzielte 5½ Sacks, vier erzwungene Fumbles und vier Interceptions, während Kuechly das Team bei den Tackles anführte (118), zwei Fumbles erzwang und vier Pässe abfing. Carolinas Secondarys bestanden aus dem Pro Bowl-Safety Kurt Coleman, der das Team mit einem Karrierehoch von sieben Interceptions anführte und gleichzeitig 88 Tackles erzielen konnte, und Pro Bowl-Cornerback Josh Norman, der sich während der Saison zur Shutdown Corner entwickelte und vier Interceptions erzielte, von denen zwei zu Touchdowns für sein Team wurden. \n <sep> Question: Wie viele Punkte gab die Verteidigung der Panthers ab?";
-        let target = "308";
+        //let input: &str = "Context: Die Verteidigung der Panthers gab nur 308 Punkte ab und belegte den sechsten Platz in der Liga, während sie die NFL mit 24 Interceptions in dieser Kategorie anführte und sich mit vier Pro Bowl-Selektionen rühmen konnte. Pro Bowl Defensive Tackle Kawann Short führte das Team mit 11 Sacks an, erzwang zudem drei Fumbles und erzielte zwei Fumble Recoverys. Mario Addison, ebenfalls Lineman, addierte 6½ Sacks hinzu. Die Panthers-Line präsentierte auch den erfahrenen Defensive End Jared Allen, einen 5-fachen Pro-Bowler, der mit 136 Sacks der aktive Anführer in der NFL-Kategorie Karriere-Sacks war, sowie den Defensive End Kony Ealy, der 5 Sacks in nur 9 Starts erzielte. Nach ihnen wurden zwei der drei Linebacker der Panthers ausgewählt, um im Pro Bowl zu spielen: Thomas Davis und Luke Kuechly. Davis erzielte 5½ Sacks, vier erzwungene Fumbles und vier Interceptions, während Kuechly das Team bei den Tackles anführte (118), zwei Fumbles erzwang und vier Pässe abfing. Carolinas Secondarys bestanden aus dem Pro Bowl-Safety Kurt Coleman, der das Team mit einem Karrierehoch von sieben Interceptions anführte und gleichzeitig 88 Tackles erzielen konnte, und Pro Bowl-Cornerback Josh Norman, der sich während der Saison zur Shutdown Corner entwickelte und vier Interceptions erzielte, von denen zwei zu Touchdowns für sein Team wurden. \n <sep> Question: Wie viele Punkte gab die Verteidigung der Panthers ab?";
+        // let target = "308";
+        let input: &str = "Was ist die Hauptstadt von Deutschland? Kannst du bitte eine kurze Antwort geben?";
+        let target = "Berlin ist die Hauptstadt und ein Land der Bundesrepublik Deutschland.";
         let dataset = Dataset::new(vec![input.to_string()], vec![target.to_string()]);
         let batch_dataset = &dataset.split_into_batches(1)[0];
         let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
@@ -44,5 +46,30 @@ pub mod test_sliding_window {
             println!("======================================================================");
             // Print first 5 tokens
         }
+
+        let max_seq_len = batch_ids.iter().map(|seq| seq.len()).max().unwrap_or(0);
+        let mut batch_ids = batch_ids.clone();
+
+        println!("max sequence length: {}", max_seq_len);
+        println!("max context window size: {}", MAX_CONTEXT_WINDOW_SIZE);
+        println!("batch ids len: {} {}", batch_ids.len(), batch_ids[0].len());
+
+        println!("Tokens before splitting: {:?}", batch_ids);
+         if max_seq_len >= MAX_CONTEXT_WINDOW_SIZE {
+            batch_ids = batch_ids
+                .into_iter()
+                .map(|mut seq| {
+                    if seq.len() > MAX_CONTEXT_WINDOW_SIZE {
+                        seq.split_off(seq.len() - MAX_CONTEXT_WINDOW_SIZE) // keep last tokens
+                    } else {
+                        seq
+                    }
+                })
+                .collect();
+            
+            println!("After splitting, batch ids len: {} {}", batch_ids.len(), batch_ids[0].len());
+            println!("Tokens after splitting: {:?}", batch_ids);
+        }
+
     }
 }

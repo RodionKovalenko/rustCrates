@@ -358,6 +358,8 @@ pub fn multiply_f64_complex(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<Complex
     let num_rows = matrix_a.len();
     let num_columns = matrix_b[0].len();
 
+    // println!("matrix a dim : {} x {}", matrix_a.len(), matrix_a[0].len());
+    // println!("matrix b dim : {} x {}", matrix_b.len(), matrix_b[0].len());
     // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
     if matrix_a[0].len() != matrix_b.len() {
         panic!("Matrix A does not have the same number of columns as Matrix B rows.");

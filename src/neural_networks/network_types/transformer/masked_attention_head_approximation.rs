@@ -1,7 +1,7 @@
 use num::Complex;
 use num_complex::ComplexFloat;
-use rand_distr::{Distribution, Normal, Uniform};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rand::Rng;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
@@ -9,89 +9,84 @@ use crate::neural_networks::{
     network_types::transformer::transformer_network::EMA_SCALER,
     utils::{
         adam_w::calculate_adam_w,
-        matrix::{add_matrix, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm, get_reduced_matrix, multiply_complex},
-        matrix_approximation::phi,
+        matrix::{average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm},
         weights_initializer::initialize_weights_complex,
     },
 };
 
 use super::transformer_network::MAX_CONTEXT_WINDOW_SIZE;
 
+// Precomputed gradient caches for optimization
+#[derive(Clone)]
+struct PrecomputedGradients {
+    numerator: Vec<Vec<Vec<Complex<f64>>>>,      // [batch][time][dv]
+    denominator: Vec<Vec<Complex<f64>>>,         // [batch][time]
+    grad_numerator: Vec<Vec<Vec<Complex<f64>>>>, // [batch][time][dv]
+    grad_denominator: Vec<Vec<Complex<f64>>>,    // [batch][time]
+    grad_phi_q: Vec<Vec<Vec<Complex<f64>>>>,     // [batch][time][r]
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MaskedAttentionHeadApproximation {
     pub weights_q: Vec<Vec<Complex<f64>>>,
     pub weights_k: Vec<Vec<Complex<f64>>>,
     pub weights_v: Vec<Vec<Complex<f64>>>,
-
     pub bias_pos: Vec<Vec<Complex<f64>>>,
-
     pub bias_q: Vec<Complex<f64>>,
     pub bias_k: Vec<Complex<f64>>,
     pub bias_v: Vec<Complex<f64>>,
-
     pub layer_type: LayerType,
     pub learning_rate: f64,
-
     pub smoothing: f64,
     pub ema: f64,
-
     pub batch_size: usize,
-
     #[serde(skip)]
     pub gradient: Option<Gradient>,
     #[serde(skip)]
     pub previous_gradient: Option<Gradient>,
     pub time_step: usize,
     #[serde(skip)]
-    pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
-    #[serde(skip)]
-    pub attention_weights_batch: Option<Vec<Vec<Vec<f64>>>>,
-    #[serde(skip)]
-    pub attention_weights_batch_raw: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub input_batch: Vec<Vec<Vec<Complex<f64>>>>,
     #[serde(skip)]
     pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
-    pub padding_mask_batch: Option<Vec<Vec<u32>>>,
-
+    pub padding_mask: Vec<Vec<u32>>,
     #[serde(skip)]
-    pub k_cache: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub q_scaled: Vec<Vec<Vec<Complex<f64>>>>,
     #[serde(skip)]
-    pub v_cache: Option<Vec<Vec<Vec<Complex<f64>>>>>,
-
+    pub k_scaled: Vec<Vec<Vec<Complex<f64>>>>,
+    #[serde(skip)]
+    pub v_batch: Vec<Vec<Vec<Complex<f64>>>>,
+    #[serde(skip)]
+    pub phi_q: Vec<Vec<Vec<Complex<f64>>>>,
+    #[serde(skip)]
+    pub phi_k: Vec<Vec<Vec<Complex<f64>>>>,
+    #[serde(skip)]
+    pub prefix_phi_k: Vec<Vec<Vec<Complex<f64>>>>,
+    #[serde(skip)]
+    pub prefix_phi_kv: Vec<Vec<Vec<Vec<Complex<f64>>>>>,
     pub w: Vec<Vec<Complex<f64>>>,
     pub b: Vec<Complex<f64>>,
-
     pub m1: Vec<Vec<Complex<f64>>>,
     pub v1: Vec<Vec<Complex<f64>>>,
 }
 
 impl MaskedAttentionHeadApproximation {
     pub fn new(rows: usize, cols: usize, learning_rate: f64) -> Self {
-        let mut weights_q: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
-        let mut weights_k: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
-        let mut weights_v: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
-
-        let mut bias_pos: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); MAX_CONTEXT_WINDOW_SIZE]; MAX_CONTEXT_WINDOW_SIZE];
-
+        let mut rng = rand::rng();
+        let mut weights_q = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
+        let mut weights_k = weights_q.clone();
+        let mut weights_v = weights_q.clone();
         initialize_weights_complex(rows, cols, &mut weights_q);
         initialize_weights_complex(rows, cols, &mut weights_k);
         initialize_weights_complex(rows, cols, &mut weights_v);
-
-        initialize_weights_complex(MAX_CONTEXT_WINDOW_SIZE, MAX_CONTEXT_WINDOW_SIZE, &mut bias_pos);
-
-        let bias_q: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
-        let bias_k: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
-        let bias_v: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
-
-        let mut rng = rand::rng();
-        let normal = Normal::new(0.0, 1.0).expect("no normal distribution found");
-        let num_features = cols;
-        let d_k = cols;
-
-        let w: Vec<Vec<Complex<f64>>> = (0..num_features).map(|_| (0..d_k).map(|_| Complex::new(normal.sample(&mut rng), 0.0)).collect()).collect();
-
-        let uniform = Uniform::new(0.0, 2.0 * std::f64::consts::PI).unwrap();
-        let b: Vec<Complex<f64>> = (0..num_features).map(|_| Complex::new(uniform.sample(&mut rng), 0.0)).collect();
+        let mut bias_pos = vec![vec![Complex::new(0.0, 0.0); MAX_CONTEXT_WINDOW_SIZE * 5]; MAX_CONTEXT_WINDOW_SIZE * 5];
+        initialize_weights_complex(MAX_CONTEXT_WINDOW_SIZE * 5, MAX_CONTEXT_WINDOW_SIZE * 5, &mut bias_pos);
+        let bias_q = vec![Complex::new(1.0, 0.0); cols];
+        let bias_k = bias_q.clone();
+        let bias_v = bias_q.clone();
+        let w = (0..cols).map(|_| (0..cols).map(|_| Complex::new(rng.random(), 0.0)).collect()).collect();
+        let b = (0..cols).map(|_| Complex::new(rng.random(), 0.0)).collect();
 
         Self {
             weights_q,
@@ -103,409 +98,303 @@ impl MaskedAttentionHeadApproximation {
             bias_v,
             layer_type: LayerType::InputLayer,
             learning_rate,
-            w,
-            b,
             smoothing: 0.99,
             ema: 0.0,
             batch_size: 0,
             gradient: None,
             previous_gradient: None,
-            input_batch: None,
+            time_step: 0,
+            input_batch: vec![],
             output_batch: None,
-            padding_mask_batch: None,
-            attention_weights_batch: None,
-            attention_weights_batch_raw: None,
-            k_cache: None,
-            v_cache: None,
+            padding_mask: vec![],
+            q_scaled: vec![],
+            k_scaled: vec![],
+            v_batch: vec![],
+            phi_q: vec![],
+            phi_k: vec![],
+            prefix_phi_k: vec![],
+            prefix_phi_kv: vec![],
+            w,
+            b,
             m1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
             v1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
-            time_step: 0,
         }
     }
 
-    pub fn set_layer_type(&mut self, layer_type: LayerType) {
-        self.layer_type = layer_type;
-    }
+    pub fn create_default_attention_layer(rows: usize, cols: usize, layer_type: LayerType, learning_rate: f64) -> MaskedAttentionHeadApproximation {
+        let mut attention_layer: MaskedAttentionHeadApproximation = MaskedAttentionHeadApproximation::new(rows, cols, learning_rate);
+        attention_layer.layer_type = layer_type;
 
-    pub fn create_default_attention_layer(rows: usize, cols: usize, layer_type: LayerType, learning_rate: f64) -> Self {
-        let mut attention_layer = Self::new(rows, cols, learning_rate);
-        attention_layer.set_layer_type(layer_type);
         attention_layer
     }
 
-    pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        let input_batch = layer_input.get_input_batch();
-        let padding_mask_batch = layer_input.get_padding_mask_batch();
-        let batch_size = input_batch.len();
-        let seq_len = input_batch[0].len();
-        let d_k = self.weights_k[0].len();
-
-        self.input_batch = Some(input_batch.clone());
-        self.padding_mask_batch = Some(padding_mask_batch.clone());
-        self.time_step = layer_input.get_time_step();
-
-        let q_batch: Vec<_> = input_batch.par_iter().map(|input| multiply_complex(input, &self.weights_q)).collect();
-        let k_batch: Vec<_> = input_batch.par_iter().map(|input| multiply_complex(input, &self.weights_k)).collect();
-        let v_batch: Vec<_> = input_batch.par_iter().map(|input| multiply_complex(input, &self.weights_v)).collect();
-
-        let q_pos_batch: Vec<_> = q_batch.iter().map(|q_seq| add_matrix::<Complex<f64>>(&q_seq, &get_reduced_matrix(&self.bias_pos, q_seq.len(), q_seq[0].len()))).collect();
-        let k_pos_batch: Vec<_> = k_batch.iter().map(|k_seq| add_matrix::<Complex<f64>>(&k_seq, &get_reduced_matrix(&self.bias_pos, k_seq.len(), k_seq[0].len()))).collect();
-
-        let scale = 1.0 / (d_k as f64).sqrt();
-
-        let phi_q_batch: Vec<Vec<Vec<Complex<f64>>>> = q_pos_batch
-            .iter()
-            .map(|q_seq| {
-                q_seq
-                    .iter()
-                    .map(|q_token| {
-                        let scaled_q: Vec<Complex<f64>> = q_token.iter().map(|c| *c * scale).collect();
-                        self.w.iter().map(|omega_i| phi(&scaled_q, omega_i)).collect()
-                    })
-                    .collect()
-            })
-            .collect();
-
-        let phi_k_batch: Vec<Vec<Vec<Complex<f64>>>> = k_pos_batch
-            .iter()
-            .map(|k_seq| {
-                k_seq
-                    .iter()
-                    .map(|k_token| {
-                        let scaled_k: Vec<Complex<f64>> = k_token.iter().map(|c| *c * scale).collect();
-                        self.w.iter().map(|omega_i| phi(&scaled_k, omega_i)).collect()
-                    })
-                    .collect()
-            })
-            .collect();
-
-        let mut prefix_phi_k: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.w.len()]; seq_len]; batch_size];
-        let mut prefix_phi_kv: Vec<Vec<Vec<Vec<Complex<f64>>>>> = vec![vec![vec![vec![Complex::new(0.0, 0.0); v_batch[0][0].len()]; self.w.len()]; seq_len]; batch_size];
-
-        for b in 0..batch_size {
-            for t in 0..seq_len {
-                if t == 0 {
-                    prefix_phi_k[b][t] = phi_k_batch[b][t].clone();
-
-                    prefix_phi_kv[b][t] = (0..self.w.len())
-                        .map(|r_idx| {
-                            let phi_k_val = phi_k_batch[b][t][r_idx];
-                            (0..v_batch[b][t].len()).map(|dv_idx| v_batch[b][t][dv_idx] * phi_k_val).collect()
-                        })
-                        .collect();
-                } else {
-                    prefix_phi_k[b][t] = prefix_phi_k[b][t - 1].iter().zip(&phi_k_batch[b][t]).map(|(prev, curr)| prev + curr).collect();
-
-                    prefix_phi_kv[b][t] = prefix_phi_kv[b][t - 1]
-                        .iter()
-                        .enumerate()
-                        .map(|(r_idx, prev_vec)| prev_vec.iter().zip(&v_batch[b][t]).map(|(&prev_val, &v_val)| prev_val + v_val * phi_k_batch[b][t][r_idx]).collect())
-                        .collect();
-                }
-            }
-        }
-
-        let mut output_batch = vec![vec![vec![Complex::new(0.0, 0.0); v_batch[0][0].len()]; seq_len]; batch_size];
-
-        for b in 0..batch_size {
-            for t in 0..seq_len {
-                let d_v = v_batch[b][0].len();
-                let mut numerator = vec![Complex::new(0.0, 0.0); d_v];
-
-                for r_idx in 0..self.w.len() {
-                    for dv_idx in 0..d_v {
-                        numerator[dv_idx] += prefix_phi_kv[b][t][r_idx][dv_idx] * phi_q_batch[b][t][r_idx];
-                    }
-                }
-
-                let mut denominator: Complex<f64> = prefix_phi_k[b][t].iter().zip(&phi_q_batch[b][t]).map(|(a, b)| a * b).sum::<Complex<f64>>();
-                // Clamp real part to minimum value to avoid division by zero
-                if denominator.abs() < 1e-8 {
-                    denominator += Complex::new(1e-8, 0.0);
-                }
-
-                for dv_idx in 0..d_v {
-                    output_batch[b][t][dv_idx] = numerator[dv_idx] / denominator;
-                }
-            }
-        }
-
-        for b in 0..batch_size {
-            for t in 0..seq_len {
-                if padding_mask_batch[b][t] == 0 {
-                    output_batch[b][t].iter_mut().for_each(|c| *c = Complex::new(0.0, 0.0));
-                }
-            }
-        }
-
-        self.output_batch = Some(output_batch.clone());
-
-        let mut layer_output = LayerOutput::new_default();
-        layer_output.set_output_batch(output_batch);
-
-        layer_output
+    fn phi(&self, x: &[Complex<f64>], omega: &[Complex<f64>]) -> Complex<f64> {
+        let dot = omega.iter().zip(x).map(|(w, x)| w.conj() * x).sum::<Complex<f64>>();
+        let norm_sq = x.iter().map(|c| c.norm_sqr()).sum::<f64>();
+        (dot - Complex::new(norm_sq / 2.0, 0.0)).exp()
     }
 
-    pub fn backward(&mut self, grad_output_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
-        let input_batch = self.input_batch.as_ref().expect("No input");
-        let padding_mask_batch = self.padding_mask_batch.as_ref().expect("No mask");
-        let batch_size = input_batch.len();
-        let seq_len = input_batch[0].len();
-        let d_model = input_batch[0][0].len();
+    pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        let input = layer_input.get_input_batch();
+        let pad = layer_input.get_padding_mask_batch();
+        let bsz = input.len();
+        let seq = input[0].len();
+        let d_model = input[0][0].len();
         let d_k = self.weights_k[0].len();
+        self.input_batch = input.clone();
+        self.padding_mask = pad.clone();
+        self.batch_size = bsz;
+        self.time_step = layer_input.get_time_step();
+        let mut q = vec![vec![vec![Complex::new(0.0, 0.0); d_k]; seq]; bsz];
+        let mut k = q.clone();
+        let mut v = q.clone();
+        for b in 0..bsz {
+            for t in 0..seq {
+                for i in 0..d_model {
+                    for j in 0..d_k {
+                        q[b][t][j] += input[b][t][i] * self.weights_q[i][j];
+                        k[b][t][j] += input[b][t][i] * self.weights_k[i][j];
+                        v[b][t][j] += input[b][t][i] * self.weights_v[i][j];
+                    }
+                }
+            }
+        }
+        self.q_scaled = q.clone();
+        self.k_scaled = k.clone();
+        self.v_batch = v.clone();
         let scale = 1.0 / (d_k as f64).sqrt();
+        for b in 0..bsz {
+            for t in 0..seq {
+                for j in 0..d_k {
+                    self.q_scaled[b][t][j] = (q[b][t][j] + self.bias_pos[t][j]) * scale;
+                    self.k_scaled[b][t][j] = (k[b][t][j] + self.bias_pos[t][j]) * scale;
+                }
+            }
+        }
+        self.phi_q = vec![vec![vec![Complex::new(0.0, 0.0); self.w.len()]; seq]; bsz];
+        self.phi_k = self.phi_q.clone();
+        for b in 0..bsz {
+            for t in 0..seq {
+                for r in 0..self.w.len() {
+                    self.phi_q[b][t][r] = self.phi(&self.q_scaled[b][t], &self.w[r]);
+                    self.phi_k[b][t][r] = self.phi(&self.k_scaled[b][t], &self.w[r]);
+                }
+            }
+        }
+        self.prefix_phi_k = self.phi_k.clone();
+        self.prefix_phi_kv = vec![vec![vec![vec![Complex::new(0.0, 0.0); d_k]; self.w.len()]; seq]; bsz];
+        for b in 0..bsz {
+            for t in 0..seq {
+                if t == 0 {
+                    for r in 0..self.w.len() {
+                        for dv in 0..d_k {
+                            self.prefix_phi_kv[b][t][r][dv] = v[b][t][dv] * self.phi_k[b][t][r];
+                        }
+                    }
+                } else {
+                    for r in 0..self.w.len() {
+                        self.prefix_phi_k[b][t][r] = self.prefix_phi_k[b][t - 1][r] + self.phi_k[b][t][r];
+                        for dv in 0..d_k {
+                            self.prefix_phi_kv[b][t][r][dv] = self.prefix_phi_kv[b][t - 1][r][dv] + v[b][t][dv] * self.phi_k[b][t][r];
+                        }
+                    }
+                }
+            }
+        }
+        let mut out = vec![vec![vec![Complex::new(0.0, 0.0); d_k]; seq]; bsz];
+        for b in 0..bsz {
+            for t in 0..seq {
+                if pad[b][t] == 0 {
+                    continue;
+                }
+                let mut num = vec![Complex::new(0.0, 0.0); d_k];
+                let mut den = Complex::new(0.0, 0.0);
+                for r in 0..self.w.len() {
+                    for dv in 0..d_k {
+                        num[dv] += self.prefix_phi_kv[b][t][r][dv] * self.phi_q[b][t][r];
+                    }
+                    den += self.prefix_phi_k[b][t][r] * self.phi_q[b][t][r];
+                }
+                if den.abs() < 1e-8 {
+                    den += Complex::new(1e-8, 0.0)
+                }
+                for dv in 0..d_k {
+                    out[b][t][dv] = num[dv] / den;
+                }
+            }
+        }
+        self.output_batch = Some(out.clone());
+        let mut lo = LayerOutput::new_default();
+        lo.set_output_batch(out);
+        lo
+    }
 
-        // Retain correct shapes
-        let mut grad_in = vec![vec![vec![Complex::new(0.0, 0.0); d_model]; seq_len]; batch_size];
-        let mut grad_wq_b: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_q[0].len()]; self.weights_q.len()]; batch_size];
-        let mut grad_wk_b: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_k[0].len()]; self.weights_k.len()]; batch_size];
-        let mut grad_wv_b: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_v[0].len()]; self.weights_v.len()]; batch_size];
-        let mut grad_bias_pos: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); seq_len]; seq_len]; batch_size];
-
-        let q_batch: Vec<_> = input_batch.iter().map(|inp| multiply_complex(inp, &self.weights_q)).collect();
-        let k_batch: Vec<_> = input_batch.iter().map(|inp| multiply_complex(inp, &self.weights_k)).collect();
-        let v_batch: Vec<_> = input_batch.iter().map(|inp| multiply_complex(inp, &self.weights_v)).collect();
-
-        let q_pos: Vec<_> = q_batch.iter().map(|seq| add_matrix(seq, &get_reduced_matrix(&self.bias_pos, seq.len(), seq[0].len()))).collect();
-        let k_pos: Vec<_> = k_batch.iter().map(|seq| add_matrix(seq, &get_reduced_matrix(&self.bias_pos, seq.len(), seq[0].len()))).collect();
-
-        let q_scaled: Vec<Vec<Vec<Complex<f64>>>> = q_pos.iter().map(|seq| seq.iter().map(|tok| tok.iter().map(|c| *c * scale).collect()).collect()).collect();
-        let k_scaled: Vec<Vec<Vec<Complex<f64>>>> = k_pos.iter().map(|seq| seq.iter().map(|tok| tok.iter().map(|c| *c * scale).collect()).collect()).collect();
-
-        let (phi_q, dphi_q) = self.compute_phi_and_derivative(&q_scaled);
-        let (phi_k, dphi_k) = self.compute_phi_and_derivative(&k_scaled);
-
-        let (prefix_phi_k, prefix_phi_kv) = self.recompute_prefix_sums(&phi_k, &v_batch);
+    /// Precompute numerator, denominator, and local gradient components for all (b,t)
+    fn precompute_gradients(&self, batch_size: usize, seq_len: usize, grad_output: &Vec<Vec<Vec<Complex<f64>>>>) -> PrecomputedGradients {
+        let d_v = self.weights_v[0].len();
+        let mut pg = PrecomputedGradients {
+            numerator: vec![vec![vec![Complex::new(0.0, 0.0); d_v]; seq_len]; batch_size],
+            denominator: vec![vec![Complex::new(0.0, 0.0); seq_len]; batch_size],
+            grad_numerator: vec![vec![vec![Complex::new(0.0, 0.0); d_v]; seq_len]; batch_size],
+            grad_denominator: vec![vec![Complex::new(0.0, 0.0); seq_len]; batch_size],
+            grad_phi_q: vec![vec![vec![Complex::new(0.0, 0.0); self.w.len()]; seq_len]; batch_size],
+        };
 
         for b in 0..batch_size {
             for t in 0..seq_len {
-                if padding_mask_batch[b][t] == 0 {
-                    continue; // correctly skip masked
+                if self.padding_mask[b][t] == 0 {
+                    continue;
                 }
-                let grad_out = &grad_output_batch[b][t];
-
-                // Same as forward numerator/denominator
-                let mut numerator = vec![Complex::new(0.0, 0.0); grad_out.len()];
+                // Compute numerator & denominator once
                 for r in 0..self.w.len() {
-                    for dv in 0..grad_out.len() {
-                        numerator[dv] += prefix_phi_kv[b][t][r][dv] * phi_q[b][t][r];
+                    let phi_q_rt = self.phi_q[b][t][r];
+                    for dv in 0..d_v {
+                        pg.numerator[b][t][dv] += self.prefix_phi_kv[b][t][r][dv] * phi_q_rt;
                     }
+                    pg.denominator[b][t] += self.prefix_phi_k[b][t][r] * phi_q_rt;
                 }
-                let denominator: Complex<f64> = prefix_phi_k[b][t].iter().zip(&phi_q[b][t]).map(|(a, b)| *a * *b).sum();
-                let safe_denominator = if denominator.norm() < 1e-8 { Complex::new(1e-8, 0.0) } else { denominator };
-
-                // Numerator and denominator gradients
-                let grad_num: Vec<Complex<f64>> = grad_out.iter().map(|&g| g / safe_denominator).collect();
-                let grad_den: Complex<f64> = grad_out.iter().zip(&numerator).map(|(&g, &n)| -g * n / (safe_denominator * safe_denominator)).sum();
-
-                // Through phi_q
-                let mut grad_phi_q_num = vec![Complex::new(0.0, 0.0); self.w.len()];
-                let mut grad_pref_kv_t = vec![vec![Complex::new(0.0, 0.0); grad_out.len()]; self.w.len()];
-                for (dv, &gn) in grad_num.iter().enumerate() {
-                    for r in 0..self.w.len() {
-                        grad_phi_q_num[r] += gn * prefix_phi_kv[b][t][r][dv];
-                        grad_pref_kv_t[r][dv] += gn * phi_q[b][t][r];
-                    }
+                if pg.denominator[b][t].abs() < 1e-8 {
+                    pg.denominator[b][t] += Complex::new(1e-8, 0.0);
                 }
-                let mut grad_phi_q_den = vec![Complex::new(0.0, 0.0); self.w.len()];
-                let mut grad_pref_k_t = vec![Complex::new(0.0, 0.0); self.w.len()];
+                // Compute grad_numerator & grad_denominator
+                for dv in 0..d_v {
+                    let go = grad_output[b][t][dv];
+                    pg.grad_numerator[b][t][dv] = go / pg.denominator[b][t];
+                    pg.grad_denominator[b][t] += -go * pg.numerator[b][t][dv] / (pg.denominator[b][t] * pg.denominator[b][t]);
+                }
+                // Compute grad_phi_q
                 for r in 0..self.w.len() {
-                    grad_phi_q_den[r] = grad_den * prefix_phi_k[b][t][r];
-                    grad_pref_k_t[r] = grad_den * phi_q[b][t][r];
-                }
-                let grad_phi_q: Vec<Complex<f64>> = grad_phi_q_num.iter().zip(&grad_phi_q_den).map(|(a, b)| *a + *b).collect();
-
-                // Backprop through phi_q -> q_scaled -> q_pos
-                let grad_q_scaled = self.backward_through_phi(&grad_phi_q, &q_scaled[b][t], &dphi_q[b][t]);
-                let grad_q_pos: Vec<Complex<f64>> = grad_q_scaled.iter().map(|&g| g * scale).collect();
-
-                // Accumulate weights and input grad for Q path (keep shapes)
-                for i in 0..d_model {
-                    for j in 0..d_k.min(grad_q_pos.len()) {
-                        grad_wq_b[b][i][j] += (input_batch[b][t][i] * grad_q_pos[j]).conj();
-                        grad_in[b][t][i] += (self.weights_q[i][j] * grad_q_pos[j]).conj();
+                    let mut sum = Complex::new(0.0, 0.0);
+                    for dv in 0..d_v {
+                        sum += pg.grad_numerator[b][t][dv] * self.prefix_phi_kv[b][t][r][dv];
                     }
+                    pg.grad_phi_q[b][t][r] = sum + pg.grad_denominator[b][t] * self.prefix_phi_k[b][t][r];
                 }
-                // Accumulate bias_pos gradient: only the relevant slice for this token position t
-                for pos in 0..seq_len.min(grad_q_pos.len()) {
-                    grad_bias_pos[b][t][pos] += grad_q_pos[pos].conj(); // only for q_path, t-th row
-                }
-
-                // Recurse K/V
-                self.backward_through_prefix_sums_batch_fixed(b, t, &grad_pref_k_t, &grad_pref_kv_t, &phi_k, &v_batch, &dphi_k, &k_scaled, input_batch, &mut grad_wk_b, &mut grad_wv_b, &mut grad_bias_pos, &mut grad_in, scale);
             }
         }
+        pg
+    }
+
+    pub fn backward(&mut self, grad_output: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
+        let bsz = self.input_batch.len();
+        let seq = self.input_batch[0].len();
+        let d_model = self.input_batch[0][0].len();
+        let d_k = self.weights_k[0].len();
+        let scale = 1.0 / (d_k as f64).sqrt();
+
+        // Precompute shared gradient terms
+        let pg = self.precompute_gradients(bsz, seq, grad_output);
+
+        // Global accumulators
+        let mut grad_in = vec![vec![vec![Complex::new(0.0, 0.0); d_model]; seq]; bsz];
+        let mut grad_wq = vec![vec![vec![Complex::new(0.0, 0.0); d_k]; d_model]; bsz];
+        let mut grad_wk = grad_wq.clone();
+        let mut grad_wv = grad_wq.clone();
+        let mut grad_bp = vec![vec![vec![Complex::new(0.0, 0.0); seq]; seq]; bsz];
+
+        // Per-batch scratch buffers in parallel
+        let scratch: Vec<_> = (0..bsz)
+            .into_par_iter()
+            .map(|b| {
+                let mut local_wq = vec![vec![Complex::new(0.0, 0.0); d_k]; d_model];
+                let mut local_wk = vec![vec![Complex::new(0.0, 0.0); d_k]; d_model];
+                let mut local_wv = vec![vec![Complex::new(0.0, 0.0); d_k]; d_model];
+                let mut local_in = vec![vec![Complex::new(0.0, 0.0); d_model]; seq];
+                let mut local_bp = vec![vec![Complex::new(0.0, 0.0); seq]; seq];
+
+                // Q path
+                for t in 0..seq {
+                    if self.padding_mask[b][t] == 0 {
+                        continue;
+                    }
+                    for r in 0..self.w.len() {
+                        let phi = self.phi_q[b][t][r];
+                        for i in 0..d_k {
+                            let dphi = phi * (self.w[r][i].conj() - self.q_scaled[b][t][i]);
+                            let gq = pg.grad_phi_q[b][t][r] * dphi * scale;
+                            for j in 0..d_model {
+                                local_wq[j][i] += (gq * self.input_batch[b][t][j]).conj();
+                                local_in[t][j] += (gq * self.weights_q[j][i]).conj();
+                            }
+                            local_bp[t][i] += gq.conj();
+                        }
+                    }
+                    // V path
+                    for tau in 0..=t {
+                        for dv in 0..d_k {
+                            let mut gv = Complex::new(0.0, 0.0);
+                            for r in 0..self.w.len() {
+                                gv += pg.grad_numerator[b][t][dv] * self.phi_q[b][t][r] * self.phi_k[b][tau][r];
+                            }
+                            for j in 0..d_model {
+                                local_wv[j][dv] += (gv * self.input_batch[b][tau][j]).conj();
+                                local_in[tau][j] += (gv * self.weights_v[j][dv]).conj();
+                            }
+                        }
+                    }
+                }
+
+                // K path
+                for tau in 0..seq {
+                    for r in 0..self.w.len() {
+                        let phi = self.phi_k[b][tau][r];
+                        for i in 0..d_k {
+                            let dphi = phi * (self.w[r][i].conj() - self.k_scaled[b][tau][i]);
+                            let mut gk = Complex::new(0.0, 0.0);
+                            for t in tau..seq {
+                                if self.padding_mask[b][t] == 0 {
+                                    continue;
+                                }
+                                let mut gp = Complex::new(0.0, 0.0);
+                                for dv in 0..d_k {
+                                    gp += pg.grad_numerator[b][t][dv] * self.phi_q[b][t][r] * self.v_batch[b][tau][dv];
+                                }
+                                gp += pg.grad_denominator[b][t] * self.phi_q[b][t][r];
+                                gk += gp * dphi * scale;
+                            }
+                            for j in 0..d_model {
+                                local_wk[j][i] += (gk * self.input_batch[b][tau][j]).conj();
+                                local_in[tau][j] += (gk * self.weights_k[j][i]).conj();
+                            }
+                            local_bp[tau][i] += gk.conj();
+                        }
+                    }
+                }
+
+                (local_wq, local_wk, local_wv, local_in, local_bp)
+            })
+            .collect();
+
+        // Merge scratch into global
+        for (b, (lwq, lwk, lwv, lin, lbp)) in scratch.into_iter().enumerate() {
+            for j in 0..d_model {
+                for i in 0..d_k {
+                    grad_wq[b][j][i] += lwq[j][i];
+                    grad_wk[b][j][i] += lwk[j][i];
+                    grad_wv[b][j][i] += lwv[j][i];
+                }
+            }
+            for t in 0..seq {
+                for j in 0..d_model {
+                    grad_in[b][t][j] += lin[t][j];
+                }
+                for i in 0..seq {
+                    grad_bp[b][t][i] += lbp[t][i];
+                }
+            }
+        }
+
+        // Build and return gradient struct
         let mut grad = Gradient::new_default();
-        grad.set_gradient_weights_q_batch(grad_wq_b);
-        grad.set_gradient_weights_k_batch(grad_wk_b);
-        grad.set_gradient_weights_v_batch(grad_wv_b);
-        grad.set_gradient_bias_pos_batch(grad_bias_pos);
+        grad.set_gradient_weights_q_batch(grad_wq);
+        grad.set_gradient_weights_k_batch(grad_wk);
+        grad.set_gradient_weights_v_batch(grad_wv);
+        grad.set_gradient_bias_pos_batch(grad_bp);
         grad.set_gradient_input_batch(grad_in);
 
         self.gradient = Some(grad.clone());
+
         grad
-    }
-
-    fn backward_through_prefix_sums_batch_fixed(
-        &self,
-        batch_idx: usize,
-        current_t: usize,
-        grad_prefix_phi_k_t: &[Complex<f64>],
-        grad_prefix_phi_kv_t: &[Vec<Complex<f64>>],
-        phi_k_batch: &[Vec<Vec<Complex<f64>>>],
-        v_batch: &[Vec<Vec<Complex<f64>>>],
-        dphi_k_batch: &[Vec<Vec<Vec<Complex<f64>>>>],
-        k_scaled_batch: &[Vec<Vec<Complex<f64>>>],
-        input_batch: &[Vec<Vec<Complex<f64>>>],
-        grad_weights_k_batch: &mut Vec<Vec<Vec<Complex<f64>>>>,
-        grad_weights_v_batch: &mut Vec<Vec<Vec<Complex<f64>>>>,
-        grad_bias_pos: &mut Vec<Vec<Vec<Complex<f64>>>>,
-        grad_input_batch: &mut Vec<Vec<Vec<Complex<f64>>>>,
-        scale: f64,
-    ) {
-        let num_features = self.w.len();
-        let d_model = input_batch[batch_idx][0].len();
-        let d_k = k_scaled_batch[batch_idx][0].len();
-        let d_v = self.weights_v[0].len();
-        let d_v_output = grad_prefix_phi_kv_t[0].len();
-
-        let mut accumulated_grad_prefix_phi_k = vec![Complex::new(0.0, 0.0); num_features];
-        let mut accumulated_grad_prefix_phi_kv = vec![vec![Complex::new(0.0, 0.0); d_v_output]; num_features];
-
-        for t in (0..=current_t).rev() {
-            let mut grad_prefix_phi_k_current = accumulated_grad_prefix_phi_k.clone();
-            let mut grad_prefix_phi_kv_current = accumulated_grad_prefix_phi_kv.clone();
-
-            if t == current_t {
-                for r_idx in 0..num_features {
-                    grad_prefix_phi_k_current[r_idx] += grad_prefix_phi_k_t[r_idx];
-                    for dv_idx in 0..d_v_output {
-                        grad_prefix_phi_kv_current[r_idx][dv_idx] += grad_prefix_phi_kv_t[r_idx][dv_idx];
-                    }
-                }
-            }
-
-            let mut grad_phi_k_local = vec![Complex::new(0.0, 0.0); num_features];
-            let mut grad_v_local = vec![Complex::new(0.0, 0.0); d_v];
-
-            for r_idx in 0..num_features {
-                let phi_k_val = phi_k_batch[batch_idx][t][r_idx];
-                for dv_idx in 0..d_v_output.min(d_v) {
-                    if dv_idx < v_batch[batch_idx][t].len() {
-                        grad_phi_k_local[r_idx] += grad_prefix_phi_kv_current[r_idx][dv_idx] * v_batch[batch_idx][t][dv_idx];
-                        grad_v_local[dv_idx] += grad_prefix_phi_kv_current[r_idx][dv_idx] * phi_k_val;
-                    }
-                }
-            }
-
-            let total_grad_phi_k: Vec<Complex<f64>> = grad_prefix_phi_k_current.iter().zip(grad_phi_k_local.iter()).map(|(a, b)| *a + *b).collect();
-            let grad_k_scaled_t = self.backward_through_phi(&total_grad_phi_k, &k_scaled_batch[batch_idx][t], &dphi_k_batch[batch_idx][t]);
-            let grad_k_pos_t: Vec<Complex<f64>> = grad_k_scaled_t.iter().map(|&g| g * scale).collect();
-
-            // Gradient accumulation for weights_k and grad_input (correct as before)
-            for i in 0..d_model {
-                for j in 0..d_k.min(grad_k_pos_t.len()) {
-                    grad_weights_k_batch[batch_idx][i][j] += (input_batch[batch_idx][t][i] * grad_k_pos_t[j]).conj();
-                    grad_input_batch[batch_idx][t][i] += (self.weights_k[i][j] * grad_k_pos_t[j]).conj();
-                }
-                for j in 0..d_v.min(grad_v_local.len()) {
-                    grad_weights_v_batch[batch_idx][i][j] += (input_batch[batch_idx][t][i] * grad_v_local[j]).conj();
-                    grad_input_batch[batch_idx][t][i] += (self.weights_v[i][j] * grad_v_local[j]).conj();
-                }
-            }
-
-            // Corrected: accumulate grad_bias_pos per sequence positions, NOT over input feature i
-            for pos_j in 0..d_k.min(grad_k_pos_t.len()) {
-                grad_bias_pos[batch_idx][t][pos_j] += grad_k_pos_t[pos_j].conj();
-            }
-
-            if t > 0 {
-                accumulated_grad_prefix_phi_k = grad_prefix_phi_k_current;
-                accumulated_grad_prefix_phi_kv = grad_prefix_phi_kv_current;
-            }
-        }
-    }
-
-    // Helper method to compute phi function and its derivative
-    fn compute_phi_and_derivative(&self, scaled_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<Vec<Vec<Complex<f64>>>>>) {
-        let batch_size = scaled_batch.len();
-        let seq_len = scaled_batch[0].len();
-        let num_features = self.w.len();
-        let d_k = scaled_batch[0][0].len();
-
-        let mut phi_batch = vec![vec![vec![Complex::new(0.0, 0.0); num_features]; seq_len]; batch_size];
-        let mut dphi_batch = vec![vec![vec![vec![Complex::new(0.0, 0.0); d_k]; num_features]; seq_len]; batch_size];
-
-        for b in 0..batch_size {
-            for t in 0..seq_len {
-                let x = &scaled_batch[b][t];
-                for (r_idx, omega_i) in self.w.iter().enumerate() {
-                    // Compute phi
-                    phi_batch[b][t][r_idx] = phi(x, omega_i);
-                    let phi_val = phi_batch[b][t][r_idx];
-
-                    // Compute derivative: dφ/dx_d = φ(x) * (conj(ω_d) - conj(x_d))
-                    for d_idx in 0..d_k {
-                        dphi_batch[b][t][r_idx][d_idx] = phi_val * (omega_i[d_idx].conj() - x[d_idx].conj());
-                    }
-                }
-            }
-        }
-
-        (phi_batch, dphi_batch)
-    }
-
-    // Helper method to backward through phi transformation
-    fn backward_through_phi(&self, grad_phi: &[Complex<f64>], _scaled_input: &[Complex<f64>], dphi_dx: &[Vec<Complex<f64>>]) -> Vec<Complex<f64>> {
-        let d_model = _scaled_input.len();
-        let mut grad_scaled = vec![Complex::new(0.0, 0.0); d_model];
-
-        for (r_idx, &grad_phi_r) in grad_phi.iter().enumerate() {
-            if r_idx < dphi_dx.len() {
-                for d_idx in 0..d_model {
-                    if d_idx < dphi_dx[r_idx].len() {
-                        grad_scaled[d_idx] += grad_phi_r * dphi_dx[r_idx][d_idx];
-                    }
-                }
-            }
-        }
-
-        grad_scaled
-    }
-
-    // Helper method to recompute prefix sums
-    fn recompute_prefix_sums(&self, phi_k_batch: &[Vec<Vec<Complex<f64>>>], v_batch: &[Vec<Vec<Complex<f64>>>]) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<Vec<Vec<Complex<f64>>>>>) {
-        let batch_size = phi_k_batch.len();
-        let seq_len = phi_k_batch[0].len();
-        let num_features = phi_k_batch[0][0].len();
-        let d_v = v_batch[0][0].len();
-
-        let mut prefix_phi_k = vec![vec![vec![Complex::new(0.0, 0.0); num_features]; seq_len]; batch_size];
-        let mut prefix_phi_kv = vec![vec![vec![vec![Complex::new(0.0, 0.0); d_v]; num_features]; seq_len]; batch_size];
-
-        for b in 0..batch_size {
-            for t in 0..seq_len {
-                if t == 0 {
-                    prefix_phi_k[b][t] = phi_k_batch[b][t].clone();
-
-                    for r_idx in 0..num_features {
-                        for dv_idx in 0..d_v {
-                            prefix_phi_kv[b][t][r_idx][dv_idx] = v_batch[b][t][dv_idx] * phi_k_batch[b][t][r_idx];
-                        }
-                    }
-                } else {
-                    for r_idx in 0..num_features {
-                        prefix_phi_k[b][t][r_idx] = prefix_phi_k[b][t - 1][r_idx] + phi_k_batch[b][t][r_idx];
-
-                        for dv_idx in 0..d_v {
-                            prefix_phi_kv[b][t][r_idx][dv_idx] = prefix_phi_kv[b][t - 1][r_idx][dv_idx] + v_batch[b][t][dv_idx] * phi_k_batch[b][t][r_idx];
-                        }
-                    }
-                }
-            }
-        }
-
-        (prefix_phi_k, prefix_phi_kv)
     }
 
     pub fn update_parameters(&mut self) {

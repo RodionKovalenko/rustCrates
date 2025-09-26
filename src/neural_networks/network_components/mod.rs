@@ -13,5 +13,5 @@ pub mod layer_input_struct;
 pub mod layer_output_struct;
 pub mod performer;
 pub mod performer_complex;
-pub mod adaptive_pooling_complex;
+pub mod adaptive_pooling;
 pub mod tests;
