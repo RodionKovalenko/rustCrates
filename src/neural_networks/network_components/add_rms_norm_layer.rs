@@ -6,7 +6,7 @@ use crate::neural_networks::{
     network_types::transformer::transformer_network::EMA_SCALER,
     utils::{
         adam_w::calculate_adam_w_bias,
-        matrix::{add_matrix, add_matrix_2d_c, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm},
+        matrix::{add_matrix, add_matrix_2d_c, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm},
     },
 };
 
@@ -142,7 +142,7 @@ impl RMSNormLayer {
 
         if self.gradient.is_some() {
             let previous_gradient = self.gradient.as_ref().expect("");
-            input_batch_gradients = add_matrix_3d(&input_batch_gradients, &previous_gradient.get_gradient_input_batch());
+            // input_batch_gradients = add_matrix_3d(&input_batch_gradients, &previous_gradient.get_gradient_input_batch());
             gradient_gamma_batch = add_matrix_2d_c(&gradient_gamma_batch, &previous_gradient.get_gradient_gamma_batch());
         }
 

@@ -273,7 +273,7 @@ impl NormalNormLayer {
 
         if self.gradient.is_some() {
             let previous_gradient = self.gradient.as_ref().expect("");
-            input_grads = add_matrix_3d(&input_grads, &previous_gradient.get_gradient_input_batch());
+            // input_grads = add_matrix_3d(&input_grads, &previous_gradient.get_gradient_input_batch());
             gamma_grad = add_vectors(&gamma_grad, &previous_gradient.get_gradient_gamma());
             beta_grad = add_vectors(&beta_grad, &previous_gradient.get_gradient_beta());
         }

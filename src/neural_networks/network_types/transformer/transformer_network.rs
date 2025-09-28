@@ -805,10 +805,10 @@ fn cross_entropy_loss(predictions: &Vec<Vec<f64>>, target_tokens: &Vec<u32>, pad
         }
     }
 
-    // let seq_ind_start = _sequence_len_unpadded - target_len - 1;
-    // let end_ind = _sequence_len_unpadded - 1;
-    let seq_ind_start = predictions.len() - target_len;
-    let end_ind = predictions.len();
+    let seq_ind_start = _sequence_len_unpadded - target_len;
+    let end_ind = _sequence_len_unpadded;
+    // let seq_ind_start = predictions.len() - target_len;
+    // let end_ind = predictions.len();
 
     for (s, &target_idx) in target_tokens.iter().enumerate() {
         if target_idx == 1 {
