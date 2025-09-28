@@ -27,6 +27,8 @@ pub struct SelfAttentionLayer {
     #[serde(skip)]
     pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
+    pub gradient: Option<Gradient>,
+    #[serde(skip)]
     pub time_step: usize,
 }
 
@@ -53,6 +55,7 @@ impl SelfAttentionLayer {
             discrete_wavelet_layer: None,
             input_batch: None,
             output_batch: None,
+            gradient: None,
             time_step: 0,
         }
     }

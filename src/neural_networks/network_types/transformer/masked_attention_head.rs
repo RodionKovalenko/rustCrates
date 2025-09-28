@@ -344,7 +344,7 @@ impl MaskedAttentionHead {
 
         if self.gradient.is_some() {
             let previous_gradient = self.gradient.as_ref().expect("");
-            gradient_input_batch = add_matrix_3d(&gradient_input_batch, &previous_gradient.get_gradient_input_batch());
+            // gradient_input_batch = add_matrix_3d(&gradient_input_batch, &previous_gradient.get_gradient_input_batch());
             gradient_bias_pos_batch = add_matrix_3d(&gradient_bias_pos_batch, &&previous_gradient.get_gradient_bias_pos_batch());
             gradient_v_batch = add_matrix_3d(&gradient_v_batch, &&previous_gradient.get_gradient_weights_v_batch());
             gradient_q_batch = add_matrix_3d(&gradient_q_batch, &&previous_gradient.get_gradient_weights_q_batch());
