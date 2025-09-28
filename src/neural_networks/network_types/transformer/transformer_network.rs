@@ -45,7 +45,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
     'outer: for epoch in 0..num_epochs {
         total_loss = Complex::new(0.0, 0.0);
-        for (record_ind, batch_dataset) in dataset.split_into_batches(1).iter().enumerate() {
+        for (record_ind, batch_dataset) in dataset.split_into_batches(batch_size).iter().enumerate() {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
 
             let seconds_elapsed = now.elapsed();
@@ -564,7 +564,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
 
     let batch_size = transformer_network.get_minibatch_size();
     let record_ind = layer_input.get_record_index();
-    let update_gradients: bool = record_ind % batch_size == 0;
+    let update_gradients: bool = (record_ind * batch_ids.len()) % batch_size == 0;
 
     if update_gradients && !forward_only {
         let whole_duration_forward = now.elapsed();
@@ -580,7 +580,8 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
     let mut gradient: Option<Gradient> = None;
     let batch_size = transformer_network.get_minibatch_size();
     let record_ind = layer_input.get_record_index();
-    let update_gradients: bool = record_ind % batch_size == 0 && update_params;
+    let batch_ids = layer_input.get_batch_ids();
+    let update_gradients: bool = (record_ind * batch_ids.len()) % batch_size == 0 && update_params;
 
     // println!("time step: {:?}", time_step);
     // println!("update gradient: {:?}", update_gradients);
