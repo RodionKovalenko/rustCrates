@@ -6,7 +6,7 @@ use crate::neural_networks::{
     network_types::transformer::transformer_network::EMA_SCALER,
     utils::{
         adam_w::calculate_adam_w_bias,
-        matrix::{add_matrix_3d, add_matrix_3d_c, add_vectors, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm},
+        matrix::{add_vectors, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm},
     },
 };
 
@@ -87,8 +87,9 @@ impl NormalNormLayer {
             .iter()
             .enumerate()
             .map(|(i, x)| {
-                let val = ((*x - mean) / stddev) * self.gamma[i] + self.beta[i];
-                Complex::new(val.re, 0.0)
+                let val: Complex<f64> = ((*x - mean) / stddev) * self.gamma[i] + self.beta[i];
+                // Complex::new(val.re, 0.0)
+                val
             })
             .collect();
 
@@ -96,8 +97,7 @@ impl NormalNormLayer {
     }
 
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        let mut input_batch: Vec<Vec<Vec<Complex<f64>>>> = layer_input.get_input_batch();
-        let input_batch_before: Vec<Vec<Vec<Complex<f64>>>> = layer_input.get_input_batch_before();
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = layer_input.get_input_batch();
         let mut output_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
         let mut normalized_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
         let mut mean_batch: Vec<Vec<Complex<f64>>> = Vec::new();
@@ -110,10 +110,8 @@ impl NormalNormLayer {
             self.beta = vec![Complex::new(0.0, 0.0); input_batch[0][0].len()];
         }
 
-        if !input_batch_before.is_empty() {
-            input_batch = add_matrix_3d_c(&input_batch, &input_batch_before);
-            self.is_residual_input_present = true;
-        }
+        // let input_batch_before = vec![vec![vec![Complex::new(0.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
+        // input_batch = add_matrix_3d_c(&input_batch, &input_batch_before);
 
         for input in input_batch.iter() {
             let mut norm_seq = Vec::new();
@@ -133,7 +131,6 @@ impl NormalNormLayer {
         }
 
         self.input_batch = Some(input_batch.clone());
-        self.residual_input_batch = Some(input_batch_before.clone());
         self.normalized_batch = Some(normalized_batch);
         self.mean_batch = Some(mean_batch);
         self.var_batch = Some(var_batch);
@@ -173,24 +170,24 @@ impl NormalNormLayer {
         match previous_gradient_batch {
             GradientBatch::Complex(previous_gradient) => {
                 for b in 0..batch_size {
-                    //previous_gradient_input_batch[b] = transpose(&previous_gradient_input_batch[b]);
                     for s in 0..seq_len {
                         let mu: Complex<f64> = mean_batch[b][s];
                         let var: Complex<f64> = var_batch[b][s] + eps;
                         let std_inv: Complex<f64> = 1.0 / var.sqrt();
                         let var_pow_minus_3_2: Complex<f64> = 1.0 / var.powf(1.5);
 
-                        // Precompute useful terms for mean/var gradients
                         for f in 0..feature_dim {
                             let mut dvar_sum = Complex::new(0.0, 0.0);
                             let mut dmu_sum = Complex::new(0.0, 0.0);
                             let mut dx_minus_mu_sum = Complex::new(0.0, 0.0);
+
+                            // Compute sums over d features
                             for d in 0..feature_dim {
                                 let x: Complex<f64> = input_batch[b][s][d];
                                 let x_hat: Complex<f64> = normalized_batch[b][s][d];
-                                let dout: Complex<f64> = previous_gradient[b][s][d];
+                                let dout: Complex<f64> = previous_gradient[b][s][d].conj();
 
-                                // ∂L/∂gamma and ∂L/∂beta
+                                // Accumulate gamma and beta gradients
                                 gamma_grad[d] += dout * x_hat;
                                 beta_grad[d] += dout;
 
@@ -198,22 +195,23 @@ impl NormalNormLayer {
                                 dvar_sum += dxhat * (x - mu) * (-0.5) * var_pow_minus_3_2;
                                 dx_minus_mu_sum += -2.0 * (x - mu) / n;
                             }
+
                             for d in 0..feature_dim {
-                                let dout: Complex<f64> = previous_gradient[b][s][d];
+                                let dout: Complex<f64> = previous_gradient[b][s][d].conj();
                                 dmu_sum += dout * (-std_inv);
                             }
 
-                            let dxhat: Complex<f64> = previous_gradient[b][s][f] * self.gamma[f];
+                            let dxhat: Complex<f64> = previous_gradient[b][s][f].conj() * self.gamma[f];
                             let x: Complex<f64> = input_batch[b][s][f];
 
                             let dmu = dmu_sum * self.gamma[f] + dvar_sum * dx_minus_mu_sum;
 
                             let gradient: Complex<f64> = (dxhat * std_inv) + (dvar_sum * (2.0 * (x - mu) / n)) + dmu / n;
 
+                            // Propagate only real part in input gradients (imaginary part zeroed)
                             for j in 0..feature_dim {
                                 let _identity: f64 = if j == f { 1.0 } else { 0.0 };
-
-                                input_grads[b][s][j] += Complex::new((gradient * _identity).re, 0.0);
+                                input_grads[b][s][j] += gradient.conj() * _identity;
                             }
                         }
                     }
@@ -221,24 +219,22 @@ impl NormalNormLayer {
             }
             GradientBatch::Real(previous_gradient) => {
                 for b in 0..batch_size {
-                    //previous_gradient_input_batch[b] = transpose(&previous_gradient_input_batch[b]);
                     for s in 0..seq_len {
                         let mu: Complex<f64> = mean_batch[b][s];
                         let var: Complex<f64> = var_batch[b][s] + eps;
                         let std_inv: Complex<f64> = 1.0 / var.sqrt();
                         let var_pow_minus_3_2: Complex<f64> = 1.0 / var.powf(1.5);
 
-                        // Precompute useful terms for mean/var gradients
                         for f in 0..feature_dim {
                             let mut dvar_sum = Complex::new(0.0, 0.0);
                             let mut dmu_sum = Complex::new(0.0, 0.0);
                             let mut dx_minus_mu_sum = Complex::new(0.0, 0.0);
+
                             for d in 0..feature_dim {
                                 let x: Complex<f64> = input_batch[b][s][d];
                                 let x_hat: Complex<f64> = normalized_batch[b][s][d];
                                 let dout: f64 = previous_gradient[b][s][d];
 
-                                // ∂L/∂gamma and ∂L/∂beta
                                 gamma_grad[d] += dout * x_hat;
                                 beta_grad[d] += dout;
 
@@ -246,6 +242,7 @@ impl NormalNormLayer {
                                 dvar_sum += dxhat * (x - mu) * (-0.5) * var_pow_minus_3_2;
                                 dx_minus_mu_sum += -2.0 * (x - mu) / n;
                             }
+
                             for d in 0..feature_dim {
                                 let dout: f64 = previous_gradient[b][s][d];
                                 dmu_sum += dout * (-std_inv);
@@ -267,13 +264,8 @@ impl NormalNormLayer {
             }
         }
 
-        if !self.is_residual_input_present {
-            input_grads = add_matrix_3d(&input_grads, &input_grads);
-        }
-
         if self.gradient.is_some() {
             let previous_gradient = self.gradient.as_ref().expect("");
-            // input_grads = add_matrix_3d(&input_grads, &previous_gradient.get_gradient_input_batch());
             gamma_grad = add_vectors(&gamma_grad, &previous_gradient.get_gradient_gamma());
             beta_grad = add_vectors(&beta_grad, &previous_gradient.get_gradient_beta());
         }
