@@ -88,7 +88,7 @@ impl NormalNormLayer {
             .enumerate()
             .map(|(i, x)| {
                 let val: Complex<f64> = ((*x - mean) / stddev) * self.gamma[i] + self.beta[i];
-                // Complex::new(val.re, 0.0)
+                //Complex::new(val.re, 0.0)
                 val
             })
             .collect();
@@ -177,36 +177,35 @@ impl NormalNormLayer {
                         let var_pow_minus_3_2: Complex<f64> = 1.0 / var.powf(1.5);
 
                         for f in 0..feature_dim {
-                            let mut dvar_sum = Complex::new(0.0, 0.0);
-                            let mut dmu_sum = Complex::new(0.0, 0.0);
-                            let mut dx_minus_mu_sum = Complex::new(0.0, 0.0);
+                            let x_hat: Complex<f64> = normalized_batch[b][s][f];
+                            let dout: Complex<f64> = previous_gradient[b][s][f];
+
+                            // Accumulate gamma and beta gradients
+                            gamma_grad[f] += dout.conj() * x_hat;
+                            beta_grad[f] += dout;
+
+                            let mut d_common_1 = Complex::new(0.0, 0.0);
+                            let mut dmu_term_2 = Complex::new(0.0, 0.0);
+                            let mut dmu_term_3 = Complex::new(0.0, 0.0);
 
                             // Compute sums over d features
                             for d in 0..feature_dim {
                                 let x: Complex<f64> = input_batch[b][s][d];
-                                let x_hat: Complex<f64> = normalized_batch[b][s][d];
                                 let dout: Complex<f64> = previous_gradient[b][s][d].conj();
-
-                                // Accumulate gamma and beta gradients
-                                gamma_grad[d] += dout * x_hat;
-                                beta_grad[d] += dout;
 
                                 let dxhat: Complex<f64> = dout * self.gamma[f];
-                                dvar_sum += dxhat * (x - mu) * (-0.5) * var_pow_minus_3_2;
-                                dx_minus_mu_sum += -2.0 * (x - mu) / n;
+                                d_common_1 += dxhat * (x - mu);
+                                dmu_term_2 += dout;
+                                dmu_term_3 += (x - mu) / n;
                             }
 
-                            for d in 0..feature_dim {
-                                let dout: Complex<f64> = previous_gradient[b][s][d].conj();
-                                dmu_sum += dout * (-std_inv);
-                            }
+                            let dvar_sum = d_common_1 * (-0.5) * var_pow_minus_3_2;
+                            let dmu_sum = self.gamma[f] * (-std_inv) * dmu_term_2 + var_pow_minus_3_2 * d_common_1 * dmu_term_3;
 
                             let dxhat: Complex<f64> = previous_gradient[b][s][f].conj() * self.gamma[f];
                             let x: Complex<f64> = input_batch[b][s][f];
 
-                            let dmu = dmu_sum * self.gamma[f] + dvar_sum * dx_minus_mu_sum;
-
-                            let gradient: Complex<f64> = (dxhat * std_inv) + (dvar_sum * (2.0 * (x - mu) / n)) + dmu / n;
+                            let gradient: Complex<f64> = (dxhat * std_inv) + (dvar_sum * ((2.0 * (x - mu)) / n)) + dmu_sum / n;
 
                             // Propagate only real part in input gradients (imaginary part zeroed)
                             for j in 0..feature_dim {
