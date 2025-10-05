@@ -1,5 +1,5 @@
 use crate::neural_networks::{
-    network_components::{embedding_layer::EmbeddingLayer, layer::LayerEnum, multi_linear_layer::MultiLinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
+    network_components::{embedding_layer::EmbeddingLayer, layer::LayerEnum, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
     network_types::{
         feedforward_layer::FeedForwardLayer,
         neural_network_generic::{create, NeuralNetwork, OperationMode},
@@ -36,7 +36,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
 
     let rows: usize = embedding_dim_compressed;
     // Transformer block start
-    let num_self_attention_layer: usize = 1;
+    let num_self_attention_layer: usize = 25;
     let origin_hidden_dim = 1024;
     for _i in 0..num_self_attention_layer {
         let num_attention_heads: usize = 4;
@@ -47,18 +47,19 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
         let attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
         layers.push(LayerEnum::SelfAttention(Box::new(attention_layer)));
 
-        let hidden_dim = origin_hidden_dim * (_i + 1);
+        // let hidden_dim = origin_hidden_dim * (_i + 1);
+        let hidden_dim = origin_hidden_dim;
 
         let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
         layers.push(LayerEnum::FeedForward(Box::new(ffn_layer)));
     }
     // Transformer block end
 
-    let multinear_layer: MultiLinearLayer = MultiLinearLayer::new(learning_rate, rows, vocab_size, 10);
-    layers.push(LayerEnum::MultiLinear(Box::new(multinear_layer)));
+    // let multinear_layer: MultiLinearLayer = MultiLinearLayer::new(learning_rate, rows, vocab_size, 10);
+    // layers.push(LayerEnum::MultiLinear(Box::new(multinear_layer)));
 
-    // let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
-    // layers.push(LayerEnum::Linear(Box::new(linear_layer)));
+    let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
+    layers.push(LayerEnum::Linear(Box::new(linear_layer)));
 
     let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode);
     layers.push(LayerEnum::Softmax(Box::new(softmax_layer)));

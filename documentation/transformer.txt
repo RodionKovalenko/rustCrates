@@ -236,3 +236,31 @@ dl/dWv = dV/dWv * (dl/dO * dO/dV)
 
 => dl/dWv = XT * (Gt * ST)
 => dl/dWv = 5,2 * (2,4 * 2, 2) = 5, 2 * 4,2 = 5, 4
+
+
+Residual gradients:
+Post norm:
+
+Norm(f(x) + x)
+
+restructure: y = f(x) + x
+o = N(y)
+
+dL/dx = dL/do * do/dN(y) * dN(y)/dy * dy/df(x) * df(x)/dx +  dL/do * do/dN(y) * dN(y)/dy * dy/dx 
+
+simplified:
+dL/dx = dL/do * do/dN(y) * dN(y)/dy * (dy/df(x) * df(x)/dx +  dy/dx)
+
+Pre Norm:
+
+x = x + f(N(x))
+
+restructure
+
+z = N(x)
+y = x + f(z)
+
+dL/dx = dL/dy * dy/df(z) * df(z)/dN(x) * dN(x)/dx + dL/dy * dy/dx
+
+simplified: 
+dL/dx = dL/dy * (dy/df(z) * df(z)/dN(x) * dN(x)/dx +  dy/dx)

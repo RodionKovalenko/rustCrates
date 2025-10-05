@@ -78,50 +78,16 @@ impl FeedForwardLayer {
         }
         self.padding_mask_batch = Some(padding_mask_batch.clone());
 
-        // Apply all layers sequentially
-        for layer in self.layers.iter_mut() {
-            match layer {
-                LayerEnum::Dense(dense_layer) => {
-                    let mut dense_layer_input = LayerInput::new_default();
-                    dense_layer_input.set_input_batch(output.clone());
-                    dense_layer_input.set_padding_mask_batch(padding_mask_batch.clone());
-                    dense_layer_input.set_time_step(self.time_step);
-                    dense_layer_input.set_batch_size(self.batch_size);
-
-                    let output_dense = dense_layer.forward(&dense_layer_input);
-                    output = output_dense.get_output_batch();
-                    //println!("Output FFN Dense layer: {:?}, {:?},  {:?}", &output.len(), &output[0].len(), &output[0][0].len());
-                }
-                LayerEnum::Linear(linear_layer) => {
-                    let mut linear_layer_input = LayerInput::new_default();
-                    linear_layer_input.set_input_batch(output.clone());
-                    linear_layer_input.set_time_step(self.time_step);
-                    linear_layer_input.set_batch_size(self.batch_size);
-
-                    let output_linear = linear_layer.forward(&linear_layer_input);
-                    output = output_linear.get_output_batch();
-                    // println!("gradient input batch in linear layer: {} {} {}", input_gradient_batch.len(), input_gradient_batch[0].len(), input_gradient_batch[0][0].len());
-                }
-                _ => {}
-            }
-        }
-
-        self.output_batch = Some(output.clone());
-
-        let mut layer_input = input.clone();
-        layer_input.set_input_batch(output.clone());
-        layer_input.set_input_batch_before(input_batch.clone());
-
         // Apply the RMS normalization layer
         if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
             match norm_layer_enum {
                 LayerEnum::RMSNorm(rms_norm_layer) => {
-                    let rms_output = rms_norm_layer.forward(&layer_input);
+                    let rms_output = rms_norm_layer.forward(input);
                     output = rms_output.get_output_batch();
                     //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
                 }
                 LayerEnum::Norm(norm_layer) => {
-                    let layer_output = norm_layer.forward(&layer_input);
+                    let layer_output = norm_layer.forward(input);
                     output = layer_output.get_output_batch();
 
                     //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
@@ -129,6 +95,36 @@ impl FeedForwardLayer {
                 _ => {}
             }
         }
+
+        let mut layer_input = input.clone();
+        layer_input.set_input_batch(output.clone());
+        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+
+        // println!("padding mask in feedforward layer: {:?}", padding_mask_batch);
+
+        // Apply all layers sequentially
+        for layer in self.layers.iter_mut() {
+            match layer {
+                LayerEnum::Dense(dense_layer) => {
+                    layer_input.set_input_batch(output.clone());
+                    let output_dense = dense_layer.forward(&layer_input);
+                    output = output_dense.get_output_batch();
+                    //println!("Output FFN Dense layer: {:?}, {:?},  {:?}", &output.len(), &output[0].len(), &output[0][0].len());
+                }
+                LayerEnum::Linear(linear_layer) => {
+                    layer_input.set_input_batch(output.clone());
+
+                    // println!("padding mask in linear layer: {:?}", padding_mask_batch);
+                    let output_linear = linear_layer.forward(&layer_input);     
+                    output = output_linear.get_output_batch();
+                    // println!("gradient input batch in linear layer: {} {} {}", input_gradient_batch.len(), input_gradient_batch[0].len(), input_gradient_batch[0][0].len());
+                }
+                _ => {}
+            }
+        }
+
+        // Residual connection
+        output = add_matrix_3d(&output, &input_batch);
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(output.clone());
@@ -142,27 +138,6 @@ impl FeedForwardLayer {
 
         let mut gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(prev_gradients.clone());
-
-        let mut output_gradient_norm = vec![];
-
-        //Apply RMSNorm backpropagation if it's present
-        if let Some(norm_layer) = &mut self.norm_layer {
-            match norm_layer {
-                LayerEnum::RMSNorm(rms_norm_layer) => {
-                    gradient = rms_norm_layer.backward(&output_gradients);
-                    output_gradients = gradient.get_gradient_input_batch();
-                    output_gradient_norm = output_gradients.clone();
-                    // println!("FFN, gradient from RMS Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
-                }
-                LayerEnum::Norm(norm_layer) => {
-                    gradient = norm_layer.backward(&gradient);
-                    output_gradients = gradient.get_gradient_input_batch();
-                    output_gradient_norm = output_gradients.clone();
-                    //println!("FFN, gradient from Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
-                }
-                _ => {}
-            }
-        }
 
         // forward -> Dense, Linear
         // backward -> Linear, Dense
@@ -183,9 +158,26 @@ impl FeedForwardLayer {
             }
         }
 
-        if !output_gradient_norm.is_empty() {
-            output_gradients = add_matrix_3d(&output_gradients, &output_gradient_norm);
+        gradient.set_gradient_input_batch(output_gradients.clone());
+
+        //Apply RMSNorm backpropagation if it's present
+        if let Some(norm_layer) = &mut self.norm_layer {
+            match norm_layer {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    gradient = rms_norm_layer.backward(&output_gradients);
+                    output_gradients = gradient.get_gradient_input_batch();
+                    // println!("FFN, gradient from RMS Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
+                }
+                LayerEnum::Norm(norm_layer) => {
+                    gradient = norm_layer.backward(&gradient);
+                    output_gradients = gradient.get_gradient_input_batch();
+                    //println!("FFN, gradient from Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
+                }
+                _ => {}
+            }
         }
+
+        output_gradients = add_matrix_3d(&prev_gradients, &output_gradients);
 
         gradient.set_gradient_input_batch(output_gradients);
         self.gradient = Some(gradient.clone());

@@ -64,31 +64,45 @@ impl SelfAttentionLayer {
 // Implement BaseLayer for SelfAttentionLayer
 impl SelfAttentionLayer {
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        let input_batch_before = layer_input.get_input_batch();
-        let mut input_batch = input_batch_before.clone();
+        let mut batch_output = layer_input.get_input_batch();
+        let input_batch = layer_input.get_input_batch();
         let mut padding_mask_batch = layer_input.get_padding_mask_batch();
 
         // Apply DWT if the layer is present
         if self.discrete_wavelet_layer.is_some() {
             if let Some(dwt_layer) = self.discrete_wavelet_layer.as_mut() {
                 let dwt_output = dwt_layer.forward(&layer_input);
-                input_batch = dwt_output.get_output_batch();
+                batch_output = dwt_output.get_output_batch();
                 padding_mask_batch = dwt_output.get_padding_mask_batch();
             }
         }
 
-        self.input_batch = Some(input_batch.clone());
-        self.time_step = layer_input.get_time_step();
+        let mut layer_input = layer_input.clone();
+        layer_input.set_input_batch(input_batch.clone());
+        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+
+        // Process the dense layers
+        if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
+            match norm_layer_enum {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    let output = rms_norm_layer.forward(&layer_input);
+                    batch_output = output.get_output_batch();
+                }
+                LayerEnum::Norm(norm_layer) => {
+                    let output = norm_layer.forward(&layer_input);
+                    batch_output = output.get_output_batch();
+                    //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
+                }
+                _ => {}
+            }
+        }
+
+        layer_input.set_input_batch(batch_output.clone());
 
         let batch_size = input_batch.len();
         let sequence_size = input_batch[0].len();
         let mut batch_output: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![]; sequence_size]; batch_size];
         let batch_size = input_batch.len();
-
-        // Apply the attention mechanism for each head
-        let mut layer_input = layer_input.clone();
-        layer_input.set_input_batch(input_batch.clone());
-        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
         //println!("padding mask batch: {:?}", &padding_mask_batch);
         let attention_head_outputs: Vec<_> = self
@@ -113,6 +127,9 @@ impl SelfAttentionLayer {
             }
         }
 
+        layer_input.set_input_batch(batch_output.clone());
+        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+
         // Decompress Wavelet if the layer is present
         if self.discrete_wavelet_layer.is_some() {
             if let Some(dwt_layer) = self.discrete_wavelet_layer.as_mut() {
@@ -126,30 +143,15 @@ impl SelfAttentionLayer {
             }
         }
 
-        layer_input.set_input_batch(batch_output.clone());
-        layer_input.set_input_batch_before(input_batch_before.clone());
-        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+        // Residual connection
+        batch_output = add_matrix_3d(&batch_output, &input_batch);
 
-        self.output_batch = Some(batch_output.clone());
-
-        // Process the dense layers
-        if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
-            match norm_layer_enum {
-                LayerEnum::RMSNorm(rms_norm_layer) => {
-                    let output = rms_norm_layer.forward(&layer_input);
-                    batch_output = output.get_output_batch();
-                }
-                LayerEnum::Norm(norm_layer) => {
-                    let output = norm_layer.forward(&layer_input);
-                    batch_output = output.get_output_batch();
-                    //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
-                }
-                _ => {}
-            }
-        }
+        self.input_batch = Some(input_batch.clone());
+        self.time_step = layer_input.get_time_step();
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(batch_output.clone());
+        layer_output.set_padding_mask_batch(padding_mask_batch.clone());
         self.output_batch = Some(batch_output.clone());
 
         layer_output
@@ -161,27 +163,6 @@ impl SelfAttentionLayer {
 
         let mut gradient: Gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(previous_gradient_batch.clone());
-
-        let mut output_gradient_norm = vec![];
-
-        // Process the dense layers
-        if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
-            match norm_layer_enum {
-                LayerEnum::RMSNorm(rms_norm_layer) => {
-                    let norm_gradient = rms_norm_layer.backward(&gradient_input_batch);
-                    gradient_input_batch = norm_gradient.get_gradient_input_batch();
-                    gradient.set_gradient_input_batch(gradient_input_batch.clone());
-                    output_gradient_norm = gradient_input_batch.clone();
-                }
-                LayerEnum::Norm(norm_layer) => {
-                    let norm_gradient = norm_layer.backward(&gradient);
-                    gradient_input_batch = norm_gradient.get_gradient_input_batch();
-                    gradient.set_gradient_input_batch(gradient_input_batch.clone());
-                    output_gradient_norm = gradient_input_batch.clone();
-                }
-                _ => {}
-            }
-        }
 
         // Apply DWT if the layer is present
         if self.discrete_wavelet_layer.is_some() {
@@ -201,9 +182,7 @@ impl SelfAttentionLayer {
         // Backpropagate gradients through each attention head
         for (head_ind, attention_head) in self.attention_heads.iter_mut().enumerate() {
             let previous_head_gradient_batch = previous_gradient_head_splitted[head_ind].clone();
-
             gradient = attention_head.backward(&previous_head_gradient_batch);
-
             gradient_input_batches.push(gradient.get_gradient_input_batch());
 
             // println!("gradient input head {:?}", &gradient.get_gradient_input_batch());
@@ -236,9 +215,27 @@ impl SelfAttentionLayer {
             }
         }
 
-        if !output_gradient_norm.is_empty() {
-            combined_gradient_input_batch = add_matrix_3d(&combined_gradient_input_batch, &output_gradient_norm);
+        gradient.set_gradient_input_batch(combined_gradient_input_batch.clone());
+        gradient_input_batch = combined_gradient_input_batch.clone();
+
+        // Process the dense layers
+        if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
+            match norm_layer_enum {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    let norm_gradient = rms_norm_layer.backward(&gradient_input_batch);
+                    gradient_input_batch = norm_gradient.get_gradient_input_batch();
+                    gradient.set_gradient_input_batch(gradient_input_batch.clone());
+                }
+                LayerEnum::Norm(norm_layer) => {
+                    let norm_gradient = norm_layer.backward(&gradient);
+                    gradient_input_batch = norm_gradient.get_gradient_input_batch();
+                    gradient.set_gradient_input_batch(gradient_input_batch.clone());
+                }
+                _ => {}
+            }
         }
+
+        combined_gradient_input_batch = add_matrix_3d(&previous_gradient_batch, &gradient_input_batch);
 
         // Return the final gradient
         gradient.set_gradient_input_batch(combined_gradient_input_batch);
