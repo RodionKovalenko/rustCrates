@@ -8,9 +8,7 @@ use crate::{
         utils::matrix::{add_matrix_2d_c, add_matrix_3d, transpose},
     },
     wavelet_transform::{
-        dwt::{dwt_1d, dwt_2d_partial, get_ll_hh, get_ll_hh_1d, grad_dwt_2d_partial, inverse_dwt_2d_partial},
-        dwt_types::DiscreteWaveletType,
-        modes::WaveletMode,
+        dwt::{dwt_1d, dwt_2d_partial, get_ll_hh, get_ll_hh_1d, grad_dwt_2d_partial, inverse_dwt_2d_partial}, dwt_types::DiscreteWaveletType, modes::WaveletMode
     },
 };
 
@@ -73,9 +71,9 @@ impl DiscreteWaveletLayer {
             gradient: None,
             output_batch: None,
             time_step: 0,
-            wavelet: DiscreteWaveletType::OrthogonalParameterized { nums: 4 },
+            wavelet: DiscreteWaveletType::DB4,
             wavelet_size: 16,
-            compression_levels: 8,
+            compression_levels: 1,
             compression_levels_used: 0,
             wavelet_mode: WaveletMode::ZERO,
             add_details: false,

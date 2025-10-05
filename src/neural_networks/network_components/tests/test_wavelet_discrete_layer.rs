@@ -225,8 +225,8 @@ mod test_wavelet_discrete_layer {
 
         // Define a small input batch, [2][2][3]
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
-        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, input_dim, input_dim as u32);
-        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, 4, 4 as u32);
+        let mut padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];
 
         println!("target token id batch: {:?}", target_token_id_batch);
 
@@ -237,6 +237,8 @@ mod test_wavelet_discrete_layer {
 
         let wavelet_output = wavelet_layer.forward(&layer_input);
         layer_input.set_input_batch(wavelet_output.get_output_batch());
+        layer_input.set_padding_mask_batch(wavelet_output.get_padding_mask_batch());
+        padding_mask_batch = wavelet_output.get_padding_mask_batch();
 
         let ffn_output = ffn_layer.forward(&layer_input);
         layer_input.set_input_batch(ffn_output.get_output_batch());

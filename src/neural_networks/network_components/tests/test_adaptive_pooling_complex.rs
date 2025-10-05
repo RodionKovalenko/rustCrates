@@ -102,7 +102,7 @@ mod test_adaptive_pooling_complex {
 
         // Test 2: Dynamic compression with different input sizes
         println!("\n=== Test 2: Dynamic Compression/Decompression ===");
-        let dynamic_compressor = DynamicSequenceCompressorLayer::new(40, 50);
+        let mut dynamic_compressor = DynamicSequenceCompressorLayer::new(40, 50);
 
         let pooling_output = dynamic_compressor.compress(&input);
         let (compressed2, _metadata2) = (pooling_output.get_output_batch(), pooling_output.get_pooling_metadata().unwrap());
@@ -170,21 +170,22 @@ mod test_adaptive_pooling_complex {
         let learning_rate = 0.001;
         let epsilon = 1e-6;
         let batch_size = 2;
-        let output_dim = 5;
         let sequent_len = 55;
         let input_dim = 64;
+        let compressed_dim = 16;
 
         let operation_mode = OperationMode::TRAINING;
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = create_random_input(2, sequent_len, input_dim);
-        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, 5, (output_dim - 1) as u32);
-        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, compressed_dim, compressed_dim as u32);
+        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; compressed_dim]; input_batch.len()];
 
         let mut layer_input = LayerInput::new_default();
         layer_input.set_input_batch(input_batch.clone());
 
         // Adaptive pooling to exactly 45 tokens
-        let mut pool: AdaptiveAvgPool1dLayer = AdaptiveAvgPool1dLayer::new(16);
+        let mut pool: AdaptiveAvgPool1dLayer = AdaptiveAvgPool1dLayer::new(compressed_dim);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
+
         let pooling_output = pool.forward(&layer_input);
         let (compressed, metadata) = (pooling_output.get_output_batch(), pooling_output.get_pooling_metadata().unwrap());
 

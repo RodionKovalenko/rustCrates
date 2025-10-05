@@ -121,7 +121,7 @@ mod adaptive_pooling_complex_tests {
     #[test]
     fn test_metadata_consistency() {
         let input = create_random_input(2, 200, 32);
-        let compressor = DynamicSequenceCompressorLayer::new(40, 50);
+        let mut compressor = DynamicSequenceCompressorLayer::new(40, 50);
 
         let pooling_output = compressor.compress(&input);
         let (compressed, metadata) = (pooling_output.get_output_batch(), pooling_output.get_pooling_metadata().unwrap());

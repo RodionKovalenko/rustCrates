@@ -10,23 +10,27 @@ use crate::neural_networks::network_components::{
 pub struct DynamicSequenceCompressorLayer {
     target_min: usize,
     target_max: usize,
+    pool_layer: AdaptiveAvgPool1dLayer,
 }
 
 impl DynamicSequenceCompressorLayer {
     pub fn new(target_min: usize, target_max: usize) -> Self {
-        Self { target_min, target_max }
+        Self {
+            target_min,
+            target_max,
+            pool_layer: AdaptiveAvgPool1dLayer::new(target_max),
+        }
     }
 
-    pub fn forward(&self, input: &Vec<Vec<Vec<Complex<f64>>>>) -> LayerOutput {
+    pub fn forward(&mut self, input: &Vec<Vec<Vec<Complex<f64>>>>) -> LayerOutput {
         self.compress(input)
     }
 
     pub fn decompress(&self, compressed: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
-        let pool = AdaptiveAvgPool1dLayer::new(compressed[0].len());
-        pool.decompress(compressed)
+        self.pool_layer.decompress(compressed)
     }
 
-    pub fn compress(&self, input: &Vec<Vec<Vec<Complex<f64>>>>) -> LayerOutput {
+    pub fn compress(&mut self, input: &Vec<Vec<Vec<Complex<f64>>>>) -> LayerOutput {
         let metadata = CompressionMetadata {
             original_length: 0,
             compressed_length: 0,
@@ -59,7 +63,10 @@ impl DynamicSequenceCompressorLayer {
 
         let mut layer_input = LayerInput::new_default();
         layer_input.set_input_batch(input.clone());
-        pool.compress(&layer_input)
+        layer_output = pool.compress(&layer_input);
+        self.pool_layer = pool.clone();
+        
+        layer_output
     }
 
     fn calculate_target_size(&self, input_len: usize) -> usize {

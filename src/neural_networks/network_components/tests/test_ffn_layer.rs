@@ -111,7 +111,7 @@ pub mod test_ffn_layer {
     #[test]
     fn test_softmax_linear_ffn_backward() {
         // Define some small batch size and input dimensions for simplicity
-        let batch_size = 5;
+        let batch_size = 15;
         let _seq_len: usize = 5; // Update to match the input structure
         let input_dim = 16; // Match the input dimension with your input batch
         let output_dim = 10; // Match output_dim to your layer's output
@@ -127,7 +127,7 @@ pub mod test_ffn_layer {
 
         // Define a small input batch, [2][3][4]
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, _seq_len, input_dim);
-        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, _seq_len, output_dim as u32);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, _seq_len - 1, _seq_len as u32);
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];
 
         println!("input batch dim: {}, {}, {}", input_batch.len(), input_batch[0].len(), input_batch[0][0].len());
