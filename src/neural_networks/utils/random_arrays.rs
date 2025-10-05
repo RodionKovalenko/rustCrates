@@ -86,7 +86,7 @@ pub fn generate_random_u32_batch(batch_size: usize, output_dim: usize, max_value
 pub fn generate_u32_batch_from_indices(batch_size: usize, output_dim: usize) -> Vec<Vec<u32>> {
     (0..batch_size)
         .map(|_| {
-            (0..output_dim)
+            (2..output_dim)
                 .map(|output_index| output_index as u32) // Just using the index of the last dimension
                 .collect()
         })

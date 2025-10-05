@@ -118,8 +118,15 @@ pub fn get_target_predictions(predicted_softmax_batch: &Vec<Vec<Vec<f64>>>, targ
                 }
             }
 
+            let mut target_token_unpadded: usize = 0;
+            for &token in target_seq.iter() {
+                if token != 1 {
+                    target_token_unpadded += 1;
+                }
+            }
+
             // let ind_end = _sequence_len_unpadded - target_len;
-            let ind_end = input_seq.len() - target_len;
+            let ind_end = _sequence_len_unpadded - target_token_unpadded;
 
             // Slide backwards to find a valid window of length `target_len`
             for offset in (0..=ind_end).rev() {

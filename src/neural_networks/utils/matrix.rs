@@ -19,6 +19,8 @@ pub fn multiply_complex(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<
     let k = matrix_a[0].len() as i64;
     let n = matrix_b[0].len() as i64;
 
+    // println!("multiply_complex: A is {}x{}, B is {}x{}", m, k, matrix_b.len(), n);
+
     assert!(m > 0 && n > 0 && k > 0, "Matrices must not be empty");
     assert!(matrix_b.len() as i64 == k, "A's columns must match B's rows");
     for row in matrix_a {

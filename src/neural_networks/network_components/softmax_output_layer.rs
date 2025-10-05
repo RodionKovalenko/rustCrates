@@ -96,19 +96,19 @@ impl SoftmaxLayer {
                 }
             }
 
-            let target_len = target_tokens.len();
-            let seq_ind_start = _sequence_len_unpadded - target_len;
-            let seq_end = _sequence_len_unpadded;
-
-            // let seq_ind_start = softmax_output.len() - target_len;
-            // let seq_end = softmax_output.len();
-
             let mut target_len_unpadded = 0.0;
             for (_t, &target_class) in target_tokens.iter().enumerate() {
                 if target_class != 1 {
                     target_len_unpadded += 1.0;
                 }
             }
+
+            // let target_len = target_tokens.len();
+            let seq_ind_start = _sequence_len_unpadded - target_len_unpadded as usize;
+            let seq_end = _sequence_len_unpadded;
+
+            // let seq_ind_start = softmax_output.len() - target_len;
+            // let seq_end = softmax_output.len();
 
             let normalizer: f64 = batch_size as f64 * target_len_unpadded;
 

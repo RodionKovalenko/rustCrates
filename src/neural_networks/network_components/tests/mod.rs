@@ -16,3 +16,4 @@ pub mod test_wavelet_compression;
 pub mod test_wavelet_discrete_layer;
 pub mod test_adaptive_pooling_complex;
 pub mod test_self_attention_layer_appro_with_loss;
+pub mod test_sparse_self_attention_layer;

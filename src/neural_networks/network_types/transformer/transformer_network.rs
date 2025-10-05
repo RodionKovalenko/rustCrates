@@ -70,7 +70,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                 })
                 .collect();
 
-             let mut batch_ids: Vec<Vec<u32>> = batch_ids
+            let mut batch_ids: Vec<Vec<u32>> = batch_ids
                 .iter()
                 .map(|seq| {
                     if seq.is_empty() {
@@ -120,7 +120,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             let loss = cross_entropy_loss_batch(&predicted_softmax_batch, &target_ids, &padding_mask_batch, transformer_network.get_minibatch_size());
             total_loss += loss;
 
-            if epoch > 0 && epoch == (num_epochs - 1) || loss.norm() <= loss_threshold {
+            if epoch > 0 && epoch == (num_epochs - 1) || loss.norm() <= loss_threshold || epoch % 50 == 0 {
                 println!("Epoch: {:?}, Loss: {:?}", epoch, loss);
                 let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = get_target_predictions(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
                 let sampled_tokens = greedy_decoding(&predicted_softmax_targets);
@@ -263,7 +263,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
 
         if time_step > 0 {
             // let last_tokens: Vec<Vec<u32>> = batch_ids.iter().map(|seq| vec![*seq.last().unwrap()]).collect();
-            let last_n = 1;
+            let last_n = 32;
 
             let last_tokens_batch: Vec<Vec<u32>> = batch_ids
                 .iter()
@@ -281,6 +281,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         }
 
         layer_input.set_time_step(time_step);
+        // layer_input.set_padding_mask_batch(vec![vec![1; batch_ids[0].len()]; batch_ids.len()]); // assuming all tokens are valid
 
         let network_output = predict(transformer_network, &layer_input);
         let current_predictions = network_output.get_output_batch_f64();
@@ -440,6 +441,22 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     println!("No previous output for Attention layer");
                 }
             }
+            LayerEnum::SparseSelfAttention(attention) => {
+                // Ensure there's an output from the previous layer before forwarding
+                if let (Some(previous_output), Some(padding_m)) = (&output, &padding_mask) {
+                    layer_input.set_input_batch(previous_output.clone());
+                    layer_input.set_padding_mask_batch(padding_m.clone());
+
+                    //println!("forward self-attention start");
+                    // let start = Instant::now();
+                    let output_attention = attention.forward(&layer_input);
+
+                    // println!("time elapsed in seconds in self attention layer: {:?}", start.elapsed().as_secs_f64());
+                    output = Some(output_attention.get_output_batch());
+                } else {
+                    println!("No previous output for Attention layer");
+                }
+            }
             LayerEnum::SelfAttentionApproximation(attention) => {
                 // Ensure there's an output from the previous layer before forwarding
                 if let (Some(previous_output), Some(padding_m)) = (&output, &padding_mask) {
@@ -550,7 +567,9 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     println!("No previous output for Dense layer");
                 }
             }
-            _ => {}
+            _ => {
+                println!("Layer type not supported for backward pass");
+            }
         }
     }
 
@@ -636,6 +655,23 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                 }
             }
             LayerEnum::SelfAttention(attention_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    // println!("backward attention layer start");
+                    let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
+
+                    let gradient_batch: Gradient = attention_layer.backward(&previous_gradient_batch);
+                    // Update weights and biases
+                    if update_gradients {
+                        attention_layer.update_parameters();
+                    }
+                    // println!("backward attention layer end");
+
+                    gradient = Some(gradient_batch);
+                } else {
+                    println!("No previous gradient in Self Attention Layer");
+                }
+            }
+            LayerEnum::SparseSelfAttention(attention_layer) => {
                 if let Some(previous_gradient) = gradient {
                     // println!("backward attention layer start");
                     let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
@@ -743,7 +779,9 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                 gradient = Some(gradient_batch);
                 // println!("backward softmax end");
             }
-            _ => {}
+            _ => {
+                println!("Layer type not supported for backward pass");
+            }
         }
     }
 
@@ -796,7 +834,7 @@ pub fn cross_entropy_loss_batch(
 
 fn cross_entropy_loss(predictions: &Vec<Vec<f64>>, target_tokens: &Vec<u32>, padding_mask: &Vec<u32>) -> f64 {
     let mut loss: f64 = 0.0;
-    let target_len = target_tokens.len();
+    // let target_len = target_tokens.len();
     let mut count = 0.0;
 
     let mut _sequence_len_unpadded: usize = 0;
@@ -806,7 +844,14 @@ fn cross_entropy_loss(predictions: &Vec<Vec<f64>>, target_tokens: &Vec<u32>, pad
         }
     }
 
-    let seq_ind_start = _sequence_len_unpadded - target_len;
+    let mut target_len_unpadded = 0.0;
+    for (_t, &target_class) in target_tokens.iter().enumerate() {
+        if target_class != 1 {
+            target_len_unpadded += 1.0;
+        }
+    }
+
+    let seq_ind_start = _sequence_len_unpadded - target_len_unpadded as usize;
     let end_ind = _sequence_len_unpadded;
     // let seq_ind_start = predictions.len() - target_len;
     // let end_ind = predictions.len();

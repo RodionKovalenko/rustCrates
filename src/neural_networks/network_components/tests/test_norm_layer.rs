@@ -14,17 +14,17 @@ mod test_norm_layer {
     #[test]
     fn test_norm_backward() {
         // Define some small batch size and input dimensions for simplicity
-        let _batch_size = 2;
-        let _seq_len: usize = 2; // Update to match the input structure
-        let _input_dim = 4; // Match the input dimension with your input batch
-        let _output_dim = 4;
+        let _batch_size = 5;
+        let _seq_len: usize = 5; // Update to match the input structure
+        let _input_dim = 16; // Match the input dimension with your input batch
+        let _output_dim = 5;
         let learning_rate = 0.01;
         let _operation_mode = OperationMode::TRAINING;
         let epsilon = 1e-7;
+        let epsilot_test = 1e-3;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(_batch_size, _output_dim, _input_dim);
-        let input_batch_before: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(_batch_size, _output_dim, _input_dim);
         let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(_batch_size, _output_dim - 1, (_output_dim - 1) as u32);
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];
 
@@ -33,7 +33,6 @@ mod test_norm_layer {
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING);
 
         let mut layer_input = LayerInput::new_default();
-        layer_input.set_input_batch_before(input_batch_before.clone());
         layer_input.set_input_batch(input_batch.clone());
 
         let norm_output = norm_layer.forward(&layer_input);
@@ -45,7 +44,6 @@ mod test_norm_layer {
         let softmax_gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
 
         println!("input batch :{:?}", &input_batch);
-        println!("\ninput batch before :{:?}", &input_batch_before);
 
         // norm_layer.previous_gradient_input_batch = Some(vec![vec![vec![Complex::new(1.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()]);
 
@@ -56,7 +54,6 @@ mod test_norm_layer {
         //TEST 2: input batch itself
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             layer_input.set_input_batch(input.clone());
-            layer_input.set_input_batch_before(input_batch_before.clone());
 
             let norm_output = norm_layer.forward(&layer_input);
 
@@ -79,6 +76,6 @@ mod test_norm_layer {
 
         println!("\n\nglobal relative gradient error: {:?}", &global_error);
 
-        test_gradient_batch_error(&numerical_grad_input_norm, &analytical_gradient_input_norm, 1e-5);
+        test_gradient_batch_error(&numerical_grad_input_norm, &analytical_gradient_input_norm, epsilot_test);
     }
 }

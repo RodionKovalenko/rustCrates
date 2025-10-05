@@ -10,7 +10,6 @@ mod test_self_attention_layer {
             feedforward_layer::FeedForwardLayer,
             neural_network_generic::OperationMode,
             transformer::{masked_attention_head::MaskedAttentionHead, self_attention_layer::SelfAttentionLayer, transformer_network::cross_entropy_loss_batch},
-            wavelet_complex_layer::ComplexWaveletLayer,
         },
         utils::{
             derivative::{global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_input_batch, numerical_gradient_input_batch_sum_without_loss, numerical_gradient_weights, numerical_gradient_weights_multiple_layers_without_loss, test_gradient_batch_error, test_gradient_error_2d},
@@ -227,28 +226,28 @@ mod test_self_attention_layer {
     #[test]
     fn test_self_attention_layer_backward() {
         // Define some small batch size and input dimensions for simplicity
-        let batch_size = 2;
-        let input_dim = 8;
-        let output_dim = 8;
+        let batch_size = 1;
+        let seq_len = 5;
+        let feature_dim = 16;
+        let output_dim = 4;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
         let num_attention_heads = 4;
+        let hidden_dim = 16;
         let epsilon = 1e-8;
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let mut attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, input_dim, output_dim, learning_rate);
+        let mut attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, feature_dim, feature_dim, learning_rate);
 
-        let sequence_len = 8;
-        let embedding_dim = 16;
-        let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(sequence_len, embedding_dim, learning_rate);
-        let mut wavelet_layer: ComplexWaveletLayer = ComplexWaveletLayer::new();
-        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, sequence_len, embedding_dim);
+        let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(feature_dim, hidden_dim, learning_rate);
+        // let mut wavelet_layer: ComplexWaveletLayer = ComplexWaveletLayer::new();
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, hidden_dim, feature_dim);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
-        let target_token_id_batch: Vec<Vec<u32>> = generate_u32_batch_from_indices(batch_size, output_dim - 4);
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, seq_len, feature_dim);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_u32_batch_from_indices(batch_size, output_dim);
 
-        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; sequence_len]; batch_size];
+        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; seq_len]; batch_size];
 
         let mut layer_input = LayerInput::new_default();
         layer_input.set_input_batch(input_batch.clone());
@@ -261,16 +260,16 @@ mod test_self_attention_layer {
         let ffn_batch_output = ffn_layer.forward(&layer_input);
         layer_input.set_input_batch(ffn_batch_output.get_output_batch());
 
-        let wavelet_output = wavelet_layer.forward(&layer_input);
-        layer_input.set_input_batch(wavelet_output.get_output_batch());
+        // let wavelet_output = wavelet_layer.forward(&layer_input);
+        // layer_input.set_input_batch(wavelet_output.get_output_batch());
 
         let linear_output = linear_layer.forward(&layer_input);
         let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
-        let gradient_wavelet: Gradient = wavelet_layer.backward(&gradient_linear);
-        let gradient_ffn: Gradient = ffn_layer.backward(&gradient_wavelet.get_gradient_input_batch());
+        // let gradient_wavelet: Gradient = wavelet_layer.backward(&gradient_linear);
+        let gradient_ffn: Gradient = ffn_layer.backward(&gradient_linear.get_gradient_input_batch());
         let gradient_attention_layer: Gradient = attention_layer.backward(&gradient_ffn.get_gradient_input_batch());
 
         let gradient_input_batch_att_l = gradient_attention_layer.get_gradient_input();
@@ -301,8 +300,8 @@ mod test_self_attention_layer {
             let ffn_batch_output = ffn_layer.forward(&layer_input);
             layer_input.set_input_batch(ffn_batch_output.get_output_batch());
 
-            let wavelet_output = wavelet_layer.forward(&layer_input);
-            layer_input.set_input_batch(wavelet_output.get_output_batch());
+            // let wavelet_output = wavelet_layer.forward(&layer_input);
+            // layer_input.set_input_batch(wavelet_output.get_output_batch());
 
             let linear_output = linear_layer.forward(&layer_input);
             let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
@@ -340,7 +339,7 @@ mod test_self_attention_layer {
             }
         }
 
-        //test_gradient_error_2d(&num_gradient_input_batch_aggregated, &gradient_input_batch_att_l, 1e-2);
+        test_gradient_error_2d(&num_gradient_input_batch_aggregated, &gradient_input_batch_att_l, 1e-2);
 
         // Test weights q
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
@@ -358,8 +357,8 @@ mod test_self_attention_layer {
             let ffn_batch_output = ffn_layer.forward(&layer_input);
             layer_input.set_input_batch(ffn_batch_output.get_output_batch());
 
-            let wavelet_output = wavelet_layer.forward(&layer_input);
-            layer_input.set_input_batch(wavelet_output.get_output_batch());
+            // let wavelet_output = wavelet_layer.forward(&layer_input);
+            // layer_input.set_input_batch(wavelet_output.get_output_batch());
 
             let linear_output = linear_layer.forward(&layer_input);
             let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));

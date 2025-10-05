@@ -152,6 +152,28 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
                     }
                 }
             }
+            LayerEnum::SparseSelfAttention(self_attention_layer) => {
+                for attention_head in self_attention_layer.attention_heads.iter_mut() {
+                    // attention_head.previous_gradient = None;
+                    attention_head.gradient = None;
+                    attention_head.batch_size = 0;
+                }
+                if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
+                    match norm_layer {
+                        LayerEnum::RMSNorm(_norm_layer) => {
+                            //_norm_layer.previous_gradient = None;
+                            _norm_layer.gradient = None;
+                            _norm_layer.batch_size = 0;
+                        }
+                        LayerEnum::Norm(_norm_layer) => {
+                            //_norm_layer.previous_gradient = None;
+                            _norm_layer.gradient = None;
+                            _norm_layer.batch_size = 0;
+                        }
+                        _ => {}
+                    }
+                }
+            }
             LayerEnum::SelfAttentionApproximation(self_attention_layer) => {
                 for attention_head in self_attention_layer.attention_heads.iter_mut() {
                     attention_head.learning_rate = learning_rate;
@@ -237,6 +259,28 @@ pub fn reset_previous_gradient(transformer: &mut NeuralNetwork) {
                 dense_layer.batch_size = 0;
             }
             LayerEnum::SelfAttention(self_attention_layer) => {
+                for attention_head in self_attention_layer.attention_heads.iter_mut() {
+                    // attention_head.previous_gradient = None;
+                    attention_head.gradient = None;
+                    attention_head.batch_size = 0;
+                }
+                if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
+                    match norm_layer {
+                        LayerEnum::RMSNorm(_norm_layer) => {
+                            //_norm_layer.previous_gradient = None;
+                            _norm_layer.gradient = None;
+                            _norm_layer.batch_size = 0;
+                        }
+                        LayerEnum::Norm(_norm_layer) => {
+                            //_norm_layer.previous_gradient = None;
+                            _norm_layer.gradient = None;
+                            _norm_layer.batch_size = 0;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            LayerEnum::SparseSelfAttention(self_attention_layer) => {
                 for attention_head in self_attention_layer.attention_heads.iter_mut() {
                     // attention_head.previous_gradient = None;
                     attention_head.gradient = None;
@@ -369,6 +413,28 @@ pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
                         }
                         LayerEnum::Norm(norm_layer) => {
                             println!("norm_layer in ffn layer: {:?}", &norm_layer.learning_rate);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            LayerEnum::SparseSelfAttention(self_attention_layer) => {
+                for attention_head in self_attention_layer.attention_heads.iter_mut() {
+                    // attention_head.previous_gradient = None;
+                    attention_head.gradient = None;
+                    attention_head.batch_size = 0;
+                }
+                if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
+                    match norm_layer {
+                        LayerEnum::RMSNorm(_norm_layer) => {
+                            //_norm_layer.previous_gradient = None;
+                            _norm_layer.gradient = None;
+                            _norm_layer.batch_size = 0;
+                        }
+                        LayerEnum::Norm(_norm_layer) => {
+                            //_norm_layer.previous_gradient = None;
+                            _norm_layer.gradient = None;
+                            _norm_layer.batch_size = 0;
                         }
                         _ => {}
                     }

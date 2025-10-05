@@ -47,30 +47,29 @@ pub fn test_train_transformer() {
     // let target_3: &str = "118";
 
     let input_str1: &str = "Was ist die Hauptstadt von Deutschland? Kannst du bitte eine kurze Antwort geben?";
-    let input_str2: &str = "Was kommt nach Donnerstag?";
-    let input_str3: &str = "Was macht 2 + 3 aus?";
+    // let input_str2: &str = "Was kommt nach Donnerstag?";
+    // let input_str3: &str = "Was macht 2 + 3 aus?";
 
-    //let target1: &str = " Mir geht es gut.";
+    // let target1: &str = " Mir geht es gut.";
     let target_1: &str = "Berlin ist die Hauptstadt und ein Land der Bundesrepublik Deutschland.";
-    let target_2: &str = "Nach Donnerstag kommt Freitag.";
-    let target_3: &str = "2 + 3 macht 5";
-
+    // let target_2: &str = "Nach Donnerstag kommt Freitag.";
+    // let target_3: &str = "2 + 3 macht 5";
 
     let mut input: Vec<String> = Vec::new();
     input.push(input_str1.to_string());
-    input.push(input_str2.to_string());
-    input.push(input_str3.to_string());
+    // input.push(input_str2.to_string());
+    // input.push(input_str3.to_string());
 
     let mut target: Vec<String> = Vec::new();
     target.push(target_1.to_string());
-    target.push(target_2.to_string());
-    target.push(target_3.to_string());
+    // target.push(target_2.to_string());
+    // target.push(target_3.to_string());
 
-    let batch_size = target.len();
+    let _batch_size = target.len();
     let dataset = Dataset::new(input, target);
     let num_epochs: usize = 5000;
 
-    train(&mut transformer, dataset, num_epochs, batch_size);
+    train(&mut transformer, dataset, num_epochs, 1);
     let seconds_elapsed_end = now.elapsed();
 
     println!("time elapsed in seconds: {:?}", seconds_elapsed_end - seconds_elapsed);

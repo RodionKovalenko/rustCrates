@@ -178,10 +178,10 @@ impl NormalNormLayer {
 
                         for f in 0..feature_dim {
                             let x_hat: Complex<f64> = normalized_batch[b][s][f];
-                            let dout: Complex<f64> = previous_gradient[b][s][f];
+                            let dout: Complex<f64> = previous_gradient[b][s][f].conj();
 
                             // Accumulate gamma and beta gradients
-                            gamma_grad[f] += dout.conj() * x_hat;
+                            gamma_grad[f] += dout * x_hat;
                             beta_grad[f] += dout;
 
                             let mut d_common_1 = Complex::new(0.0, 0.0);
@@ -207,59 +207,13 @@ impl NormalNormLayer {
 
                             let gradient: Complex<f64> = (dxhat * std_inv) + (dvar_sum * ((2.0 * (x - mu)) / n)) + dmu_sum / n;
 
-                            // Propagate only real part in input gradients (imaginary part zeroed)
-                            for j in 0..feature_dim {
-                                let _identity: f64 = if j == f { 1.0 } else { 0.0 };
-                                input_grads[b][s][j] += gradient.conj() * _identity;
-                            }
+                            input_grads[b][s][f] = gradient.conj();
                         }
                     }
                 }
             }
-            GradientBatch::Real(previous_gradient) => {
-                for b in 0..batch_size {
-                    for s in 0..seq_len {
-                        let mu: Complex<f64> = mean_batch[b][s];
-                        let var: Complex<f64> = var_batch[b][s] + eps;
-                        let std_inv: Complex<f64> = 1.0 / var.sqrt();
-                        let var_pow_minus_3_2: Complex<f64> = 1.0 / var.powf(1.5);
-
-                        for f in 0..feature_dim {
-                            let mut dvar_sum = Complex::new(0.0, 0.0);
-                            let mut dmu_sum = Complex::new(0.0, 0.0);
-                            let mut dx_minus_mu_sum = Complex::new(0.0, 0.0);
-
-                            for d in 0..feature_dim {
-                                let x: Complex<f64> = input_batch[b][s][d];
-                                let x_hat: Complex<f64> = normalized_batch[b][s][d];
-                                let dout: f64 = previous_gradient[b][s][d];
-
-                                gamma_grad[d] += dout * x_hat;
-                                beta_grad[d] += dout;
-
-                                let dxhat: Complex<f64> = dout * self.gamma[f];
-                                dvar_sum += dxhat * (x - mu) * (-0.5) * var_pow_minus_3_2;
-                                dx_minus_mu_sum += -2.0 * (x - mu) / n;
-                            }
-
-                            for d in 0..feature_dim {
-                                let dout: f64 = previous_gradient[b][s][d];
-                                dmu_sum += dout * (-std_inv);
-                            }
-
-                            let dxhat: Complex<f64> = previous_gradient[b][s][f] * self.gamma[f];
-                            let x: Complex<f64> = input_batch[b][s][f];
-
-                            let dmu = dmu_sum * self.gamma[f] + dvar_sum * dx_minus_mu_sum;
-                            let gradient: Complex<f64> = (dxhat * std_inv) + (dvar_sum * (2.0 * (x - mu) / n)) + dmu / n;
-
-                            for j in 0..feature_dim {
-                                let _identity: f64 = if j == f { 1.0 } else { 0.0 };
-                                input_grads[b][s][j] += gradient * _identity;
-                            }
-                        }
-                    }
-                }
+            GradientBatch::Real(_previous_gradient) => {
+                panic!("Backward pass for real gradients not implemented for NormalNormLayer");
             }
         }
 
