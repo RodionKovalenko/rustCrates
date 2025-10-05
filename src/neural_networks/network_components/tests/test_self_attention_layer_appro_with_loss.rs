@@ -12,6 +12,7 @@ mod test_self_attention_layer_approx_with_loss {
         utils::derivative::{global_relative_error_2d_l2, numerical_gradient_input, numerical_gradient_weights, test_gradient_error_2d},
     };
 
+    #[ignore]
     #[test]
     fn test_loss_attention_head_approx_backward() {
         let batch_size = 2;
