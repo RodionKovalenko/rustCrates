@@ -4,7 +4,7 @@ mod test_norm_layer {
         network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, linear_layer::LinearLayer, norm_layer::NormalNormLayer, softmax_output_layer::SoftmaxLayer},
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
         utils::{
-            derivative::{global_relative_error_l2, numerical_gradient_input_batch, test_gradient_batch_error},
+            derivative::{global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_bias, numerical_gradient_input_batch, test_gradient_batch_error, test_gradient_error_1d},
             random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
         },
     };
@@ -50,8 +50,12 @@ mod test_norm_layer {
         let linear_gradient = linear_layer.backward(&softmax_gradient);
         let gradient_norm = norm_layer.backward(&linear_gradient);
         let analytical_gradient_input_norm = gradient_norm.get_gradient_input_batch();
+        let analytical_beta_gradient = gradient_norm.get_gradient_beta();
+        let beta = norm_layer.beta.clone();
+        let analytical_gamma_gradient = gradient_norm.get_gradient_gamma();
+        let gamma = norm_layer.gamma.clone();
 
-        //TEST 2: input batch itself
+        //TEST 1: input batch itself
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             layer_input.set_input_batch(input.clone());
 
@@ -69,13 +73,67 @@ mod test_norm_layer {
 
         let numerical_grad_input_norm: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch(&mut loss_fn, input_batch.clone(), epsilon);
 
-        println!("\nnumerical gradient norm: {:?}", &numerical_grad_input_norm);
-        println!("\nanalytical gradient norm: {:?}", &analytical_gradient_input_norm);
+        println!("\nnumerical gradient input batch norm: {:?}", &numerical_grad_input_norm);
+        println!("\nanalytical gradient input batch norm: {:?}", &analytical_gradient_input_norm);
 
         let global_error = global_relative_error_l2(&numerical_grad_input_norm, &analytical_gradient_input_norm);
 
-        println!("\n\nglobal relative gradient error: {:?}", &global_error);
+        println!("\n\nglobal relative gradient input batch error: {:?}", &global_error);
 
         test_gradient_batch_error(&numerical_grad_input_norm, &analytical_gradient_input_norm, epsilot_test);
+
+        //TEST 2: gamma gradient
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, gamma: &Vec<Complex<f64>>| -> Complex<f64> {
+            norm_layer.gamma = gamma.clone();
+            layer_input.set_input_batch(input.clone());
+            let norm_output = norm_layer.forward(&layer_input);
+
+            layer_input.set_input_batch(norm_output.get_output_batch());
+            let linear_layer_output = linear_layer.forward(&layer_input);
+
+            let softmax_batch_output = softmax_layer.forward(&linear_layer_output.get_output_batch(), Some(padding_mask_batch.clone()));
+
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, _batch_size);
+
+            loss
+        };
+
+        let numerical_grad_gamma: Vec<Complex<f64>> = numerical_gradient_bias(&mut loss_fn, input_batch.clone(), &gamma, epsilon);
+
+        println!("\nnumerical gradient gamma norm: {:?}", &numerical_grad_gamma);
+        println!("\nanalytical gradient gamma norm: {:?}", &analytical_gamma_gradient);
+
+        let global_error = global_relative_error_2d_l2(&vec![numerical_grad_gamma.clone()], &vec![analytical_gamma_gradient.clone()]);
+
+        println!("\n\nglobal relative gradient error gamma: {:?}", &global_error);
+
+        test_gradient_error_1d(&numerical_grad_gamma, &analytical_gamma_gradient, epsilot_test);
+
+        //TEST 3: beta gradient
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, beta: &Vec<Complex<f64>>| -> Complex<f64> {
+            norm_layer.beta = beta.clone();
+            layer_input.set_input_batch(input.clone());
+            let norm_output = norm_layer.forward(&layer_input);
+
+            layer_input.set_input_batch(norm_output.get_output_batch());
+            let linear_layer_output = linear_layer.forward(&layer_input);
+
+            let softmax_batch_output = softmax_layer.forward(&linear_layer_output.get_output_batch(), Some(padding_mask_batch.clone()));
+
+            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, _batch_size);
+
+            loss
+        };
+
+        let numerical_grad_beta: Vec<Complex<f64>> = numerical_gradient_bias(&mut loss_fn, input_batch.clone(), &beta, epsilon);
+
+        println!("\nnumerical gradient beta norm: {:?}", &numerical_grad_beta);
+        println!("\nanalytical gradient beta norm: {:?}", &analytical_beta_gradient);
+
+        let global_error = global_relative_error_2d_l2(&vec![numerical_grad_beta.clone()], &vec![analytical_beta_gradient.clone()]);
+
+        println!("\n\nglobal relative gradient error beta: {:?}", &global_error);
+
+        test_gradient_error_1d(&numerical_grad_beta, &analytical_beta_gradient, epsilot_test);
     }
 }
