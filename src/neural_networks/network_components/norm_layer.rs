@@ -6,7 +6,7 @@ use crate::neural_networks::{
     network_types::transformer::transformer_network::EMA_SCALER,
     utils::{
         adam_w::calculate_adam_w_bias,
-        matrix::{add_vectors, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm},
+        matrix::{add_vectors, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm, conjugate_1d},
     },
 };
 
@@ -226,8 +226,8 @@ impl NormalNormLayer {
         let mut gradient = Gradient::new_default();
         gradient.set_time_step(self.time_step);
         gradient.set_gradient_input_batch(input_grads);
-        gradient.set_gradient_gamma(gamma_grad);
-        gradient.set_gradient_beta(beta_grad);
+        gradient.set_gradient_gamma(conjugate_1d(&gamma_grad));
+        gradient.set_gradient_beta(conjugate_1d(&beta_grad));
 
         self.gradient = Some(gradient.clone());
         gradient

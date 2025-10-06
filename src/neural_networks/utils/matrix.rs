@@ -410,6 +410,28 @@ pub fn conjugate(matrix: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
     result
 }
 
+pub fn conjugate_1d(matrix: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
+    let mut result = vec![Complex::new(0.0, 0.0); matrix.len()];
+
+    for i in 0..matrix.len() {
+        result[i] = matrix[i].conj();
+    }
+    result
+}
+
+pub fn conjugate_2d(matrix: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    let rows = matrix.len();
+    let cols = matrix[0].len();
+    let mut result = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
+
+    for i in 0..rows {
+        for j in 0..cols {
+            result[i][j] = matrix[i][j].conj();
+        }
+    }
+    result
+}
+
 pub fn transpose<T: Debug + Clone + Sync + Send>(matrix_a: &Vec<Vec<T>>) -> Vec<Vec<T>> {
     let num_rows = matrix_a.len();
     let num_cols = matrix_a[0].len();

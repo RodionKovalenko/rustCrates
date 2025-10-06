@@ -5,7 +5,7 @@ pub static B_2: f64 = 0.999;
 pub static EPSILON: f64 = 1e-6;
 pub static WEIGHT_DECAY: f64 = 0.01;
 pub static MAX_NORM: f64 = 10.0;
-pub static WARMUP_STEPS: usize = 4000;
+pub static WARMUP_STEPS: usize = 50;
 
 // Assume this helper function exists or add it
 pub fn is_nan_or_inf(c: &Complex<f64>) -> bool {
