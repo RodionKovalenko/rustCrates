@@ -29,7 +29,7 @@ pub fn test_train_transformer() {
         }
     };
 
-    let learning_rate = 0.0001;
+    let learning_rate = 0.01;
     transformer.learning_rate = learning_rate;
     update_learning_rate(&mut transformer, learning_rate);
 

@@ -40,12 +40,15 @@ impl FeedForwardLayer {
 
         let mut layers: Vec<LayerEnum> = vec![];
         let dense_layer: Layer = Layer::new(rows, cols, &learning_rate, &ActivationType::TANH, LayerType::DenseLayer);
-        let linear_layer = LinearLayer::new(learning_rate, cols, rows);
+        let dense_layer_2: Layer = Layer::new(cols, rows, &learning_rate, &ActivationType::TANH, LayerType::DenseLayer);
+
+        let _linear_layer = LinearLayer::new(learning_rate, cols, rows);
         let _norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(rows, epsilon, learning_rate))));
         let _rms_norm_layer = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(rows, epsilon, learning_rate))));
 
         layers.push(LayerEnum::Dense(Box::new(dense_layer)));
-        layers.push(LayerEnum::Linear(Box::new(linear_layer)));
+        layers.push(LayerEnum::Dense(Box::new(dense_layer_2)));
+        // layers.push(LayerEnum::Linear(Box::new(_linear_layer)));
 
         Self {
             layers,
@@ -115,7 +118,7 @@ impl FeedForwardLayer {
                     layer_input.set_input_batch(output.clone());
 
                     // println!("padding mask in linear layer: {:?}", padding_mask_batch);
-                    let output_linear = linear_layer.forward(&layer_input);     
+                    let output_linear = linear_layer.forward(&layer_input);
                     output = output_linear.get_output_batch();
                     // println!("gradient input batch in linear layer: {} {} {}", input_gradient_batch.len(), input_gradient_batch[0].len(), input_gradient_batch[0][0].len());
                 }
@@ -146,7 +149,6 @@ impl FeedForwardLayer {
                 LayerEnum::Dense(dense_layer) => {
                     gradient = dense_layer.backward(&output_gradients);
                     output_gradients = gradient.get_gradient_input_batch();
-
                     //println!("Gradient input batch FFN Dense Layer: {:?}, {:?},  {:?}", &output_gradients.len(), &output_gradients[0].len(), &output_gradients[0][0].len());
                 }
                 LayerEnum::Linear(linear_layer) => {

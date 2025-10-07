@@ -468,6 +468,9 @@ pub fn hadamard_product_2d_c(input_1: &Vec<Vec<Complex<f64>>>, input_2: &Vec<Vec
     // Initialize result matrix with zeros
     let mut result = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
 
+    // println!("input 1 dim: {} x {}", input_1.len(), input_1[0].len());
+    // println!("input 2 dim: {} x {}", input_2.len(), input_2[0].len());
+
     for i in 0..rows {
         for j in 0..cols {
             result[i][j] = input_1[i][j] * input_2[i][j];
@@ -849,36 +852,57 @@ pub fn get_reduced_matrix(matrix: &Vec<Vec<Complex<f64>>>, num_rows: usize, num_
         .collect()
 }
 
-pub fn clip_gradients(_gradients: &mut Vec<Vec<Complex<f64>>>, _threshold: f64) {}
-
-pub fn clip_gradient_1d(_gradients: &mut Vec<Complex<f64>>, _threshold: f64) {}
-
-pub fn compute_global_norm(grads: &Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Complex<f64>>) -> f64 {
+pub fn compute_global_norm(grads: &Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Vec<Complex<f64>>>) -> f64 {
     let mut total_norm = 0.0;
+
+    let mut total_real = 0.0;
+    let mut total_imag = 0.0;
 
     for g in grads {
         for row in g.iter() {
             for val in row.iter() {
                 total_norm += val.norm_sqr();
+                total_real += val.re * val.re;
+                total_imag += val.im * val.im;
             }
         }
     }
 
-    for val in bias.iter() {
-        total_norm += val.norm_sqr();
+    for row in bias.iter() {
+        for val in row.iter() {
+            total_norm += val.norm_sqr();
+            total_real += val.re * val.re;
+            total_imag += val.im * val.im;
+        }
     }
+
+    println!("Total norm: {:8e}", total_norm.sqrt());
+    println!("Real norm: {:}, Imag norm: {:}, ratio: {:}", total_real.sqrt(), total_imag.sqrt(), total_imag.sqrt() / total_real.sqrt());
 
     total_norm.sqrt()
 }
 
-pub fn clip_all_gradients_by_global_norm_2d(grads: &mut Vec<Vec<Vec<Complex<f64>>>>, bias: &mut Vec<Complex<f64>>, total_norm: f64, max_norm: f64) {
+pub fn clip_all_gradients_by_global_norm_3d(grads: &mut Vec<Vec<Vec<Complex<f64>>>>, bias: &mut Vec<Complex<f64>>, total_norm: f64, max_norm: f64) {
     if total_norm > max_norm {
-        let scale = max_norm / total_norm;
+        let scale = 1.0 / total_norm;
         for g in grads {
             for row in g.iter_mut() {
                 for val in row.iter_mut() {
                     *val *= scale;
                 }
+            }
+        }
+
+        bias.iter_mut().for_each(|val| *val *= scale);
+    }
+}
+
+pub fn clip_all_gradients_by_global_norm_2d(grads: &mut Vec<Vec<Complex<f64>>>, bias: &mut Vec<Complex<f64>>, total_norm: f64, max_norm: f64) {
+    if total_norm > max_norm {
+        let scale = 1.0 / total_norm;
+        for row in grads.iter_mut() {
+            for val in row.iter_mut() {
+                *val *= scale;
             }
         }
 

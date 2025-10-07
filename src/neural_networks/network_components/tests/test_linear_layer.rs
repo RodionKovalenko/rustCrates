@@ -66,6 +66,20 @@ mod test_linear_layer {
         println!("\nanalytical grad weights: {:?}", grouped_linear_gradient);
         println!("\nnumerical grad weights: {:?}", numerical_grad_linear);
 
+        // Check if gradient batch dimensions match expected shapes
+        println!("\n analytical grad weights dim: {:?}, {}", grouped_linear_gradient.len(), grouped_linear_gradient[0].len());
+        println!("numerical grad weights dim: {:?}, {}", numerical_grad_linear.len(), numerical_grad_linear[0].len());
+
+        for b in 0..grouped_linear_gradient.len() {
+            let analytical_row_sum: Complex<f64> = grouped_linear_gradient[b].iter().sum();
+            let numerical_row_sum: Complex<f64> = numerical_grad_linear[b].iter().sum();
+
+            println!("analytical row sum: {:?}", analytical_row_sum);
+            println!("numerical row sum: {:?}", numerical_row_sum);
+        }
+
+        let global_error = global_relative_error_2d_l2(&numerical_grad_linear, &grouped_linear_gradient);
+        println!("\n\n global relative gradient error weights ffn: {:?}", &global_error);
         test_gradient_error_2d(&grouped_linear_gradient, &numerical_grad_linear, 1e-5);
 
         // TEST BIAS
@@ -252,11 +266,21 @@ mod test_linear_layer {
         // Check if gradient batch dimensions match expected shapes
         //println!("\n analytical gradient_weights_batch: {:?}", gradient_weights_batch);
         //println!("\n analytical gradient_input_batch: {:?}", anal_multilayer_gradient_input_batch);
-        println!("\n anlytical gradient_input_batch dim: {} {} {}", anal_multilayer_gradient_input_batch.len(), anal_multilayer_gradient_input_batch[0].len(), anal_multilayer_gradient_input_batch[0][0].len());
+        println!(
+            "\n anlytical gradient_input_batch dim: {} {} {}",
+            anal_multilayer_gradient_input_batch.len(),
+            anal_multilayer_gradient_input_batch[0].len(),
+            anal_multilayer_gradient_input_batch[0][0].len()
+        );
 
         //println!("\n numerical grad: {:?}", num_gradient_weight_batch);
         //println!("\n numerical num_gradient_input_batch: {:?}", &num_multi_linear_gradient_input_batch);
-        println!("\n numerical num_gradient_input_batch dim: {} {} {}", num_multi_linear_gradient_input_batch.len(), num_multi_linear_gradient_input_batch[0].len(), num_multi_linear_gradient_input_batch[0][0].len());
+        println!(
+            "\n numerical num_gradient_input_batch dim: {} {} {}",
+            num_multi_linear_gradient_input_batch.len(),
+            num_multi_linear_gradient_input_batch[0].len(),
+            num_multi_linear_gradient_input_batch[0][0].len()
+        );
 
         let global_error = global_relative_error_l2(&num_multi_linear_gradient_input_batch, &anal_multilayer_gradient_input_batch);
 

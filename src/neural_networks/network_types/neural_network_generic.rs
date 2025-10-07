@@ -29,6 +29,10 @@ pub struct NeuralNetwork {
     pub number_of_hidden_neurons: usize,
     pub minibatch_size: usize,
     pub time_step: usize,
+    pub smoothing: f64,
+    pub ema: f64,
+    pub global_norm: f64,
+    pub max_norm: f64,
 }
 
 // Provide more flexible methods for getting properties of the network
@@ -87,6 +91,10 @@ pub fn create(number_inputs: usize, number_outputs: usize, number_of_hidden_laye
         number_of_hidden_neurons,
         minibatch_size,
         time_step: 0,
+        smoothing: 0.9,
+        ema: 0.0,
+        global_norm: 0.0,
+        max_norm: 0.0,
     };
 
     feed_net
@@ -197,7 +205,6 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
                     match layer {
                         LayerEnum::Dense(dense_layer) => {
                             dense_layer.learning_rate = learning_rate;
-                            dense_layer.activation_type = ActivationType::GELU;
                         }
                         LayerEnum::Linear(linear_layer) => {
                             linear_layer.learning_rate = learning_rate;

@@ -5,12 +5,11 @@ use serde::{Deserialize, Serialize};
 use crate::{
     neural_networks::{
         network_components::{gradient_struct::Gradient, layer::LayerType, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
-        network_types::transformer::transformer_network::EMA_SCALER,
         utils::{
             activation::softmax_complex_padding_real,
             adam_w::calculate_adam_w,
             derivative::{backpropagate_softmax_masked_real, softmax_derivative_complex_jacobian},
-            matrix::{add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm, conjugate_transpose, get_reduced_matrix, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
+            matrix::{add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, get_reduced_matrix, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
             weights_initializer::initialize_weights_complex,
         },
     },
@@ -40,6 +39,8 @@ pub struct MaskedAttentionHead {
 
     pub smoothing: f64,
     pub ema: f64,
+    pub global_norm: f64,
+    pub max_norm: f64,
 
     #[serde(skip)]
     pub gradient: Option<Gradient>,
@@ -97,6 +98,9 @@ impl MaskedAttentionHead {
 
             smoothing: 0.99,
             ema: 0.0,
+
+            global_norm: 0.0,
+            max_norm: 0.0,
 
             gradient: None,
             previous_gradient: None,
@@ -365,31 +369,25 @@ impl MaskedAttentionHead {
     }
     pub fn update_parameters(&mut self) {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("Gradient is missing in attention head layer");
-        let (grad_w_q, grad_w_v, grad_w_k) = (gradient.get_gradient_weights_q(), gradient.get_gradient_weights_v(), gradient.get_gradient_weights_k());
+        let (mut grad_w_q, mut grad_w_v, mut grad_w_k) = (gradient.get_gradient_weights_q(), gradient.get_gradient_weights_v(), gradient.get_gradient_weights_k());
 
+        let mut grad_bias_pos = gradient.get_gradient_bias_pos();
         let input_batch = gradient.get_gradient_input_batch();
-        let grad_bias_pos = gradient.get_gradient_bias_pos();
         let mut batch_size = input_batch.len() as f64;
 
         if self.batch_size > 0 {
             batch_size = self.batch_size as f64;
         }
 
-        let mut all_gradients = vec![grad_w_q, grad_w_v, grad_w_k, grad_bias_pos];
-        let global_norm = compute_global_norm(&all_gradients, &vec![]);
-        self.ema = self.smoothing * self.ema + (1.0 - self.smoothing) * global_norm;
-        let max_norm = self.ema * EMA_SCALER;
-        clip_all_gradients_by_global_norm_2d(&mut all_gradients, &mut vec![], global_norm, max_norm);
-
-        let mut grad_w_q = all_gradients[0].clone();
-        let mut grad_w_v = all_gradients[1].clone();
-        let mut grad_w_k = all_gradients[2].clone();
-        let mut grad_bias_pos = all_gradients[3].clone();
-
         grad_w_q = average_matrix_by_scalar(&grad_w_q, batch_size);
         grad_w_v = average_matrix_by_scalar(&grad_w_v, batch_size);
         grad_w_k = average_matrix_by_scalar(&grad_w_k, batch_size);
         grad_bias_pos = average_matrix_by_scalar(&grad_bias_pos, batch_size);
+
+        clip_all_gradients_by_global_norm_2d(&mut grad_w_q, &mut vec![], self.global_norm, self.max_norm);
+        clip_all_gradients_by_global_norm_2d(&mut grad_w_v, &mut vec![], self.global_norm, self.max_norm);
+        clip_all_gradients_by_global_norm_2d(&mut grad_w_k, &mut vec![], self.global_norm, self.max_norm);
+        clip_all_gradients_by_global_norm_2d(&mut grad_bias_pos, &mut vec![], self.global_norm, self.max_norm);
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
