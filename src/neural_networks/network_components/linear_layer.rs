@@ -4,10 +4,11 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
-    network_types::{transformer::transformer_network::EMA_SCALER, wavelet_discrete_layer::DiscreteWaveletLayer},
+    network_components::{layer::LayerEnum, norm_layer::NormalNormLayer},
+    network_types::wavelet_discrete_layer::DiscreteWaveletLayer,
     utils::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
-        matrix::{add_matrix_2d_c, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm, conjugate_transpose, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
+        matrix::{add_matrix_2d_c, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -26,6 +27,9 @@ pub struct LinearLayer {
     pub smoothing: f64,
     pub ema: f64,
     pub discrete_wavelet_layer: Option<DiscreteWaveletLayer>,
+    pub norm_layer: Option<LayerEnum>,
+    pub global_norm: f64,
+    pub max_norm: f64,
 
     #[serde(skip)]
     pub gradients: Vec<Vec<Complex<f64>>>,
@@ -47,8 +51,8 @@ impl LinearLayer {
     pub fn new(learning_rate: f64, rows: usize, cols: usize) -> Self {
         let mut weights: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
         let bias: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
-        let mut _dwt_layer = DiscreteWaveletLayer::new();
-        _dwt_layer.is_linear_layer = true;
+        let epsilon: f64 = 0.00000001;
+        let _norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(cols, epsilon, learning_rate))));
 
         initialize_weights_complex(rows, cols, &mut weights);
 
@@ -58,6 +62,7 @@ impl LinearLayer {
             learning_rate,
             gradients: vec![],
             discrete_wavelet_layer: None,
+            norm_layer: None,
             gradients_bias: vec![],
             input_batch: None,
             gradient: None,
@@ -66,28 +71,40 @@ impl LinearLayer {
             batch_size: 0,
             smoothing: 0.99,
             ema: 0.0,
+            global_norm: 0.0,
+            max_norm: 0.0,
         }
     }
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
-        let mut input_batch: Vec<Vec<Vec<Complex<f64>>>> = input.get_input_batch();
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = input.get_input_batch();
 
         self.time_step = input.get_time_step();
         self.batch_size = input.get_batch_size();
+        self.input_batch = Some(input_batch.clone());
 
-        // println!("Input batch size in linear layer: {} {} {}", input_batch.len(), input_batch[0].len(), input_batch[0][0].len());
+        let mut output_batch: Vec<Vec<Vec<Complex<f64>>>> = input_batch.clone();
+        let mut layer_input = input.clone();
+        layer_input.set_input_batch(output_batch.clone());
 
-        if self.discrete_wavelet_layer.is_some() {
-            if let Some(dwt_layer) = self.discrete_wavelet_layer.as_mut() {
-                let dwt_output = dwt_layer.forward(&input);
-                input_batch = dwt_output.get_output_batch();
+        // Apply the RMS normalization layer
+        if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
+            match norm_layer_enum {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    let rms_output = rms_norm_layer.forward(&layer_input);
+                    output_batch = rms_output.get_output_batch();
+                    //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
+                }
+                LayerEnum::Norm(norm_layer) => {
+                    let layer_output = norm_layer.forward(&layer_input);
+                    output_batch = layer_output.get_output_batch();
+
+                    //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
+                }
+                _ => {}
             }
         }
 
-        self.input_batch = Some(input_batch.clone());
-
-        // println!("Input batch size in linear layer after dwt: {} {} {}", input_batch.len(), input_batch[0].len(), input_batch[0][0].len());
-
-        let mut output_batch: Vec<Vec<Vec<Complex<f64>>>> = input_batch
+        output_batch = output_batch
             .par_iter() // Use a parallel iterator to process inputs in parallel
             .map(|input| {
                 let mut output = multiply_complex(input, &self.weights);
@@ -98,19 +115,11 @@ impl LinearLayer {
             })
             .collect();
 
-        // println!("Output batch size in linear layer after forward: {} {} {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
-
-        // Decompress Wavelet if the layer is present
-        if self.discrete_wavelet_layer.is_some() {
-            if let Some(dwt_layer) = self.discrete_wavelet_layer.as_mut() {
-                let mut dwt_layer_input = LayerInput::new_default();
-                dwt_layer_input.set_input_batch(output_batch.clone());
-                let wavelet_inverse_output = dwt_layer.forward_inverse(&dwt_layer_input);
-                output_batch = wavelet_inverse_output.get_output_batch();
-            }
-        }
-
         // println!("Output batch size in linear layer after dwt inverse:  {} {} {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
+
+        if self.norm_layer.is_some() {
+            output_batch = add_matrix_3d(&output_batch, &input_batch);
+        }
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(output_batch);
@@ -122,7 +131,10 @@ impl LinearLayer {
         let input_batch = self.input_batch.as_ref().expect("Input batch is missing in linear layer");
         let mut gradient = Gradient::new_default();
 
-        let previous_gradient_batch = if !previous_gradient.get_gradient_input_batch().is_empty() {
+        let mut _previous_input_gradient = Vec::new();
+
+        let previous_gradient_batch: GradientBatch = if !previous_gradient.get_gradient_input_batch().is_empty() {
+            _previous_input_gradient = previous_gradient.get_gradient_input_batch();
             GradientBatch::Complex(previous_gradient.get_gradient_input_batch())
         } else {
             GradientBatch::Real(previous_gradient.get_gradient_input_batch_softmax())
@@ -131,20 +143,11 @@ impl LinearLayer {
         // Initialize gradients for weights and biases
         let mut weight_gradients: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()]; input_batch.len()];
         let mut bias_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.bias.len()]; input_batch.len()];
-        let mut gradient_input_batch = vec![vec![vec![Complex::new(0.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
+        let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
 
         match previous_gradient_batch {
             GradientBatch::Complex(previous_gradient_input_batch) => {
-                let mut previous_gradient_input_batch_clone = previous_gradient_input_batch.clone();
-                // Apply DWT if the layer is present
-                if self.discrete_wavelet_layer.is_some() {
-                    if let Some(dwt_layer) = self.discrete_wavelet_layer.as_mut() {
-                        gradient.set_gradient_input_batch(previous_gradient_input_batch.clone());
-
-                        let gradient_inverse: Gradient = dwt_layer.backward_inverse(&gradient);
-                        previous_gradient_input_batch_clone = gradient_inverse.get_gradient_input_batch();
-                    }
-                }
+                let previous_gradient_input_batch_clone = previous_gradient_input_batch.clone();
 
                 for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_input_batch_clone).enumerate() {
                     weight_gradients[batch_ind] = multiply_complex(&conjugate_transpose(&input_sample), &previous_gradient);
@@ -156,15 +159,6 @@ impl LinearLayer {
                     }
 
                     gradient_input_batch[batch_ind] = multiply_complex(&previous_gradient, &conjugate_transpose(&self.weights));
-                }
-
-                if self.discrete_wavelet_layer.is_some() {
-                    if let Some(dwt_layer) = self.discrete_wavelet_layer.as_mut() {
-                        gradient.set_gradient_input_batch(gradient_input_batch.clone());
-
-                        let dwt_gradient = dwt_layer.backward(&gradient);
-                        gradient_input_batch = dwt_gradient.get_gradient_input_batch();
-                    }
                 }
             }
             GradientBatch::Real(previous_gradient_input_batch) => {
@@ -181,6 +175,29 @@ impl LinearLayer {
                     gradient_input_batch[batch_ind] = multiply_f64_complex(&previous_gradient, &transpose(&self.weights));
                 }
             }
+        }
+
+        gradient.set_gradient_input_batch(gradient_input_batch.clone());
+
+        //Apply RMSNorm backpropagation if it's present
+        if let Some(norm_layer) = &mut self.norm_layer {
+            match norm_layer {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    gradient = rms_norm_layer.backward(&gradient_input_batch);
+                    gradient_input_batch = gradient.get_gradient_input_batch();
+                    // println!("FFN, gradient from RMS Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
+                }
+                LayerEnum::Norm(norm_layer) => {
+                    gradient = norm_layer.backward(&gradient);
+                    gradient_input_batch = gradient.get_gradient_input_batch();
+                    //println!("FFN, gradient from Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
+                }
+                _ => {}
+            }
+        }
+
+        if self.norm_layer.is_some() {
+            gradient_input_batch = add_matrix_3d(&gradient_input_batch, &_previous_input_gradient);
         }
 
         if self.gradient.is_some() {
@@ -202,22 +219,19 @@ impl LinearLayer {
 
     pub fn update_parameters(&mut self) {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("No Gradient found in linear layer");
-        let (weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
+        let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
         let input_batch = gradient.get_gradient_input_batch();
         let mut batch_size = input_batch.len() as f64;
-        let mut all_gradients = vec![weight_gradients];
-        let global_norm = compute_global_norm(&all_gradients, &bias_gradients);
-        self.ema = self.smoothing * self.ema + (1.0 - self.smoothing) * global_norm;
-        let max_norm = self.ema * EMA_SCALER;
-        clip_all_gradients_by_global_norm_2d(&mut all_gradients, &mut bias_gradients, global_norm, max_norm);
+
         if self.batch_size > 0 {
             batch_size = self.batch_size as f64;
         }
-        let mut weight_gradients: Vec<Vec<Complex<f64>>> = all_gradients[0].clone();
+
         weight_gradients = average_matrix_by_scalar(&weight_gradients, batch_size);
         bias_gradients = average_vector_by_scalar(&bias_gradients, batch_size);
-        gradient.set_gradient_weights(weight_gradients.clone());
-        gradient.set_gradient_bias(bias_gradients.clone());
+
+        clip_all_gradients_by_global_norm_2d(&mut weight_gradients, &mut bias_gradients, self.global_norm, self.max_norm);
+
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
         let (mut prev_m_bias, mut prev_v_bias, mut prev_m_weights, mut prev_v_weights) = if let Some(previous_gradient) = &mut self.previous_gradient {
@@ -242,6 +256,8 @@ impl LinearLayer {
         gradient.set_prev_v_bias(prev_v_bias);
         gradient.set_prev_m_weights(prev_m_weights);
         gradient.set_prev_v_weights(prev_v_weights);
+        gradient.set_gradient_weights(weight_gradients.clone());
+        gradient.set_gradient_bias(bias_gradients.clone());
         self.previous_gradient = Some(gradient.clone());
     }
 

@@ -2,12 +2,9 @@ use core::fmt::Debug;
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::{
-    network_types::transformer::transformer_network::EMA_SCALER,
-    utils::{
-        adam_w::calculate_adam_w_bias,
-        matrix::{add_matrix, add_matrix_2d_c, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm},
-    },
+use crate::neural_networks::utils::{
+    adam_w::calculate_adam_w_bias,
+    matrix::{add_matrix, add_matrix_2d_c, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d},
 };
 
 use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
@@ -22,6 +19,8 @@ pub struct RMSNormLayer {
     pub learning_rate: f64,       // Learning rate for gamma updates
     pub smoothing: f64,
     pub ema: f64,
+    pub global_norm: f64,
+    pub max_norm: f64,
 
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
@@ -49,6 +48,8 @@ impl RMSNormLayer {
             previous_gradient: None,
             time_step: 0,
             batch_size: 0,
+            global_norm: 0.0,
+            max_norm: 0.0,
         }
     }
 
@@ -152,17 +153,10 @@ impl RMSNormLayer {
 
         gradient
     }
-    
+
     pub fn update_parameters(&mut self) {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("No gradient found in rms norm layer");
-        let gradient_gamma: Vec<Vec<Complex<f64>>> = gradient.get_gradient_gamma_batch();
-
-        let mut all_gradients = vec![gradient_gamma];
-        let global_norm = compute_global_norm(&all_gradients, &vec![]);
-        self.ema = self.smoothing * self.ema + (1.0 - self.smoothing) * global_norm;
-        let max_norm = self.ema * EMA_SCALER;
-        clip_all_gradients_by_global_norm_2d(&mut all_gradients, &mut vec![], global_norm, max_norm);
-        let mut gradient_gamma: Vec<Vec<Complex<f64>>> = all_gradients[0].clone();
+        let mut gradient_gamma: Vec<Complex<f64>> = gradient.get_gradient_gamma();
 
         let mut batch_size = self.batch_size as f64;
 
@@ -170,8 +164,9 @@ impl RMSNormLayer {
             batch_size = self.batch_size as f64;
         }
 
-        gradient_gamma = average_matrix_by_scalar(&gradient_gamma, batch_size);
-        gradient.set_gradient_gamma_batch(gradient_gamma.clone());
+        gradient_gamma = average_vector_by_scalar(&gradient_gamma, batch_size);
+
+        clip_all_gradients_by_global_norm_2d(&mut vec![], &mut gradient_gamma, self.global_norm, self.max_norm);
 
         let learning_rate = self.learning_rate;
 
@@ -179,13 +174,14 @@ impl RMSNormLayer {
             (previous_gradient.get_prev_m_gamma(), previous_gradient.get_prev_v_gamma())
         } else {
             // Initialize to zeros on first step
-            (vec![Complex::new(0.0, 0.0); gradient_gamma[0].len()], vec![Complex::new(0.0, 0.0); gradient_gamma[0].len()])
+            (vec![Complex::new(0.0, 0.0); gradient_gamma.len()], vec![Complex::new(0.0, 0.0); gradient_gamma.len()])
         };
 
         calculate_adam_w_bias(&mut self.gamma, &gradient.get_gradient_gamma(), &mut prev_m_gamma, &mut prev_v_gamma, learning_rate, gradient.get_time_step());
 
         gradient.set_prev_m_gamma(prev_m_gamma);
         gradient.set_prev_v_gamma(prev_v_gamma);
+        gradient.set_gradient_gamma(gradient_gamma.clone());
         self.previous_gradient = Some(gradient.clone());
     }
 }

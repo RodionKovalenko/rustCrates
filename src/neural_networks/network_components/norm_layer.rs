@@ -2,12 +2,9 @@ use core::fmt::Debug;
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::{
-    network_types::transformer::transformer_network::EMA_SCALER,
-    utils::{
-        adam_w::calculate_adam_w_bias,
-        matrix::{add_vectors, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm, conjugate_1d},
-    },
+use crate::neural_networks::utils::{
+    adam_w::calculate_adam_w_bias,
+    matrix::{add_vectors, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_1d},
 };
 
 use super::{
@@ -24,6 +21,8 @@ pub struct NormalNormLayer {
     pub learning_rate: f64,
     pub smoothing: f64,
     pub ema: f64,
+    pub global_norm: f64,
+    pub max_norm: f64,
 
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
@@ -72,6 +71,8 @@ impl NormalNormLayer {
             batch_size: 0,
             smoothing: 0.99,
             ema: 0.0,
+            global_norm: 0.0,
+            max_norm: 0.0,
         }
     }
 
@@ -239,25 +240,17 @@ impl NormalNormLayer {
         let mut gradient_beta = gradient.get_gradient_beta();
         let input_batch = self.input_batch.as_ref().expect("no input batch in norm layer");
 
-        let all_bias = add_vectors(&gradient_gamma, &gradient_beta);
-        let global_norm = compute_global_norm(&vec![], &all_bias);
-        self.ema = self.smoothing * self.ema + (1.0 - self.smoothing) * global_norm;
-        let max_norm = self.ema * EMA_SCALER;
-
         let mut batch_size = input_batch.len() as f64;
 
         if self.batch_size > 0 {
             batch_size = self.batch_size as f64;
         }
 
-        clip_all_gradients_by_global_norm_2d(&mut vec![], &mut gradient_gamma, global_norm, max_norm);
-        clip_all_gradients_by_global_norm_2d(&mut vec![], &mut gradient_beta, global_norm, max_norm);
-
         gradient_beta = average_vector_by_scalar(&gradient_beta, batch_size);
         gradient_gamma = average_vector_by_scalar(&gradient_gamma, batch_size);
 
-        gradient.set_gradient_beta(gradient_beta.clone());
-        gradient.set_gradient_gamma(gradient_gamma.clone());
+        clip_all_gradients_by_global_norm_2d(&mut vec![], &mut gradient_gamma, self.global_norm, self.max_norm);
+        clip_all_gradients_by_global_norm_2d(&mut vec![], &mut gradient_beta, self.global_norm, self.max_norm);
 
         let learning_rate = self.learning_rate;
         let time_step = gradient.get_time_step();
@@ -281,6 +274,8 @@ impl NormalNormLayer {
         gradient.set_prev_v_gamma(prev_v_gamma);
         gradient.set_prev_m_beta(prev_m_beta);
         gradient.set_prev_v_beta(prev_v_beta);
+        gradient.set_gradient_beta(gradient_beta.clone());
+        gradient.set_gradient_gamma(gradient_gamma.clone());
         self.previous_gradient = Some(gradient.clone());
     }
 }

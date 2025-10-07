@@ -2,7 +2,7 @@ use crate::neural_networks::{
     network_components::{adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, multi_linear_layer::MultiLinearLayer},
     network_types::{
         feedforward_layer::FeedForwardLayer,
-        transformer::{self_attention_layer::SelfAttentionLayer, self_attention_layer_approximation::SelfAttentionLayerApproximation, sparse_self_attention_layer::SparseSelfAttentionLayer, transformer_network::EMA_SCALER},
+        transformer::{self_attention_layer::SelfAttentionLayer, self_attention_layer_approximation::SelfAttentionLayerApproximation, sparse_self_attention_layer::SparseSelfAttentionLayer},
         wavelet_complex_layer::ComplexWaveletLayer,
         wavelet_discrete_layer::DiscreteWaveletLayer,
     },
@@ -10,7 +10,7 @@ use crate::neural_networks::{
         activation::activate_output_complex_padding,
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         derivative::get_gradient_complex,
-        matrix::{add_matrix, add_matrix_3d, add_vector, apply_padding_mask_batch, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm, conjugate_transpose, hadamard_product_2d_c, multiply_complex, transpose},
+        matrix::{add_matrix, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate, conjugate_transpose, hadamard_product_2d_c, multiply_complex},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -107,6 +107,8 @@ pub struct Layer {
     pub learning_rate: f64,
     pub smoothing: f64,
     pub ema: f64,
+    pub global_norm: f64,
+    pub max_norm: f64,
 
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
@@ -185,7 +187,6 @@ impl Layer {
         let input_batch = self.input_batch.as_ref().expect("Input batch is missing in dense layer");
         let raw_output_batch = self.inactivated_input_batch.as_ref().expect("Raw output batch is missing in dense layer");
         let output_batch = self.output_batch.as_ref().expect("Output batch is missing in dense layer");
-        let padding_mask_batch = self.padding_mask_batch.as_ref().expect("No padding mask batch found");
 
         let mut gradient = Gradient::new_default();
 
@@ -194,15 +195,12 @@ impl Layer {
         let mut bias_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.bias.len()]; input_batch.len()];
         let mut input_gradient_batch = vec![vec![vec![Complex::new(0.0, 0.0); previous_gradient_batch[0][0].len()]; previous_gradient_batch[0].len()]; input_batch.len()];
 
-        let mut previous_gradient_batch_padded: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient_batch.clone();
-
-        apply_padding_mask_batch(&mut previous_gradient_batch_padded, padding_mask_batch);
+        let previous_gradient_batch_padded: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient_batch.clone();
 
         // println!("\n\n\nprevious gradient batch padded: {:?}", previous_gradient_batch_padded);
-
         for (batch_ind, (input, previous_gradient)) in input_batch.iter().zip(&previous_gradient_batch_padded).enumerate() {
             let gradient_output = get_gradient_complex(&output_batch[batch_ind], &raw_output_batch[batch_ind], self.activation_type.clone());
-            let gradient_output_conj = transpose(&conjugate_transpose(&gradient_output));
+            let gradient_output_conj = conjugate(&gradient_output);
 
             input_gradient_batch[batch_ind] = hadamard_product_2d_c(previous_gradient, &gradient_output_conj);
             weight_gradients[batch_ind] = multiply_complex(&conjugate_transpose(&input), &input_gradient_batch[batch_ind]);
@@ -234,7 +232,7 @@ impl Layer {
 
     pub fn update_parameters(&mut self) {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("No Gradient found in linear layer");
-        let (weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
+        let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
 
         let input_batch = gradient.get_gradient_input_batch();
         let mut batch_size = input_batch.len() as f64;
@@ -243,19 +241,10 @@ impl Layer {
             batch_size = self.batch_size as f64;
         }
 
-        let mut all_gradients = vec![weight_gradients];
-        let global_norm = compute_global_norm(&all_gradients, &bias_gradients);
-        self.ema = self.smoothing * self.ema + (1.0 - self.smoothing) * global_norm;
-        let max_norm = self.ema * EMA_SCALER;
-        clip_all_gradients_by_global_norm_2d(&mut all_gradients, &mut bias_gradients, global_norm, max_norm);
-
-        let mut weight_gradients: Vec<Vec<Complex<f64>>> = all_gradients[0].clone();
+        clip_all_gradients_by_global_norm_2d(&mut weight_gradients, &mut bias_gradients, self.global_norm, self.max_norm);
 
         weight_gradients = average_matrix_by_scalar(&weight_gradients, batch_size);
         bias_gradients = average_vector_by_scalar(&bias_gradients, batch_size);
-
-        gradient.set_gradient_weights(weight_gradients.clone());
-        gradient.set_gradient_bias(bias_gradients.clone());
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
@@ -279,6 +268,8 @@ impl Layer {
         gradient.set_prev_v_bias(prev_v_bias);
         gradient.set_prev_m_weights(prev_m_weights);
         gradient.set_prev_v_weights(prev_v_weights);
+        gradient.set_gradient_weights(weight_gradients.clone());
+        gradient.set_gradient_bias(bias_gradients.clone());
         self.previous_gradient = Some(gradient.clone());
     }
 }
@@ -306,6 +297,8 @@ impl Layer {
             batch_size: 0,
             smoothing: 0.99,
             ema: 0.0,
+            global_norm: 0.0,
+            max_norm: 0.0,
         }
     }
 }

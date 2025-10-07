@@ -12,9 +12,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::database::sled_db::{get_db_embedding, get_storage_path_embedding_db};
-use crate::neural_networks::network_types::transformer::transformer_network::EMA_SCALER;
 use crate::neural_networks::network_types::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
-use crate::neural_networks::utils::matrix::{add_matrix_3d, clip_all_gradients_by_global_norm_2d, compute_global_norm, is_nan_or_inf};
+use crate::neural_networks::utils::matrix::{add_matrix_3d, clip_all_gradients_by_global_norm_3d, is_nan_or_inf};
 use crate::utils::normalization::normalize;
 
 use super::gradient_struct::Gradient;
@@ -28,6 +27,8 @@ pub struct EmbeddingLayer {
     pub learning_rate: f64,
     pub smoothing: f64,
     pub ema: f64,
+    pub global_norm: f64,
+    pub max_norm: f64,
 
     #[serde(skip)]
     pub gradient: Option<Gradient>,
@@ -68,6 +69,8 @@ impl EmbeddingLayer {
             smoothing: 0.99,
             ema: 0.0,
             cache: Arc::new(RwLock::new(HashMap::new())),
+            global_norm: 0.0,
+            max_norm: 0.0,
         }
     }
 
@@ -96,6 +99,8 @@ impl EmbeddingLayer {
             batch_size: 0,
             smoothing: 0.99,
             ema: 0.0,
+            global_norm: 0.0,
+            max_norm: 0.0,
             cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -251,10 +256,7 @@ impl EmbeddingLayer {
             batch_size = self.batch_size as f64;
         }
 
-        let global_norm = compute_global_norm(&previous_gradients, &vec![]);
-        self.ema = self.smoothing * self.ema + (1.0 - self.smoothing) * global_norm;
-        let max_norm = self.ema * EMA_SCALER;
-        clip_all_gradients_by_global_norm_2d(&mut previous_gradients, &mut vec![], global_norm, max_norm);
+        clip_all_gradients_by_global_norm_3d(&mut previous_gradients, &mut vec![], self.global_norm, self.max_norm);
 
         // let max = previous_gradients.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
         // println!("max in backward embedding layer gradient batch: {:?}", max);
@@ -312,6 +314,8 @@ impl EmbeddingLayer {
             batch_size: 0,
             smoothing: 0.99,
             ema: 0.0,
+            global_norm: 0.0,
+            max_norm: 0.0,
             cache: Arc::new(RwLock::new(HashMap::new())),
         };
         let serialized: Vec<u8> = bincode::serialize(&embedding_layer_meta).expect("Failed to serialize");

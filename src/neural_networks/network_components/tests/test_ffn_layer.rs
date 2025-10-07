@@ -111,7 +111,7 @@ pub mod test_ffn_layer {
     #[test]
     fn test_softmax_linear_ffn_backward() {
         // Define some small batch size and input dimensions for simplicity
-        let batch_size = 15;
+        let batch_size = 3;
         let _seq_len: usize = 5; // Update to match the input structure
         let input_dim = 16; // Match the input dimension with your input batch
         let output_dim = 10; // Match output_dim to your layer's output

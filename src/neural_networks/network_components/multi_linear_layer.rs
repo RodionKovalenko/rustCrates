@@ -5,11 +5,10 @@ use std::sync::Arc;
 
 use crate::neural_networks::{
     network_components::linear_layer::LinearLayer,
-    network_types::transformer::transformer_network::EMA_SCALER,
     utils::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         array_splitting::split_sizes,
-        matrix::{average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, compute_global_norm},
+        matrix::{average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -23,6 +22,8 @@ pub struct MultiLinearLayer {
     pub col_ranges: Vec<(usize, usize)>,
     pub smoothing: f64,
     pub ema: f64,
+    pub global_norm: f64,
+    pub max_norm: f64,
     #[serde(skip)]
     pub input_batch: Option<Arc<Vec<Vec<Vec<Complex<f64>>>>>>,
     #[serde(skip)]
@@ -75,6 +76,8 @@ impl MultiLinearLayer {
             ema: 0.0,
             time_step: 0,
             batch_size: 0,
+            global_norm: 0.0,
+            max_norm: 0.0,
         }
     }
 
@@ -141,13 +144,7 @@ impl MultiLinearLayer {
         let seq_len = input_batch[0].len();
 
         // Forward pass through each sublayer
-        let lin_layer_output_chunks: Vec<_> = self
-            .layers
-            .iter_mut()
-            .map(|lin_layer| {
-                lin_layer.forward(input).get_output_batch()
-            })
-            .collect();
+        let lin_layer_output_chunks: Vec<_> = self.layers.iter_mut().map(|lin_layer| lin_layer.forward(input).get_output_batch()).collect();
 
         let output_feature_size: usize = lin_layer_output_chunks.iter().map(|chunk| chunk[0][0].len()).sum();
 
@@ -226,33 +223,17 @@ impl MultiLinearLayer {
             }
         }
 
-        let (weight_gradients, mut bias_gradients) = self.get_combined_gradients();
+        let (mut weight_gradients, mut bias_gradients) = self.get_combined_gradients();
         let (mut combined_weights, mut combined_bias) = self.get_combined_weights();
 
         // Use batch size for averaging
         let batch_size_num = if self.batch_size > 0 { self.batch_size as f64 } else { self.input_batch.as_ref().map(|batch| batch.len()).unwrap_or(1) as f64 };
 
-        // Global gradient processing
-        let mut all_gradients = vec![weight_gradients];
-        let global_norm = compute_global_norm(&all_gradients, &bias_gradients);
-
-        // Update EMA for gradient norm
-        self.ema = self.smoothing * self.ema + (1.0 - self.smoothing) * global_norm;
-        let max_norm = self.ema * EMA_SCALER;
-
-        // Clip gradients
-        clip_all_gradients_by_global_norm_2d(&mut all_gradients, &mut bias_gradients, global_norm, max_norm);
-
-        // Average gradients by batch size
-        let mut weight_gradients: Vec<Vec<Complex<f64>>> = all_gradients[0].clone();
         weight_gradients = average_matrix_by_scalar(&weight_gradients, batch_size_num);
         bias_gradients = average_vector_by_scalar(&bias_gradients, batch_size_num);
 
-        // Update gradient in self for tracking
-        if let Some(gradient) = &mut self.gradient {
-            gradient.set_gradient_weights(weight_gradients.clone());
-            gradient.set_gradient_bias(bias_gradients.clone());
-        }
+        // Clip gradients
+        clip_all_gradients_by_global_norm_2d(&mut weight_gradients, &mut bias_gradients, self.global_norm, self.max_norm);
 
         // Get previous optimizer states
         let (mut prev_m_bias, mut prev_v_bias, mut prev_m_weights, mut prev_v_weights) = if let Some(previous_gradient) = &mut self.previous_gradient {
@@ -279,6 +260,8 @@ impl MultiLinearLayer {
             gradient.set_prev_v_bias(prev_v_bias.clone());
             gradient.set_prev_m_weights(prev_m_weights.clone());
             gradient.set_prev_v_weights(prev_v_weights.clone());
+            gradient.set_gradient_weights(weight_gradients.clone());
+            gradient.set_gradient_bias(bias_gradients.clone());
             self.previous_gradient = Some(gradient.clone());
         }
 
