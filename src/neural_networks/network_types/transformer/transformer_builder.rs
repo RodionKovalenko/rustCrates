@@ -1,5 +1,5 @@
 use crate::neural_networks::{
-    network_components::{embedding_layer::EmbeddingLayer, layer::LayerEnum, linear_layer::LinearLayer, norm_layer::NormalNormLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
+    network_components::{embedding_layer::EmbeddingLayer, layer::LayerEnum, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
     network_types::{
         feedforward_layer::FeedForwardLayer,
         neural_network_generic::{create, NeuralNetwork, OperationMode},
@@ -7,6 +7,8 @@ use crate::neural_networks::{
         wavelet_network::DECOMPOSITION_LEVELS,
     },
 };
+
+pub const NUM_SELF_ATT_LAYERS: usize = 5;
 
 pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let number_inputs: usize = 32;
@@ -36,7 +38,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
 
     let rows: usize = embedding_dim_compressed;
     // Transformer block start
-    let num_self_attention_layer: usize = 25;
+    let num_self_attention_layer: usize = NUM_SELF_ATT_LAYERS;
     let origin_hidden_dim = 2048;
     for _i in 0..num_self_attention_layer {
         let num_attention_heads: usize = 4;
@@ -58,8 +60,8 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     // let multinear_layer: MultiLinearLayer = MultiLinearLayer::new(learning_rate, rows, vocab_size, 10);
     // layers.push(LayerEnum::MultiLinear(Box::new(multinear_layer)));
 
-    let norm_layer = NormalNormLayer::new(vocab_size, 1e-8, learning_rate);
-    layers.push(LayerEnum::Norm(Box::new(norm_layer)));
+    // let norm_layer = NormalNormLayer::new(vocab_size, 1e-8, learning_rate);
+    // layers.push(LayerEnum::Norm(Box::new(norm_layer)));
     
     let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
     layers.push(LayerEnum::Linear(Box::new(linear_layer)));

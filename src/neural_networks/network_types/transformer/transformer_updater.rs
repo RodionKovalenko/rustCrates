@@ -1,13 +1,17 @@
+use num::Complex;
+
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer::LayerEnum},
-    network_types::{neural_network_generic::NeuralNetwork, transformer::transformer_network::EMA_SCALER},
-    utils::matrix::compute_global_norm,
+    network_types::{neural_network_generic::NeuralNetwork, transformer::transformer_builder::NUM_SELF_ATT_LAYERS},
+    utils::matrix::{normalize_bias, normalize_gradients, normalize_gradients_batch},
 };
 
-fn update_global_norm(transformer: &mut NeuralNetwork) {
+pub const VERBOSE: bool = false;
+
+fn update_by_norm(transformer: &mut NeuralNetwork) {
     let mut global_weights = Vec::new();
     let mut global_biases = Vec::new();
-    let mut gradient: &Gradient;
+    let mut gradient: &mut Gradient;
 
     for layer in transformer.layers.iter_mut() {
         match layer {
@@ -16,40 +20,123 @@ fn update_global_norm(transformer: &mut NeuralNetwork) {
             }
             LayerEnum::Embedding(_embedding_layer) => {}
             LayerEnum::Norm(norm_layer) => {
-                gradient = norm_layer.gradient.as_ref().expect("No gradient found");
+                gradient = norm_layer.gradient.as_mut().expect("No gradient found");
 
                 global_biases.push(gradient.get_gradient_beta());
                 global_biases.push(gradient.get_gradient_gamma());
+
+                let mut gamma_grad = gradient.get_gradient_gamma();
+                let mut beta_grad = gradient.get_gradient_beta();
+                // Normalize gradients
+                normalize_bias(&mut beta_grad);
+                normalize_bias(&mut gamma_grad);
+
+                gradient.set_gradient_gamma(gamma_grad);
+                gradient.set_gradient_beta(beta_grad);
+
+                if VERBOSE {
+                    println!("norm layer updating gradient");
+                    max_bias(&gradient.get_gradient_beta());
+                    max_bias(&gradient.get_gradient_gamma());
+                }
             }
             LayerEnum::RMSNorm(norm_layer) => {
-                gradient = norm_layer.gradient.as_ref().expect("No gradient found");
+                gradient = norm_layer.gradient.as_mut().expect("No gradient found");
 
                 global_biases.push(gradient.get_gradient_beta());
                 global_biases.push(gradient.get_gradient_gamma());
+
+                let mut gamma_grad = gradient.get_gradient_gamma();
+                let mut beta_grad = gradient.get_gradient_beta();
+                // Normalize gradients
+                normalize_bias(&mut beta_grad);
+                normalize_bias(&mut gamma_grad);
+
+                gradient.set_gradient_gamma(gamma_grad);
+                gradient.set_gradient_beta(beta_grad);
+
+                if VERBOSE {
+                    println!("RMS norm layer updating gradient");
+                    max_bias(&gradient.get_gradient_beta());
+                    max_bias(&gradient.get_gradient_gamma());
+                }
             }
 
             LayerEnum::SelfAttention(self_attention_layer) => {
                 for attention_head in self_attention_layer.attention_heads.iter_mut() {
-                    gradient = attention_head.gradient.as_ref().expect("No gradient found");
+                    gradient = attention_head.gradient.as_mut().expect("No gradient found");
 
                     global_weights.push(gradient.get_gradient_weights_k());
                     global_weights.push(gradient.get_gradient_weights_q());
                     global_weights.push(gradient.get_gradient_weights_v());
                     global_weights.push(gradient.get_gradient_bias_pos());
+
+                    let mut gradient_weight_k_batch = gradient.get_gradient_weights_k_batch();
+                    let mut gradient_weight_v_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_weights_v_batch();
+                    let mut gradient_weight_q_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_weights_q_batch();
+                    let mut gradient_weight_pos_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_bias_pos_batch();
+
+                    normalize_gradients_batch(&mut gradient_weight_k_batch);
+                    normalize_gradients_batch(&mut gradient_weight_v_batch);
+                    normalize_gradients_batch(&mut gradient_weight_q_batch);
+                    normalize_gradients_batch(&mut gradient_weight_pos_batch);
+
+                    gradient.set_gradient_weights_k_batch(gradient_weight_k_batch);
+                    gradient.set_gradient_weights_v_batch(gradient_weight_v_batch);
+                    gradient.set_gradient_weights_q_batch(gradient_weight_q_batch);
+                    gradient.set_gradient_bias_pos_batch(gradient_weight_pos_batch);
+
+                    if VERBOSE {
+                        println!("self attention layer updating gradient");
+                        max_weight(&gradient.get_gradient_weights_k());
+                        max_weight(&gradient.get_gradient_weights_q());
+                        max_weight(&gradient.get_gradient_weights_v());
+                        max_weight(&gradient.get_gradient_bias_pos());
+                    }
                 }
                 if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
                     match norm_layer {
                         LayerEnum::RMSNorm(norm_layer) => {
-                            gradient = norm_layer.gradient.as_ref().expect("No gradient found");
+                            gradient = norm_layer.gradient.as_mut().expect("No gradient found");
 
                             global_biases.push(gradient.get_gradient_beta());
                             global_biases.push(gradient.get_gradient_gamma());
+
+                            let mut gamma_grad = gradient.get_gradient_gamma();
+                            let mut beta_grad = gradient.get_gradient_beta();
+                            // Normalize gradients
+                            normalize_bias(&mut beta_grad);
+                            normalize_bias(&mut gamma_grad);
+
+                            gradient.set_gradient_gamma(gamma_grad);
+                            gradient.set_gradient_beta(beta_grad);
+
+                            if VERBOSE {
+                                println!("RMS norm layer updating gradient");
+                                max_bias(&gradient.get_gradient_beta());
+                                max_bias(&gradient.get_gradient_gamma());
+                            }
                         }
                         LayerEnum::Norm(norm_layer) => {
-                            gradient = norm_layer.gradient.as_ref().expect("No gradient found");
+                            gradient = norm_layer.gradient.as_mut().expect("No gradient found");
 
                             global_biases.push(gradient.get_gradient_beta());
                             global_biases.push(gradient.get_gradient_gamma());
+
+                            let mut gamma_grad = gradient.get_gradient_gamma();
+                            let mut beta_grad = gradient.get_gradient_beta();
+                            // Normalize gradients
+                            normalize_bias(&mut beta_grad);
+                            normalize_bias(&mut gamma_grad);
+
+                            gradient.set_gradient_gamma(gamma_grad);
+                            gradient.set_gradient_beta(beta_grad);
+
+                            if VERBOSE {
+                                println!("norm layer updating gradient");
+                                max_bias(&gradient.get_gradient_beta());
+                                max_bias(&gradient.get_gradient_gamma());
+                            }
                         }
                         _ => {}
                     }
@@ -57,26 +144,79 @@ fn update_global_norm(transformer: &mut NeuralNetwork) {
             }
             LayerEnum::SparseSelfAttention(self_attention_layer) => {
                 for attention_head in self_attention_layer.attention_heads.iter_mut() {
-                    gradient = attention_head.gradient.as_ref().expect("No gradient found");
+                    gradient = attention_head.gradient.as_mut().expect("No gradient found");
 
                     global_weights.push(gradient.get_gradient_weights_k());
                     global_weights.push(gradient.get_gradient_weights_q());
                     global_weights.push(gradient.get_gradient_weights_v());
                     global_weights.push(gradient.get_gradient_bias_pos());
+
+                    let mut gradient_weight_k_batch = gradient.get_gradient_weights_k_batch();
+                    let mut gradient_weight_v_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_weights_v_batch();
+                    let mut gradient_weight_q_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_weights_q_batch();
+                    let mut gradient_weight_pos_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_bias_pos_batch();
+
+                    normalize_gradients_batch(&mut gradient_weight_k_batch);
+                    normalize_gradients_batch(&mut gradient_weight_v_batch);
+                    normalize_gradients_batch(&mut gradient_weight_q_batch);
+                    normalize_gradients_batch(&mut gradient_weight_pos_batch);
+
+                    gradient.set_gradient_weights_k_batch(gradient_weight_k_batch);
+                    gradient.set_gradient_weights_v_batch(gradient_weight_v_batch);
+                    gradient.set_gradient_weights_q_batch(gradient_weight_q_batch);
+                    gradient.set_gradient_bias_pos_batch(gradient_weight_pos_batch);
+
+                    if VERBOSE {
+                        println!("self sparse attention layer updating gradient");
+                        max_weight(&gradient.get_gradient_weights_k());
+                        max_weight(&gradient.get_gradient_weights_q());
+                        max_weight(&gradient.get_gradient_weights_v());
+                        max_weight(&gradient.get_gradient_bias_pos());
+                    }
                 }
                 if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
                     match norm_layer {
                         LayerEnum::RMSNorm(norm_layer) => {
-                            gradient = norm_layer.gradient.as_ref().expect("No gradient found");
+                            gradient = norm_layer.gradient.as_mut().expect("No gradient found");
 
                             global_biases.push(gradient.get_gradient_beta());
                             global_biases.push(gradient.get_gradient_gamma());
+
+                            let mut gamma_grad = gradient.get_gradient_gamma();
+                            let mut beta_grad = gradient.get_gradient_beta();
+                            // Normalize gradients
+                            normalize_bias(&mut beta_grad);
+                            normalize_bias(&mut gamma_grad);
+
+                            gradient.set_gradient_gamma(gamma_grad);
+                            gradient.set_gradient_beta(beta_grad);
+
+                            if VERBOSE {
+                                println!("rms norm layer updating gradient");
+                                max_bias(&gradient.get_gradient_beta());
+                                max_bias(&gradient.get_gradient_gamma());
+                            }
                         }
                         LayerEnum::Norm(norm_layer) => {
-                            gradient = norm_layer.gradient.as_ref().expect("No gradient found");
+                            gradient = norm_layer.gradient.as_mut().expect("No gradient found");
 
                             global_biases.push(gradient.get_gradient_beta());
                             global_biases.push(gradient.get_gradient_gamma());
+
+                            let mut gamma_grad = gradient.get_gradient_gamma();
+                            let mut beta_grad = gradient.get_gradient_beta();
+                            // Normalize gradients
+                            normalize_bias(&mut beta_grad);
+                            normalize_bias(&mut gamma_grad);
+
+                            gradient.set_gradient_gamma(gamma_grad);
+                            gradient.set_gradient_beta(beta_grad);
+
+                            if VERBOSE {
+                                println!("norm layer updating gradient");
+                                max_bias(&gradient.get_gradient_beta());
+                                max_bias(&gradient.get_gradient_gamma());
+                            }
                         }
                         _ => {}
                     }
@@ -84,26 +224,79 @@ fn update_global_norm(transformer: &mut NeuralNetwork) {
             }
             LayerEnum::SelfAttentionApproximation(self_attention_layer) => {
                 for attention_head in self_attention_layer.attention_heads.iter_mut() {
-                    gradient = attention_head.gradient.as_ref().expect("No gradient found");
+                    gradient = attention_head.gradient.as_mut().expect("No gradient found");
 
                     global_weights.push(gradient.get_gradient_weights_k());
                     global_weights.push(gradient.get_gradient_weights_q());
                     global_weights.push(gradient.get_gradient_weights_v());
                     global_weights.push(gradient.get_gradient_bias_pos());
+
+                    let mut gradient_weight_k_batch = gradient.get_gradient_weights_k_batch();
+                    let mut gradient_weight_v_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_weights_v_batch();
+                    let mut gradient_weight_q_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_weights_q_batch();
+                    let mut gradient_weight_pos_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_bias_pos_batch();
+
+                    normalize_gradients_batch(&mut gradient_weight_k_batch);
+                    normalize_gradients_batch(&mut gradient_weight_v_batch);
+                    normalize_gradients_batch(&mut gradient_weight_q_batch);
+                    normalize_gradients_batch(&mut gradient_weight_pos_batch);
+
+                    gradient.set_gradient_weights_k_batch(gradient_weight_k_batch);
+                    gradient.set_gradient_weights_v_batch(gradient_weight_v_batch);
+                    gradient.set_gradient_weights_q_batch(gradient_weight_q_batch);
+                    gradient.set_gradient_bias_pos_batch(gradient_weight_pos_batch);
+
+                    if VERBOSE {
+                        println!("self attention approximation layer updating gradient");
+                        max_weight(&gradient.get_gradient_weights_k());
+                        max_weight(&gradient.get_gradient_weights_q());
+                        max_weight(&gradient.get_gradient_weights_v());
+                        max_weight(&gradient.get_gradient_bias_pos());
+                    }
                 }
                 if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
                     match norm_layer {
                         LayerEnum::RMSNorm(norm_layer) => {
-                            gradient = norm_layer.gradient.as_ref().expect("No gradient found");
+                            gradient = norm_layer.gradient.as_mut().expect("No gradient found");
 
                             global_biases.push(gradient.get_gradient_beta());
                             global_biases.push(gradient.get_gradient_gamma());
+
+                            let mut gamma_grad = gradient.get_gradient_gamma();
+                            let mut beta_grad = gradient.get_gradient_beta();
+                            // Normalize gradients
+                            normalize_bias(&mut beta_grad);
+                            normalize_bias(&mut gamma_grad);
+
+                            gradient.set_gradient_gamma(gamma_grad);
+                            gradient.set_gradient_beta(beta_grad);
+
+                            if VERBOSE {
+                                println!("norm layer updating gradient");
+                                max_bias(&gradient.get_gradient_beta());
+                                max_bias(&gradient.get_gradient_gamma());
+                            }
                         }
                         LayerEnum::Norm(norm_layer) => {
-                            gradient = norm_layer.gradient.as_ref().expect("No gradient found");
+                            gradient = norm_layer.gradient.as_mut().expect("No gradient found");
 
                             global_biases.push(gradient.get_gradient_beta());
                             global_biases.push(gradient.get_gradient_gamma());
+
+                            let mut gamma_grad = gradient.get_gradient_gamma();
+                            let mut beta_grad = gradient.get_gradient_beta();
+                            // Normalize gradients
+                            normalize_bias(&mut beta_grad);
+                            normalize_bias(&mut gamma_grad);
+
+                            gradient.set_gradient_gamma(gamma_grad);
+                            gradient.set_gradient_beta(beta_grad);
+
+                            if VERBOSE {
+                                println!("norm layer updating gradient");
+                                max_bias(&gradient.get_gradient_beta());
+                                max_bias(&gradient.get_gradient_gamma());
+                            }
                         }
                         _ => {}
                     }
@@ -113,16 +306,46 @@ fn update_global_norm(transformer: &mut NeuralNetwork) {
                 for layer in ffn_layer.layers.iter_mut() {
                     match layer {
                         LayerEnum::Dense(dense_layer) => {
-                            gradient = dense_layer.gradient.as_ref().expect("No gradient found");
+                            gradient = dense_layer.gradient.as_mut().expect("No gradient found");
 
                             global_weights.push(gradient.get_gradient_weights());
                             global_biases.push(gradient.get_gradient_bias());
+
+                            let mut weight_gradient_batch = gradient.get_gradient_weight_batch();
+                            let mut bias_gradient_batch = gradient.get_gradient_bias_batch();
+
+                            normalize_gradients_batch(&mut weight_gradient_batch);
+                            normalize_gradients(&mut bias_gradient_batch);
+
+                            gradient.set_gradient_weight_batch(weight_gradient_batch);
+                            gradient.set_gradient_bias_batch(bias_gradient_batch);
+
+                            if VERBOSE {
+                                println!("dense layer updating gradient");
+                                max_weight(&gradient.get_gradient_weights());
+                                max_bias(&gradient.get_gradient_bias());
+                            }
                         }
                         LayerEnum::Linear(linear_layer) => {
-                            gradient = linear_layer.gradient.as_ref().expect("No gradient found");
+                            gradient = linear_layer.gradient.as_mut().expect("No gradient found");
 
                             global_weights.push(gradient.get_gradient_weights());
                             global_biases.push(gradient.get_gradient_bias());
+
+                            let mut weight_gradient_batch = gradient.get_gradient_weight_batch();
+                            let mut bias_gradient_batch = gradient.get_gradient_bias_batch();
+
+                            normalize_gradients_batch(&mut weight_gradient_batch);
+                            normalize_gradients(&mut bias_gradient_batch);
+
+                            gradient.set_gradient_weight_batch(weight_gradient_batch);
+                            gradient.set_gradient_bias_batch(bias_gradient_batch);
+
+                            if VERBOSE {
+                                println!("linear layer updating gradient");
+                                max_weight(&gradient.get_gradient_weights());
+                                max_bias(&gradient.get_gradient_bias());
+                            }
                         }
                         _ => {}
                     }
@@ -130,181 +353,119 @@ fn update_global_norm(transformer: &mut NeuralNetwork) {
                 if let Some(norm_layer) = ffn_layer.norm_layer.as_mut() {
                     match norm_layer {
                         LayerEnum::RMSNorm(norm_layer) => {
-                            gradient = norm_layer.gradient.as_ref().expect("No gradient found");
+                            gradient = norm_layer.gradient.as_mut().expect("No gradient found");
 
                             global_biases.push(gradient.get_gradient_beta());
                             global_biases.push(gradient.get_gradient_gamma());
+
+                            let mut gamma_grad = gradient.get_gradient_gamma();
+                            let mut beta_grad = gradient.get_gradient_beta();
+                            // Normalize gradients
+                            normalize_bias(&mut beta_grad);
+                            normalize_bias(&mut gamma_grad);
+
+                            gradient.set_gradient_gamma(gamma_grad);
+                            gradient.set_gradient_beta(beta_grad);
+
+                            if VERBOSE {
+                                println!("RMS norm layer updating gradient");
+                                max_bias(&gradient.get_gradient_beta());
+                                max_bias(&gradient.get_gradient_gamma());
+                            }
                         }
                         LayerEnum::Norm(norm_layer) => {
-                            gradient = norm_layer.gradient.as_ref().expect("No gradient found");
+                            gradient = norm_layer.gradient.as_mut().expect("No gradient found");
 
                             global_biases.push(gradient.get_gradient_beta());
                             global_biases.push(gradient.get_gradient_gamma());
+
+                            let mut gamma_grad = gradient.get_gradient_gamma();
+                            let mut beta_grad = gradient.get_gradient_beta();
+                            // Normalize gradients
+                            normalize_bias(&mut beta_grad);
+                            normalize_bias(&mut gamma_grad);
+
+                            gradient.set_gradient_gamma(gamma_grad);
+                            gradient.set_gradient_beta(beta_grad);
+
+                            if VERBOSE {
+                                println!("norm layer updating gradient");
+                                max_bias(&gradient.get_gradient_beta());
+                                max_bias(&gradient.get_gradient_gamma());
+                            }
                         }
                         _ => {}
                     }
                 }
             }
             LayerEnum::Dense(dense_layer) => {
-                gradient = dense_layer.gradient.as_ref().expect("No gradient found");
+                gradient = dense_layer.gradient.as_mut().expect("No gradient found");
 
                 global_weights.push(gradient.get_gradient_weights());
                 global_biases.push(gradient.get_gradient_bias());
+
+                let mut weight_gradient_batch = gradient.get_gradient_weight_batch();
+                let mut bias_gradient_batch = gradient.get_gradient_bias_batch();
+
+                normalize_gradients_batch(&mut weight_gradient_batch);
+                normalize_gradients(&mut bias_gradient_batch);
+
+                gradient.set_gradient_weight_batch(weight_gradient_batch);
+                gradient.set_gradient_bias_batch(bias_gradient_batch);
+
+                if VERBOSE {
+                    println!("dense layer updating gradient");
+                    max_weight(&gradient.get_gradient_weights());
+                    max_bias(&gradient.get_gradient_bias());
+                }
             }
             LayerEnum::Linear(linear_layer) => {
-                gradient = linear_layer.gradient.as_ref().expect("No gradient found");
+                gradient = linear_layer.gradient.as_mut().expect("No gradient found");
 
                 global_weights.push(gradient.get_gradient_weights());
                 global_biases.push(gradient.get_gradient_bias());
+
+                let mut weight_gradient_batch = gradient.get_gradient_weight_batch();
+                let mut bias_gradient_batch = gradient.get_gradient_bias_batch();
+
+                normalize_gradients_batch(&mut weight_gradient_batch);
+                normalize_gradients(&mut bias_gradient_batch);
+
+                gradient.set_gradient_weight_batch(weight_gradient_batch);
+                gradient.set_gradient_bias_batch(bias_gradient_batch);
+
+                if VERBOSE {
+                    println!("linear layer updating gradient");
+                    max_weight(&gradient.get_gradient_weights());
+                    max_bias(&gradient.get_gradient_bias());
+                }
             }
             LayerEnum::MultiLinear(linear_layer) => {
                 let (weight_grad, bias_grad) = linear_layer.get_combined_gradients();
+
+                if VERBOSE {
+                    println!("multi linear layer updating gradient");
+                    max_weight(&weight_grad);
+                    max_bias(&bias_grad);
+                }
 
                 global_weights.push(weight_grad);
                 global_biases.push(bias_grad);
             }
             LayerEnum::Wavelet(_wavelet_layer) => {}
             LayerEnum::DiscreteWavelet(_wavelet_layer) => {}
-            LayerEnum::Softmax(_softmax_layer) => {}
-            LayerEnum::PositionalEncoding(_positional_encoding_layer) => {}
-        }
-    }
-
-    let global_norm = compute_global_norm(&global_weights, &global_biases);
-    transformer.ema = transformer.smoothing * transformer.ema + (1.0 - transformer.smoothing) * global_norm;
-    let max_norm = transformer.ema * EMA_SCALER;
-
-    transformer.global_norm = global_norm;
-    transformer.max_norm = max_norm;
-
-    println!("Global norm: {}, Max norm: {}", global_norm, max_norm);
-
-    update_layers_max_norm(transformer, global_norm, max_norm);
-}
-
-fn update_layers_max_norm(transformer: &mut NeuralNetwork, global_norm: f64, max_norm: f64) {
-    for layer in transformer.layers.iter_mut() {
-        match layer {
-            LayerEnum::AdaptiveAvgPool1d(_adaptive_avg_pooling_layer) => {
-                // println!("adaptive avg pooling layer with output size: {:?}", &adaptive_avg_pooling_layer.output_size);
-            }
-            LayerEnum::Embedding(_embedding_layer) => {}
-            LayerEnum::Norm(norm_layer) => {
-                norm_layer.max_norm = max_norm;
-                norm_layer.global_norm = global_norm;
-            }
-            LayerEnum::RMSNorm(norm_layer) => {
-                norm_layer.max_norm = max_norm;
-                norm_layer.global_norm = global_norm;
-            }
-
-            LayerEnum::SelfAttention(self_attention_layer) => {
-                for attention_head in self_attention_layer.attention_heads.iter_mut() {
-                    attention_head.max_norm = max_norm;
-                    attention_head.global_norm = global_norm;
-                }
-                if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
-                    match norm_layer {
-                        LayerEnum::RMSNorm(norm_layer) => {
-                            norm_layer.max_norm = max_norm;
-                            norm_layer.global_norm = global_norm;
-                        }
-                        LayerEnum::Norm(norm_layer) => {
-                            norm_layer.max_norm = max_norm;
-                            norm_layer.global_norm = global_norm;
-                        }
-                        _ => {}
-                    }
+            LayerEnum::Softmax(_softmax_layer) => {
+                if VERBOSE {
+                    println!("softmax layer - no parameters to update");
                 }
             }
-            LayerEnum::SparseSelfAttention(self_attention_layer) => {
-                for attention_head in self_attention_layer.attention_heads.iter_mut() {
-                    attention_head.max_norm = max_norm;
-                    attention_head.global_norm = global_norm;
-                }
-                if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
-                    match norm_layer {
-                        LayerEnum::RMSNorm(norm_layer) => {
-                            norm_layer.max_norm = max_norm;
-                            norm_layer.global_norm = global_norm;
-                        }
-                        LayerEnum::Norm(norm_layer) => {
-                            norm_layer.max_norm = max_norm;
-                            norm_layer.global_norm = global_norm;
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            LayerEnum::SelfAttentionApproximation(self_attention_layer) => {
-                for attention_head in self_attention_layer.attention_heads.iter_mut() {
-                    attention_head.max_norm = max_norm;
-                    attention_head.global_norm = global_norm;
-                }
-                if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
-                    match norm_layer {
-                        LayerEnum::RMSNorm(norm_layer) => {
-                            norm_layer.max_norm = max_norm;
-                            norm_layer.global_norm = global_norm;
-                        }
-                        LayerEnum::Norm(norm_layer) => {
-                            norm_layer.max_norm = max_norm;
-                            norm_layer.global_norm = global_norm;
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            LayerEnum::FeedForward(ffn_layer) => {
-                for layer in ffn_layer.layers.iter_mut() {
-                    match layer {
-                        LayerEnum::Dense(dense_layer) => {
-                            dense_layer.max_norm = max_norm;
-                            dense_layer.global_norm = global_norm;
-                        }
-                        LayerEnum::Linear(linear_layer) => {
-                            linear_layer.max_norm = max_norm;
-                            linear_layer.global_norm = global_norm;
-                        }
-                        _ => {}
-                    }
-                }
-                if let Some(norm_layer) = ffn_layer.norm_layer.as_mut() {
-                    match norm_layer {
-                        LayerEnum::RMSNorm(norm_layer) => {
-                            norm_layer.max_norm = max_norm;
-                            norm_layer.global_norm = global_norm;
-                        }
-                        LayerEnum::Norm(norm_layer) => {
-                            norm_layer.max_norm = max_norm;
-                            norm_layer.global_norm = global_norm;
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            LayerEnum::Dense(dense_layer) => {
-                dense_layer.max_norm = max_norm;
-                dense_layer.global_norm = global_norm;
-            }
-            LayerEnum::Linear(linear_layer) => {
-                linear_layer.max_norm = max_norm;
-                linear_layer.global_norm = global_norm;
-            }
-            LayerEnum::MultiLinear(linear_layer) => {
-                linear_layer.max_norm = max_norm;
-                linear_layer.global_norm = global_norm;
-            }
-            LayerEnum::Wavelet(_wavelet_layer) => {}
-            LayerEnum::DiscreteWavelet(_wavelet_layer) => {}
-            LayerEnum::Softmax(_softmax_layer) => {}
             LayerEnum::PositionalEncoding(_positional_encoding_layer) => {}
         }
     }
 }
 
 pub fn update_transformer(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<Vec<u32>>) {
-    update_global_norm(transformer_network);
+    update_by_norm(transformer_network);
 
     for layer in transformer_network.layers.iter_mut().rev() {
         match layer {
@@ -342,4 +503,48 @@ pub fn update_transformer(transformer_network: &mut NeuralNetwork, target_batch_
             }
         }
     }
+}
+
+pub fn max_weight(weights: &Vec<Vec<Complex<f64>>>) -> f64 {
+    let mut max_weight = 0.0;
+    for row in weights.iter() {
+        for &weight in row.iter() {
+            let abs_weight = weight.norm();
+            if abs_weight > max_weight {
+                max_weight = abs_weight;
+            }
+        }
+    }
+
+    if VERBOSE {
+        println!("Max weight: {}", max_weight);
+    }
+    max_weight
+}
+
+pub fn max_bias(bias: &[Complex<f64>]) -> f64 {
+    let mut max_bias = 0.0;
+    for &b in bias.iter() {
+        let abs_b = b.norm();
+        if abs_b > max_bias {
+            max_bias = abs_b;
+        }
+    }
+
+    if VERBOSE {
+        println!("Max bias: {}", max_bias);
+    }
+    max_bias
+}
+
+// for scaling the input
+pub fn calculate_alpha() -> f64 {
+    let num_layer = NUM_SELF_ATT_LAYERS as f64;
+    (2.0 * num_layer).powf(1.0 / 4.0)
+}
+
+// for scaling the residuals
+pub fn calculate_beta() -> f64 {
+    let alpha = calculate_alpha();
+    1.0 / alpha
 }

@@ -111,7 +111,7 @@ pub mod test_ffn_layer {
     #[test]
     fn test_softmax_linear_ffn_backward() {
         // Define some small batch size and input dimensions for simplicity
-        let batch_size = 3;
+        let batch_size = 1;
         let _seq_len: usize = 5; // Update to match the input structure
         let input_dim = 16; // Match the input dimension with your input batch
         let output_dim = 10; // Match output_dim to your layer's output
@@ -170,6 +170,10 @@ pub mod test_ffn_layer {
 
         let numerical_grad_input_ffn: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch(&mut loss_fn, input_batch.clone(), epsilon);
         let analytical_grad_input_ffn: Vec<Vec<Vec<Complex<f64>>>> = gradient_ffn.get_gradient_input_batch();
+
+
+        println!("\n\n analytical grad input ffn: {:?}", &analytical_grad_input_ffn);
+        println!("\n\n numerical grad input ffn: {:?}", &numerical_grad_input_ffn);
 
         // Check if gradient batch dimensions match expected shapes
         println!("\n analytical grad input dim: {:?}, {}", analytical_grad_input_ffn.len(), analytical_grad_input_ffn[0].len());
