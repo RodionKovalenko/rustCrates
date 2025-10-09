@@ -8,7 +8,7 @@ use crate::neural_networks::{
     utils::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         array_splitting::split_sizes,
-        matrix::{average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d},
+        matrix::{average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, normalize_bias, normalize_gradients},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -130,6 +130,9 @@ impl MultiLinearLayer {
 
             col_offset += chunk_size;
         }
+
+        normalize_gradients(&mut combined_weights_gradients);
+        normalize_bias(&mut combined_bias_gradients);
 
         (combined_weights_gradients, combined_bias_gradients)
     }

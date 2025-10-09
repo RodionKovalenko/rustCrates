@@ -11,6 +11,8 @@ use std::ops::Div;
 use std::ops::{Add, Mul, Sub};
 use std::sync::{Arc, Mutex};
 
+use crate::neural_networks::network_types::transformer::transformer_updater::VERBOSE;
+
 extern "C" {
     fn zgemm_(transa: *const c_char, transb: *const c_char, m: *const i64, n: *const i64, k: *const i64, alpha: *const Complex<f64>, a: *const Complex<f64>, lda: *const i64, b: *const Complex<f64>, ldb: *const i64, beta: *const Complex<f64>, c: *mut Complex<f64>, ldc: *const i64);
 }
@@ -700,7 +702,7 @@ pub fn average_matrix_by_scalar<T>(matrix_a: &Vec<Vec<T>>, scalar: f64) -> Vec<V
 where
     T: PolarConvertible + Debug + Clone + Div<f64, Output = T>,
 {
-    matrix_a.iter().map(|val| average_vector_by_scalar(val, scalar * matrix_a.len() as f64)).collect()
+    matrix_a.iter().map(|val| average_vector_by_scalar(val, scalar)).collect()
     //average_gradient_polar_generic(matrix_a, scalar)
 }
 
@@ -709,6 +711,28 @@ where
     T: PolarConvertible + Debug + Clone + Div<f64, Output = T>,
 {
     matrix_a.iter().map(|val| average_matrix_by_scalar(val, scalar)).collect()
+}
+
+pub fn scale_matrix_3d_by_scalar<T>(matrix_a: &Vec<Vec<Vec<T>>>, scalar: f64) -> Vec<Vec<Vec<T>>>
+where
+    T: PolarConvertible + Debug + Clone + Mul<f64, Output = T>,
+{
+    matrix_a.iter().map(|val| scale_matrix_by_scalar(val, scalar)).collect()
+}
+
+pub fn scale_matrix_by_scalar<T>(matrix_a: &Vec<Vec<T>>, scalar: f64) -> Vec<Vec<T>>
+where
+    T: PolarConvertible + Debug + Clone + Mul<f64, Output = T>,
+{
+    matrix_a.iter().map(|val| scale_vector_by_scalar(val, scalar)).collect()
+}
+
+pub fn scale_vector_by_scalar<T>(matrix_a: &Vec<T>, scalar: f64) -> Vec<T>
+where
+    T: PolarConvertible + Debug + Clone + Mul<f64, Output = T>,
+{
+    matrix_a.iter().map(|val| val.clone() * scalar).collect()
+    //average_gradient_polar_1d_generic(matrix_a, scalar)
 }
 
 pub trait PolarConvertible: Clone {
@@ -876,8 +900,10 @@ pub fn compute_global_norm(grads: &Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Vec<C
         }
     }
 
-    println!("Total norm: {:8e}", total_norm.sqrt());
-    println!("Real norm: {:}, Imag norm: {:}, ratio: {:}", total_real.sqrt(), total_imag.sqrt(), total_imag.sqrt() / total_real.sqrt());
+    if VERBOSE {
+        println!("Total norm: {:8e}", total_norm.sqrt());
+        println!("Real norm: {:}, Imag norm: {:}, ratio: {:}", total_real.sqrt(), total_imag.sqrt(), total_imag.sqrt() / total_real.sqrt());
+    }
 
     total_norm.sqrt()
 }
@@ -907,6 +933,61 @@ pub fn clip_all_gradients_by_global_norm_2d(grads: &mut Vec<Vec<Complex<f64>>>, 
         }
 
         bias.iter_mut().for_each(|val| *val *= scale);
+    }
+}
+
+pub fn normalize_gradients_batch(gradients_batch: &mut Vec<Vec<Vec<Complex<f64>>>>) {
+    let mut norm: f64 = 0.0;
+
+    for gradients in gradients_batch.iter() {
+        for row in gradients.iter() {
+            for val in row.iter() {
+                norm += val.norm_sqr();
+            }
+        }
+    }
+    norm = norm.sqrt();
+
+    if norm > 0.0 {
+        for gradients in gradients_batch.iter_mut() {
+            for row in gradients.iter_mut() {
+                for val in row.iter_mut() {
+                    *val /= norm;
+                }
+            }
+        }
+    }
+}
+
+pub fn normalize_gradients(gradients: &mut Vec<Vec<Complex<f64>>>) {
+    let mut norm: f64 = 0.0;
+    for row in gradients.iter() {
+        for val in row.iter() {
+            norm += val.norm_sqr();
+        }
+    }
+    norm = norm.sqrt();
+
+    if norm > 0.0 {
+        for row in gradients.iter_mut() {
+            for val in row.iter_mut() {
+                *val /= norm;
+            }
+        }
+    }
+}
+
+pub fn normalize_bias(gradients: &mut Vec<Complex<f64>>) {
+    let mut norm: f64 = 0.0;
+    for val in gradients.iter() {
+        norm += val.norm_sqr();
+    }
+    norm = norm.sqrt();
+
+    if norm > 0.0 {
+        for val in gradients.iter_mut() {
+            *val /= norm;
+        }
     }
 }
 
