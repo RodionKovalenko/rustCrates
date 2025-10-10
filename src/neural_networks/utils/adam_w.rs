@@ -4,7 +4,7 @@ pub static B_1: f64 = 0.9;
 pub static B_2: f64 = 0.999;
 pub static EPSILON: f64 = 1e-6;
 pub static WEIGHT_DECAY: f64 = 0.01;
-pub static MAX_NORM: f64 = 1.0;
+pub static MAX_NORM: f64 = 5.0;
 pub static WARMUP_STEPS: usize = 200;
 
 // Assume this helper function exists or add it
@@ -25,15 +25,18 @@ pub fn calculate_adam_w(
     let t = t.max(1) as i32;
     let current_lr = get_current_learning_rate(learning_rate, t as usize);
 
+    // normalize_gradients(weights);
+    // normalize_gradients(prev_m);
+    // normalize_gradients(prev_v);
+
     for i in 0..weights.len() {
         for j in 0..weights[i].len() {
             // 1️⃣ Gradient clipping (complex norm)
-            let mut g_t = weight_gradients[i][j];
+            let g_t = weight_gradients[i][j];
 
-            if g_t.norm_sqr() > MAX_NORM {
-                let scale = MAX_NORM / g_t.norm_sqr();
-                g_t = g_t * scale;
-            }
+            // if g_t.norm_sqr() > MAX_NORM {
+            //     g_t = g_t / g_t.norm_sqr();
+            // }
 
             if is_nan_or_inf(&g_t) {
                 println!("Gradient contains NaN or Inf in adam w weights: {:?}", g_t);
@@ -60,24 +63,26 @@ pub fn calculate_adam_w(
 
 // AdamW optimizer for complex biases (vector)
 pub fn calculate_adam_w_bias(
-    bias: &[Complex<f64>],
+    bias: &mut Vec<Complex<f64>>,
     gradient: &[Complex<f64>],
     prev_m: &mut Vec<Complex<f64>>,
     prev_v: &mut Vec<Complex<f64>>, // real part used, imag=0
     learning_rate: f64,
     time_step: usize,
 ) {
-    let mut bias = bias.to_vec();
     let t_i = time_step.max(1) as i32;
 
+    // normalize_bias(bias);
+    // normalize_bias(prev_m);
+    // normalize_bias(prev_v);
+
     for (i, b) in bias.iter_mut().enumerate() {
-        let mut g_t = gradient[i];
+        let g_t = gradient[i];
         let current_lr = get_current_learning_rate(learning_rate, t_i as usize);
 
-        if g_t.norm_sqr() > MAX_NORM {
-            let scale = MAX_NORM / g_t.norm_sqr();
-            g_t = g_t * scale; // g_t is now clipped to have magnitude <= MAX_NORM
-        }
+        // if g_t.norm_sqr() > MAX_NORM {
+        //     g_t = g_t / / g_t.norm_sqr();
+        // }
 
         if is_nan_or_inf(&g_t) {
             println!("Gradient contains NaN or Inf in adam w bias: {:?}", g_t);

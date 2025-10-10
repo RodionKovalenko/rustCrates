@@ -14,7 +14,7 @@ use crate::{
             layer_output_struct::LayerOutput,
         },
         network_types::{
-            neural_network_generic::{get_from_db, print_networt_structure, reset_previous_gradient, save_to_sled, NeuralNetwork, OperationMode},
+            neural_network_generic::{get_from_db, print_networt_structure, save_to_sled, NeuralNetwork, OperationMode},
             transformer::{transformer_builder::create_transformer, transformer_updater::update_transformer},
         },
         utils::{
@@ -186,7 +186,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                 if loss_increasing_count > 5 && epoch_processed != epoch {
                     println!("loss is increasing too much, reducing learning rate");
                     transformer_network.decay_learning_rate(0.5); // e.g., reduce LR by half
-                    reset_previous_gradient(transformer_network);
+                                                                  // reset_previous_gradient(transformer_network);
 
                     epoch_processed = epoch;
                 }
@@ -749,7 +749,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
 
     if update_gradients {
         update_transformer(transformer_network, &target_batch_ids);
-        reset_previous_gradient(transformer_network);
+        // reset_previous_gradient(transformer_network);
     }
 
     gradient
