@@ -250,8 +250,8 @@ impl LinearLayer {
         // prev_m_weights = average_gradient_polar(&previous_gradient.get_prev_m_weights(), batch_size);
         // prev_v_weights = average_gradient_polar(&previous_gradient.get_prev_v_weights(), batch_size);
         calculate_adam_w_bias(&mut self.bias, &gradient.get_gradient_bias(), &mut prev_m_bias, &mut prev_v_bias, learning_rate, time_step);
-
         calculate_adam_w(&mut self.weights, &gradient.get_gradient_weights(), &mut prev_m_weights, &mut prev_v_weights, learning_rate, time_step);
+        
         gradient.set_prev_m_bias(prev_m_bias);
         gradient.set_prev_v_bias(prev_v_bias);
         gradient.set_prev_m_weights(prev_m_weights);

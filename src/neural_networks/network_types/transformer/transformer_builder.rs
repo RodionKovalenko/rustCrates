@@ -8,7 +8,7 @@ use crate::neural_networks::{
     },
 };
 
-pub const NUM_SELF_ATT_LAYERS: usize = 5;
+pub const NUM_SELF_ATT_LAYERS: usize = 25;
 
 pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let number_inputs: usize = 32;
