@@ -7,7 +7,6 @@ use std::marker::Copy;
 use std::ops::{Add, Div, Mul};
 
 use crate::neural_networks::network_components::layer::ActivationType;
-
 /// SELU hyperparameters
 pub const LAMBDA: f64 = 1.050700987355480493419334985294598;
 pub const ALPHA: f64 = 1.673263242354377284817042991671750;
@@ -135,14 +134,20 @@ where
         ActivationType::SOFTPLUS => data.iter().map(|row| row.iter().map(|&x| softplus(x)).collect()).collect(),
         ActivationType::PROBIT => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Just return the value as is
         ActivationType::RANDOM => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Just return the value as is
-        ActivationType::SOFTMAX => unimplemented!(),                                                 // Handle separately if needed
+        ActivationType::SOFTMAX => unimplemented!(),
+        ActivationType::SWiGLU => unimplemented!(),
     }
 }
 
 // Implement activation functions for Complex<f64>
-pub fn sigmoid_complex(z: Complex<f64>) -> Complex<f64> {
-    let exp_neg_z = (-z).exp();
-    Complex::new(1.0, 0.0) / (Complex::new(1.0, 0.0) + exp_neg_z)
+pub fn sigmoid_complex(z: &Complex<f64>) -> Complex<f64> {
+    let one = Complex::new(1.0, 0.0);
+    if z.re >= 0.0 {
+        one / (one + (-z).exp())
+    } else {
+        let exp_z = z.exp();
+        exp_z / (one + exp_z)
+    }
 }
 
 pub fn tanh_complex(z: Complex<f64>) -> Complex<f64> {
@@ -170,7 +175,7 @@ fn elu_complex(z: Complex<f64>, alpha: f64) -> Complex<f64> {
         Complex::new(alpha * (z.exp().re - 1.0), z.im)
     }
 }
-fn selu_complex(z: Complex<f64>) -> Complex<f64> {
+fn selu_complex(z: &Complex<f64>) -> Complex<f64> {
     if z.re >= 0.0 {
         Complex::new(LAMBDA, 0.0) * z
     } else {
@@ -192,7 +197,7 @@ fn selu_complex(z: Complex<f64>) -> Complex<f64> {
 //     0.5 * z * (Complex::new(1.0, 0.0) + tanh_f_z)
 // }
 
-pub fn gelu_complex(z: Complex<f64>) -> Complex<f64> {
+pub fn gelu_complex(z: &Complex<f64>) -> Complex<f64> {
     let sqrt_2_over_pi = (2.0 / PI).sqrt();
 
     let z_cubed = z.powi(3);
@@ -237,29 +242,52 @@ pub fn erf_complex(z: Complex<f64>) -> Complex<f64> {
     two_over_sqrt_pi * sum
 }
 
-pub fn softsign_complex(z: Complex<f64>) -> Complex<f64> {
+pub fn softsign_complex(z: &Complex<f64>) -> Complex<f64> {
     Complex::new(z.re / (1.0 + z.re.abs()), z.im / (1.0 + z.im.abs()))
 }
 
-fn softplus_complex(z: Complex<f64>) -> Complex<f64> {
+fn softplus_complex(z: &Complex<f64>) -> Complex<f64> {
     (z.exp() + Complex::new(1.0, 0.0)).ln()
+}
+
+pub fn swiglu_matrix(data: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    data.iter()
+        .map(|row| {
+            let column_split = row.len() / 2;
+            let (l, r) = row.split_at(column_split);
+            swiglu_vector(&l.to_vec(), &r.to_vec())
+        })
+        .collect()
+}
+
+pub fn swiglu_vector(a: &Vec<Complex<f64>>, b: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
+    a.iter().zip(b.iter()).map(|(a, b)| swiglu(a, b)).collect()
+}
+
+fn swiglu(a: &Complex<f64>, b: &Complex<f64>) -> Complex<f64> {
+    a * b * sigmoid_complex(b)
+}
+
+pub fn swish(data: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    data.iter().map(|row| row.iter().map(|&x| x * sigmoid_complex(&x)).collect()).collect()
 }
 
 // Main activation function for complex numbers
 pub fn activate_output_complex(data: &Vec<Vec<Complex<f64>>>, activation: ActivationType) -> Vec<Vec<Complex<f64>>> {
     match activation {
-        ActivationType::SIGMOID => data.iter().map(|row| row.iter().map(|&x| sigmoid_complex(x)).collect()).collect(),
+        ActivationType::SIGMOID => data.iter().map(|row| row.iter().map(|&x| sigmoid_complex(&x)).collect()).collect(),
         ActivationType::TANH => data.iter().map(|row| row.iter().map(|&x| tanh_complex(x)).collect()).collect(),
         ActivationType::LINEAR => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Linear is identity
         ActivationType::RELU => data.iter().map(|row| row.iter().map(|&x| relu_complex(x)).collect()).collect(),
         ActivationType::LEAKYRELU => data.iter().map(|row| row.iter().map(|&x| leaky_relu_complex(x, 0.01)).collect()).collect(),
         ActivationType::ELU => data.iter().map(|row| row.iter().map(|&x| elu_complex(x, 1.0)).collect()).collect(), // Assuming alpha = 1.0
-        ActivationType::SELU => data.iter().map(|row| row.iter().map(|&x| selu_complex(x)).collect()).collect(),    // Assuming scale = 1.0, alpha = 1.0
-        ActivationType::GELU => data.iter().map(|row| row.iter().map(|&x| gelu_complex(x)).collect()).collect(),
-        ActivationType::SOFTSIGN => data.iter().map(|row| row.iter().map(|&x| softsign_complex(x)).collect()).collect(),
-        ActivationType::SOFTPLUS => data.iter().map(|row| row.iter().map(|&x| softplus_complex(x)).collect()).collect(),
+        ActivationType::SELU => data.iter().map(|row| row.iter().map(|&x| selu_complex(&x)).collect()).collect(),   // Assuming scale = 1.0, alpha = 1.0
+        ActivationType::GELU => data.iter().map(|row| row.iter().map(|&x| gelu_complex(&x)).collect()).collect(),
+        ActivationType::SOFTSIGN => data.iter().map(|row| row.iter().map(|&x| softsign_complex(&x)).collect()).collect(),
+        ActivationType::SOFTPLUS => data.iter().map(|row| row.iter().map(|&x| softplus_complex(&x)).collect()).collect(),
         ActivationType::PROBIT => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Just return the value as is
         ActivationType::RANDOM => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Just return the value as is
+        ActivationType::SWiGLU => swiglu_matrix(data),
         _ => vec![],
     }
 }
@@ -267,16 +295,16 @@ pub fn activate_output_complex(data: &Vec<Vec<Complex<f64>>>, activation: Activa
 // Main activation function for complex numbers with padding support
 pub fn activate_output_complex_padding(data: &Vec<Vec<Complex<f64>>>, activation: ActivationType, padding_mask: &Vec<u32>) -> Vec<Vec<Complex<f64>>> {
     match activation {
-        ActivationType::SIGMOID => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { sigmoid_complex(x) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
+        ActivationType::SIGMOID => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { sigmoid_complex(&x) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
         ActivationType::TANH => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { tanh_complex(x) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
         ActivationType::LINEAR => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { x } else { Complex::new(0.0, 0.0) }).collect()).collect(),
         ActivationType::RELU => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { relu_complex(x) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
         ActivationType::LEAKYRELU => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { leaky_relu_complex(x, 0.01) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
         ActivationType::ELU => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { elu_complex(x, 1.0) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
-        ActivationType::SELU => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { selu_complex(x) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
-        ActivationType::GELU => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { gelu_complex(x) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
-        ActivationType::SOFTSIGN => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { softsign_complex(x) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
-        ActivationType::SOFTPLUS => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { softplus_complex(x) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
+        ActivationType::SELU => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { selu_complex(&x) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
+        ActivationType::GELU => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { gelu_complex(&x) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
+        ActivationType::SOFTSIGN => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { softsign_complex(&x) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
+        ActivationType::SOFTPLUS => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { softplus_complex(&x) } else { Complex::new(0.0, 0.0) }).collect()).collect(),
         ActivationType::PROBIT => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { x } else { Complex::new(0.0, 0.0) }).collect()).collect(),
         ActivationType::RANDOM => data.iter().enumerate().map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { x } else { Complex::new(0.0, 0.0) }).collect()).collect(),
         _ => vec![],
@@ -388,12 +416,7 @@ pub fn softmax_complex_padding_real(input: &Vec<Vec<Complex<f64>>>, padding_mask
 }
 
 pub fn softmax_matrix_f64(input: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
-    input
-        .par_iter()
-        .map(|row| {
-            softmax_row_f64(row)
-        })
-        .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
+    input.par_iter().map(|row| softmax_row_f64(row)).collect() // Collect the results into a Vec<Vec<Complex<f64>>>
 }
 
 pub fn softmax_row_f64(input: &Vec<f64>) -> Vec<f64> {

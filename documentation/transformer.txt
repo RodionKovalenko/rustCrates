@@ -264,3 +264,4 @@ dL/dx = dL/dy * dy/df(z) * df(z)/dN(x) * dN(x)/dx + dL/dy * dy/dx
 
 simplified: 
 dL/dx = dL/dy * (dy/df(z) * df(z)/dN(x) * dN(x)/dx +  dy/dx)
+

@@ -15,7 +15,10 @@ use crate::{
         },
         network_types::{
             neural_network_generic::{get_from_db, print_networt_structure, save_to_sled, NeuralNetwork, OperationMode},
-            transformer::{transformer_builder::create_transformer, transformer_updater::update_transformer},
+            transformer::{
+                transformer_builder::create_transformer,
+                transformer_updater::{update_transformer, VERBOSE},
+            },
         },
         utils::{
             array_splitting::sliding_window_chunks_matrix,
@@ -34,7 +37,7 @@ pub const EMA_SCALER: f64 = 1.1;
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize, batch_size: usize) {
     let mut total_loss: Complex<f64>;
-    let loss_threshold: f64 = 0.003;
+    let loss_threshold: f64 = 0.01;
     let now = Instant::now();
     let mut previous_last_losses: Vec<f64> = Vec::new();
     let mut total_loss_exp_ma = 0.0;
@@ -399,7 +402,9 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                 if let Some(previous_output) = &output {
                     let positional_encoding_l = Some(positional_encoding_layer).unwrap();
 
-                    //println!("forward pos encoding");
+                    if VERBOSE {
+                        println!("forward pos encoding");
+                    }
                     // let start = Instant::now();
                     layer_input.set_input_batch(previous_output.clone());
                     let positional_encodings: Vec<Vec<Vec<Complex<f64>>>> = positional_encoding_l.forward(&layer_input);
@@ -431,7 +436,9 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     layer_input.set_input_batch(previous_output.clone());
                     layer_input.set_padding_mask_batch(padding_m.clone());
 
-                    //println!("forward self-attention start");
+                    if VERBOSE {
+                        println!("forward self-attention start");
+                    }
                     // let start = Instant::now();
                     let output_attention = attention.forward(&layer_input);
 
@@ -447,7 +454,9 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     layer_input.set_input_batch(previous_output.clone());
                     layer_input.set_padding_mask_batch(padding_m.clone());
 
-                    //println!("forward self-attention start");
+                    if VERBOSE {
+                        println!("forward sparse self-attention start");
+                    }
                     // let start = Instant::now();
                     let output_attention = attention.forward(&layer_input);
 
@@ -463,7 +472,9 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     layer_input.set_input_batch(previous_output.clone());
                     layer_input.set_padding_mask_batch(padding_m.clone());
 
-                    //println!("forward self-attention start");
+                    if VERBOSE {
+                        println!("forward self-attention approximation start");
+                    }
                     // let start = Instant::now();
                     let output_attention = attention.forward(&layer_input);
                     // println!("time elapsed in seconds in self attention layer: {:?}", start.elapsed().as_secs_f64());
@@ -476,7 +487,9 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                 if let Some(previous_output) = &output {
                     dense_layer.padding_mask_batch = padding_mask.clone();
 
-                    //println!("forward ffn start");
+                    if VERBOSE {
+                        println!("forward feed-forward network start");
+                    }
                     layer_input.set_input_batch(previous_output.to_vec());
 
                     //let start = Instant::now();
@@ -492,7 +505,9 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
             }
             LayerEnum::Linear(linear_layer) => {
                 if let Some(previous_output) = &output {
-                    //println!("forward linear start");
+                    if VERBOSE {
+                        println!("forward linear start");
+                    }
                     layer_input.set_input_batch(previous_output.clone());
 
                     // let start = Instant::now();
@@ -506,7 +521,10 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
             }
             LayerEnum::MultiLinear(multi_linear_layer) => {
                 if let Some(previous_output) = &output {
-                    //println!("forward linear start");
+
+                    if VERBOSE {
+                        println!("forward multilinear start");
+                    }
                     layer_input.set_input_batch(previous_output.clone());
 
                     //let start = Instant::now();

@@ -1,0 +1,62 @@
+ 
+Swiglu
+
+a = x * W1 + b1
+
+b = x * W2 + b2
+
+Swish(b) = b ⊙ sigma(b) = (x * W2 + b2) ⊙ sigma(x*W2 + b2)
+
+y = (x * W1 + b1) ⊙ ((x*W2 + b2) ⊙ sigma (x*W2 + b2))
+
+y = a ⊙ Swish(b) = a ⊙ b ⊙ sigma(b)
+
+dy/d Swish(b) = sigma(b) + b * sigma(b)* (1 - sigma(b))
+
+
+dL/dx = (dL/dy ⊙ Swish(b)) * W1T + (dL/dy ⊙ (a ⊙ dy/dSwish(b))) * W2T
+
+
+x 450x64
+W 64 * 2048
+
+
+a = 450x64 * 64x 1024 = 450x1024
+b = 450x64 * 64 * 1024 = 450x1024
+
+
+concatenate 
+out = 450 x 2048
+
+Improved:
+activated = X * W = 450x2048
+
+split into two matrices:
+
+a = 450x1024
+b = 450x1024
+
+Swiglu(a,b) = a ⊙ Swish(b) = a ⊙ b ⊙ sigma(b)
+
+dy/d Swish(b) = sigma(b) + b * sigma(b) * (1 - sigma(b))
+
+dL/dx = (dL/dy ⊙ Swish(b)) * W1T + (dL/dy ⊙ (a ⊙ dy/dSwish(b))) * W2T
+
+
+dL/dW1 = dL/dy ⊙ dy/da * da/dW1 
+dL/dw2 = dL/dy ⊙ dy/dSwish(b) ⊙ dSwish(b)/db * db/dW2
+
+// gradient of bias is 1
+dL/db1 = (dL/dy ⊙ dy/da) 
+dL/db2 = (dL/dy ⊙ dy/dSwish(b)) ⊙ dSWish(b)/db
+
+
+XT * 450x64, Swish(b) 450x1024, dl/dy 450x1024 = 450x64 * (450x1024 ⊙ 450x1024) = 450x64 * (450 x1024) = 64x450 * 450x1024 = 64x1024
+dL/dW1 = (dL/dy ⊙ Swish(b)) * XT
+
+
+450x64 * ((450x1024 * 450x1024) ⊙ 450x1024) = 64x450 * 450*1024 = 64x1024
+dL/dw2 = ((dL/dy ⊙ a) ⊙ dSwish(b)/db) * XT 
+
+dL/db1 = (dL/dy ⊙ dy/da) 
+dL/db2 = (dL/dy ⊙ dy/dSwish(b)) ⊙ dSWish(b)/db

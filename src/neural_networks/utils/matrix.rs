@@ -467,6 +467,8 @@ pub fn hadamard_product_2d_c(input_1: &Vec<Vec<Complex<f64>>>, input_2: &Vec<Vec
     let rows = input_1.len();
     let cols = input_1[0].len();
 
+    assert!(rows == input_2.len() && cols == input_2[0].len(), "Input matrices must have the same dimensions");
+
     // Initialize result matrix with zeros
     let mut result = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
 
@@ -618,6 +620,7 @@ pub fn add_matrix<T: std::ops::Add<Output = T> + Copy>(a: &[Vec<T>], b: &[Vec<T>
 pub fn add_matrix_3d<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<Vec<Vec<T>>>, matrix_b: &Vec<Vec<Vec<T>>>) -> Vec<Vec<Vec<T>>> {
     let mut matrix_result: Vec<Vec<Vec<T>>> = matrix_a.clone();
 
+    assert!(matrix_a.len() == matrix_b.len() && matrix_a[0].len() == matrix_b[0].len() && matrix_a[0][0].len() == matrix_b[0][0].len(), "Input matrices must not be empty");
     for i in 0..matrix_a.len() {
         for j in 0..matrix_a[i].len() {
             for k in 0..matrix_a[i][j].len() {
@@ -1023,4 +1026,17 @@ pub fn check_nan_or_inf(matrix: &mut Vec<Vec<Complex<f64>>>, message: &str) -> b
     } else {
         false
     }
+}
+
+pub fn split_data_by_columns(data: &Vec<Vec<Complex<f64>>>) -> (Vec<Vec<Complex<f64>>>, Vec<Vec<Complex<f64>>>) {
+    let (left, right): (Vec<Vec<Complex<f64>>>, Vec<Vec<Complex<f64>>>) = data
+        .iter()
+        .map(|row| {
+            let column_splt = row.len() / 2;
+            let (l, r) = row.split_at(column_splt);
+            (l.to_vec(), r.to_vec()) // clone the slices
+        })
+        .unzip();
+
+    (left, right)
 }

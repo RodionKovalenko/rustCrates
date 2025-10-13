@@ -1,5 +1,7 @@
 use num::Complex;
 
+use crate::neural_networks::utils::matrix::{normalize_bias, normalize_gradients};
+
 pub static B_1: f64 = 0.9;
 pub static B_2: f64 = 0.999;
 pub static EPSILON: f64 = 1e-6;
@@ -25,9 +27,9 @@ pub fn calculate_adam_w(
     let t = t.max(1) as i32;
     let current_lr = get_current_learning_rate(learning_rate, t as usize);
 
-    // normalize_gradients(weights);
-    // normalize_gradients(prev_m);
-    // normalize_gradients(prev_v);
+    //normalize_gradients(weights);
+    normalize_gradients(prev_m);
+    normalize_gradients(prev_v);
 
     for i in 0..weights.len() {
         for j in 0..weights[i].len() {
@@ -62,19 +64,12 @@ pub fn calculate_adam_w(
 }
 
 // AdamW optimizer for complex biases (vector)
-pub fn calculate_adam_w_bias(
-    bias: &mut Vec<Complex<f64>>,
-    gradient: &[Complex<f64>],
-    prev_m: &mut Vec<Complex<f64>>,
-    prev_v: &mut Vec<Complex<f64>>, // real part used, imag=0
-    learning_rate: f64,
-    time_step: usize,
-) {
+pub fn calculate_adam_w_bias(bias: &mut Vec<Complex<f64>>, gradient: &[Complex<f64>], prev_m: &mut Vec<Complex<f64>>, prev_v: &mut Vec<Complex<f64>>, learning_rate: f64, time_step: usize) {
     let t_i = time_step.max(1) as i32;
 
     // normalize_bias(bias);
-    // normalize_bias(prev_m);
-    // normalize_bias(prev_v);
+    normalize_bias(prev_m);
+    normalize_bias(prev_v);
 
     for (i, b) in bias.iter_mut().enumerate() {
         let g_t = gradient[i];

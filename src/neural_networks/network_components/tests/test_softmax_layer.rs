@@ -88,9 +88,9 @@ mod test_softmax_layer {
 
         // Iterate over the array and test each element
         for (i, z) in test_array.iter().enumerate() {
-            let sigmoid_output = sigmoid_complex(*z);
+            let sigmoid_output = sigmoid_complex(z);
             let analytical_derivative = sigmoid_derivative_complex(sigmoid_output);
-            let numerical_derivative = numerical_gradient(sigmoid_complex, *z, h);
+            let numerical_derivative = numerical_gradient(sigmoid_complex, z, h);
 
             println!("Sigmoid: Test case {}:", i + 1);
             println!("  Input: {}", z);
@@ -119,7 +119,7 @@ mod test_softmax_layer {
         // Iterate over the array and test each element
         for (i, z) in test_array.iter().enumerate() {
             let analytical_derivative = gelu_derivative_complex(*z);
-            let numerical_derivative = numerical_gradient(gelu_complex, *z, h);
+            let numerical_derivative = numerical_gradient(gelu_complex, z, h);
 
             println!("Test case {}:", i + 1);
             println!("  Input: {}", z);
@@ -134,12 +134,12 @@ mod test_softmax_layer {
         }
     }
     // Numerical gradient for verification
-    fn numerical_gradient<F>(f: F, z: Complex<f64>, h: f64) -> Complex<f64>
+    fn numerical_gradient<F>(f: F, z: &Complex<f64>, h: f64) -> Complex<f64>
     where
-        F: Fn(Complex<f64>) -> Complex<f64>,
+        F: Fn(&Complex<f64>) -> Complex<f64>,
     {
-        let f_z_plus_h = f(z + h);
-        let f_z_minus_h = f(z - h);
+        let f_z_plus_h = f(&(z + h));
+        let f_z_minus_h = f(&(z - h));
 
         let grad = (f_z_plus_h - f_z_minus_h) / (2.0 * h);
 
@@ -155,7 +155,7 @@ mod test_softmax_layer {
         // Iterate over the array and test each element
         for (i, z) in test_values.iter().enumerate() {
             let analytical_derivative = softsign_derivative_complex(*z);
-            let numerical_derivative = numerical_gradient(softsign_complex, *z, h);
+            let numerical_derivative = numerical_gradient(softsign_complex, z, h);
 
             println!("Test case {}:", i + 1);
             println!("  Input: {}", z);
