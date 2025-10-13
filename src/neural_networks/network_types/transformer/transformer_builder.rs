@@ -3,7 +3,7 @@ use crate::neural_networks::{
     network_types::{
         feedforward_layer::FeedForwardLayer,
         neural_network_generic::{create, NeuralNetwork, OperationMode},
-        transformer::self_attention_layer::SelfAttentionLayer,
+        transformer::sparse_self_attention_layer::SparseSelfAttentionLayer,
         wavelet_network::DECOMPOSITION_LEVELS,
     },
 };
@@ -46,8 +46,8 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
         // Colums are divided into number of heads
         let cols: usize = embedding_dim_compressed;
 
-        let attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
-        layers.push(LayerEnum::SelfAttention(Box::new(attention_layer)));
+        let attention_layer: SparseSelfAttentionLayer = SparseSelfAttentionLayer::new(num_attention_heads, rows, cols, _i, learning_rate);
+        layers.push(LayerEnum::SparseSelfAttention(Box::new(attention_layer)));
 
         // let hidden_dim = origin_hidden_dim * (_i + 1);
         let hidden_dim = origin_hidden_dim;
@@ -62,7 +62,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
 
     // let norm_layer = NormalNormLayer::new(vocab_size, 1e-8, learning_rate);
     // layers.push(LayerEnum::Norm(Box::new(norm_layer)));
-    
+
     let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
     layers.push(LayerEnum::Linear(Box::new(linear_layer)));
 
