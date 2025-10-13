@@ -41,11 +41,10 @@ pub struct MaskedAttentionHead {
     pub ema: f64,
     pub global_norm: f64,
     pub max_norm: f64,
+    pub previous_gradient: Option<Gradient>,
 
     #[serde(skip)]
     pub gradient: Option<Gradient>,
-    #[serde(skip)]
-    pub previous_gradient: Option<Gradient>,
     #[serde(skip)]
     pub time_step: usize,
     #[serde(skip)]
@@ -238,6 +237,10 @@ impl MaskedAttentionHead {
         let output_batch = self.output_batch.as_ref().expect("Output batch is missing in attention head layer");
         let input_batch = self.input_batch.as_ref().expect("Input batch is missing in lattention head inear layer");
         let padding_mask_batch = self.padding_mask_batch.as_ref().expect("Padding mask batch is missing in attention head ");
+
+        println!("previous_gradient_batch in attention head: {} {} {}", previous_gradient_batch.len(), previous_gradient_batch[0].len(), previous_gradient_batch[0][0].len());
+        println!("input_batch in attention head: {} {} {}", input_batch.len(), input_batch[0].len(), input_batch[0][0].len());
+        println!("output_batch in attention head: {} {} {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
 
         // dimensions [seq_len][seq_len] -> A
         let attention_weights_batch: &Vec<Vec<Vec<f64>>> = self.attention_weights_batch.as_ref().expect("Attention weights batch is missing in attention head");

@@ -21,15 +21,15 @@ mod test_sparse_self_attention_layer {
     #[test]
     fn test_sparse_self_attention_layer_backward() {
         // Define some small batch size and input dimensions for simplicity
-        let batch_size = 2;
-        let seq_len = 25;
+        let batch_size = 1;
+        let seq_len = 8;
         let feature_dim = 16;
-        let output_dim = 8;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
         let num_attention_heads = 4;
         let hidden_dim = 16;
         let epsilon = 1e-8;
+        let attention_head_ind = 1;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut attention_layer: SparseSelfAttentionLayer = SparseSelfAttentionLayer::new(num_attention_heads, feature_dim, feature_dim, 0, learning_rate);
@@ -40,7 +40,7 @@ mod test_sparse_self_attention_layer {
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, seq_len, feature_dim);
-        let target_token_id_batch: Vec<Vec<u32>> = generate_u32_batch_from_indices(batch_size, output_dim);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_u32_batch_from_indices(batch_size, seq_len - 1);
 
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; seq_len]; batch_size];
 
@@ -70,7 +70,7 @@ mod test_sparse_self_attention_layer {
         let gradient_input_batch_att_l = gradient_attention_layer.get_gradient_input();
         let gradient_input_batch_att_batch = gradient_attention_layer.get_gradient_input_batch();
 
-        let attention_head = attention_layer.attention_heads.get(0).unwrap().clone();
+        let attention_head = attention_layer.attention_heads.get(attention_head_ind).unwrap().clone();
         let weight_q = attention_head.weights_q.clone();
         let gradient = attention_head.gradient.as_ref().unwrap();
         let analytical_weight_q_gradient = gradient.get_gradient_weights_q();
@@ -124,6 +124,9 @@ mod test_sparse_self_attention_layer {
 
         println!("global relative gradient error input: {:?}", &global_error);
 
+        println!("\n Analytical gradient input batch attention layer: {:?}", &gradient_input_batch_att_batch);
+        println!("\n Numerical gradient input batch attention layer: {:?}", &num_gradient_input_batch);
+
         for b in 0..gradient_input_batch_att_batch.len() {
             for s in 0..gradient_input_batch_att_batch[b].len() {
                 let analytical_row_sum: Complex<f64> = gradient_input_batch_att_batch[b][s].iter().sum();
@@ -139,7 +142,7 @@ mod test_sparse_self_attention_layer {
         // Test weights q
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
             let seconds_elapsed = now.elapsed();
-            let attention_head = attention_layer.attention_heads.get_mut(0).unwrap();
+            let attention_head = attention_layer.attention_heads.get_mut(attention_head_ind).unwrap();
             attention_head.weights_q = weights.clone();
 
             layer_input.set_calculate_gradient(false);
@@ -190,7 +193,79 @@ mod test_sparse_self_attention_layer {
 
         test_gradient_error_2d(&analytical_weight_q_gradient, &num_gradient_weights_q, 1e-2);
 
-        let mut attention_head = attention_layer.attention_heads.get_mut(0).unwrap().clone();
+        let mut attention_head = attention_layer.attention_heads.get_mut(attention_head_ind).unwrap().clone();
         attention_head.weights_q = weight_q.clone();
+    }
+
+    #[test]
+    fn test_splitting_input_into_partitions() {
+        let input: Vec<Vec<Vec<Complex<f64>>>> = vec![
+            vec![
+                vec![Complex::new(1.0, 0.0)],
+                vec![Complex::new(2.0, 0.0)],
+                vec![Complex::new(3.0, 0.0)],
+                vec![Complex::new(4.0, 0.0)],
+                vec![Complex::new(5.0, 0.0)],
+                vec![Complex::new(6.0, 0.0)],
+                vec![Complex::new(7.0, 0.0)],
+                vec![Complex::new(8.0, 0.0)],
+                vec![Complex::new(9.0, 0.0)],
+                vec![Complex::new(10.0, 0.0)],
+                vec![Complex::new(11.0, 0.0)],
+                vec![Complex::new(12.0, 0.0)],
+                vec![Complex::new(13.0, 0.0)],
+                vec![Complex::new(14.0, 1.5)],
+                vec![Complex::new(15.5, 1.5)],
+                vec![Complex::new(16.5, 1.5)],
+                vec![Complex::new(17.5, 1.5)],
+                vec![Complex::new(18.5, 1.5)],
+                vec![Complex::new(19.5, 1.5)],
+                vec![Complex::new(20.5, 1.5)],
+                vec![Complex::new(21.5, 1.5)],
+                vec![Complex::new(22.5, 1.5)],
+                vec![Complex::new(23.5, 1.5)],
+            ],
+            vec![
+                vec![Complex::new(11.0, 0.0)],
+                vec![Complex::new(12.0, 0.0)],
+                vec![Complex::new(13.0, 0.0)],
+                vec![Complex::new(14.0, 1.5)],
+                vec![Complex::new(15.5, 1.5)],
+                vec![Complex::new(16.5, 1.5)],
+                vec![Complex::new(17.5, 1.5)],
+                vec![Complex::new(18.5, 1.5)],
+                vec![Complex::new(19.5, 1.5)],
+                vec![Complex::new(20.5, 1.5)],
+                vec![Complex::new(21.5, 1.5)],
+                vec![Complex::new(22.5, 1.5)],
+                vec![Complex::new(23.5, 1.5)],
+                vec![Complex::new(24.5, 1.5)],
+                vec![Complex::new(25.5, 1.5)],
+                vec![Complex::new(26.5, 1.5)],
+                vec![Complex::new(27.5, 1.5)],
+                vec![Complex::new(28.5, 1.5)],
+                vec![Complex::new(29.5, 1.5)],
+                vec![Complex::new(30.5, 1.5)],
+                vec![Complex::new(31.5, 1.5)],
+                vec![Complex::new(32.5, 1.5)],
+                vec![Complex::new(33.5, 1.5)],
+            ],
+        ];
+
+        let rows = input[0].len();
+        let cols = input[0][0].len();
+        let learning_rate = 0.001;
+        let mut self_attention_layer = SparseSelfAttentionLayer::new(5, rows, cols, 4, learning_rate);
+
+        let partitions: Vec<Vec<Vec<Vec<Complex<f64>>>>> = self_attention_layer.split_input_into_partitions(&input);
+
+        println!("\ninput dim: {:?}, {}, {}", input.len(), input[0].len(), input[0][0].len());
+        println!("\npartitions dim: {:?}, {}, {}, {}", partitions.len(), partitions[0].len(), partitions[0][0].len(), partitions[0][0][0].len());
+
+        for b in 0..partitions.len() {
+            for p in 0..partitions[0].len() {
+                println!("\npartition[{}][{}]: {:?}", b, p, partitions[b][p]);
+            }
+        }
     }
 }

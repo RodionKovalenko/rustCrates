@@ -963,34 +963,87 @@ pub fn normalize_gradients_batch(gradients_batch: &mut Vec<Vec<Vec<Complex<f64>>
 }
 
 pub fn normalize_gradients(gradients: &mut Vec<Vec<Complex<f64>>>) {
-    let mut norm: f64 = 0.0;
+    let mut max_log = f64::NEG_INFINITY;
+
+    // Step 1: Find the largest log(norm)
     for row in gradients.iter() {
         for val in row.iter() {
-            norm += val.norm_sqr();
+            let n = val.norm();
+            if n > 0.0 {
+                max_log = max_log.max(n.ln());
+            }
         }
     }
-    norm = norm.sqrt();
 
-    if norm > 0.0 {
-        for row in gradients.iter_mut() {
-            for val in row.iter_mut() {
-                *val /= norm;
+    if max_log == f64::NEG_INFINITY {
+        return;
+    }
+
+    // Step 2: Compute log-sum-exp of squared magnitudes
+    let mut log_sum = f64::NEG_INFINITY;
+    for row in gradients.iter() {
+        for val in row.iter() {
+            let n = val.norm();
+            if n > 0.0 {
+                let log_term = 2.0 * n.ln() - 2.0 * max_log; // log of (scaled^2)
+                log_sum = log_add_exp(log_sum, log_term);
             }
+        }
+    }
+
+    // Step 3: norm = exp(0.5 * log_sum) * exp(max_log)
+    let norm = (0.5 * log_sum).exp() * max_log.exp();
+    let eps = 1e-12;
+
+    for row in gradients.iter_mut() {
+        for val in row.iter_mut() {
+            *val /= norm + eps;
         }
     }
 }
 
-pub fn normalize_bias(gradients: &mut Vec<Complex<f64>>) {
-    let mut norm: f64 = 0.0;
-    for val in gradients.iter() {
-        norm += val.norm_sqr();
+fn log_add_exp(x: f64, y: f64) -> f64 {
+    if x.is_infinite() {
+        return y;
     }
-    norm = norm.sqrt();
+    if y.is_infinite() {
+        return x;
+    }
+    let m = x.max(y);
+    m + (x - m).exp().ln_1p() // ln(1 + exp(x - y))
+}
 
-    if norm > 0.0 {
-        for val in gradients.iter_mut() {
-            *val /= norm;
+pub fn normalize_bias(bias: &mut Vec<Complex<f64>>) {
+    let mut max_log = f64::NEG_INFINITY;
+
+    // Step 1: Find the largest log(norm)
+    for val in bias.iter() {
+        let n = val.norm();
+        if n > 0.0 {
+            max_log = max_log.max(n.ln());
         }
+    }
+
+    if max_log == f64::NEG_INFINITY {
+        return;
+    }
+
+    // Step 2: Compute log-sum-exp of squared magnitudes
+    let mut log_sum = f64::NEG_INFINITY;
+    for val in bias.iter() {
+        let n = val.norm();
+        if n > 0.0 {
+            let log_term = 2.0 * n.ln() - 2.0 * max_log; // log of (scaled^2)
+            log_sum = log_add_exp(log_sum, log_term);
+        }
+    }
+
+    // Step 3: norm = exp(0.5 * log_sum) * exp(max_log)
+    let norm = (0.5 * log_sum).exp() * max_log.exp();
+    let eps = 1e-12;
+
+    for val in bias.iter_mut() {
+        *val /= norm + eps;
     }
 }
 

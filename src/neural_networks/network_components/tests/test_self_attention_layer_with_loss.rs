@@ -7,7 +7,7 @@ mod test_self_attention_layer_with_loss {
         network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, softmax_output_layer::SoftmaxLayer},
         network_types::{
             neural_network_generic::OperationMode,
-            transformer::{masked_attention_head::MaskedAttentionHead, sparse_self_attention_layer::SparseSelfAttentionLayer, transformer_network::cross_entropy_loss_batch},
+            transformer::{masked_attention_head::MaskedAttentionHead, transformer_network::cross_entropy_loss_batch},
         },
         utils::{
             derivative::{global_relative_error_2d_l2, numerical_gradient_input, numerical_gradient_weights, test_gradient_error_2d},
@@ -211,77 +211,5 @@ mod test_self_attention_layer_with_loss {
         // For Gelu it can a little more deviation
         test_gradient_error_2d(&numerical_grad_input_batch, &analytical_gradient_input, epsilon);
         //Input gradient ------------------------------------------------------------------------------------------- end
-    }
-
-    #[test]
-    fn test_splitting_input_into_partitions() {
-        let input: Vec<Vec<Vec<Complex<f64>>>> = vec![
-            vec![
-                vec![Complex::new(1.0, 0.0)],
-                vec![Complex::new(2.0, 0.0)],
-                vec![Complex::new(3.0, 0.0)],
-                vec![Complex::new(4.0, 0.0)],
-                vec![Complex::new(5.0, 0.0)],
-                vec![Complex::new(6.0, 0.0)],
-                vec![Complex::new(7.0, 0.0)],
-                vec![Complex::new(8.0, 0.0)],
-                vec![Complex::new(9.0, 0.0)],
-                vec![Complex::new(10.0, 0.0)],
-                vec![Complex::new(11.0, 0.0)],
-                vec![Complex::new(12.0, 0.0)],
-                vec![Complex::new(13.0, 0.0)],
-                vec![Complex::new(14.0, 1.5)],
-                vec![Complex::new(15.5, 1.5)],
-                vec![Complex::new(16.5, 1.5)],
-                vec![Complex::new(17.5, 1.5)],
-                vec![Complex::new(18.5, 1.5)],
-                vec![Complex::new(19.5, 1.5)],
-                vec![Complex::new(20.5, 1.5)],
-                vec![Complex::new(21.5, 1.5)],
-                vec![Complex::new(22.5, 1.5)],
-                vec![Complex::new(23.5, 1.5)],
-            ],
-            vec![
-                vec![Complex::new(11.0, 0.0)],
-                vec![Complex::new(12.0, 0.0)],
-                vec![Complex::new(13.0, 0.0)],
-                vec![Complex::new(14.0, 1.5)],
-                vec![Complex::new(15.5, 1.5)],
-                vec![Complex::new(16.5, 1.5)],
-                vec![Complex::new(17.5, 1.5)],
-                vec![Complex::new(18.5, 1.5)],
-                vec![Complex::new(19.5, 1.5)],
-                vec![Complex::new(20.5, 1.5)],
-                vec![Complex::new(21.5, 1.5)],
-                vec![Complex::new(22.5, 1.5)],
-                vec![Complex::new(23.5, 1.5)],
-                vec![Complex::new(24.5, 1.5)],
-                vec![Complex::new(25.5, 1.5)],
-                vec![Complex::new(26.5, 1.5)],
-                vec![Complex::new(27.5, 1.5)],
-                vec![Complex::new(28.5, 1.5)],
-                vec![Complex::new(29.5, 1.5)],
-                vec![Complex::new(30.5, 1.5)],
-                vec![Complex::new(31.5, 1.5)],
-                vec![Complex::new(32.5, 1.5)],
-                vec![Complex::new(33.5, 1.5)],
-            ],
-        ];
-
-        let rows = input[0].len();
-        let cols = input[0][0].len();
-        let learning_rate = 0.001;
-        let mut self_attention_layer = SparseSelfAttentionLayer::new(5, rows, cols, 4, learning_rate);
-
-        let partitions: Vec<Vec<Vec<Vec<Complex<f64>>>>> = self_attention_layer.split_input_into_partitions(&input);
-
-        println!("\ninput dim: {:?}, {}, {}", input.len(), input[0].len(), input[0][0].len());
-        println!("\npartitions dim: {:?}, {}, {}, {}", partitions.len(), partitions[0].len(), partitions[0][0].len(), partitions[0][0][0].len());
-
-        for b in 0..partitions.len() {
-            for p in 0..partitions[0].len() {
-                println!("\npartition[{}][{}]: {:?}", b, p, partitions[b][p]);
-            }
-        }
     }
 }
