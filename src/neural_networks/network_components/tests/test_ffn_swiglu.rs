@@ -45,7 +45,7 @@ pub mod test_ffn_swiglu {
         // Define some small batch size and input dimensions for simplicity
         let batch_size = 1;
         let _seq_len: usize = 6; // Update to match the input structure
-        let input_dim = 16; // Match the input dimension with your input batch
+        let input_dim = 64; // Match the input dimension with your input batch
         let output_dim = 10; // Match output_dim to your layer's output
         let hidden_dim = 26;
         let learning_rate = 0.01;
