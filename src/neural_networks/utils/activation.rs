@@ -151,9 +151,16 @@ pub fn sigmoid_complex(z: &Complex<f64>) -> Complex<f64> {
 }
 
 pub fn tanh_complex(z: Complex<f64>) -> Complex<f64> {
-    let exp_z = z.exp();
-    let exp_neg_z = (-z).exp();
-    (exp_z - exp_neg_z) / (exp_z + exp_neg_z)
+    if z.re > 20.0 {
+        // large positive real part
+        Complex::new(1.0, 0.0)
+    } else if z.re < -20.0 {
+        // large negative real part
+        Complex::new(-1.0, 0.0)
+    } else {
+        let exp_2z = (2.0 * z).exp();
+        (exp_2z - Complex::new(1.0, 0.0)) / (exp_2z + Complex::new(1.0, 0.0))
+    }
 }
 
 fn relu_complex(z: Complex<f64>) -> Complex<f64> {

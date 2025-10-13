@@ -34,6 +34,7 @@ pub fn calculate_adam_w(
     for i in 0..weights.len() {
         for j in 0..weights[i].len() {
             // 1️⃣ Gradient clipping (complex norm)
+            let orig_gt = weight_gradients[i][j];
             let g_t = weight_gradients[i][j];
 
             // if g_t.norm_sqr() > MAX_NORM {
@@ -41,7 +42,7 @@ pub fn calculate_adam_w(
             // }
 
             if is_nan_or_inf(&g_t) {
-                println!("Gradient contains NaN or Inf in adam w weights: {:?}", g_t);
+                println!("Gradient contains NaN or Inf in adam w weights: {:?}, original g_t: {:?}", g_t, orig_gt);
                 continue;
             }
 
@@ -76,7 +77,7 @@ pub fn calculate_adam_w_bias(bias: &mut Vec<Complex<f64>>, gradient: &[Complex<f
         let current_lr = get_current_learning_rate(learning_rate, t_i as usize);
 
         // if g_t.norm_sqr() > MAX_NORM {
-        //     g_t = g_t / / g_t.norm_sqr();
+        //     g_t = g_t / g_t.norm_sqr();
         // }
 
         if is_nan_or_inf(&g_t) {

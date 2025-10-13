@@ -66,105 +66,23 @@ impl SparseSelfAttentionLayer {
 // Implement BaseLayer for SelfAttentionLayer
 impl SparseSelfAttentionLayer {
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        let input_batch_before = layer_input.get_input_batch();
-        let mut input_batch = input_batch_before.clone();
+        let mut batch_output = layer_input.get_input_batch();
+        let input_batch = layer_input.get_input_batch();
         let mut padding_mask_batch = layer_input.get_padding_mask_batch();
 
         // Apply DWT if the layer is present
         if self.discrete_wavelet_layer.is_some() {
             if let Some(dwt_layer) = self.discrete_wavelet_layer.as_mut() {
                 let dwt_output = dwt_layer.forward(&layer_input);
-                input_batch = dwt_output.get_output_batch();
+                batch_output = dwt_output.get_output_batch();
                 padding_mask_batch = dwt_output.get_padding_mask_batch();
             }
         }
 
-        self.input_batch = Some(input_batch.clone());
-        self.time_step = layer_input.get_time_step();
-
-        let batch_size = input_batch.len();
-        let sequence_size = input_batch[0].len();
-        let feature_dim = input_batch[0][0].len();
-
         // Apply the attention mechanism for each head
         let mut layer_input = layer_input.clone();
-        layer_input.set_input_batch(input_batch.clone());
-        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
-
-        let input_splitted_heads = self.split_input_into_partitions(&input_batch);
-        let padding_mask_splitted_heads = self.split_padding_mask_into_partitions(&padding_mask_batch);
-
-        // println!("padding mask before self-attention: {:?}", padding_mask_batch);
-        // println!("padding mask splitted heads: {:?}", padding_mask_splitted_heads);
-
-        // for (i, head) in input_splitted_heads.iter().enumerate() {
-        //     println!("input splitted head {}: {}, {}, {}", i, head.len(), head[0].len(), head[0][0].len());
-        // }
-
-        //println!("padding mask batch: {:?}", &padding_mask_batch);
-        let attention_head_outputs: Vec<_> = self
-            .attention_heads
-            .par_iter_mut() // Use rayon's parallel iterator
-            .enumerate()
-            .map(|(head_index, attention_head)| {
-                let mut layer_input = layer_input.clone();
-                layer_input.set_input_batch(input_splitted_heads[head_index].clone());
-                layer_input.set_padding_mask_batch(padding_mask_splitted_heads[head_index].clone());
-                let attention_output = attention_head.forward(&layer_input);
-                attention_output.get_output_batch()
-            })
-            .collect(); // Collect the results into a vector
-
-        // println!("attention head outputs: {:?}", &attention_head_outputs);
-
-        let mut batch_output: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); feature_dim]; sequence_size]; batch_size];
-
-        if attention_head_outputs[0].len() < self.attention_heads.len() {
-            // Combine the outputs of the attention heads (e.g., concatenating horizontally)
-            for head_output in attention_head_outputs {
-                for b in 0..batch_size {
-                    for row in 0..head_output[b].len() {
-                        for val in 0..head_output[b][row].len() {
-                            batch_output[b][row][val] += head_output[b][row][val];
-                        }
-                    }
-                }
-            }
-        } else {
-            // Combine the outputs of the attention heads (e.g., concatenating horizontally)
-            for b in 0..batch_size {
-                let mut combined_sequence: Vec<Vec<Complex<f64>>> = Vec::new();
-                // Take all rows from each head and glue them
-                for head_output in &attention_head_outputs {
-                    combined_sequence.extend(head_output[b].clone());
-                }
-
-                batch_output[b] = combined_sequence;
-            }
-        }
-
-        // println!("batch output after self-attention: {}, {}, {}", &batch_output.len(), &batch_output[0].len(), &batch_output[0][0].len());
-
-        // Decompress Wavelet if the layer is present
-        if self.discrete_wavelet_layer.is_some() {
-            if let Some(dwt_layer) = self.discrete_wavelet_layer.as_mut() {
-                layer_input.set_input_batch(batch_output.clone());
-                layer_input.set_padding_mask_batch(padding_mask_batch.clone());
-
-                let wavelet_inverse_output = dwt_layer.forward_inverse(&layer_input);
-
-                batch_output = wavelet_inverse_output.get_output_batch();
-                padding_mask_batch = wavelet_inverse_output.get_padding_mask_batch();
-            }
-        }
-
         layer_input.set_input_batch(batch_output.clone());
-        layer_input.set_input_batch_before(input_batch_before.clone());
         layer_input.set_padding_mask_batch(padding_mask_batch.clone());
-
-        // println!("padding mask after self-attention: {:?}", padding_mask_batch);
-
-        self.output_batch = Some(batch_output.clone());
 
         // Process the dense layers
         if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
@@ -182,40 +100,103 @@ impl SparseSelfAttentionLayer {
             }
         }
 
+        layer_input.set_input_batch(batch_output.clone());
+
+        let input_splitted_heads = self.split_input_into_partitions(&batch_output);
+        let padding_mask_splitted_heads = self.split_padding_mask_into_partitions(&padding_mask_batch);
+
+        //println!("padding mask batch: {:?}", &padding_mask_batch);
+        let attention_head_outputs: Vec<_> = self
+            .attention_heads
+            .par_iter_mut() // Use rayon's parallel iterator
+            .enumerate()
+            .map(|(head_index, attention_head)| {
+                let mut layer_input = layer_input.clone();
+                layer_input.set_input_batch(input_splitted_heads[head_index].clone());
+                layer_input.set_padding_mask_batch(padding_mask_splitted_heads[head_index].clone());
+                let attention_output = attention_head.forward(&layer_input);
+                attention_output.get_output_batch()
+            })
+            .collect(); // Collect the results into a vector
+
+        // println!("attention head outputs: {:?}", &attention_head_outputs);
+        let batch_size = input_batch.len();
+        let sequence_size = input_batch[0].len();
+        let feature_dim = input_batch[0][0].len();
+
+        batch_output = vec![vec![vec![Complex::new(0.0, 0.0); feature_dim]; sequence_size]; batch_size];
+
+        if attention_head_outputs.len() < self.attention_heads.len() {
+            println!("Attention head output size is smaller than number of heads, something went wrong!");
+            // Combine the outputs of the attention heads (e.g., concatenating horizontally)
+            for head_output in attention_head_outputs {
+                for b in 0..batch_size {
+                    for row in 0..head_output[b].len() {
+                        for val in 0..head_output[b][row].len() {
+                            batch_output[b][row][val] += head_output[b][row][val];
+                        }
+                    }
+                }
+            }
+        } else {
+            // Combine the outputs of the attention heads (e.g., concatenating horizontally)
+
+            batch_output = Vec::new();
+
+            // Take all rows from each head and glue them
+            for head_output in attention_head_outputs {
+                for (head_batch_index, head_batch) in head_output.iter().enumerate() {
+                    for row in head_batch {
+                        if batch_output.len() <= head_batch_index {
+                            batch_output.push(vec![]);
+                        }
+                        batch_output[head_batch_index].push(row.clone());
+                    }
+                }
+            }
+
+            // for b in 0..batch_size {
+            //     println!("dimension after concat: {}, {}, {}", batch_output.len(), &batch_output[b].len(), &batch_output[b][0].len());
+            //     println!("input dimension: {}, {}, {}", input_batch.len(), &input_batch[b].len(), &input_batch[b][0].len());
+            // }
+        }
+
+        layer_input.set_input_batch(batch_output.clone());
+        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+
+        // println!("batch output after self-attention: {}, {}, {}", &batch_output.len(), &batch_output[0].len(), &batch_output[0][0].len());
+
+        // Decompress Wavelet if the layer is present
+        if self.discrete_wavelet_layer.is_some() {
+            if let Some(dwt_layer) = self.discrete_wavelet_layer.as_mut() {
+                layer_input.set_input_batch(batch_output.clone());
+                layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+
+                let wavelet_inverse_output = dwt_layer.forward_inverse(&layer_input);
+
+                batch_output = wavelet_inverse_output.get_output_batch();
+                padding_mask_batch = wavelet_inverse_output.get_padding_mask_batch();
+            }
+        }
+
+        batch_output = add_matrix_3d(&batch_output, &input_batch);
+
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(batch_output.clone());
+        layer_output.set_padding_mask_batch(padding_mask_batch.clone());
+
         self.output_batch = Some(batch_output.clone());
+        self.input_batch = Some(input_batch.clone());
+        self.time_step = layer_input.get_time_step();
 
         layer_output
     }
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
-        // let input_batch = self.input_batch.as_ref().expect("Input batch not found in self-attention layer backward");
         let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient_batch.clone();
 
         let mut gradient: Gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(previous_gradient_batch.clone());
-
-        let mut output_gradient_norm = vec![];
-
-        // Process the dense layers
-        if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
-            match norm_layer_enum {
-                LayerEnum::RMSNorm(rms_norm_layer) => {
-                    let norm_gradient = rms_norm_layer.backward(&gradient_input_batch);
-                    gradient_input_batch = norm_gradient.get_gradient_input_batch();
-                    gradient.set_gradient_input_batch(gradient_input_batch.clone());
-                    output_gradient_norm = gradient_input_batch.clone();
-                }
-                LayerEnum::Norm(norm_layer) => {
-                    let norm_gradient = norm_layer.backward(&gradient);
-                    gradient_input_batch = norm_gradient.get_gradient_input_batch();
-                    gradient.set_gradient_input_batch(gradient_input_batch.clone());
-                    output_gradient_norm = gradient_input_batch.clone();
-                }
-                _ => {}
-            }
-        }
 
         // Apply DWT if the layer is present
         if self.discrete_wavelet_layer.is_some() {
@@ -240,21 +221,33 @@ impl SparseSelfAttentionLayer {
             // println!("gradient input head {:?}", &gradient.get_gradient_input_batch());
         }
 
-        let mut combined_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![]; gradient_input_batch.len()];
+        let batch_size = gradient_input_batch.len();
+        let seq_len = gradient_input_batch[0].len();
+        let feature_dim = gradient_input_batch[0][0].len();
 
-        for h in 0..gradient_input_batches.len() {
-            for b in 0..gradient_input_batches[h].len() {
-                combined_gradient_input_batch[b].extend(gradient_input_batches[h][b].clone());
+        let mut combined_gradient_input_batch = vec![vec![vec![Complex::new(0.0, 0.0); feature_dim]; seq_len]; batch_size];
+
+        let num_input_per_partition = seq_len / num_heads;
+        let rest_partitions = seq_len % num_heads;
+        let input_shift = self.input_partition_order * num_input_per_partition;
+
+        let mut start_idx = input_shift;
+        let num_heads = self.attention_heads.len();
+
+        for head_idx in 0..num_heads {
+            for b in 0..batch_size {
+                let grad_batch = &gradient_input_batches[head_idx][b];
+                let seq_len_h = grad_batch.len();
+                for i in 0..seq_len_h {
+                    let global_idx = (start_idx + i) % seq_len;
+                    combined_gradient_input_batch[b][global_idx] = grad_batch[i].clone();
+                }
             }
+            // Move start_idx by current partition length; partition gets extra 1 if head_idx < rest_partitions
+            start_idx += num_input_per_partition + if head_idx < rest_partitions { 1 } else { 0 };
         }
 
-        // println!("combined gradient input batch: {}, {}, {}", &combined_gradient_input_batch.len(), &combined_gradient_input_batch[0].len(), &combined_gradient_input_batch[0][0].len());
-
-        // let max = combined_gradient_input_batch.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
-        // let min = combined_gradient_input_batch.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).min_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Greater));
-
-        // println!("max in backward self-attention layer gradient batch: {:?}", max);
-        // println!("min in backward self-attention layer gradient batch: {:?}", min);
+        gradient.set_gradient_input_batch(combined_gradient_input_batch.clone());
 
         if self.discrete_wavelet_layer.is_some() {
             if let Some(dwt_layer) = self.discrete_wavelet_layer.as_mut() {
@@ -265,9 +258,25 @@ impl SparseSelfAttentionLayer {
             }
         }
 
-        if !output_gradient_norm.is_empty() {
-            combined_gradient_input_batch = add_matrix_3d(&combined_gradient_input_batch, &output_gradient_norm);
+        gradient.set_gradient_input_batch(combined_gradient_input_batch.clone());
+        gradient_input_batch = combined_gradient_input_batch.clone();
+
+        // Process the dense layers
+        if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
+            match norm_layer_enum {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    let norm_gradient = rms_norm_layer.backward(&gradient_input_batch);
+                    gradient_input_batch = norm_gradient.get_gradient_input_batch();
+                }
+                LayerEnum::Norm(norm_layer) => {
+                    let norm_gradient = norm_layer.backward(&gradient);
+                    gradient_input_batch = norm_gradient.get_gradient_input_batch();
+                }
+                _ => {}
+            }
         }
+
+        combined_gradient_input_batch = add_matrix_3d(&previous_gradient_batch, &gradient_input_batch);
 
         // Return the final gradient
         gradient.set_gradient_input_batch(combined_gradient_input_batch);
@@ -286,11 +295,11 @@ impl SparseSelfAttentionLayer {
 
         // the last partition will have more input then the previous one is there is rest
         let mut partitions: Vec<Vec<Vec<Vec<Complex<f64>>>>> = vec![vec![vec![]; batch_size]; num_partitions];
-        let mut input_shift: usize = self.input_partition_order * num_input_per_partition;
+        let input_shift: usize = self.input_partition_order * num_input_per_partition;
 
-        if input_shift > 5 {
-            input_shift -= 5;
-        }
+        // if input_shift > 5 {
+        //     input_shift -= 5;
+        // }
 
         let mut start_idx: usize = input_shift;
         let mut end_idx: usize = start_idx;
@@ -327,11 +336,11 @@ impl SparseSelfAttentionLayer {
 
         // the last partition will have more input then the previous one is there is rest
         let mut partitions: Vec<Vec<Vec<u32>>> = vec![vec![vec![]; batch_size]; num_partitions];
-        let mut input_shift: usize = self.input_partition_order * num_input_per_partition;
+        let input_shift: usize = (self.input_partition_order * num_input_per_partition) % seq_len;
 
-        if input_shift > 5 {
-            input_shift -= 5;
-        }
+        // if input_shift > 5 {
+        //     input_shift -= 5;
+        // }
 
         let mut start_idx: usize = input_shift;
         let mut end_idx: usize = start_idx;

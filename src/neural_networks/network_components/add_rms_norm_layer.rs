@@ -21,13 +21,12 @@ pub struct RMSNormLayer {
     pub ema: f64,
     pub global_norm: f64,
     pub max_norm: f64,
+    pub previous_gradient: Option<Gradient>,
 
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     pub gradient: Option<Gradient>,
-    #[serde(skip)]
-    pub previous_gradient: Option<Gradient>,
     #[serde(skip)]
     pub time_step: usize,
     #[serde(skip)]
