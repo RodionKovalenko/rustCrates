@@ -1,7 +1,14 @@
 #[cfg(test)]
-pub mod test_ffn_layer {
+pub mod test_ffn_swiglu {
     use crate::neural_networks::{
-        network_components::{gradient_struct::Gradient, layer::LayerEnum, layer_input_struct::LayerInput, layer_output_struct::LayerOutput, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
+        network_components::{
+            gradient_struct::Gradient,
+            layer::{ActivationType, Layer, LayerEnum, LayerType},
+            layer_input_struct::LayerInput,
+            layer_output_struct::LayerOutput,
+            linear_layer::LinearLayer,
+            softmax_output_layer::SoftmaxLayer,
+        },
         network_types::{feedforward_layer::FeedForwardLayer, neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
         utils::{
             derivative::{global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_bias, numerical_gradient_input_batch, numerical_gradient_weights, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d},
@@ -12,109 +19,35 @@ pub mod test_ffn_layer {
     use num::Complex;
 
     #[test]
-    fn test_softmax_linear_with_loss_backward() {
-        // Define some small batch size and input dimensions for simplicity
-        let batch_size = 6;
-        let _seq_len: usize = 1; // Update to match the input structure
-        let input_dim = 16; // Match the input dimension with your input batch
-        let output_dim = 5; // Match output_dim to your layer's output
+    fn test_array_splitting() {
+        let column_dim = 64;
+        let input_dim = 46;
+        let hidden_dim = 2048;
+        let batch_size = 1;
         let learning_rate = 0.01;
-        let operation_mode = OperationMode::TRAINING;
-
-        // Create a simple LinearLayer with the given input and output dimensions
-        let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(input_dim, output_dim, learning_rate);
-        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim);
-        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
-
-        // Define a small input batch, [2][3][4]
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
-        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim - 1, (output_dim - 1) as u32);
-        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];
-
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, input_dim, column_dim);
+        let mut dense_layer: Layer = Layer::new(column_dim, hidden_dim, &learning_rate, &ActivationType::SWiGLU, LayerType::DenseLayer);
         let mut layer_input = LayerInput::new_default();
 
-        layer_input.set_input_batch(input_batch.clone());
+        layer_input.set_input_batch(input_batch);
+        let layer_output: LayerOutput = dense_layer.forward(&layer_input);
+        let activated_output = layer_output.get_output_batch();
+        assert!(activated_output[0][0].len() == hidden_dim / 2);
 
-        // Forward pass (initialize the input batch) [2][4][3]  * [3][4] => [2][2][4]
-        let ffn_output = ffn_layer.forward(&layer_input);
-
-        layer_input.set_input_batch(ffn_output.get_output_batch());
-        let linear_output = linear_layer.forward(&layer_input);
-        let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
-
-        let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
-        let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
-        let (grouped_linear_gradient_weights, _analytical_gradient_bias_linear) = (gradient_linear.get_gradient_weights(), gradient_linear.get_gradient_bias());
-
-        let weights_linear = linear_layer.weights.clone();
-        let bias_linear = linear_layer.bias.clone();
-
-        // Define the loss function
-        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
-            linear_layer.weights = weights.clone();
-
-            layer_input.set_input_batch(input.to_vec());
-            let ffn_output = ffn_layer.forward(&layer_input);
-
-            layer_input.set_input_batch(ffn_output.get_output_batch());
-            let linear_output = linear_layer.forward(&layer_input);
-
-            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
-
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, input.len());
-
-            loss
-        };
-
-        let epsilon = 1e-8;
-        let numerical_grad_linear: Vec<Vec<Complex<f64>>> = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &weights_linear, epsilon);
-
-        // Check if gradient batch dimensions match expected shapes
-        println!("\nanalytical grad weights linear: {:?}", grouped_linear_gradient_weights);
-        println!("\nnumerical grad weights linear: {:?}", numerical_grad_linear);
-
-        test_gradient_error_2d(&grouped_linear_gradient_weights, &numerical_grad_linear, 1e-5);
-
-        let global_error = global_relative_error_2d_l2(&grouped_linear_gradient_weights, &numerical_grad_linear);
-        println!("global relative gradient error gradient_weights_batch: {:?}", &global_error);
-
-        linear_layer.weights = weights_linear.clone();
-
-        // TEST BIAS
-        // Define the loss function
-        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Complex<f64>>| -> Complex<f64> {
-            linear_layer.bias = bias.clone();
-
-            layer_input.set_input_batch(input.to_vec());
-            let ffn_output = ffn_layer.forward(&layer_input);
-
-            layer_input.set_input_batch(ffn_output.get_output_batch());
-            let linear_output = linear_layer.forward(&layer_input);
-
-            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
-
-            //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, input.len());
-
-            loss
-        };
-
-        let numerical_grad_linear_bias: Vec<Complex<f64>> = numerical_gradient_bias(&mut loss_fn, input_batch.clone(), &bias_linear, epsilon);
-
-        // Check if gradient batch dimensions match expected shapes
-        println!("\nanalytical grad bias linear: {:?}", _analytical_gradient_bias_linear);
-        println!("\nnumerical grad bias linear: {:?}", numerical_grad_linear_bias);
-
-        test_gradient_error_1d(&_analytical_gradient_bias_linear, &numerical_grad_linear_bias, 1e-5);
+        let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(column_dim, hidden_dim, learning_rate);
+        let ffn_output: LayerOutput = ffn_layer.forward(&layer_input);
+        let ffn_activated_output = ffn_output.get_output_batch();
+        assert!(ffn_activated_output[0][0].len() == column_dim);
     }
 
     #[test]
-    fn test_softmax_linear_ffn_backward() {
+    fn test_softmax_linear_ffn_swiglu_backward() {
         // Define some small batch size and input dimensions for simplicity
         let batch_size = 1;
-        let _seq_len: usize = 5; // Update to match the input structure
+        let _seq_len: usize = 6; // Update to match the input structure
         let input_dim = 16; // Match the input dimension with your input batch
         let output_dim = 10; // Match output_dim to your layer's output
+        let hidden_dim = 26;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
         let epsilon: f64 = 1e-5;
@@ -122,7 +55,7 @@ pub mod test_ffn_layer {
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(input_dim, output_dim, learning_rate);
-        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim);
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, hidden_dim);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
         // Define a small input batch, [2][3][4]
@@ -139,7 +72,12 @@ pub mod test_ffn_layer {
         let ffn_batch_output = ffn_layer.forward(&layer_input);
 
         layer_input.set_input_batch(ffn_batch_output.get_output_batch());
+        let output = ffn_batch_output.get_output_batch();
+        println!("FFN output batch dim: {}, {}, {}", output.len(), output[0].len(), output[0][0].len());
+        println!("linear layer process");
         let linear_output: LayerOutput = linear_layer.forward(&layer_input);
+
+        println!("linear output batch dim: {}, {}, {}", linear_output.get_output_batch().len(), linear_output.get_output_batch()[0].len(), linear_output.get_output_batch()[0][0].len());
         let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
@@ -171,13 +109,12 @@ pub mod test_ffn_layer {
         let numerical_grad_input_ffn: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch(&mut loss_fn, input_batch.clone(), epsilon);
         let analytical_grad_input_ffn: Vec<Vec<Vec<Complex<f64>>>> = gradient_ffn.get_gradient_input_batch();
 
-
         println!("\n\n analytical grad input ffn: {:?}", &analytical_grad_input_ffn);
         println!("\n\n numerical grad input ffn: {:?}", &numerical_grad_input_ffn);
 
         // Check if gradient batch dimensions match expected shapes
-        println!("\n analytical grad input dim: {:?}, {}", analytical_grad_input_ffn.len(), analytical_grad_input_ffn[0].len());
-        println!("numerical grad input dim: {:?}, {}", numerical_grad_input_ffn.len(), numerical_grad_input_ffn[0].len());
+        println!("\n analytical grad input dim: {:?}, {} {}", analytical_grad_input_ffn.len(), analytical_grad_input_ffn[0].len(), analytical_grad_input_ffn[0][0].len());
+        println!("numerical grad input dim: {:?}, {} {}", numerical_grad_input_ffn.len(), numerical_grad_input_ffn[0].len(), numerical_grad_input_ffn[0][0].len());
 
         for b in 0..analytical_grad_input_ffn.len() {
             for s in 0..analytical_grad_input_ffn[b].len() {

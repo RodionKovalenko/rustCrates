@@ -1,4 +1,4 @@
-use crate::neural_networks::network_components::layer::ActivationType;
+use crate::neural_networks::{network_components::layer::ActivationType, utils::activation::activate_output_complex};
 use num::abs;
 use num_complex::{Complex, ComplexFloat};
 
@@ -330,6 +330,14 @@ pub fn get_adam_value(gradient: &f64, b1: f64, m1: f64) -> f64 {
     sum += b1 * m1 + (1.0 - b1) * gradient;
 
     sum
+}
+
+//dy/d Swish(b) = sigma(b) + b * sigma(b) * (1 - sigma(b))
+pub fn get_gradient_swish(b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    let sigmoid = activate_output_complex(b, ActivationType::SIGMOID);
+    let one = Complex::new(1.0, 0.0);
+
+    b.iter().zip(sigmoid.iter()).map(|(row_b, row_sigma)| row_b.iter().zip(row_sigma.iter()).map(|(&z, &sigma_z)| sigma_z + z * sigma_z * (one - sigma_z)).collect()).collect()
 }
 
 pub fn get_gradient_complex(activated_data: &Vec<Vec<Complex<f64>>>, input_data: &Vec<Vec<Complex<f64>>>, activation: ActivationType) -> Vec<Vec<Complex<f64>>> {

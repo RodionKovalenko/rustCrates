@@ -7,10 +7,10 @@ use crate::neural_networks::{
         wavelet_discrete_layer::DiscreteWaveletLayer,
     },
     utils::{
-        activation::activate_output_complex_padding,
+        activation::{activate_output_complex, swish},
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
-        derivative::get_gradient_complex,
-        matrix::{add_matrix, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate, conjugate_transpose, hadamard_product_2d_c, multiply_complex},
+        derivative::{get_gradient_complex, get_gradient_swish},
+        matrix::{add_matrix, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate, conjugate_transpose, hadamard_product_2d_c, multiply_complex, split_data_by_columns},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -47,6 +47,7 @@ pub enum ActivationType {
     SELU,
     // Gaussian Error Linear Units used in Chat-GTP-3, Albert und Roberta
     GELU,
+    SWiGLU,
     SOFTSIGN,
     SOFTPLUS,
     PROBIT,
@@ -109,6 +110,7 @@ pub struct Layer {
     pub ema: f64,
     pub global_norm: f64,
     pub max_norm: f64,
+    pub previous_gradient: Option<Gradient>,
 
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
@@ -118,8 +120,6 @@ pub struct Layer {
     pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     pub gradient: Option<Gradient>,
-    #[serde(skip)]
-    pub previous_gradient: Option<Gradient>,
     #[serde(skip)]
     pub padding_mask_batch: Option<Vec<Vec<u32>>>,
     #[serde(skip)]
@@ -166,10 +166,10 @@ impl Layer {
 
         let batch_output: Vec<Vec<Vec<Complex<f64>>>> = inactivated_batch_output
             .par_iter()
-            .zip(padding_mask_batch.par_iter())
-            .map(|(input, padding_mask)| {
+            .map(|input| {
                 // Apply activation if the layer type is DenseLayer
-                activate_output_complex_padding(&input, self.activation_type.clone(), padding_mask)
+                let activated_output = activate_output_complex(&input, self.activation_type.clone());
+                activated_output
             })
             .collect();
 
@@ -198,21 +198,81 @@ impl Layer {
         let previous_gradient_batch_padded: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient_batch.clone();
 
         // println!("\n\n\nprevious gradient batch padded: {:?}", previous_gradient_batch_padded);
-        for (batch_ind, (input, previous_gradient)) in input_batch.iter().zip(&previous_gradient_batch_padded).enumerate() {
-            let gradient_output = get_gradient_complex(&output_batch[batch_ind], &raw_output_batch[batch_ind], self.activation_type.clone());
-            let gradient_output_conj = conjugate(&gradient_output);
 
-            input_gradient_batch[batch_ind] = hadamard_product_2d_c(previous_gradient, &gradient_output_conj);
-            weight_gradients[batch_ind] = multiply_complex(&conjugate_transpose(&input), &input_gradient_batch[batch_ind]);
+        match &self.activation_type {
+            ActivationType::SWiGLU => {
+                let (weights_1, weights_2) = split_data_by_columns(&self.weights);
+                let mut gradient_weights_1 = vec![vec![vec![Complex::new(0.0, 0.0); weights_1[0].len()]; weights_1.len()]; input_batch.len()];
+                let mut gradient_weights_2 = vec![vec![vec![Complex::new(0.0, 0.0); weights_2[0].len()]; weights_2.len()]; input_batch.len()];
 
-            //Accumulate gradients for biases
-            for grad_row in input_gradient_batch[batch_ind].iter() {
-                for (k, grad_val) in grad_row.iter().enumerate() {
-                    bias_gradients[batch_ind][k] += grad_val;
+                let mut gradient_bias_1 = vec![vec![Complex::new(0.0, 0.0); bias_gradients[0].len() / 2]; input_batch.len()];
+                let mut gradient_bias_2 = vec![vec![Complex::new(0.0, 0.0); bias_gradients[0].len() / 2]; input_batch.len()];
+
+                for batch_ind in 0..input_batch.len() {
+                    let (a, b) = split_data_by_columns(&raw_output_batch[batch_ind]);
+
+                    let swish_b = swish(&b);
+                    let gradient_b = get_gradient_swish(&b);
+
+                    //5x10 hadamard 5x10 = 5x10
+                    let dl_da = hadamard_product_2d_c(&previous_gradient_batch[batch_ind], &conjugate(&swish_b));
+                    // 16x5 * 5x10 = 16x10
+                    gradient_weights_1[batch_ind] = multiply_complex(&conjugate_transpose(&input_batch[batch_ind]), &dl_da);
+
+                    // 5x10 hadamard 5x10 = 5x10
+                    let dl_db_1 = hadamard_product_2d_c(&previous_gradient_batch[batch_ind], &conjugate(&a));
+                    // 5x10 hadamard 5x10 = 5x10
+                    let dl_db_2 = hadamard_product_2d_c(&dl_db_1, &conjugate(&gradient_b));
+
+                    // 16x5 * 5x10 = 16x10
+                    gradient_weights_2[batch_ind] = multiply_complex(&conjugate_transpose(&input_batch[batch_ind]), &dl_db_2);
+
+                    for grad_row in dl_da.iter() {
+                        for (k, grad_val) in grad_row.iter().enumerate() {
+                            gradient_bias_1[batch_ind][k] += grad_val;
+                        }
+                    }
+                    for grad_row in dl_db_2.iter() {
+                        for (k, grad_val) in grad_row.iter().enumerate() {
+                            gradient_bias_2[batch_ind][k] += grad_val;
+                        }
+                    }
+
+                    // 5x10 * 10x16 = 5x16
+                    let gradient_input_a = multiply_complex(&dl_da, &conjugate_transpose(&weights_1));
+                    // 5x10 * 10x16 = 5x16
+                    let gradient_input_b = multiply_complex(&dl_db_2, &conjugate_transpose(&weights_2));
+                    input_gradient_batch[batch_ind] = add_matrix(&gradient_input_a, &gradient_input_b);
+                }
+
+                for batch_ind in 0..input_batch.len() {
+                    for (row_ind, row) in gradient_weights_1[batch_ind].iter_mut().enumerate() {
+                        row.extend_from_slice(&gradient_weights_2[batch_ind][row_ind]);
+                    }
+                    gradient_bias_1[batch_ind].extend_from_slice(&gradient_bias_2[batch_ind]);
+                }
+
+                weight_gradients = gradient_weights_1;
+                bias_gradients = gradient_bias_1;
+            }
+            _ => {
+                for (batch_ind, (input, previous_gradient)) in input_batch.iter().zip(&previous_gradient_batch_padded).enumerate() {
+                    let gradient_output = get_gradient_complex(&output_batch[batch_ind], &raw_output_batch[batch_ind], self.activation_type.clone());
+                    let gradient_output_conj = conjugate(&gradient_output);
+
+                    input_gradient_batch[batch_ind] = hadamard_product_2d_c(previous_gradient, &gradient_output_conj);
+                    weight_gradients[batch_ind] = multiply_complex(&conjugate_transpose(&input), &input_gradient_batch[batch_ind]);
+
+                    //Accumulate gradients for biases
+                    for grad_row in input_gradient_batch[batch_ind].iter() {
+                        for (k, grad_val) in grad_row.iter().enumerate() {
+                            bias_gradients[batch_ind][k] += grad_val;
+                        }
+                    }
+
+                    input_gradient_batch[batch_ind] = multiply_complex(&input_gradient_batch[batch_ind], &conjugate_transpose(&self.weights));
                 }
             }
-
-            input_gradient_batch[batch_ind] = multiply_complex(&input_gradient_batch[batch_ind], &conjugate_transpose(&self.weights));
         }
 
         if self.gradient.is_some() {

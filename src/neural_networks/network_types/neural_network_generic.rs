@@ -4,7 +4,7 @@ use std::{fmt::Debug, path::Path};
 use crate::{
     database::sled_db::get_storage_path_transformer_db,
     neural_networks::{
-        network_components::layer::{ActivationType, LayerEnum},
+        network_components::layer::LayerEnum,
         utils::file::{derialize_bin, serialize_bin},
     },
 };
@@ -468,7 +468,6 @@ pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
                     match layer {
                         LayerEnum::Dense(dense_layer) => {
                             println!("ffn dense layer weigths: {} {}", dense_layer.weights.len(), dense_layer.weights[0].len());
-                            dense_layer.activation_type = ActivationType::GELU;
                         }
                         LayerEnum::Linear(linear_layer) => {
                             println!("ffn linear layer weigths: {} {}", linear_layer.weights.len(), linear_layer.weights[0].len());
