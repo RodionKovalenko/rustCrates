@@ -238,10 +238,6 @@ impl MaskedAttentionHead {
         let input_batch = self.input_batch.as_ref().expect("Input batch is missing in lattention head inear layer");
         let padding_mask_batch = self.padding_mask_batch.as_ref().expect("Padding mask batch is missing in attention head ");
 
-        println!("previous_gradient_batch in attention head: {} {} {}", previous_gradient_batch.len(), previous_gradient_batch[0].len(), previous_gradient_batch[0][0].len());
-        println!("input_batch in attention head: {} {} {}", input_batch.len(), input_batch[0].len(), input_batch[0][0].len());
-        println!("output_batch in attention head: {} {} {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
-
         // dimensions [seq_len][seq_len] -> A
         let attention_weights_batch: &Vec<Vec<Vec<f64>>> = self.attention_weights_batch.as_ref().expect("Attention weights batch is missing in attention head");
         let _attention_weights_batch_raw: &Vec<Vec<Vec<Complex<f64>>>> = self.attention_weights_batch_raw.as_ref().expect("Attention weights batch is missing in attention head");
