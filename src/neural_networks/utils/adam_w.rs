@@ -1,6 +1,6 @@
 use num::Complex;
 
-use crate::neural_networks::utils::matrix::{normalize_bias, normalize_gradients};
+use crate::neural_networks::utils::matrix::normalize_bias;
 
 pub static B_1: f64 = 0.9;
 pub static B_2: f64 = 0.999;
@@ -21,8 +21,8 @@ pub fn calculate_adam_w(weights: &mut Vec<Vec<Complex<f64>>>, weight_gradients: 
     let current_lr = get_current_learning_rate(learning_rate, t as usize);
 
     //normalize_gradients(weights);
-    normalize_gradients(prev_m);
-    normalize_gradients(prev_v);
+    // normalize_gradients(prev_m);
+    // normalize_gradients(prev_v);
 
     for i in 0..weights.len() {
         for j in 0..weights[i].len() {
