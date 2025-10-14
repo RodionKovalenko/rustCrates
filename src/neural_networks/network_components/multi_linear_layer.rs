@@ -239,14 +239,23 @@ impl MultiLinearLayer {
         clip_all_gradients_by_global_norm_2d(&mut weight_gradients, &mut bias_gradients, self.global_norm, self.max_norm);
 
         // Get previous optimizer states
-        let (mut prev_m_bias, mut prev_v_bias, mut prev_m_weights, mut prev_v_weights) = if let Some(previous_gradient) = &mut self.previous_gradient {
-            (previous_gradient.get_prev_m_bias(), previous_gradient.get_prev_v_bias(), previous_gradient.get_prev_m_weights(), previous_gradient.get_prev_v_weights())
+        let (mut prev_m_bias, mut prev_v_bias, mut prev_m_weights, mut prev_v_weights, mut prev_v_weights_hat, mut prev_v_bias_hat) = if let Some(previous_gradient) = &mut self.previous_gradient {
+            (
+                previous_gradient.get_prev_m_bias(),
+                previous_gradient.get_prev_v_bias(),
+                previous_gradient.get_prev_m_weights(),
+                previous_gradient.get_prev_v_weights(),
+                previous_gradient.get_prev_v_weights_hat(),
+                previous_gradient.get_prev_v_bias_hat(),
+            )
         } else {
             (
                 vec![Complex::new(0.0, 0.0); bias_gradients.len()],
                 vec![Complex::new(0.0, 0.0); bias_gradients.len()],
                 vec![vec![Complex::new(0.0, 0.0); weight_gradients[0].len()]; weight_gradients.len()],
                 vec![vec![Complex::new(0.0, 0.0); weight_gradients[0].len()]; weight_gradients.len()],
+                vec![vec![Complex::new(0.0, 0.0); weight_gradients[0].len()]; weight_gradients.len()],
+                vec![Complex::new(0.0, 0.0); bias_gradients.len()],
             )
         };
 
@@ -254,8 +263,8 @@ impl MultiLinearLayer {
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
 
-        calculate_adam_w_bias(&mut combined_bias, &bias_gradients, &mut prev_m_bias, &mut prev_v_bias, learning_rate, time_step);
-        calculate_adam_w(&mut combined_weights, &weight_gradients, &mut prev_m_weights, &mut prev_v_weights, learning_rate, time_step);
+        calculate_adam_w_bias(&mut combined_bias, &bias_gradients, &mut prev_m_bias, &mut prev_v_bias, &mut prev_v_bias_hat, learning_rate, time_step);
+        calculate_adam_w(&mut combined_weights, &weight_gradients, &mut prev_m_weights, &mut prev_v_weights, &mut prev_v_weights_hat, learning_rate, time_step);
 
         // Store updated optimizer states
         if let Some(gradient) = &mut self.gradient {
@@ -263,6 +272,8 @@ impl MultiLinearLayer {
             gradient.set_prev_v_bias(prev_v_bias.clone());
             gradient.set_prev_m_weights(prev_m_weights.clone());
             gradient.set_prev_v_weights(prev_v_weights.clone());
+            gradient.set_prev_v_weights_hat(prev_v_weights_hat.clone());
+            gradient.set_prev_v_bias_hat(prev_v_bias_hat.clone());
             gradient.set_gradient_weights(weight_gradients.clone());
             gradient.set_gradient_bias(bias_gradients.clone());
             self.previous_gradient = Some(gradient.clone());

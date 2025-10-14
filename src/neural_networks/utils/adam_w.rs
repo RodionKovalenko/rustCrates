@@ -16,14 +16,7 @@ pub fn is_nan_or_inf(c: &Complex<f64>) -> bool {
 }
 
 // AdamW optimizer for complex weights (matrix)
-pub fn calculate_adam_w(
-    weights: &mut Vec<Vec<Complex<f64>>>,
-    weight_gradients: &Vec<Vec<Complex<f64>>>,
-    prev_m: &mut Vec<Vec<Complex<f64>>>,
-    prev_v: &mut Vec<Vec<Complex<f64>>>, // real part used, imag=0
-    learning_rate: f64,
-    t: usize,
-) {
+pub fn calculate_adam_w(weights: &mut Vec<Vec<Complex<f64>>>, weight_gradients: &Vec<Vec<Complex<f64>>>, prev_m: &mut Vec<Vec<Complex<f64>>>, prev_v: &mut Vec<Vec<Complex<f64>>>, prev_v_hat: &mut Vec<Vec<Complex<f64>>>, learning_rate: f64, t: usize) {
     let t = t.max(1) as i32;
     let current_lr = get_current_learning_rate(learning_rate, t as usize);
 
@@ -50,13 +43,15 @@ pub fn calculate_adam_w(
             prev_m[i][j] = prev_m[i][j] * B_1 + (1.0 - B_1) * g_t;
 
             // 3️⃣Second moment update (F)
-            prev_v[i][j] = prev_v[i][j] * B_2 + (1.0 - B_2) * g_t.norm_sqr();
+            prev_v[i][j] = prev_v[i][j] * B_2 + (1.0 - B_2) * g_t * g_t;
 
-            let m_t = prev_m[i][j] / (1.0 - B_1.powi(t));
-            let v_t = prev_v[i][j] / (1.0 - B_2.powi(t));
+            prev_v_hat[i][j] = if prev_v_hat[i][j].norm() > prev_v[i][j].norm() { prev_v_hat[i][j] } else { prev_v[i][j] };
+
+            let m_t_hat = prev_m[i][j] / (1.0 - B_1.powi(t));
+            let v_t_hat = prev_v_hat[i][j] / (1.0 - B_2.powi(t));
 
             // 4️⃣ Adaptive learning rate
-            let adaptive_lr = (current_lr * m_t) / (v_t.sqrt() + EPSILON);
+            let adaptive_lr = (current_lr * m_t_hat) / (v_t_hat.sqrt() + EPSILON);
 
             // 5️⃣ AdamW update (with decoupled weight decay)
             weights[i][j] = weights[i][j] - (current_lr * WEIGHT_DECAY * weights[i][j]) - adaptive_lr;
@@ -65,7 +60,7 @@ pub fn calculate_adam_w(
 }
 
 // AdamW optimizer for complex biases (vector)
-pub fn calculate_adam_w_bias(bias: &mut Vec<Complex<f64>>, gradient: &[Complex<f64>], prev_m: &mut Vec<Complex<f64>>, prev_v: &mut Vec<Complex<f64>>, learning_rate: f64, time_step: usize) {
+pub fn calculate_adam_w_bias(bias: &mut Vec<Complex<f64>>, gradient: &[Complex<f64>], prev_m: &mut Vec<Complex<f64>>, prev_v: &mut Vec<Complex<f64>>, prev_v_hat: &mut Vec<Complex<f64>>, learning_rate: f64, time_step: usize) {
     let t_i = time_step.max(1) as i32;
 
     // normalize_bias(bias);
@@ -90,10 +85,11 @@ pub fn calculate_adam_w_bias(bias: &mut Vec<Complex<f64>>, gradient: &[Complex<f
 
         // 2️⃣ Second moment update
         prev_v[i] = prev_v[i] * B_2 + (1.0 - B_2) * g_t.norm_sqr();
+        prev_v_hat[i] = if prev_v_hat[i].norm() > prev_v[i].norm() { prev_v_hat[i] } else { prev_v[i] };
 
         // 3️⃣ Bias corrections
         let m_hat: Complex<f64> = prev_m[i] / (1.0 - B_1.powi(t_i));
-        let v_hat: Complex<f64> = prev_v[i] / (1.0 - B_2.powi(t_i));
+        let v_hat: Complex<f64> = prev_v_hat[i] / (1.0 - B_2.powi(t_i));
 
         // 4️⃣ Adaptive learning rate
         let adaptive_lr = (current_lr * m_hat) / (v_hat.sqrt() + EPSILON);

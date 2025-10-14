@@ -297,8 +297,8 @@ impl SparseSelfAttentionLayer {
         let mut partitions: Vec<Vec<Vec<Vec<Complex<f64>>>>> = vec![vec![vec![]; batch_size]; num_partitions];
         let mut input_shift: usize = self.input_partition_order * num_input_per_partition;
 
-        if input_shift > 5 {
-            input_shift -= 5;
+        if input_shift > 15 {
+            input_shift -= 15;
         }
 
         let mut start_idx: usize = input_shift;
@@ -338,8 +338,8 @@ impl SparseSelfAttentionLayer {
         let mut partitions: Vec<Vec<Vec<u32>>> = vec![vec![vec![]; batch_size]; num_partitions];
         let mut input_shift: usize = (self.input_partition_order * num_input_per_partition) % seq_len;
 
-        if input_shift > 5 {
-            input_shift -= 5;
+        if input_shift > 15 {
+            input_shift -= 15;
         }
 
         let mut start_idx: usize = input_shift;
