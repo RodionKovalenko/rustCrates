@@ -1,7 +1,5 @@
 use num::Complex;
 
-use crate::neural_networks::utils::matrix::normalize_bias;
-
 pub static B_1: f64 = 0.9;
 pub static B_2: f64 = 0.999;
 pub static EPSILON: f64 = 1e-6;
@@ -64,8 +62,8 @@ pub fn calculate_adam_w_bias(bias: &mut Vec<Complex<f64>>, gradient: &[Complex<f
     let t_i = time_step.max(1) as i32;
 
     // normalize_bias(bias);
-    normalize_bias(prev_m);
-    normalize_bias(prev_v);
+    // normalize_bias(prev_m);
+    // normalize_bias(prev_v);
 
     for (i, b) in bias.iter_mut().enumerate() {
         let g_t = gradient[i];
