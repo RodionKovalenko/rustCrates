@@ -169,17 +169,18 @@ impl RMSNormLayer {
 
         let learning_rate = self.learning_rate;
 
-        let (mut prev_m_gamma, mut prev_v_gamma) = if let Some(previous_gradient) = &mut self.previous_gradient {
-            (previous_gradient.get_prev_m_gamma(), previous_gradient.get_prev_v_gamma())
+        let (mut prev_m_gamma, mut prev_v_gamma, mut prev_v_gamma_hat) = if let Some(previous_gradient) = &mut self.previous_gradient {
+            (previous_gradient.get_prev_m_gamma(), previous_gradient.get_prev_v_gamma(), previous_gradient.get_prev_v_gamma_hat())
         } else {
             // Initialize to zeros on first step
-            (vec![Complex::new(0.0, 0.0); gradient_gamma.len()], vec![Complex::new(0.0, 0.0); gradient_gamma.len()])
+            (vec![Complex::new(0.0, 0.0); gradient_gamma.len()], vec![Complex::new(0.0, 0.0); gradient_gamma.len()], vec![Complex::new(0.0, 0.0); gradient_gamma.len()])
         };
 
-        calculate_adam_w_bias(&mut self.gamma, &gradient.get_gradient_gamma(), &mut prev_m_gamma, &mut prev_v_gamma, learning_rate, gradient.get_time_step());
+        calculate_adam_w_bias(&mut self.gamma, &gradient.get_gradient_gamma(), &mut prev_m_gamma, &mut prev_v_gamma, &mut prev_v_gamma_hat, learning_rate, gradient.get_time_step());
 
         gradient.set_prev_m_gamma(prev_m_gamma);
         gradient.set_prev_v_gamma(prev_v_gamma);
+        gradient.set_prev_v_gamma_hat(prev_v_gamma_hat);
         gradient.set_gradient_gamma(gradient_gamma.clone());
         self.previous_gradient = Some(gradient.clone());
     }

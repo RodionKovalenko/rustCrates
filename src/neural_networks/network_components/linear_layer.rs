@@ -233,8 +233,15 @@ impl LinearLayer {
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
-        let (mut prev_m_bias, mut prev_v_bias, mut prev_m_weights, mut prev_v_weights) = if let Some(previous_gradient) = &mut self.previous_gradient {
-            (previous_gradient.get_prev_m_bias(), previous_gradient.get_prev_v_bias(), previous_gradient.get_prev_m_weights(), previous_gradient.get_prev_v_weights())
+        let (mut prev_m_bias, mut prev_v_bias, mut prev_m_weights, mut prev_v_weights, mut prev_v_weights_hat, mut prev_v_bias_hat) = if let Some(previous_gradient) = &mut self.previous_gradient {
+            (
+                previous_gradient.get_prev_m_bias(),
+                previous_gradient.get_prev_v_bias(),
+                previous_gradient.get_prev_m_weights(),
+                previous_gradient.get_prev_v_weights(),
+                previous_gradient.get_prev_v_weights_hat(),
+                previous_gradient.get_prev_v_bias_hat(),
+            )
         } else {
             // Initialize to zeros on first step
             (
@@ -242,19 +249,23 @@ impl LinearLayer {
                 vec![Complex::new(0.0, 0.0); self.bias.len()],
                 vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()],
                 vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()],
+                vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()],
+                vec![Complex::new(0.0, 0.0); self.bias.len()],
             )
         };
         // prev_m_bias = average_gradient_polar_1d(&previous_gradient.get_prev_m_bias(), batch_size);
         // prev_v_bias = average_gradient_polar_1d(&previous_gradient.get_prev_v_bias(), batch_size);
         // prev_m_weights = average_gradient_polar(&previous_gradient.get_prev_m_weights(), batch_size);
         // prev_v_weights = average_gradient_polar(&previous_gradient.get_prev_v_weights(), batch_size);
-        calculate_adam_w_bias(&mut self.bias, &gradient.get_gradient_bias(), &mut prev_m_bias, &mut prev_v_bias, learning_rate, time_step);
-        calculate_adam_w(&mut self.weights, &gradient.get_gradient_weights(), &mut prev_m_weights, &mut prev_v_weights, learning_rate, time_step);
-        
+        calculate_adam_w_bias(&mut self.bias, &gradient.get_gradient_bias(), &mut prev_m_bias, &mut prev_v_bias, &mut prev_v_bias_hat, learning_rate, time_step);
+        calculate_adam_w(&mut self.weights, &gradient.get_gradient_weights(), &mut prev_m_weights, &mut prev_v_weights, &mut prev_v_weights_hat, learning_rate, time_step);
+
         gradient.set_prev_m_bias(prev_m_bias);
         gradient.set_prev_v_bias(prev_v_bias);
         gradient.set_prev_m_weights(prev_m_weights);
         gradient.set_prev_v_weights(prev_v_weights);
+        gradient.set_prev_v_weights_hat(prev_v_weights_hat);
+        gradient.set_prev_v_bias_hat(prev_v_bias_hat);
         gradient.set_gradient_weights(weight_gradients.clone());
         gradient.set_gradient_bias(bias_gradients.clone());
         self.previous_gradient = Some(gradient.clone());

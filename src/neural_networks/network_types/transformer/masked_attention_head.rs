@@ -391,38 +391,48 @@ impl MaskedAttentionHead {
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
 
-        let (mut prev_m_weights_q, mut prev_v_weights_q, mut prev_m_weights_k, mut prev_v_weights_k, mut prev_m_weights_v, mut prev_v_weights_v, mut prev_m_bias_pos, mut prev_v_bias_pos) = if let Some(previous_gradient) = &mut self.previous_gradient {
-            (
-                previous_gradient.get_prev_m_weigths_q(),
-                previous_gradient.get_prev_v_weigths_q(),
-                previous_gradient.get_prev_m_weigths_k(),
-                previous_gradient.get_prev_v_weigths_k(),
-                previous_gradient.get_prev_m_weigths_v(),
-                previous_gradient.get_prev_v_weigths_v(),
-                vec![vec![Complex::new(0.0, 0.0); grad_bias_pos[0].len()]; grad_bias_pos.len()],
-                vec![vec![Complex::new(0.0, 0.0); grad_bias_pos[0].len()]; grad_bias_pos.len()],
-            )
-        } else {
-            // Initialize to zeros on first step
-            (
-                vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()],
-                vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()],
-                vec![vec![Complex::new(0.0, 0.0); grad_w_k[0].len()]; grad_w_k.len()],
-                vec![vec![Complex::new(0.0, 0.0); grad_w_k[0].len()]; grad_w_k.len()],
-                vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
-                vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
-                vec![vec![Complex::new(0.0, 0.0); grad_bias_pos[0].len()]; grad_bias_pos.len()],
-                vec![vec![Complex::new(0.0, 0.0); grad_bias_pos[0].len()]; grad_bias_pos.len()],
-            )
-        };
+        let (mut prev_m_weights_q, mut prev_v_weights_q, mut prev_m_weights_k, mut prev_v_weights_k, mut prev_m_weights_v, mut prev_v_weights_v, mut prev_m_bias_pos, mut prev_v_bias_pos, mut prev_v_weights_q_hat, mut prev_v_weights_k_hat, mut prev_v_weights_v_hat, mut prev_v_weights_p_hat) =
+            if let Some(previous_gradient) = &mut self.previous_gradient {
+                (
+                    previous_gradient.get_prev_m_weigths_q(),
+                    previous_gradient.get_prev_v_weigths_q(),
+                    previous_gradient.get_prev_m_weigths_k(),
+                    previous_gradient.get_prev_v_weights_k(),
+                    previous_gradient.get_prev_m_weigths_v(),
+                    previous_gradient.get_prev_v_weights_v(),
+                    previous_gradient.get_prev_m_bias_pos(),
+                    previous_gradient.get_prev_v_bias_pos(),
+                    // vec![vec![Complex::new(0.0, 0.0); self.bias_pos[0].len()]; self.bias_pos.len()],
+                    // vec![vec![Complex::new(0.0, 0.0); self.bias_pos[0].len()]; self.bias_pos.len()],
+                    previous_gradient.get_prev_v_weights_q_hat(),
+                    previous_gradient.get_prev_v_weights_k_hat(),
+                    previous_gradient.get_prev_v_weights_v_hat(),
+                    previous_gradient.get_prev_v_weights_p_hat(),
+                )
+            } else {
+                (
+                    vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()],
+                    vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()],
+                    vec![vec![Complex::new(0.0, 0.0); grad_w_k[0].len()]; grad_w_k.len()],
+                    vec![vec![Complex::new(0.0, 0.0); grad_w_k[0].len()]; grad_w_k.len()],
+                    vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
+                    vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
+                    vec![vec![Complex::new(0.0, 0.0); self.bias_pos[0].len()]; self.bias_pos.len()],
+                    vec![vec![Complex::new(0.0, 0.0); self.bias_pos[0].len()]; self.bias_pos.len()],
+                    vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
+                    vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
+                    vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
+                    vec![vec![Complex::new(0.0, 0.0); self.bias_pos[0].len()]; self.bias_pos.len()],
+                )
+            };
 
-        calculate_adam_w(&mut self.weights_q, &grad_w_q, &mut prev_m_weights_q, &mut prev_v_weights_q, learning_rate, time_step);
-        calculate_adam_w(&mut self.weights_k, &grad_w_k, &mut prev_m_weights_k, &mut prev_v_weights_k, learning_rate, time_step);
-        calculate_adam_w(&mut self.weights_v, &grad_w_v, &mut prev_m_weights_v, &mut prev_v_weights_v, learning_rate, time_step);
+        calculate_adam_w(&mut self.weights_q, &grad_w_q, &mut prev_m_weights_q, &mut prev_v_weights_q, &mut prev_v_weights_q_hat, learning_rate, time_step);
+        calculate_adam_w(&mut self.weights_k, &grad_w_k, &mut prev_m_weights_k, &mut prev_v_weights_k, &mut prev_v_weights_k_hat, learning_rate, time_step);
+        calculate_adam_w(&mut self.weights_v, &grad_w_v, &mut prev_m_weights_v, &mut prev_v_weights_v, &mut prev_v_weights_v_hat, learning_rate, time_step);
 
         let seq_len = grad_bias_pos.len();
         let mut bias_pos_slice: Vec<Vec<Complex<f64>>> = self.bias_pos[0..seq_len].iter().map(|row| row[0..seq_len].to_vec()).collect();
-        calculate_adam_w(&mut bias_pos_slice, &grad_bias_pos, &mut prev_m_bias_pos, &mut prev_v_bias_pos, learning_rate, time_step);
+        calculate_adam_w(&mut bias_pos_slice, &grad_bias_pos, &mut prev_m_bias_pos, &mut prev_v_bias_pos, &mut prev_v_weights_p_hat, learning_rate, time_step);
 
         for i in 0..seq_len {
             for j in 0..seq_len {
@@ -438,6 +448,11 @@ impl MaskedAttentionHead {
         gradient.set_prev_v_weights_v(prev_v_weights_v);
         gradient.set_prev_m_bias_pos(prev_m_bias_pos);
         gradient.set_prev_v_bias_pos(prev_v_bias_pos);
+
+        gradient.set_prev_v_weights_q_hat(prev_v_weights_q_hat);
+        gradient.set_prev_v_weights_k_hat(prev_v_weights_k_hat);
+        gradient.set_prev_v_weights_v_hat(prev_v_weights_v_hat);
+        gradient.set_prev_v_weights_p_hat(prev_v_weights_p_hat);
 
         self.previous_gradient = Some(gradient.clone());
     }
