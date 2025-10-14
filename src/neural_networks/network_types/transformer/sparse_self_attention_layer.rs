@@ -8,8 +8,8 @@ use crate::neural_networks::{
         layer_output_struct::LayerOutput,
         norm_layer::NormalNormLayer,
     },
-    network_types::wavelet_discrete_layer::DiscreteWaveletLayer,
-    utils::matrix::add_matrix_3d,
+    network_types::{transformer::transformer_builder::NUM_SELF_ATT_LAYERS, wavelet_discrete_layer::DiscreteWaveletLayer},
+    utils::matrix::{add_matrix_3d, scale_matrix_3d_by_scalar},
 };
 use num::Complex;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
@@ -23,6 +23,8 @@ pub struct SparseSelfAttentionLayer {
     pub norm_layer: Option<LayerEnum>,
     pub discrete_wavelet_layer: Option<DiscreteWaveletLayer>,
     pub input_partition_order: usize,
+    pub alpha: f64,
+    pub beta: f64,
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
@@ -49,6 +51,9 @@ impl SparseSelfAttentionLayer {
         let _norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(cols, epsilon, learning_rate))));
         let _dwt_layer = Some(DiscreteWaveletLayer::new());
 
+        let alpha = (3.0 * NUM_SELF_ATT_LAYERS as f64).powf(0.25);
+        let beta = 1.0 / alpha;
+
         Self {
             attention_heads,
             activated_output: vec![],
@@ -59,6 +64,8 @@ impl SparseSelfAttentionLayer {
             output_batch: None,
             gradient: None,
             time_step: 0,
+            alpha,
+            beta,
         }
     }
 }
@@ -140,7 +147,6 @@ impl SparseSelfAttentionLayer {
             }
         } else {
             // Combine the outputs of the attention heads (e.g., concatenating horizontally)
-
             batch_output = Vec::new();
 
             // Take all rows from each head and glue them
@@ -154,11 +160,6 @@ impl SparseSelfAttentionLayer {
                     }
                 }
             }
-
-            // for b in 0..batch_size {
-            //     println!("dimension after concat: {}, {}, {}", batch_output.len(), &batch_output[b].len(), &batch_output[b][0].len());
-            //     println!("input dimension: {}, {}, {}", input_batch.len(), &input_batch[b].len(), &input_batch[b][0].len());
-            // }
         }
 
         layer_input.set_input_batch(batch_output.clone());
@@ -179,7 +180,8 @@ impl SparseSelfAttentionLayer {
             }
         }
 
-        batch_output = add_matrix_3d(&batch_output, &input_batch);
+        let batch_output_scaled = scale_matrix_3d_by_scalar(&batch_output, self.beta);
+        batch_output = add_matrix_3d(&batch_output_scaled, &input_batch);
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(batch_output.clone());
@@ -194,6 +196,7 @@ impl SparseSelfAttentionLayer {
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
         let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient_batch.clone();
+        gradient_input_batch = scale_matrix_3d_by_scalar(&gradient_input_batch, self.beta);
 
         let mut gradient: Gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(previous_gradient_batch.clone());

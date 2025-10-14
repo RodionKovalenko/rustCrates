@@ -13,8 +13,7 @@ mod test_sparse_self_attention_layer {
             wavelet_complex_layer::ComplexWaveletLayer,
         },
         utils::{
-            derivative::{global_relative_error_2d_l2, numerical_gradient_input_batch, numerical_gradient_weights, test_gradient_error_2d},
-            random_arrays::{generate_random_complex_3d, generate_u32_batch_from_indices},
+            derivative::{global_relative_error_2d_l2, numerical_gradient_input_batch, numerical_gradient_weights, test_gradient_error_2d}, matrix::scale_matrix_3d_by_scalar, random_arrays::{generate_random_complex_3d, generate_u32_batch_from_indices}
         },
     };
 
@@ -22,14 +21,14 @@ mod test_sparse_self_attention_layer {
     fn test_sparse_self_attention_layer_backward() {
         // Define some small batch size and input dimensions for simplicity
         let batch_size = 1;
-        let seq_len = 8;
+        let seq_len = 16;
         let feature_dim = 16;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
-        let num_attention_heads = 4;
+        let num_attention_heads = 8;
         let hidden_dim = 16;
         let epsilon = 1e-8;
-        let attention_head_ind = 0;
+        let attention_head_ind = 5;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut attention_layer: SparseSelfAttentionLayer = SparseSelfAttentionLayer::new(num_attention_heads, feature_dim, feature_dim, 0, learning_rate);
@@ -267,5 +266,19 @@ mod test_sparse_self_attention_layer {
                 println!("\npartition[{}][{}]: {:?}", b, p, partitions[b][p]);
             }
         }
+    }
+
+    #[test]
+    fn test_batch_scale() {
+        let batch_size = 2;
+        let seq_len = 16;
+        let feature_dim = 4;
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(1.0, 1.0); feature_dim]; seq_len ]; batch_size];
+
+        let scalar_a: f64 = 0.6;
+
+        let scaled_batch = scale_matrix_3d_by_scalar(&input_batch, scalar_a);
+        println!("input batch: {:?}", scaled_batch);
+
     }
 }
