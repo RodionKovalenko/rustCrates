@@ -147,9 +147,7 @@ impl SparseSelfAttentionLayer {
             }
         } else {
             // Combine the outputs of the attention heads (e.g., concatenating horizontally)
-            let mut global_ind = 0;
-
-            batch_output = vec![vec![vec![Complex::new(0.0, 0.0); feature_dim]; sequence_size]; batch_size];
+            batch_output = Vec::new();
 
             // Take all rows from each head and glue them
             for head_output in attention_head_outputs {
@@ -158,12 +156,13 @@ impl SparseSelfAttentionLayer {
                         if batch_output.len() <= head_batch_index {
                             batch_output.push(vec![]);
                         }
-                        batch_output[head_batch_index][global_ind % sequence_size] = row.clone();
-                        global_ind += 1;
+                        batch_output[head_batch_index].push(row.clone());
                     }
                 }
             }
         }
+
+        //println!("batch output after sparse self-attention: {}, {}, {}", &batch_output.len(), &batch_output[0].len(), &batch_output[0][0].len());
 
         layer_input.set_input_batch(batch_output.clone());
         layer_input.set_padding_mask_batch(padding_mask_batch.clone());
@@ -241,16 +240,15 @@ impl SparseSelfAttentionLayer {
         let mut combined_gradient_input_batch = vec![vec![vec![Complex::new(0.0, 0.0); feature_dim]; sequence_size]; batch_size];
         let mut global_ind = 0;
 
-        for head_output in gradient_input_batches {
-            for (head_batch_index, head_batch) in head_output.iter().enumerate() {
-                for (_row_index, _row) in head_batch.iter().enumerate() {
-                    if combined_gradient_input_batch.len() <= head_batch_index {
-                        combined_gradient_input_batch.push(vec![]);
-                    }
-                    combined_gradient_input_batch[head_batch_index][(global_ind + self.input_partition_order) % sequence_size] = _row.clone();
+        for batch_ind in 0..batch_size {
+            for head_ind in 0..gradient_input_batches.len() {
+                for (_row_index, _row) in gradient_input_batches[head_ind][batch_ind].iter().enumerate() {
+                    let moving_ind = (global_ind + self.input_partition_order) % sequence_size;
+                    combined_gradient_input_batch[batch_ind][moving_ind] = _row.clone();
                     global_ind += 1;
                 }
             }
+            global_ind = 0;
         }
 
         gradient.set_gradient_input_batch(combined_gradient_input_batch.clone());
