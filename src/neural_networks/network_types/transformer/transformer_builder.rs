@@ -3,7 +3,7 @@ use crate::neural_networks::{
     network_types::{
         feedforward_layer::FeedForwardLayer,
         neural_network_generic::{create, NeuralNetwork, OperationMode},
-        transformer::{self_attention_layer::SelfAttentionLayer},
+        transformer::sparse_self_attention_layer::SparseSelfAttentionLayer,
         wavelet_network::DECOMPOSITION_LEVELS,
     },
 };
@@ -41,13 +41,13 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let num_self_attention_layer: usize = NUM_SELF_ATT_LAYERS;
     let origin_hidden_dim = 256;
     for _i in 0..num_self_attention_layer {
-        let num_attention_heads: usize = 4;
+        let num_attention_heads: usize = 8;
 
         // Colums are divided into number of heads
         let cols: usize = embedding_dim_compressed;
 
-        let attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
-        layers.push(LayerEnum::SelfAttention(Box::new(attention_layer)));
+        let attention_layer: SparseSelfAttentionLayer = SparseSelfAttentionLayer::new(num_attention_heads, rows, cols, _i, learning_rate);
+        layers.push(LayerEnum::SparseSelfAttention(Box::new(attention_layer)));
 
         // let hidden_dim = origin_hidden_dim * (_i + 1);
         let hidden_dim = origin_hidden_dim;

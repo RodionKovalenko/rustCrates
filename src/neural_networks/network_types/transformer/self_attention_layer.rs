@@ -12,7 +12,7 @@ use crate::neural_networks::{
     utils::matrix::{add_matrix_3d, scale_matrix_3d_by_scalar},
 };
 use num::Complex;
-use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 // Layer struct
@@ -186,16 +186,18 @@ impl SelfAttentionLayer {
         assert!(num_heads > 0, "No attention heads found in self-attention layer!");
 
         let previous_gradient_head_splitted = self.split_gradient_into_heads(&gradient_input_batch);
-        let mut gradient_input_batches: Vec<Vec<Vec<Vec<Complex<f64>>>>> = Vec::new();
 
-        // Backpropagate gradients through each attention head
-        for (head_ind, attention_head) in self.attention_heads.iter_mut().enumerate() {
-            let previous_head_gradient_batch = previous_gradient_head_splitted[head_ind].clone();
-            gradient = attention_head.backward(&previous_head_gradient_batch);
-            gradient_input_batches.push(gradient.get_gradient_input_batch());
-
-            // println!("gradient input head {:?}", &gradient.get_gradient_input_batch());
-        }
+        let gradient_input_batches: Vec<Vec<Vec<Vec<Complex<f64>>>>> = self
+            .attention_heads
+            .par_iter_mut()
+            .enumerate()
+            .map(|(head_ind, attention_head)| {
+                // It's better to borrow if possible, not clone — clone only if needed
+                let previous_head_gradient_batch = &previous_gradient_head_splitted[head_ind];
+                let gradient = attention_head.backward(previous_head_gradient_batch);
+                gradient.get_gradient_input_batch()
+            })
+            .collect();
 
         let mut combined_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); gradient_input_batches[0][0][0].len()]; gradient_input_batches[0][0].len()]; gradient_input_batches[0].len()];
 

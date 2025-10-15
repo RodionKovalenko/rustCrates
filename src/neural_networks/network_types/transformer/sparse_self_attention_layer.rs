@@ -109,7 +109,7 @@ impl SparseSelfAttentionLayer {
 
         layer_input.set_input_batch(batch_output.clone());
 
-        let input_splitted_heads = self.split_input_into_partitions(&batch_output);
+        let input_splitted_heads = self.split_input_into_partitions(&batch_output, self.input_partition_order);
         let padding_mask_splitted_heads = self.split_padding_mask_into_partitions(&padding_mask_batch);
 
         //println!("padding mask batch: {:?}", &padding_mask_batch);
@@ -147,7 +147,9 @@ impl SparseSelfAttentionLayer {
             }
         } else {
             // Combine the outputs of the attention heads (e.g., concatenating horizontally)
-            batch_output = Vec::new();
+            let mut global_ind = 0;
+
+            batch_output = vec![vec![vec![Complex::new(0.0, 0.0); feature_dim]; sequence_size]; batch_size];
 
             // Take all rows from each head and glue them
             for head_output in attention_head_outputs {
@@ -156,7 +158,8 @@ impl SparseSelfAttentionLayer {
                         if batch_output.len() <= head_batch_index {
                             batch_output.push(vec![]);
                         }
-                        batch_output[head_batch_index].push(row.clone());
+                        batch_output[head_batch_index][global_ind % sequence_size] = row.clone();
+                        global_ind += 1;
                     }
                 }
             }
@@ -196,6 +199,7 @@ impl SparseSelfAttentionLayer {
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
         let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient_batch.clone();
+
         gradient_input_batch = scale_matrix_3d_by_scalar(&gradient_input_batch, self.beta);
 
         let mut gradient: Gradient = Gradient::new_default();
@@ -213,41 +217,40 @@ impl SparseSelfAttentionLayer {
         let num_heads = self.attention_heads.len();
         assert!(num_heads > 0, "No attention heads found in self-attention layer!");
 
-        let previous_gradient_head_splitted: Vec<Vec<Vec<Vec<Complex<f64>>>>> = self.split_input_into_partitions(&gradient_input_batch);
-        let mut gradient_input_batches: Vec<Vec<Vec<Vec<Complex<f64>>>>> = Vec::new();
-
+        let previous_gradient_head_splitted: Vec<Vec<Vec<Vec<Complex<f64>>>>> = self.split_input_into_partitions(&gradient_input_batch, 0);
         // Backpropagate gradients through each attention head
-        for (head_ind, attention_head) in self.attention_heads.iter_mut().enumerate() {
-            let previous_head_gradient_batch = previous_gradient_head_splitted[head_ind].clone();
-            gradient = attention_head.backward(&previous_head_gradient_batch);
-            gradient_input_batches.push(gradient.get_gradient_input_batch());
-            // println!("gradient input head {:?}", &gradient.get_gradient_input_batch());
-        }
+        let gradient_input_batches: Vec<_> = self
+            .attention_heads
+            .par_iter_mut()
+            .enumerate()
+            .map(|(head_ind, attention_head)| {
+                let previous_head_gradient_batch = previous_gradient_head_splitted[head_ind].clone();
+                let gradient = attention_head.backward(&previous_head_gradient_batch);
 
-        let batch_size = gradient_input_batch.len();
-        let seq_len = gradient_input_batch[0].len();
-        let feature_dim = gradient_input_batch[0][0].len();
+                let gradient_input_batch = gradient.get_gradient_input_batch();
+                println!("Gradient input batch from head {}: {}, {}, {}", head_ind, &gradient_input_batch.len(), &gradient_input_batch[0].len(), &gradient_input_batch[0][0].len());
+                gradient.get_gradient_input_batch()
+            })
+            .collect();
 
-        let mut combined_gradient_input_batch = vec![vec![vec![Complex::new(0.0, 0.0); feature_dim]; seq_len]; batch_size];
+        let input_batch = self.input_batch.as_ref().expect("No input batch found for backward pass!");
+        let batch_size = input_batch.len();
+        let sequence_size = input_batch[0].len();
+        let feature_dim = input_batch[0][0].len();
 
-        let num_input_per_partition = seq_len / num_heads;
-        let rest_partitions = seq_len % num_heads;
-        let input_shift = self.input_partition_order * num_input_per_partition;
+        let mut combined_gradient_input_batch = vec![vec![vec![Complex::new(0.0, 0.0); feature_dim]; sequence_size]; batch_size];
+        let mut global_ind = 0;
 
-        let mut start_idx = input_shift;
-        let num_heads = self.attention_heads.len();
-
-        for head_idx in 0..num_heads {
-            for b in 0..batch_size {
-                let grad_batch = &gradient_input_batches[head_idx][b];
-                let seq_len_h = grad_batch.len();
-                for i in 0..seq_len_h {
-                    let global_idx = (start_idx + i) % seq_len;
-                    combined_gradient_input_batch[b][global_idx] = grad_batch[i].clone();
+        for head_output in gradient_input_batches {
+            for (head_batch_index, head_batch) in head_output.iter().enumerate() {
+                for (_row_index, _row) in head_batch.iter().enumerate() {
+                    if combined_gradient_input_batch.len() <= head_batch_index {
+                        combined_gradient_input_batch.push(vec![]);
+                    }
+                    combined_gradient_input_batch[head_batch_index][(global_ind + self.input_partition_order) % sequence_size] = _row.clone();
+                    global_ind += 1;
                 }
             }
-            // Move start_idx by current partition length; partition gets extra 1 if head_idx < rest_partitions
-            start_idx += num_input_per_partition + if head_idx < rest_partitions { 1 } else { 0 };
         }
 
         gradient.set_gradient_input_batch(combined_gradient_input_batch.clone());
@@ -287,7 +290,7 @@ impl SparseSelfAttentionLayer {
         gradient
     }
 
-    pub fn split_input_into_partitions(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Vec<Complex<f64>>>>> {
+    pub fn split_input_into_partitions(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>, partition_shift: usize) -> Vec<Vec<Vec<Vec<Complex<f64>>>>> {
         let batch_size = input_batch.len();
         let seq_len = input_batch[0].len();
 
@@ -298,11 +301,11 @@ impl SparseSelfAttentionLayer {
 
         // the last partition will have more input then the previous one is there is rest
         let mut partitions: Vec<Vec<Vec<Vec<Complex<f64>>>>> = vec![vec![vec![]; batch_size]; num_partitions];
-        let mut input_shift: usize = self.input_partition_order * num_input_per_partition;
+        let input_shift: usize = partition_shift;
 
-        if input_shift > 15 {
-            input_shift -= 15;
-        }
+        // if input_shift > 15 {
+        //     input_shift -= 15;
+        // }
 
         let mut start_idx: usize = input_shift;
         let mut end_idx: usize = start_idx;
@@ -339,11 +342,11 @@ impl SparseSelfAttentionLayer {
 
         // the last partition will have more input then the previous one is there is rest
         let mut partitions: Vec<Vec<Vec<u32>>> = vec![vec![vec![]; batch_size]; num_partitions];
-        let mut input_shift: usize = (self.input_partition_order * num_input_per_partition) % seq_len;
+        let input_shift: usize = self.input_partition_order;
 
-        if input_shift > 15 {
-            input_shift -= 15;
-        }
+        // if input_shift > 15 {
+        //     input_shift -= 15;
+        // }
 
         let mut start_idx: usize = input_shift;
         let mut end_idx: usize = start_idx;
