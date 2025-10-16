@@ -30,8 +30,8 @@ mod test_sparse_self_attention_layer {
         let num_attention_heads = 4;
         let hidden_dim = 8;
         let epsilon = 1e-8;
-        let attention_head_ind = num_attention_heads - 1;
-        let partition_shift = 1;
+        let attention_head_ind = num_attention_heads - 2;
+        let partition_shift = 10;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut attention_layer: SparseSelfAttentionLayer = SparseSelfAttentionLayer::new(num_attention_heads, feature_dim, feature_dim, partition_shift, learning_rate);
