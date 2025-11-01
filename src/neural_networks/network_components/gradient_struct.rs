@@ -488,6 +488,9 @@ impl Gradient {
         for weight_gradient_batch in weight_gradients_batch {
             for (row, w_gradient) in weight_gradient_batch.iter().enumerate() {
                 for (col, gradient_value) in w_gradient.iter().enumerate() {
+                    if col >= weight_gradients[row].len() {
+                        continue;
+                    }
                     weight_gradients[row][col] += gradient_value;
                 }
             }

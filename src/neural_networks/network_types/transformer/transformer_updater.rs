@@ -6,7 +6,7 @@ use crate::neural_networks::{
     utils::matrix::{normalize_bias, normalize_gradients, normalize_gradients_batch},
 };
 
-pub const VERBOSE: bool = false;
+pub const VERBOSE: bool = true;
 
 fn update_by_norm(transformer: &mut NeuralNetwork) {
     let mut global_weights = Vec::new();
@@ -18,7 +18,19 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
             LayerEnum::AdaptiveAvgPool1d(_adaptive_avg_pooling_layer) => {
                 // println!("adaptive avg pooling layer with output size: {:?}", &adaptive_avg_pooling_layer.output_size);
             }
-            LayerEnum::Embedding(_embedding_layer) => {}
+            LayerEnum::Embedding(_embedding_layer) => {
+                gradient = _embedding_layer.gradient.as_mut().expect("No gradient found");
+
+                let mut gradient_input_batch = gradient.get_gradient_input_batch();
+                
+                normalize_gradients_batch(&mut gradient_input_batch);
+                gradient.set_gradient_input_batch(gradient_input_batch);
+
+                if VERBOSE {
+                    println!("embedding layer updating gradient");
+                    max_weight(&gradient.get_gradient_input());
+                }
+            }
             LayerEnum::Norm(norm_layer) => {
                 gradient = norm_layer.gradient.as_mut().expect("No gradient found");
 
@@ -539,8 +551,7 @@ pub fn max_bias(bias: &[Complex<f64>]) -> f64 {
 
 // for scaling the input
 pub fn calculate_alpha() -> f64 {
-    let num_layer = NUM_SELF_ATT_LAYERS as f64;
-    (2.0 * num_layer).powf(1.0 / 4.0)
+    (3.0 * NUM_SELF_ATT_LAYERS as f64).powf(0.25)
 }
 
 // for scaling the residuals

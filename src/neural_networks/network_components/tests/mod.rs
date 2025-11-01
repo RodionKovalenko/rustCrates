@@ -18,3 +18,4 @@ pub mod test_adaptive_pooling_complex;
 pub mod test_self_attention_layer_appro_with_loss;
 pub mod test_sparse_self_attention_layer;
 pub mod test_ffn_swiglu;
+pub mod test_sparse_self_attention_head;

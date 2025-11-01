@@ -20,6 +20,7 @@ pub struct LayerInput {
     calculate_gradient: bool,
     record_ind: usize,
     pooling_metadata: Option<CompressionMetadata>,
+    calculate_k_v_cache: bool,
 }
 
 impl LayerInput {
@@ -39,6 +40,7 @@ impl LayerInput {
             record_ind: 0,
             batch_size: 25,
             pooling_metadata: None,
+            calculate_k_v_cache: false,
         }
     }
     pub fn set_input_batch(&mut self, input_batch: Vec<Vec<Vec<Complex<f64>>>>) {
@@ -125,5 +127,12 @@ impl LayerInput {
     }
     pub fn get_pooling_metadata(&self) -> Option<CompressionMetadata> {
         self.pooling_metadata.clone()
+    }
+
+    pub fn set_calculate_k_v_cache(&mut self, calculate_k_v_cache: bool) {
+        self.calculate_k_v_cache = calculate_k_v_cache;
+    }
+    pub fn get_calculate_k_v_cache(&self) -> bool {
+        self.calculate_k_v_cache
     }
 }

@@ -1,0 +1,147 @@
+
+
+Q 16x4
+K 16x4
+V 16x4
+
+
+Forward pass:
+
+Q 16x4  * K 16x4
+
+K is split into tokens with windows size [i - window size] .. [i + window size]
+
+Token Q 1 * window tokens of K
+Window:
+[Complex { re: 0.0, im: 0.0 }, Complex { re: 1.0, im: 0.0 }, Complex { re: 2.0, im: 0.0 }, Complex { re: 3.0, im: 0.0 }]
+[Complex { re: 4.0, im: 0.0 }, Complex { re: 5.0, im: 0.0 }, Complex { re: 6.0, im: 0.0 }, Complex { re: 7.0, im: 0.0 }]
+---
+Token Q 2 * window tokens of K
+Window:
+[Complex { re: 0.0, im: 0.0 }, Complex { re: 1.0, im: 0.0 }, Complex { re: 2.0, im: 0.0 }, Complex { re: 3.0, im: 0.0 }]
+[Complex { re: 4.0, im: 0.0 }, Complex { re: 5.0, im: 0.0 }, Complex { re: 6.0, im: 0.0 }, Complex { re: 7.0, im: 0.0 }]
+[Complex { re: 8.0, im: 0.0 }, Complex { re: 9.0, im: 0.0 }, Complex { re: 10.0, im: 0.0 }, Complex { re: 11.0, im: 0.0 }]
+---
+Token Q3 * window tokens of K
+Window:
+[Complex { re: 4.0, im: 0.0 }, Complex { re: 5.0, im: 0.0 }, Complex { re: 6.0, im: 0.0 }, Complex { re: 7.0, im: 0.0 }]
+[Complex { re: 8.0, im: 0.0 }, Complex { re: 9.0, im: 0.0 }, Complex { re: 10.0, im: 0.0 }, Complex { re: 11.0, im: 0.0 }]
+[Complex { re: 12.0, im: 0.0 }, Complex { re: 13.0, im: 0.0 }, Complex { re: 14.0, im: 0.0 }, Complex { re: 15.0, im: 0.0 }]
+---
+Token Q4 * window tokens of K
+Window:
+[Complex { re: 8.0, im: 0.0 }, Complex { re: 9.0, im: 0.0 }, Complex { re: 10.0, im: 0.0 }, Complex { re: 11.0, im: 0.0 }]
+[Complex { re: 12.0, im: 0.0 }, Complex { re: 13.0, im: 0.0 }, Complex { re: 14.0, im: 0.0 }, Complex { re: 15.0, im: 0.0 }]
+[Complex { re: 16.0, im: 0.0 }, Complex { re: 17.0, im: 0.0 }, Complex { re: 18.0, im: 0.0 }, Complex { re: 19.0, im: 0.0 }]
+---
+Window:
+[Complex { re: 12.0, im: 0.0 }, Complex { re: 13.0, im: 0.0 }, Complex { re: 14.0, im: 0.0 }, Complex { re: 15.0, im: 0.0 }]
+[Complex { re: 16.0, im: 0.0 }, Complex { re: 17.0, im: 0.0 }, Complex { re: 18.0, im: 0.0 }, Complex { re: 19.0, im: 0.0 }]
+[Complex { re: 20.0, im: 0.0 }, Complex { re: 21.0, im: 0.0 }, Complex { re: 22.0, im: 0.0 }, Complex { re: 23.0, im: 0.0 }]
+---
+Window:
+[Complex { re: 16.0, im: 0.0 }, Complex { re: 17.0, im: 0.0 }, Complex { re: 18.0, im: 0.0 }, Complex { re: 19.0, im: 0.0 }]
+[Complex { re: 20.0, im: 0.0 }, Complex { re: 21.0, im: 0.0 }, Complex { re: 22.0, im: 0.0 }, Complex { re: 23.0, im: 0.0 }]
+[Complex { re: 24.0, im: 0.0 }, Complex { re: 25.0, im: 0.0 }, Complex { re: 26.0, im: 0.0 }, Complex { re: 27.0, im: 0.0 }]
+---
+Window:
+[Complex { re: 20.0, im: 0.0 }, Complex { re: 21.0, im: 0.0 }, Complex { re: 22.0, im: 0.0 }, Complex { re: 23.0, im: 0.0 }]
+[Complex { re: 24.0, im: 0.0 }, Complex { re: 25.0, im: 0.0 }, Complex { re: 26.0, im: 0.0 }, Complex { re: 27.0, im: 0.0 }]
+[Complex { re: 28.0, im: 0.0 }, Complex { re: 29.0, im: 0.0 }, Complex { re: 30.0, im: 0.0 }, Complex { re: 31.0, im: 0.0 }]
+---
+Window:
+[Complex { re: 24.0, im: 0.0 }, Complex { re: 25.0, im: 0.0 }, Complex { re: 26.0, im: 0.0 }, Complex { re: 27.0, im: 0.0 }]
+[Complex { re: 28.0, im: 0.0 }, Complex { re: 29.0, im: 0.0 }, Complex { re: 30.0, im: 0.0 }, Complex { re: 31.0, im: 0.0 }]
+[Complex { re: 32.0, im: 0.0 }, Complex { re: 33.0, im: 0.0 }, Complex { re: 34.0, im: 0.0 }, Complex { re: 35.0, im: 0.0 }]
+---
+Window:
+[Complex { re: 28.0, im: 0.0 }, Complex { re: 29.0, im: 0.0 }, Complex { re: 30.0, im: 0.0 }, Complex { re: 31.0, im: 0.0 }]
+[Complex { re: 32.0, im: 0.0 }, Complex { re: 33.0, im: 0.0 }, Complex { re: 34.0, im: 0.0 }, Complex { re: 35.0, im: 0.0 }]
+[Complex { re: 36.0, im: 0.0 }, Complex { re: 37.0, im: 0.0 }, Complex { re: 38.0, im: 0.0 }, Complex { re: 39.0, im: 0.0 }]
+---
+Window:
+[Complex { re: 32.0, im: 0.0 }, Complex { re: 33.0, im: 0.0 }, Complex { re: 34.0, im: 0.0 }, Complex { re: 35.0, im: 0.0 }]
+[Complex { re: 36.0, im: 0.0 }, Complex { re: 37.0, im: 0.0 }, Complex { re: 38.0, im: 0.0 }, Complex { re: 39.0, im: 0.0 }]
+[Complex { re: 40.0, im: 0.0 }, Complex { re: 41.0, im: 0.0 }, Complex { re: 42.0, im: 0.0 }, Complex { re: 43.0, im: 0.0 }]
+---
+Window:
+[Complex { re: 36.0, im: 0.0 }, Complex { re: 37.0, im: 0.0 }, Complex { re: 38.0, im: 0.0 }, Complex { re: 39.0, im: 0.0 }]
+[Complex { re: 40.0, im: 0.0 }, Complex { re: 41.0, im: 0.0 }, Complex { re: 42.0, im: 0.0 }, Complex { re: 43.0, im: 0.0 }]
+[Complex { re: 44.0, im: 0.0 }, Complex { re: 45.0, im: 0.0 }, Complex { re: 46.0, im: 0.0 }, Complex { re: 47.0, im: 0.0 }]
+---
+Window:
+[Complex { re: 40.0, im: 0.0 }, Complex { re: 41.0, im: 0.0 }, Complex { re: 42.0, im: 0.0 }, Complex { re: 43.0, im: 0.0 }]
+[Complex { re: 44.0, im: 0.0 }, Complex { re: 45.0, im: 0.0 }, Complex { re: 46.0, im: 0.0 }, Complex { re: 47.0, im: 0.0 }]
+[Complex { re: 48.0, im: 0.0 }, Complex { re: 49.0, im: 0.0 }, Complex { re: 50.0, im: 0.0 }, Complex { re: 51.0, im: 0.0 }]
+---
+Window:
+[Complex { re: 44.0, im: 0.0 }, Complex { re: 45.0, im: 0.0 }, Complex { re: 46.0, im: 0.0 }, Complex { re: 47.0, im: 0.0 }]
+[Complex { re: 48.0, im: 0.0 }, Complex { re: 49.0, im: 0.0 }, Complex { re: 50.0, im: 0.0 }, Complex { re: 51.0, im: 0.0 }]
+[Complex { re: 52.0, im: 0.0 }, Complex { re: 53.0, im: 0.0 }, Complex { re: 54.0, im: 0.0 }, Complex { re: 55.0, im: 0.0 }]
+---
+Window:
+[Complex { re: 48.0, im: 0.0 }, Complex { re: 49.0, im: 0.0 }, Complex { re: 50.0, im: 0.0 }, Complex { re: 51.0, im: 0.0 }]
+[Complex { re: 52.0, im: 0.0 }, Complex { re: 53.0, im: 0.0 }, Complex { re: 54.0, im: 0.0 }, Complex { re: 55.0, im: 0.0 }]
+[Complex { re: 56.0, im: 0.0 }, Complex { re: 57.0, im: 0.0 }, Complex { re: 58.0, im: 0.0 }, Complex { re: 59.0, im: 0.0 }]
+---
+Window:
+[Complex { re: 52.0, im: 0.0 }, Complex { re: 53.0, im: 0.0 }, Complex { re: 54.0, im: 0.0 }, Complex { re: 55.0, im: 0.0 }]
+[Complex { re: 56.0, im: 0.0 }, Complex { re: 57.0, im: 0.0 }, Complex { re: 58.0, im: 0.0 }, Complex { re: 59.0, im: 0.0 }]
+[Complex { re: 60.0, im: 0.0 }, Complex { re: 61.0, im: 0.0 }, Complex { re: 62.0, im: 0.0 }, Complex { re: 63.0, im: 0.0 }]
+---
+Token Q16 * window tokens of K
+Window:
+[Complex { re: 56.0, im: 0.0 }, Complex { re: 57.0, im: 0.0 }, Complex { re: 58.0, im: 0.0 }, Complex { re: 59.0, im: 0.0 }]
+[Complex { re: 60.0, im: 0.0 }, Complex { re: 61.0, im: 0.0 }, Complex { re: 62.0, im: 0.0 }, Complex { re: 63.0, im: 0.0 }]
+
+Softmax(Q*K/srqr(dk)) has dimensions
+1x2
+1x3
+1x3
+1x3
+1x3
+1x3
+1x3
+1x3
+1x3
+1x3
+1x3
+1x3
+1x3
+1x3
+1x3
+1x2
+
+16 Tokens with different dimensions for 1 and last token. 
+16x2 or 16x3
+
+2. Multiply Attention weights with V. V is also split in window tokens
+
+AW     V
+1x2 * 2x4 = 1x4
+1x3 * 3x4 = 1x4
+1x3 * 3x4 = 1x4
+1x3 * 3x4 = 1x4
+1x3 * 3x4 = 1x4
+1x3 * 3x4 = 1x4
+1x3 * 3x4 = 1x4
+1x3 * 3x4 = 1x4
+1x3 * 3x4 = 1x4
+1x3 * 3x4 = 1x4
+1x3 * 3x4 = 1x4
+1x3 * 3x4 = 1x4
+1x3 * 3x4 = 1x4
+1x3 * 3x4 = 1x4
+1x3 * 3x4 = 1x4
+1x2 * 2x4 = 1x4
+
+Attention weights * V = 16x4
+
+
+Backwards: 
+
+Gt 16x4
+
+
+
+

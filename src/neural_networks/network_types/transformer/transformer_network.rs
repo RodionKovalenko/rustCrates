@@ -37,7 +37,7 @@ pub const EMA_SCALER: f64 = 1.1;
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize, batch_size: usize) {
     let mut total_loss: Complex<f64>;
-    let loss_threshold: f64 = 0.01;
+    let loss_threshold: f64 = 0.08;
     let now = Instant::now();
     let mut previous_last_losses: Vec<f64> = Vec::new();
     let mut total_loss_exp_ma = 0.0;
@@ -212,7 +212,8 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
     let now = Instant::now();
     let mut layer_input = LayerInput::new_default();
     layer_input.set_calculate_gradient(false);
-    layer_input.set_forward_only(true);
+    layer_input.set_forward_only(false);
+    layer_input.set_calculate_k_v_cache(false);
 
     print!("Antwort: ");
 
@@ -264,7 +265,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
 
         layer_input.set_batch_ids(batch_ids.clone());
 
-        if time_step > 0 {
+        if time_step > 0 && layer_input.get_forward_only() {
             // let last_tokens: Vec<Vec<u32>> = batch_ids.iter().map(|seq| vec![*seq.last().unwrap()]).collect();
             let last_n = 32;
 
@@ -331,7 +332,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         current_input_batch[0] = format!("{}{}", current_input_batch[0], predicted_token);
 
         count_tokens_prediction += 1;
-        if count_tokens_prediction > 20 {
+        if count_tokens_prediction > 50 {
             println!("\nMax token prediction limit reached. Breaking.");
             break;
         }
