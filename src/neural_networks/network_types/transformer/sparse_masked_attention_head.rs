@@ -10,8 +10,11 @@ use crate::{
         utils::{
             activation::softmax_complex_padding_real,
             adam_w::calculate_adam_w,
-            derivative::{backpropagate_softmax_masked_real, softmax_derivative_complex_jacobian},
-            matrix::{add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
+            derivative::{backpropagate_softmax_masked_real, softmax_derivative_complex_jacobian, test_gradient_batch_error_f64},
+            matrix::{
+                add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, multiply_complex_with_f64, multiply_f64_complex,
+                transpose,
+            },
             weights_initializer::initialize_weights_complex,
         },
     },
@@ -207,26 +210,6 @@ impl SparseMaskedAttentionHead {
         layer_output
     }
 
-    pub fn restore_sparse_matrix(&self, input: &Vec<Vec<Complex<f64>>>, window_size: usize, seq_len: usize) -> Vec<Vec<Complex<f64>>> {
-        let mut restored_matrix: Vec<Vec<Complex<f64>>> = Vec::new();
-
-        for (token_index, row) in input.iter().enumerate() {
-            restored_matrix.push(restore_sparse_row(&row, token_index, window_size, seq_len));
-        }
-
-        restored_matrix
-    }
-
-    pub fn restore_sparse_matrix_f64(&self, input: &Vec<Vec<f64>>, window_size: usize, seq_len: usize) -> Vec<Vec<f64>> {
-        let mut restored_matrix: Vec<Vec<f64>> = Vec::new();
-
-        for (token_index, row) in input.iter().enumerate() {
-            restored_matrix.push(restore_sparse_row_f64(&row, token_index, window_size, seq_len));
-        }
-
-        restored_matrix
-    }
-
     pub fn calculated_sparse_masked_attention(
         &mut self,
         q_batch: Vec<Vec<Vec<Complex<f64>>>>,
@@ -364,8 +347,7 @@ impl SparseMaskedAttentionHead {
         q_v_k_dot
     }
 
-    pub fn apply_sparse_causal_mask(&self, q: &mut Vec<Vec<Complex<f64>>>)
-    {
+    pub fn apply_sparse_causal_mask(&self, q: &mut Vec<Vec<Complex<f64>>>) {
         // row i can only attend to rows <= i
         /*
             [1 2 0 0 0 0] => bekomes [1 0 0 0 0 0]
@@ -420,6 +402,67 @@ impl SparseMaskedAttentionHead {
                 }
             }
         }
+    }
+
+    pub fn restore_sparse_matrix(&self, input: &Vec<Vec<Complex<f64>>>, window_size: usize, seq_len: usize) -> Vec<Vec<Complex<f64>>> {
+        let mut restored_matrix: Vec<Vec<Complex<f64>>> = Vec::new();
+
+        for (token_index, row) in input.iter().enumerate() {
+            restored_matrix.push(restore_sparse_row(&row, token_index, window_size, seq_len));
+        }
+
+        restored_matrix
+    }
+
+    pub fn restore_sparse_matrix_f64(&self, input: &Vec<Vec<f64>>, window_size: usize, seq_len: usize) -> Vec<Vec<f64>> {
+        let mut restored_matrix: Vec<Vec<f64>> = Vec::new();
+
+        for (token_index, row) in input.iter().enumerate() {
+            restored_matrix.push(restore_sparse_row_f64(&row, token_index, window_size, seq_len));
+        }
+
+        restored_matrix
+    }
+
+    fn sparse_softmax_derivative_complex(&self, data: &Vec<f64>, token_ind: usize, seq_len: usize) -> Vec<Vec<f64>> {
+        // let mut jacobian: Vec<Vec<f64>> = vec![vec![0.0; seq_len]; seq_len];
+        let mut jacobian: Vec<Vec<f64>> = vec![vec![0.0; data.len()]; data.len()];
+
+        let (start_ind, end_ind) = calculate_start_end_indices(token_ind, self.window_size, seq_len);
+
+        let range: Vec<usize> = (start_ind..end_ind).collect::<Vec<usize>>();
+
+        // Loop through each pair of indices (i, j)
+        for i in range.iter() {
+            let position_i = range.iter().position(|&x| x == *i).unwrap();
+            for j in range.iter() {
+                let position_j = range.iter().position(|&x| x == *j).unwrap();
+                if i == j {
+                    // Diagonal elements: s_i * (1 - s_i)
+                    jacobian[position_i][position_j] = data[position_i] * (1.0 - data[position_i]);
+                    // jacobian[*i][*j] = data[position_i] * (1.0 - data[position_i]);
+                } else {
+                    // Off-diagonal elements: -s_i * s_j
+                    jacobian[position_i][position_j] = -data[position_i] * data[position_j];
+                    //jacobian[*i][*j] = -data[position_i] * data[position_j];
+                }
+            }
+        }
+
+        jacobian
+    }
+
+    pub fn sparse_softmax_derivative_complex_jacobian(&self, softmax_values: &Vec<Vec<f64>>) -> Vec<Vec<Vec<f64>>> {
+        let seq_len = softmax_values.len();
+
+        // 3D tensor to hold Jacobian matrices for each row
+        let mut derivative: Vec<Vec<Vec<f64>>> = Vec::new();
+
+        for i in 0..seq_len {
+            derivative.push(self.sparse_softmax_derivative_complex(&softmax_values[i], i, seq_len));
+        }
+
+        derivative
     }
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
@@ -487,15 +530,18 @@ impl SparseMaskedAttentionHead {
             let attention_weights_restored = self.restore_sparse_matrix_f64(&attention_weights_batch[batch_ind], self.window_size, input_batch[batch_ind].len());
             let softmax_derivative: Vec<Vec<Vec<f64>>> = softmax_derivative_complex_jacobian(&attention_weights_restored);
 
+            // 16 x(2x2/3x3)
+            let sparse_softmax_derivative: Vec<Vec<Vec<f64>>> = self.sparse_softmax_derivative_complex_jacobian(&attention_weights_batch[batch_ind]);
+
             // println!("softmax_derivative dim: {}, {}, {}", &softmax_derivative.len(), &softmax_derivative[0].len(),  &softmax_derivative[0][0].len());
 
             // Gradient Wq
             //    => dl/dwq = XT * (Gt * VT * grad(A) * Kt/sqtr(dk))
             //    dl/dwq = dl/ds * ds/da * da/dq * dq/dWq
             // dl/dWq = (((dl/dO * dO/dS) * dS/dA) * dA/dQ) * dQ/dWq
-            // 2, 4 * 2, 4 = 2,2
+            // 16x4 x 4x16 = 16x16
             let dl_ds: Vec<Vec<Complex<f64>>> = multiply_complex(&previous_gradient, &conjugate_transpose(&v));
-            // 2,2 * 2,2  = 2,2
+            // 16x16 x 16x16 = 16x16
             let dl_da: Vec<Vec<f64>> = backpropagate_softmax_masked_real(&softmax_derivative, &dl_ds, &padding_mask_batch[batch_ind]);
             // println!("dl_da dim: {}, {}", &dl_da.len(), &dl_da[0].len(),);
             // 2,2 * 4, 2 = 2 * 2 * 2, 4 = 2,4
@@ -559,6 +605,7 @@ impl SparseMaskedAttentionHead {
 
         gradient
     }
+
     pub fn update_parameters(&mut self) {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("Gradient is missing in attention head layer");
         let (mut grad_w_q, mut grad_w_v, mut grad_w_k) = (gradient.get_gradient_weights_q(), gradient.get_gradient_weights_v(), gradient.get_gradient_weights_k());
