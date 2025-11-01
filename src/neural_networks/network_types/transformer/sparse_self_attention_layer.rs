@@ -8,7 +8,7 @@ use crate::neural_networks::{
         layer_output_struct::LayerOutput,
         norm_layer::NormalNormLayer,
     },
-    network_types::{transformer::transformer_builder::NUM_SELF_ATT_LAYERS, wavelet_discrete_layer::DiscreteWaveletLayer},
+    network_types::{transformer::transformer_updater::calculate_alpha, wavelet_discrete_layer::DiscreteWaveletLayer},
     utils::matrix::{add_matrix_3d, scale_matrix_3d_by_scalar},
 };
 use num::Complex;
@@ -51,13 +51,14 @@ impl SparseSelfAttentionLayer {
         let _norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(cols, epsilon, learning_rate))));
         let _dwt_layer = Some(DiscreteWaveletLayer::new());
 
-        let alpha = (3.0 * NUM_SELF_ATT_LAYERS as f64).powf(0.25);
+        let alpha = calculate_alpha();
         let beta = 1.0 / alpha;
 
-        let mut partition_shift_scaled = (partition_shift * num_heads) / 2;
+        let mut _partition_shift_scaled = (partition_shift * num_heads) % (num_heads * 2);
+        let _overlapping = num_heads * 2;
 
-        if partition_shift_scaled > 15 {
-            partition_shift_scaled -= 15;
+        if _partition_shift_scaled > _overlapping {
+           _partition_shift_scaled -= _overlapping;
         }
 
         Self {
@@ -65,7 +66,7 @@ impl SparseSelfAttentionLayer {
             activated_output: vec![],
             norm_layer: _norm_layer,
             discrete_wavelet_layer: None,
-            input_partition_order: partition_shift_scaled,
+            input_partition_order: _partition_shift_scaled,
             input_batch: None,
             output_batch: None,
             gradient: None,

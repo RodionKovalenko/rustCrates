@@ -8,7 +8,7 @@ use crate::neural_networks::{
         layer_output_struct::LayerOutput,
         norm_layer::NormalNormLayer,
     },
-    network_types::{transformer::transformer_builder::NUM_SELF_ATT_LAYERS, wavelet_discrete_layer::DiscreteWaveletLayer},
+    network_types::{transformer::{transformer_updater::calculate_alpha}, wavelet_discrete_layer::DiscreteWaveletLayer},
     utils::matrix::{add_matrix_3d, scale_matrix_3d_by_scalar},
 };
 use num::Complex;
@@ -51,7 +51,7 @@ impl SelfAttentionLayer {
         let _norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(cols, epsilon, learning_rate))));
         let _dwt_layer = Some(DiscreteWaveletLayer::new());
 
-        let alpha = (3.0 * NUM_SELF_ATT_LAYERS as f64).powf(0.25);
+        let alpha = calculate_alpha();
         let beta = 1.0 / alpha;
 
         Self {

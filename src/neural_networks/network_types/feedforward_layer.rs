@@ -8,7 +8,8 @@ use crate::neural_networks::{
         linear_layer::LinearLayer,
         norm_layer::NormalNormLayer,
     },
-    utils::matrix::add_matrix_3d,
+    network_types::transformer::transformer_updater::calculate_alpha,
+    utils::matrix::{add_matrix_3d, scale_matrix_3d_by_scalar},
 };
 use num::Complex;
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,8 @@ pub struct FeedForwardLayer {
     pub norm_layer: Option<LayerEnum>,
     pub gradient: Option<Gradient>,
     pub learning_rate: f64,
+    pub alpha: f64,
+    pub beta: f64,
 
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
@@ -52,6 +55,9 @@ impl FeedForwardLayer {
         let _norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(rows, epsilon, learning_rate))));
         let _rms_norm_layer = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(rows, epsilon, learning_rate))));
 
+        let alpha = calculate_alpha();
+        let beta = 1.0 / alpha;
+
         layers.push(LayerEnum::Dense(Box::new(dense_layer)));
         layers.push(LayerEnum::Dense(Box::new(_dense_layer_2)));
         // layers.push(LayerEnum::Linear(Box::new(_linear_layer)));
@@ -66,6 +72,8 @@ impl FeedForwardLayer {
             padding_mask_batch: None,
             time_step: 0,
             batch_size: 0,
+            alpha: alpha,
+            beta: beta,
         }
     }
 }
@@ -133,7 +141,8 @@ impl FeedForwardLayer {
         }
 
         // Residual connection
-        output = add_matrix_3d(&output, &input_batch);
+        let batch_output_scaled = scale_matrix_3d_by_scalar(&output, self.beta);
+        output = add_matrix_3d(&batch_output_scaled, &input_batch);
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(output.clone());
@@ -144,6 +153,7 @@ impl FeedForwardLayer {
 
     pub fn backward(&mut self, prev_gradients: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
         let mut output_gradients = prev_gradients.clone();
+        output_gradients = scale_matrix_3d_by_scalar(&output_gradients, self.beta);
 
         let mut gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(prev_gradients.clone());

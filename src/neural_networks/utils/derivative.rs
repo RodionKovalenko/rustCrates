@@ -261,8 +261,8 @@ pub fn backpropagate_softmax_masked_real(softmax_jacobian: &Vec<Vec<Vec<f64>>>, 
             // Skip updating gradients for masked positions (zero out dl_dz[i])
             continue;
         }
-        for j in 0..num_cols {
-            for k in 0..num_cols {
+        for j in 0..dl_ds[i].len() {
+            for k in 0..dl_ds[i].len() {
                 dl_dz[i][j] += softmax_jacobian[i][j][k] * dl_ds[i][k].re;
             }
         }
@@ -337,7 +337,10 @@ pub fn get_gradient_swish(b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> 
     let sigmoid = activate_output_complex(b, ActivationType::SIGMOID);
     let one = Complex::new(1.0, 0.0);
 
-    b.iter().zip(sigmoid.iter()).map(|(row_b, row_sigma)| row_b.iter().zip(row_sigma.iter()).map(|(&z, &sigma_z)| sigma_z + z * sigma_z * (one - sigma_z)).collect()).collect()
+    b.iter()
+        .zip(sigmoid.iter())
+        .map(|(row_b, row_sigma)| row_b.iter().zip(row_sigma.iter()).map(|(&z, &sigma_z)| sigma_z + z * sigma_z * (one - sigma_z)).collect())
+        .collect()
 }
 
 pub fn get_gradient_complex(activated_data: &Vec<Vec<Complex<f64>>>, input_data: &Vec<Vec<Complex<f64>>>, activation: ActivationType) -> Vec<Vec<Complex<f64>>> {
@@ -737,7 +740,13 @@ where
     grad_batch
 }
 
-pub fn numerical_gradient_weights_multiple_layers_without_loss<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>, output: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
+pub fn numerical_gradient_weights_multiple_layers_without_loss<F>(
+    f: &mut F,
+    input: Vec<Vec<Vec<Complex<f64>>>>,
+    weights: &Vec<Vec<Complex<f64>>>,
+    output: Vec<Vec<Vec<Complex<f64>>>>,
+    epsilon: f64,
+) -> Vec<Vec<Vec<Complex<f64>>>>
 where
     F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>, &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Vec<Complex<f64>>>>,
 {
@@ -781,7 +790,12 @@ where
     grad_batch
 }
 
-pub fn numerical_gradient_weigts_transformer_multiple_layers_without_loss<F>(f: &mut F, weights: &Vec<Vec<Complex<f64>>>, output: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
+pub fn numerical_gradient_weigts_transformer_multiple_layers_without_loss<F>(
+    f: &mut F,
+    weights: &Vec<Vec<Complex<f64>>>,
+    output: Vec<Vec<Vec<Complex<f64>>>>,
+    epsilon: f64,
+) -> Vec<Vec<Vec<Complex<f64>>>>
 where
     F: FnMut(&Vec<Vec<Complex<f64>>>) -> Vec<Vec<Vec<Complex<f64>>>>,
 {
@@ -1075,7 +1089,20 @@ where
     F: Fn(&Vec<Vec<Complex<f64>>>) -> Vec<Vec<f64>>,
 {
     let num_rows = z.len();
-    let num_cols = z[0].len();
+    let mut num_cols = z[0].len();
+
+    let mut max_cols_dim = num_cols;
+
+    println!("Numerical Gradient Check: num_rows = {}, num_cols = {}", num_rows, num_cols);
+
+    for z_col in z.iter() {
+        if z_col.len() > max_cols_dim {
+            max_cols_dim = z_col.len();
+        }
+    }
+
+    num_cols = max_cols_dim;
+    println!("Max cols dim determined: {}", max_cols_dim);
 
     // Gradient[i][k][j] = ∂f[i][k] / ∂z[i][j]
     let mut gradient = vec![vec![vec![Complex::new(0.0, 0.0); num_cols]; num_cols]; num_rows];
@@ -1085,28 +1112,30 @@ where
             // Perturb real part of z[i][j]
             let mut z_plus = z.clone();
             let mut z_minus = z.clone();
-            z_plus[i][j].re += epsilon;
-            z_minus[i][j].re -= epsilon;
+
+            let col_len = z_plus[i].len();
+            z_plus[i][j % col_len].re += epsilon;
+            z_minus[i][j % col_len].re -= epsilon;
 
             let f_plus = f(&z_plus);
             let f_minus = f(&z_minus);
 
             for k in 0..num_cols {
-                let re_grad = (f_plus[i][k] - f_minus[i][k]) / (2.0 * epsilon);
+                let re_grad = (f_plus[i][k % f_plus[i].len()] - f_minus[i][k % f_minus[i].len()]) / (2.0 * epsilon);
                 gradient[i][k][j].re = re_grad;
             }
 
             // Perturb imaginary part of z[i][j]
             let mut z_plus = z.clone();
             let mut z_minus = z.clone();
-            z_plus[i][j].im += epsilon;
-            z_minus[i][j].im -= epsilon;
+            z_plus[i][j % col_len].im += epsilon;
+            z_minus[i][j % col_len].im -= epsilon;
 
             let f_plus = f(&z_plus);
             let f_minus = f(&z_minus);
 
             for k in 0..num_cols {
-                let im_grad = (f_plus[i][k] - f_minus[i][k]) / (2.0 * epsilon);
+                let im_grad = (f_plus[i][k % f_plus[i].len()] - f_minus[i][k % f_minus[i].len()]) / (2.0 * epsilon);
                 gradient[i][k][j].im = im_grad;
             }
         }
@@ -1177,7 +1206,10 @@ pub fn test_gradient_error_1d_f64(numerical_grad: &Vec<f64>, analytical_grad: &V
         let rel_diff = abs_diff / max_val;
 
         if rel_diff > epsilon {
-            println!("Gradient mismatch: numerical = {:.12}, analytical = {:.12}, abs_diff = {:.12}, rel_diff = {:.12}", val_numerical, val_analytical, abs_diff, rel_diff);
+            println!(
+                "Gradient mismatch: numerical = {:.12}, analytical = {:.12}, abs_diff = {:.12}, rel_diff = {:.12}",
+                val_numerical, val_analytical, abs_diff, rel_diff
+            );
         }
 
         assert!(rel_diff < epsilon);
@@ -1192,7 +1224,10 @@ pub fn test_gradient_error_1d(numerical_grad: &Vec<Complex<f64>>, analytical_gra
         let rel_diff = abs_diff / max_val;
 
         if rel_diff > epsilon {
-            println!("Gradient mismatch: numerical = {:.12}, analytical = {:.12}, abs_diff = {:.12}, rel_diff = {:.12}", val_numerical, val_analytical, abs_diff, rel_diff);
+            println!(
+                "Gradient mismatch: numerical = {:.12}, analytical = {:.12}, abs_diff = {:.12}, rel_diff = {:.12}",
+                val_numerical, val_analytical, abs_diff, rel_diff
+            );
         }
 
         assert!(rel_diff < epsilon);

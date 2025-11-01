@@ -3,12 +3,19 @@ mod test_softmax_layer {
     use crate::{
         neural_networks::{
             network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
-            network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
+            network_types::{
+                neural_network_generic::OperationMode,
+                transformer::{
+                    sparse_masked_attention_head::{calculate_window_tokens, SparseMaskedAttentionHead},
+                    transformer_network::cross_entropy_loss_batch,
+                },
+            },
             utils::{
                 activation::{gelu_complex, sigmoid_complex, softmax_complex_norm, softmax_complex_real, softsign_complex},
                 derivative::{
-                    backpropagate_softmax_masked_norm, gelu_derivative_complex, global_relative_error_2d_l2, global_relative_error_l2, norm_softmax_derivative_complex, numerical_gradient_check_f64, numerical_gradient_input, numerical_gradient_input_batch, sigmoid_derivative_complex,
-                    softmax_derivative_complex_jacobian, softsign_derivative_complex, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d,
+                    backpropagate_softmax_masked_norm, gelu_derivative_complex, global_relative_error_2d_l2, global_relative_error_l2, norm_softmax_derivative_complex, numerical_gradient_check_f64,
+                    numerical_gradient_input, numerical_gradient_input_batch, sigmoid_derivative_complex, softmax_derivative_complex_jacobian, softsign_derivative_complex, test_gradient_batch_error,
+                    test_gradient_error_1d, test_gradient_error_2d,
                 },
                 random_arrays::{generate_random_complex_2d, generate_random_complex_3d, generate_random_u32_batch},
             },
@@ -148,7 +155,12 @@ mod test_softmax_layer {
 
     #[test]
     fn test_softsign() {
-        let test_values = vec![Complex::new(1.0, 2.0), Complex::new(-2.345451523555475, 15.239089157237373), Complex::new(0.5, -0.5), Complex::new(1.0, 1.0)];
+        let test_values = vec![
+            Complex::new(1.0, 2.0),
+            Complex::new(-2.345451523555475, 15.239089157237373),
+            Complex::new(0.5, -0.5),
+            Complex::new(1.0, 1.0),
+        ];
 
         let h = 1e-7; // Step size for numerical gradient
 
@@ -238,6 +250,45 @@ mod test_softmax_layer {
 
         println!("\n dim analytical gradient {:?}", analytical_gradient);
         println!("\n dim numerical gradient {:?}", numerical_gradient);
+
+        test_gradient_batch_error(&numerical_gradient, &analytical_gradient, epsilon);
+
+        let global_error = global_relative_error_l2(&numerical_gradient, &analytical_gradient);
+        println!("\n\n global relative error input gradient: {:?}", &global_error);
+    }
+
+    #[test]
+    fn test_softmax_sparse_gradient() {
+        let input_dim: usize = 16; // Match the input dimension with your input batch
+        let output_dim = 4; // Match output_dim to your layer's output
+        let epsilon = 1e-6;
+
+        // Define a small input batch, [2][2][3]
+        let q: Vec<Vec<Complex<f64>>> = generate_random_complex_2d(input_dim, output_dim);
+        let k: Vec<Vec<Complex<f64>>> = generate_random_complex_2d(input_dim, output_dim);
+
+        let sparse_attention_head = SparseMaskedAttentionHead::new(output_dim, output_dim, 1, 0.001);
+
+        let v_window_tokens_sequence: Vec<Vec<Vec<Complex<f64>>>> = calculate_window_tokens(&k, sparse_attention_head.window_size);
+        let output = sparse_attention_head.calculate_local_attention(&q, &v_window_tokens_sequence, true);
+
+        let softmax_values: Vec<Vec<f64>> = softmax_complex_real(&output);
+
+        for sv in &softmax_values {
+            println!("\n softmax row: {:?}", sv.len());
+        }
+
+        let analytical_gradient: Vec<Vec<Vec<f64>>> = softmax_derivative_complex_jacobian(&softmax_values);
+        let analytical_gradient = convert_to_c_f64_3d(&analytical_gradient);
+        let numerical_gradient: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_check_f64(softmax_complex_real, &output, epsilon);
+
+        println!("\n dim analytical gradient {:?}", analytical_gradient);
+        println!("\n dim numerical gradient {:?}", numerical_gradient);
+
+        for i in 0..analytical_gradient.len() {
+            println!("\n analytical gradient[{}] len: {} ", i, analytical_gradient[i].len());
+            println!("\n numerical gradient[{}] len: {} ", i, numerical_gradient[i].len());
+        }
 
         test_gradient_batch_error(&numerical_gradient, &analytical_gradient, epsilon);
 

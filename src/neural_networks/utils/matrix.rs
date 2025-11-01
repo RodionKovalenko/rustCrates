@@ -12,6 +12,7 @@ use std::ops::{Add, Mul, Sub};
 use std::sync::{Arc, Mutex};
 
 use crate::neural_networks::network_types::transformer::transformer_updater::VERBOSE;
+use crate::neural_networks::utils::adam_w::MAX_NORM;
 
 extern "C" {
     fn zgemm_(transa: *const c_char, transb: *const c_char, m: *const i64, n: *const i64, k: *const i64, alpha: *const Complex<f64>, a: *const Complex<f64>, lda: *const i64, b: *const Complex<f64>, ldb: *const i64, beta: *const Complex<f64>, c: *mut Complex<f64>, ldc: *const i64);
@@ -926,8 +927,8 @@ pub fn clip_all_gradients_by_global_norm_3d(grads: &mut Vec<Vec<Vec<Complex<f64>
     }
 }
 
-pub fn clip_all_gradients_by_global_norm_2d(grads: &mut Vec<Vec<Complex<f64>>>, bias: &mut Vec<Complex<f64>>, total_norm: f64, max_norm: f64) {
-    if total_norm > max_norm {
+pub fn clip_all_gradients_by_global_norm_2d(grads: &mut Vec<Vec<Complex<f64>>>, bias: &mut Vec<Complex<f64>>, total_norm: f64, _max_norm: f64) {
+    if total_norm > MAX_NORM {
         let scale = 1.0 / total_norm;
         for row in grads.iter_mut() {
             for val in row.iter_mut() {
@@ -940,22 +941,14 @@ pub fn clip_all_gradients_by_global_norm_2d(grads: &mut Vec<Vec<Complex<f64>>>, 
 }
 
 pub fn normalize_gradients_batch(gradients_batch: &mut Vec<Vec<Vec<Complex<f64>>>>) {
-    let mut norm: f64 = 0.0;
+    let norm: f64 = gradients_batch.iter().flatten().flatten().map(|g| g.norm_sqr()).sum::<f64>().sqrt();
 
-    for gradients in gradients_batch.iter() {
-        for row in gradients.iter() {
-            for val in row.iter() {
-                norm += val.norm_sqr();
-            }
-        }
-    }
-    norm = norm.sqrt();
-
-    if norm > 0.0 {
+    if norm > MAX_NORM {
+        let scale = MAX_NORM / norm;
         for gradients in gradients_batch.iter_mut() {
             for row in gradients.iter_mut() {
                 for val in row.iter_mut() {
-                    *val /= norm;
+                    *val *= scale;
                 }
             }
         }
@@ -963,26 +956,25 @@ pub fn normalize_gradients_batch(gradients_batch: &mut Vec<Vec<Vec<Complex<f64>>
 }
 
 pub fn normalize_gradients(gradients: &mut Vec<Vec<Complex<f64>>>) {
-    for row in gradients.iter_mut() {
-        let norm_sq: f64 = row.iter().map(|c| c.norm_sqr()).sum();
-          let norm = (norm_sq + 1e-12).sqrt();
+    let norm: f64 = gradients.iter().flatten().map(|g| g.norm_sqr()).sum::<f64>().sqrt();
 
-        // avoid division by zero
-        if norm > 1e-12 {
+    if norm > MAX_NORM {
+        let scale = MAX_NORM / norm;
+        for row in gradients.iter_mut() {
             for val in row.iter_mut() {
-                *val /= norm;
+                *val *= scale;
             }
         }
     }
 }
 
 pub fn normalize_bias(bias: &mut Vec<Complex<f64>>) {
-    let norm_sq: f64 = bias.iter().map(|c| c.norm_sqr()).sum();
-    let norm = (norm_sq + 1e-12).sqrt();
+    let norm: f64 = bias.iter().map(|g| g.norm_sqr()).sum::<f64>().sqrt();
 
-    if norm > 1e-12 {
+    if norm > MAX_NORM {
+        let scale = MAX_NORM / norm;
         for val in bias.iter_mut() {
-            *val /= norm;
+            *val *= scale;
         }
     }
 }
