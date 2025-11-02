@@ -10,11 +10,8 @@ use crate::{
         utils::{
             activation::softmax_complex_padding_real,
             adam_w::calculate_adam_w,
-            derivative::{backpropagate_softmax_masked_real, softmax_derivative_complex_jacobian, test_gradient_batch_error_f64},
-            matrix::{
-                add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, multiply_complex_with_f64, multiply_f64_complex,
-                transpose,
-            },
+            derivative::softmax_attention_backward_fused,
+            matrix::{add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, transpose},
             weights_initializer::initialize_weights_complex,
         },
     },
@@ -424,45 +421,80 @@ impl SparseMaskedAttentionHead {
         restored_matrix
     }
 
-    fn sparse_softmax_derivative_complex(&self, data: &Vec<f64>, token_ind: usize, seq_len: usize) -> Vec<Vec<f64>> {
-        // let mut jacobian: Vec<Vec<f64>> = vec![vec![0.0; seq_len]; seq_len];
-        let mut jacobian: Vec<Vec<f64>> = vec![vec![0.0; data.len()]; data.len()];
+    pub fn build_original_indices(&self, input: &Vec<Vec<f64>>) -> Vec<Vec<usize>> {
+        let mut indices_matrix: Vec<Vec<usize>> = Vec::new();
 
-        let (start_ind, end_ind) = calculate_start_end_indices(token_ind, self.window_size, seq_len);
+        for token_index in 0..input.len() {
+            indices_matrix.push(self.build_sparse_row_indices(token_index, self.window_size, input.len()));
+        }
 
-        let range: Vec<usize> = (start_ind..end_ind).collect::<Vec<usize>>();
+        indices_matrix
+    }
 
-        // Loop through each pair of indices (i, j)
-        for i in range.iter() {
-            let position_i = range.iter().position(|&x| x == *i).unwrap();
-            for j in range.iter() {
-                let position_j = range.iter().position(|&x| x == *j).unwrap();
-                if i == j {
-                    // Diagonal elements: s_i * (1 - s_i)
-                    jacobian[position_i][position_j] = data[position_i] * (1.0 - data[position_i]);
-                    // jacobian[*i][*j] = data[position_i] * (1.0 - data[position_i]);
-                } else {
-                    // Off-diagonal elements: -s_i * s_j
-                    jacobian[position_i][position_j] = -data[position_i] * data[position_j];
-                    //jacobian[*i][*j] = -data[position_i] * data[position_j];
-                }
+    pub fn build_sparse_row_indices(&self, token_index: usize, window_size: usize, seq_len: usize) -> Vec<usize> {
+        let (start_ind, end_ind) = calculate_start_end_indices(token_index, window_size, seq_len);
+        let mut indices: Vec<usize> = Vec::new();
+
+        for i in start_ind..end_ind {
+            indices.push(i);
+        }
+
+        indices
+    }
+
+    pub fn softmax_attention_backward_sparse(
+        &self,
+        softmax_vals: &Vec<Vec<f64>>,
+        softmax_idx: &Vec<Vec<usize>>,
+        dl_do: &Vec<Vec<Complex<f64>>>,
+        do_ds: &Vec<Vec<Complex<f64>>>,
+        padding_mask: &Vec<u32>,
+    ) -> Vec<Vec<Complex<f64>>> {
+        let n = dl_do.len();
+        let d = dl_do[0].len();
+
+        let mut dl_dz = vec![vec![Complex::new(0.0, 0.0); n]; n];
+
+        // Pre-transpose V
+        let mut v_t = vec![vec![Complex::new(0.0, 0.0); n]; d];
+        for i in 0..n {
+            for j in 0..d {
+                v_t[j][i] = do_ds[i][j];
             }
         }
 
-        jacobian
-    }
+        for i in 0..n {
+            if padding_mask[i] == 0 {
+                continue;
+            }
 
-    pub fn sparse_softmax_derivative_complex_jacobian(&self, softmax_values: &Vec<Vec<f64>>) -> Vec<Vec<Vec<f64>>> {
-        let seq_len = softmax_values.len();
+            let cols = &softmax_idx[i]; // indices in this row that exist
+            let values = &softmax_vals[i]; // sparse softmax row
 
-        // 3D tensor to hold Jacobian matrices for each row
-        let mut derivative: Vec<Vec<Vec<f64>>> = Vec::new();
+            // Compute dot = Σ s[k] * u_k only over sparse entries
+            let mut dot = 0.0;
 
-        for i in 0..seq_len {
-            derivative.push(self.sparse_softmax_derivative_complex(&softmax_values[i], i, seq_len));
+            for (p, &col) in cols.iter().enumerate() {
+                let mut u_k = 0.0;
+                for j in 0..d {
+                    u_k += dl_do[i][j].re * v_t[j][col].re;
+                }
+                dot += values[p] * u_k;
+            }
+
+            // Now compute dl/dz for sparse positions
+            for (p, &col) in cols.iter().enumerate() {
+                let mut u_j = 0.0;
+                for j in 0..d {
+                    u_j += dl_do[i][j].re * v_t[j][col].re;
+                }
+
+                let s = values[p];
+                dl_dz[i][col] = Complex::new(s * (u_j - dot), 0.0);
+            }
         }
 
-        derivative
+        dl_dz
     }
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
@@ -527,26 +559,13 @@ impl SparseMaskedAttentionHead {
 
             // Compute activation derivative softmax
             // 16x(2/3)
-            let attention_weights_restored = self.restore_sparse_matrix_f64(&attention_weights_batch[batch_ind], self.window_size, input_batch[batch_ind].len());
-            let softmax_derivative: Vec<Vec<Vec<f64>>> = softmax_derivative_complex_jacobian(&attention_weights_restored);
+            //let attention_weights_restored = self.restore_sparse_matrix_f64(&attention_weights_batch[batch_ind], self.window_size, input_batch[batch_ind].len());
+            // 16x16 original
+            let sparse_attention_idxs = self.build_original_indices(&attention_weights_batch[batch_ind]);
+            let dl_da: Vec<Vec<Complex<f64>>> =
+                self.softmax_attention_backward_sparse(&attention_weights_batch[batch_ind], &sparse_attention_idxs, &previous_gradient, &v, &padding_mask_batch[batch_ind]);
 
-            // 16 x(2x2/3x3)
-            let sparse_softmax_derivative: Vec<Vec<Vec<f64>>> = self.sparse_softmax_derivative_complex_jacobian(&attention_weights_batch[batch_ind]);
-
-            // println!("softmax_derivative dim: {}, {}, {}", &softmax_derivative.len(), &softmax_derivative[0].len(),  &softmax_derivative[0][0].len());
-
-            // Gradient Wq
-            //    => dl/dwq = XT * (Gt * VT * grad(A) * Kt/sqtr(dk))
-            //    dl/dwq = dl/ds * ds/da * da/dq * dq/dWq
-            // dl/dWq = (((dl/dO * dO/dS) * dS/dA) * dA/dQ) * dQ/dWq
-            // 16x4 x 4x16 = 16x16
-            let dl_ds: Vec<Vec<Complex<f64>>> = multiply_complex(&previous_gradient, &conjugate_transpose(&v));
-            // 16x16 x 16x16 = 16x16
-            let dl_da: Vec<Vec<f64>> = backpropagate_softmax_masked_real(&softmax_derivative, &dl_ds, &padding_mask_batch[batch_ind]);
-            // println!("dl_da dim: {}, {}", &dl_da.len(), &dl_da[0].len(),);
-            // 2,2 * 4, 2 = 2 * 2 * 2, 4 = 2,4
-            let dl_dq: Vec<Vec<Complex<f64>>> = multiply_complex_with_f64(&k_scaled, &transpose(&dl_da));
-
+            let dl_dq: Vec<Vec<Complex<f64>>> = multiply_complex(&k_scaled, &conjugate_transpose(&dl_da));
             // println!("dl_dq dim: {}, {}", &dl_dq.len(), &dl_dq[0].len(),);
             // 2,5 * 4,2 = 5,2 * 2, 4 = 5, 4
             let dl_dwq: Vec<Vec<Complex<f64>>> = multiply_complex(&conjugate_transpose(&input_batch[batch_ind]), &conjugate_transpose(&dl_dq));
@@ -556,7 +575,7 @@ impl SparseMaskedAttentionHead {
             // Gradient Wk
             //dl/dWk = (((dl/dO * dO/dS) * dS/dA) * dA/dKT) * dKT/dWk
             // 2,2 * 2,4 = 2,2 * 2,4 = 2,4
-            let dl_dk: Vec<Vec<Complex<f64>>> = multiply_complex_with_f64(&conjugate_transpose(&q_scaled), &dl_da);
+            let dl_dk: Vec<Vec<Complex<f64>>> = multiply_complex(&conjugate_transpose(&q_scaled), &dl_da);
 
             // println!("dl_dk dim: {}, {}", &dl_dk.len(), &dl_dk[0].len());
             // 2,5 * 2,4 = 5,2 * 2, 4 = 5,4

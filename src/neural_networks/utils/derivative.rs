@@ -159,6 +159,58 @@ pub fn softmax_derivative_complex_matrix(softmax_values: &Vec<Vec<f64>>) -> Vec<
     grouped_derivated
 }
 
+pub fn softmax_attention_backward_fused(
+    softmax_vals: &Vec<Vec<f64>>,   // s: 16×16
+    dl_do: &Vec<Vec<Complex<f64>>>, // ∂L/∂o: 16×4
+    do_ds: &Vec<Vec<Complex<f64>>>, // do_ds matrix: 16×4
+    padding_mask: &Vec<u32>,
+) -> Vec<Vec<Complex<f64>>> // ∂L/∂z: 16×16
+{
+    let n = softmax_vals.len(); // 16
+    let d = dl_do[0].len(); // 4
+
+    let mut dl_dz = vec![vec![Complex::new(0.0, 0.0); n]; n];
+
+    // Pretranspose V for better cache
+    let mut v_t = vec![vec![Complex::new(0.0, 0.0); n]; d];
+
+    for i in 0..n {
+        for j in 0..d {
+            v_t[j][i] = do_ds[i][j];
+        }
+    }
+
+    for i in 0..n {
+        if padding_mask[i] == 0 {
+            continue;
+        }
+
+        // Compute u = sum_j dl/do[i][j] * Vᵀ[j]   (length n) but lazily
+        // Actually we only care about dot = s·u, not u fully
+
+        let mut dot = 0.0;
+
+        for k in 0..n {
+            let mut u_k = 0.0;
+            for j in 0..d {
+                u_k += dl_do[i][j].re * v_t[j][k].re;
+            }
+            dot += softmax_vals[i][k] * u_k;
+        }
+
+        // Final dl/dz row
+        for j in 0..n {
+            let mut u_j = 0.0;
+            for c in 0..d {
+                u_j += dl_do[i][c].re * v_t[c][j].re;
+            }
+            dl_dz[i][j] = Complex::new(softmax_vals[i][j] * (u_j - dot), 0.0);
+        }
+    }
+
+    dl_dz
+}
+
 pub fn norm_softmax_derivative(input: &Vec<Complex<f64>>, softmax_output: &Vec<f64>) -> Vec<Vec<Complex<f64>>> {
     let n = input.len();
     let mut jacobian = vec![vec![Complex::new(0.0, 0.0); n]; n];
