@@ -3,7 +3,6 @@ use std::{
     ops::{AddAssign, Mul},
 };
 
-use faer::sparse;
 use num::{Complex, Zero};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
