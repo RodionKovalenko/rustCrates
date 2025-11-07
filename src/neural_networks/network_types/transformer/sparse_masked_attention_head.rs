@@ -1,5 +1,9 @@
-use std::f64;
+use std::{
+    f64,
+    ops::{AddAssign, Mul},
+};
 
+use faer::sparse;
 use num::{Complex, Zero};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
@@ -10,7 +14,6 @@ use crate::{
         utils::{
             activation::softmax_complex_padding_real,
             adam_w::calculate_adam_w,
-            derivative::softmax_attention_backward_fused,
             matrix::{add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, transpose},
             weights_initializer::initialize_weights_complex,
         },
@@ -134,6 +137,10 @@ impl SparseMaskedAttentionHead {
         attention_layer
     }
 }
+
+pub trait Scalar: Copy + AddAssign + Mul<f64, Output = Self> + Default {}
+impl Scalar for f64 {}
+impl Scalar for Complex<f64> {}
 
 // Implement BaseLayer for Layer struct
 impl SparseMaskedAttentionHead {
@@ -274,31 +281,80 @@ impl SparseMaskedAttentionHead {
         output
     }
 
-    pub fn multiply_sparse_backward(&self, v: &Vec<Vec<Complex<f64>>>, attention_sparse_weights: &Vec<Vec<f64>>) -> Vec<Vec<Complex<f64>>> {
+    // pub fn multiply_sparse_backward(&self, v: &Vec<Vec<Complex<f64>>>, attention_sparse_weights: &Vec<Vec<f64>>) -> Vec<Vec<Complex<f64>>> {
+    //     let n_rows = v.len();
+    //     let n_cols = attention_sparse_weights.len();
+
+    //     let mut output = vec![vec![Complex::zero(); n_cols]; n_rows];
+
+    //     let mut range: Vec<usize>;
+    //     let mut position: usize;
+
+    //     for k in 0..n_rows {
+    //         for q in 0..n_cols {
+    //             for p in 0..n_cols {
+    //                 let (start_ind, end_ind) = calculate_start_end_indices(p, self.window_size, n_cols);
+
+    //                 // e.g. p = 3, start_ind = 2, end_ind = 5
+    //                 if q >= start_ind && q < end_ind {
+    //                     // now we should find at what position the q index is located with regard to the start_ind and end_ind
+    //                     // the range is start_ind..end_ind, e.g. 2..5 = [2,3,4]
+
+    //                     range = (start_ind..end_ind).collect();
+    //                     // find position in the range
+    //                     position = range.iter().position(|&x| x == q).unwrap();
+
+    //                     output[k][q] += v[k][p] * attention_sparse_weights[p][position];
+    //                 }
+    //             }
+    //         }
+    //     }
+
+    //     output
+    // }
+
+    pub fn multiply_sparse_backward<V, W>(&self, v: &Vec<Vec<V>>, attention_sparse_weights: &Vec<Vec<W>>) -> Vec<Vec<V>>
+    where
+        V: Scalar + Mul<W, Output = V>,
+        W: Copy,
+    {
         let n_rows = v.len();
         let n_cols = attention_sparse_weights.len();
 
-        let mut output = vec![vec![Complex::zero(); n_cols]; n_rows];
-
-        let mut range: Vec<usize>;
-        let mut position: usize;
+        let mut output = vec![vec![V::default(); n_cols]; n_rows];
 
         for k in 0..n_rows {
             for q in 0..n_cols {
                 for p in 0..n_cols {
                     let (start_ind, end_ind) = calculate_start_end_indices(p, self.window_size, n_cols);
 
-                    // e.g. p = 3, start_ind = 2, end_ind = 5
                     if q >= start_ind && q < end_ind {
-                        // now we should find at what position the q index is located with regard to the start_ind and end_ind
-                        // the range is start_ind..end_ind, e.g. 2..5 = [2,3,4]
-
-                        range = (start_ind..end_ind).collect();
-                        // find position in the range
-                        position = range.iter().position(|&x| x == q).unwrap();
+                        let position = (start_ind..end_ind).position(|x| x == q).unwrap();
 
                         output[k][q] += v[k][p] * attention_sparse_weights[p][position];
                     }
+                }
+            }
+        }
+
+        output
+    }
+
+    pub fn transpose_sparse(&self, sparse_matrix: &Vec<Vec<Complex<f64>>>, sparse_matrix_ind: &Vec<Vec<usize>>) -> Vec<Vec<Complex<f64>>> {
+        let n_rows = sparse_matrix.len();
+
+        let mut output: Vec<Vec<Complex<f64>>> = Vec::new();
+
+        for i in 0..n_rows {
+            output.push(vec![Complex::zero(); sparse_matrix[i].len()]);
+        }
+
+        for i in 0..n_rows {
+            for j in 0..sparse_matrix[i].len() {
+                let position_j = sparse_matrix_ind[i][j];
+
+                if let Some((sparse_i, sparse_j)) = calculate_sparse_i_j(position_j, i, self.window_size, n_rows) {
+                    output[sparse_i][sparse_j] = sparse_matrix[i][j];
                 }
             }
         }
@@ -411,6 +467,16 @@ impl SparseMaskedAttentionHead {
         restored_matrix
     }
 
+    pub fn restore_sparse_matrix_zeroes(&self, input: &Vec<Vec<Complex<f64>>>, window_size: usize, seq_len: usize) -> Vec<Vec<Complex<f64>>> {
+        let mut restored_matrix: Vec<Vec<Complex<f64>>> = Vec::new();
+
+        for (token_index, row) in input.iter().enumerate() {
+            restored_matrix.push(restore_sparse_row_zeroes(&row, token_index, window_size, seq_len));
+        }
+
+        restored_matrix
+    }
+
     pub fn restore_sparse_matrix_f64(&self, input: &Vec<Vec<f64>>, window_size: usize, seq_len: usize) -> Vec<Vec<f64>> {
         let mut restored_matrix: Vec<Vec<f64>> = Vec::new();
 
@@ -442,7 +508,7 @@ impl SparseMaskedAttentionHead {
         indices
     }
 
-    pub fn softmax_attention_backward_sparse(
+    pub fn softmax_attention_backward_full(
         &self,
         softmax_vals: &Vec<Vec<f64>>,
         softmax_idx: &Vec<Vec<usize>>,
@@ -497,6 +563,68 @@ impl SparseMaskedAttentionHead {
         dl_dz
     }
 
+    pub fn softmax_backward_sparse_compressed(
+        &self,
+        softmax_vals: &Vec<Vec<f64>>,   // sparse softmax values per row
+        softmax_idx: &Vec<Vec<usize>>,  // original column indices
+        dl_do: &Vec<Vec<Complex<f64>>>, // ∂L/∂o
+        do_ds: &Vec<Vec<Complex<f64>>>, // ∂o/∂s
+        padding_mask: &Vec<u32>,
+    ) -> (Vec<Vec<Complex<f64>>>, Vec<Vec<usize>>) // sparse ∂L/∂z
+    {
+        let n = softmax_vals.len();
+        let d = dl_do[0].len();
+
+        let mut dl_dz_vals: Vec<Vec<Complex<f64>>> = Vec::with_capacity(n);
+        let mut dl_dz_idx: Vec<Vec<usize>> = Vec::with_capacity(n);
+
+        // Pre-transpose do_ds for easier indexing
+        let mut v_t = vec![vec![Complex::new(0.0, 0.0); n]; d];
+        for i in 0..n {
+            for j in 0..d {
+                v_t[j][i] = do_ds[i][j];
+            }
+        }
+
+        for i in 0..n {
+            if padding_mask[i] == 0 {
+                dl_dz_vals.push(vec![]);
+                dl_dz_idx.push(vec![]);
+                continue;
+            }
+
+            let cols = &softmax_idx[i];
+            let values = &softmax_vals[i];
+
+            // Compute u[col] = dl_do[i] ⋅ do_ds[:, col] for sparse columns
+            let mut u_vals: Vec<f64> = Vec::with_capacity(cols.len());
+            for &col in cols.iter() {
+                let mut u = 0.0;
+                for j in 0..d {
+                    u += dl_do[i][j].re * v_t[j][col].re;
+                }
+                u_vals.push(u);
+            }
+
+            // Compute dot = Σ s[k] * u_k
+            let mut dot = 0.0;
+            for (p, _) in cols.iter().enumerate() {
+                dot += values[p] * u_vals[p];
+            }
+
+            // Compute final dl/dz only for sparse entries
+            let mut grad_vals = Vec::with_capacity(cols.len());
+            for (p, _) in cols.iter().enumerate() {
+                grad_vals.push(Complex::new(values[p] * (u_vals[p] - dot), 0.0));
+            }
+
+            dl_dz_vals.push(grad_vals);
+            dl_dz_idx.push(cols.clone());
+        }
+
+        (dl_dz_vals, dl_dz_idx)
+    }
+
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
         // Input shape e.g. [2][5] and out shape of weights [5][4] => we get final output [2][4]
         let output_batch = self.output_batch.as_ref().expect("Output batch is missing in attention head layer");
@@ -521,33 +649,6 @@ impl SparseMaskedAttentionHead {
             let k: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &self.weights_k);
             let v: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &self.weights_v);
 
-            /*
-               A = Q*KT/sqtr(dk)
-               S = sigma(A)
-               O = S * V
-
-               dl/ds = Gt * VT
-               dl/da = Gt * VT * ds/da = dl/ds * ds/da
-               dl/dq = dl/ds * ds/da * da/dq = dl/da  * da/dq
-               dl/dwq = XT * dl/ds * ds/da * da/dq = XT * dl/dq
-
-               //Wq
-               => dl/dwq = XT * (Gt * VT * grad(A) * Kt/sqtr(dk))
-               dl/dwq = dl/ds * ds/da * da/dq * dq/dWq
-
-               //Wv
-               => dl/dWv = dl/do * do/dv * dv/dwv
-
-               //Wk
-               dl/dWk = dl/ds * ds/da * da/dk * dk/dWk
-
-            */
-
-            // Compute gradient of Wv
-            // => dl/dWv = dl/do * do/dv * dv/dwv
-            // 2, 4 * 2,2 = 4,2 * 2,2 = 4,2#
-
-            //let grad_wv = multiply_complex_with_f64(&transpose(&previous_gradient), &attention_weights_batch[batch_ind]);
             let grad_wv: Vec<Vec<Complex<f64>>> = self.multiply_sparse_backward(&transpose(&previous_gradient), &attention_weights_batch[batch_ind]);
             // 2,5 * 2, 4 = 5, 2 * 2, 4 = 5, 4
             gradient_v_batch[batch_ind] = multiply_complex(&conjugate_transpose(&input_batch[batch_ind]), &transpose(&grad_wv));
@@ -557,17 +658,21 @@ impl SparseMaskedAttentionHead {
             let k_scaled: Vec<Vec<Complex<f64>>> = scale_attention_scores(&transpose(&k), d_k);
             let q_scaled: Vec<Vec<Complex<f64>>> = scale_attention_scores(&q, d_k);
 
-            // Compute activation derivative softmax
-            // 16x(2/3)
-            //let attention_weights_restored = self.restore_sparse_matrix_f64(&attention_weights_batch[batch_ind], self.window_size, input_batch[batch_ind].len());
             // 16x16 original
             let sparse_attention_idxs = self.build_original_indices(&attention_weights_batch[batch_ind]);
-            let dl_da: Vec<Vec<Complex<f64>>> =
-                self.softmax_attention_backward_sparse(&attention_weights_batch[batch_ind], &sparse_attention_idxs, &previous_gradient, &v, &padding_mask_batch[batch_ind]);
+            // 16x(2/3)
+            let (dl_da, _dl_da_inds) = self.softmax_backward_sparse_compressed(&attention_weights_batch[batch_ind], &sparse_attention_idxs, &previous_gradient, &v, &padding_mask_batch[batch_ind]);
+            // let dl_da_restored: Vec<Vec<Complex<f64>>> = self.restore_sparse_matrix_zeroes(&dl_da, self.window_size, input_batch[batch_ind].len());
+            // let dl_dq: Vec<Vec<Complex<f64>>> = multiply_complex(&k_scaled, &transpose(&dl_da_restored));
 
-            let dl_dq: Vec<Vec<Complex<f64>>> = multiply_complex(&k_scaled, &conjugate_transpose(&dl_da));
-            // println!("dl_dq dim: {}, {}", &dl_dq.len(), &dl_dq[0].len(),);
-            // 2,5 * 4,2 = 5,2 * 2, 4 = 5, 4
+            println!("dl_da dim: {:?}", &dl_da);
+            let dl_da_transposed: Vec<Vec<Complex<f64>>> = self.transpose_sparse(&dl_da, &_dl_da_inds);
+
+            println!("dl_da_transposed dim: {:?}", &dl_da_transposed);
+
+            let dl_dq: Vec<Vec<Complex<f64>>> = self.multiply_sparse_backward(&k_scaled, &dl_da_transposed);
+            println!("dl_dq dim: {}, {}", &dl_dq.len(), &dl_dq[0].len());
+            // // 2,5 * 4,2 = 5,2 * 2, 4 = 5, 4
             let dl_dwq: Vec<Vec<Complex<f64>>> = multiply_complex(&conjugate_transpose(&input_batch[batch_ind]), &conjugate_transpose(&dl_dq));
             // println!("dl_dwq dim: {}, {}", &dl_dwq.len(), &dl_dwq[0].len());
             gradient_q_batch[batch_ind] = dl_dwq;
@@ -575,7 +680,7 @@ impl SparseMaskedAttentionHead {
             // Gradient Wk
             //dl/dWk = (((dl/dO * dO/dS) * dS/dA) * dA/dKT) * dKT/dWk
             // 2,2 * 2,4 = 2,2 * 2,4 = 2,4
-            let dl_dk: Vec<Vec<Complex<f64>>> = multiply_complex(&conjugate_transpose(&q_scaled), &dl_da);
+            let dl_dk: Vec<Vec<Complex<f64>>> = self.multiply_sparse_backward(&conjugate_transpose(&q_scaled), &dl_da);
 
             // println!("dl_dk dim: {}, {}", &dl_dk.len(), &dl_dk[0].len());
             // 2,5 * 2,4 = 5,2 * 2, 4 = 5,4
@@ -835,9 +940,34 @@ pub fn calculate_start_end_indices(token_index: usize, window_size: usize, seq_l
     (start_ind, end_ind)
 }
 
+pub fn calculate_sparse_i_j(original_i: usize, original_j: usize, window_size: usize, seq_len: usize) -> Option<(usize, usize)> {
+    let (start_ind, end_ind) = calculate_start_end_indices(original_i, window_size, seq_len);
+
+    if original_j >= start_ind && original_j < end_ind {
+        let sparse_j = original_j - start_ind;
+        Some((original_i, sparse_j))
+    } else {
+        None
+    }
+}
+
 pub fn restore_sparse_row(sparse_row: &Vec<Complex<f64>>, token_index: usize, window_size: usize, seq_len: usize) -> Vec<Complex<f64>> {
     let (start_ind, end_ind) = calculate_start_end_indices(token_index, window_size, seq_len);
     let mut row = vec![Complex::new(f64::NEG_INFINITY, f64::NEG_INFINITY); seq_len];
+    let mut index_in_row = 0;
+
+    for i in 0..seq_len {
+        if i >= start_ind && i < end_ind {
+            row[i] = sparse_row[index_in_row];
+            index_in_row += 1;
+        }
+    }
+    row
+}
+
+pub fn restore_sparse_row_zeroes(sparse_row: &Vec<Complex<f64>>, token_index: usize, window_size: usize, seq_len: usize) -> Vec<Complex<f64>> {
+    let (start_ind, end_ind) = calculate_start_end_indices(token_index, window_size, seq_len);
+    let mut row = vec![Complex::new(0.0, 0.0); seq_len];
     let mut index_in_row = 0;
 
     for i in 0..seq_len {
