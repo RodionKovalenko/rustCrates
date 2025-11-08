@@ -280,38 +280,6 @@ impl SparseMaskedAttentionHead {
         output
     }
 
-    // pub fn multiply_sparse_backward(&self, v: &Vec<Vec<Complex<f64>>>, attention_sparse_weights: &Vec<Vec<f64>>) -> Vec<Vec<Complex<f64>>> {
-    //     let n_rows = v.len();
-    //     let n_cols = attention_sparse_weights.len();
-
-    //     let mut output = vec![vec![Complex::zero(); n_cols]; n_rows];
-
-    //     let mut range: Vec<usize>;
-    //     let mut position: usize;
-
-    //     for k in 0..n_rows {
-    //         for q in 0..n_cols {
-    //             for p in 0..n_cols {
-    //                 let (start_ind, end_ind) = calculate_start_end_indices(p, self.window_size, n_cols);
-
-    //                 // e.g. p = 3, start_ind = 2, end_ind = 5
-    //                 if q >= start_ind && q < end_ind {
-    //                     // now we should find at what position the q index is located with regard to the start_ind and end_ind
-    //                     // the range is start_ind..end_ind, e.g. 2..5 = [2,3,4]
-
-    //                     range = (start_ind..end_ind).collect();
-    //                     // find position in the range
-    //                     position = range.iter().position(|&x| x == q).unwrap();
-
-    //                     output[k][q] += v[k][p] * attention_sparse_weights[p][position];
-    //                 }
-    //             }
-    //         }
-    //     }
-
-    //     output
-    // }
-
     pub fn multiply_sparse_backward<V, W>(&self, v: &Vec<Vec<V>>, attention_sparse_weights: &Vec<Vec<W>>) -> Vec<Vec<V>>
     where
         V: Scalar + Mul<W, Output = V>,
@@ -649,7 +617,6 @@ impl SparseMaskedAttentionHead {
             let v: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &self.weights_v);
 
             let grad_wv: Vec<Vec<Complex<f64>>> = self.multiply_sparse_backward(&transpose(&previous_gradient), &attention_weights_batch[batch_ind]);
-            // 2,5 * 2, 4 = 5, 2 * 2, 4 = 5, 4
             gradient_v_batch[batch_ind] = multiply_complex(&conjugate_transpose(&input_batch[batch_ind]), &transpose(&grad_wv));
 
             let d_k = k[0].len() as f64;
@@ -664,14 +631,8 @@ impl SparseMaskedAttentionHead {
             // let dl_da_restored: Vec<Vec<Complex<f64>>> = self.restore_sparse_matrix_zeroes(&dl_da, self.window_size, input_batch[batch_ind].len());
             // let dl_dq: Vec<Vec<Complex<f64>>> = multiply_complex(&k_scaled, &transpose(&dl_da_restored));
 
-            println!("dl_da dim: {:?}", &dl_da);
             let dl_da_transposed: Vec<Vec<Complex<f64>>> = self.transpose_sparse(&dl_da, &_dl_da_inds);
-
-            println!("dl_da_transposed dim: {:?}", &dl_da_transposed);
-
             let dl_dq: Vec<Vec<Complex<f64>>> = self.multiply_sparse_backward(&k_scaled, &dl_da_transposed);
-            println!("dl_dq dim: {}, {}", &dl_dq.len(), &dl_dq[0].len());
-            // // 2,5 * 4,2 = 5,2 * 2, 4 = 5, 4
             let dl_dwq: Vec<Vec<Complex<f64>>> = multiply_complex(&conjugate_transpose(&input_batch[batch_ind]), &conjugate_transpose(&dl_dq));
             // println!("dl_dwq dim: {}, {}", &dl_dwq.len(), &dl_dwq[0].len());
             gradient_q_batch[batch_ind] = dl_dwq;
@@ -761,12 +722,12 @@ impl SparseMaskedAttentionHead {
             mut prev_v_weights_k,
             mut prev_m_weights_v,
             mut prev_v_weights_v,
-            mut prev_m_bias_pos,
-            mut prev_v_bias_pos,
+            mut _prev_m_bias_pos,
+            mut _prev_v_bias_pos,
             mut prev_v_weights_q_hat,
             mut prev_v_weights_k_hat,
             mut prev_v_weights_v_hat,
-            mut prev_v_weights_p_hat,
+            mut _prev_v_weights_p_hat,
         ) = if let Some(previous_gradient) = &mut self.previous_gradient {
             (
                 previous_gradient.get_prev_m_weigths_q(),
@@ -829,23 +790,23 @@ impl SparseMaskedAttentionHead {
             time_step,
         );
 
-        let seq_len = grad_bias_pos.len();
-        let mut bias_pos_slice: Vec<Vec<Complex<f64>>> = self.bias_pos[0..seq_len].iter().map(|row| row[0..seq_len].to_vec()).collect();
-        calculate_adam_w(
-            &mut bias_pos_slice,
-            &grad_bias_pos,
-            &mut prev_m_bias_pos,
-            &mut prev_v_bias_pos,
-            &mut prev_v_weights_p_hat,
-            learning_rate,
-            time_step,
-        );
+        // let seq_len = grad_bias_pos.len();
+        // let mut bias_pos_slice: Vec<Vec<Complex<f64>>> = self.bias_pos[0..seq_len].iter().map(|row| row[0..seq_len].to_vec()).collect();
+        // calculate_adam_w(
+        //     &mut bias_pos_slice,
+        //     &grad_bias_pos,
+        //     &mut prev_m_bias_pos,
+        //     &mut prev_v_bias_pos,
+        //     &mut prev_v_weights_p_hat,
+        //     learning_rate,
+        //     time_step,
+        // );
 
-        for i in 0..seq_len {
-            for j in 0..seq_len {
-                self.bias_pos[i][j] = bias_pos_slice[i][j];
-            }
-        }
+        // for i in 0..seq_len {
+        //     for j in 0..seq_len {
+        //         self.bias_pos[i][j] = bias_pos_slice[i][j];
+        //     }
+        // }
 
         gradient.set_prev_m_weights_q(prev_m_weights_q);
         gradient.set_prev_v_weights_q(prev_v_weights_q);
@@ -853,13 +814,13 @@ impl SparseMaskedAttentionHead {
         gradient.set_prev_v_weights_k(prev_v_weights_k);
         gradient.set_prev_m_weights_v(prev_m_weights_v);
         gradient.set_prev_v_weights_v(prev_v_weights_v);
-        gradient.set_prev_m_bias_pos(prev_m_bias_pos);
-        gradient.set_prev_v_bias_pos(prev_v_bias_pos);
+        // gradient.set_prev_m_bias_pos(prev_m_bias_pos);
+        // gradient.set_prev_v_bias_pos(prev_v_bias_pos);
 
         gradient.set_prev_v_weights_q_hat(prev_v_weights_q_hat);
         gradient.set_prev_v_weights_k_hat(prev_v_weights_k_hat);
         gradient.set_prev_v_weights_v_hat(prev_v_weights_v_hat);
-        gradient.set_prev_v_weights_p_hat(prev_v_weights_p_hat);
+        // gradient.set_prev_v_weights_p_hat(prev_v_weights_p_hat);
 
         self.previous_gradient = Some(gradient.clone());
     }

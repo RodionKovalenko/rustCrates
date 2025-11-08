@@ -44,7 +44,8 @@ impl SparseSelfAttentionLayer {
         let head_cols = cols / num_heads; // Columns per attention head
 
         for _i in 0..num_heads {
-            let attention_head = SparseMaskedAttentionHead::create_default_attention_layer(rows, head_cols, LayerType::AttentionLayer, window_size, learning_rate);
+            let window_overlaping_shift = window_size + (_i) * window_size;
+            let attention_head = SparseMaskedAttentionHead::create_default_attention_layer(rows, head_cols, LayerType::AttentionLayer, window_overlaping_shift, learning_rate);
             attention_heads.push(attention_head);
         }
 

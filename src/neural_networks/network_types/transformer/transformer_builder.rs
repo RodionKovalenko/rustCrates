@@ -41,14 +41,16 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let rows: usize = embedding_dim_compressed;
     // Transformer block start
     let num_self_attention_layer: usize = NUM_SELF_ATT_LAYERS;
-    let origin_hidden_dim = 64 * 5;
+    let origin_hidden_dim = 320; // 64 * 5
+    let window_size = 2;
     for _i in 0..num_self_attention_layer {
         let num_attention_heads: usize = 4;
 
         // Colums are divided into number of heads
         let cols: usize = embedding_dim_compressed;
 
-        let attention_layer: SparseSelfAttentionLayer = SparseSelfAttentionLayer::new(num_attention_heads, rows, cols, _i + 1, learning_rate);
+
+        let attention_layer: SparseSelfAttentionLayer = SparseSelfAttentionLayer::new(num_attention_heads, rows, cols, window_size, learning_rate);
         layers.push(LayerEnum::SparseSelfAttention(Box::new(attention_layer)));
 
         // let attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
