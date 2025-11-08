@@ -212,7 +212,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
     let now = Instant::now();
     let mut layer_input = LayerInput::new_default();
     layer_input.set_calculate_gradient(false);
-    layer_input.set_forward_only(false);
+    layer_input.set_forward_only(true);
     layer_input.set_calculate_k_v_cache(true);
 
     print!("Antwort: ");
@@ -267,7 +267,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
 
         if time_step > 0 && layer_input.get_forward_only() {
             // let last_tokens: Vec<Vec<u32>> = batch_ids.iter().map(|seq| vec![*seq.last().unwrap()]).collect();
-            let last_n = MAX_CONTEXT_WINDOW_SIZE;
+            let last_n = 1;
 
             let last_tokens_batch: Vec<Vec<u32>> = batch_ids
                 .iter()

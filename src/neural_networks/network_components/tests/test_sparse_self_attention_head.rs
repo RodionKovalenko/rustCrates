@@ -332,7 +332,8 @@ mod test_sparse_self_attention_head {
 
         let mut sparse_attention_weights_causal_masked: Vec<Vec<Complex<f64>>> = sparse_attention_weights.clone();
 
-        sparse_attention_head.apply_sparse_causal_mask(&mut sparse_attention_weights_causal_masked);
+        //sparse_attention_head.apply_sparse_causal_mask(&mut sparse_attention_weights_causal_masked);
+        sparse_attention_head.apply_unified_mask(&mut sparse_attention_weights_causal_masked, &vec![1; seq_len]);
 
         for (i, row) in sparse_attention_weights_causal_masked.iter().enumerate() {
             println!("\n sparse original q row {}: {:?}", i, sparse_attention_weights[i]);
