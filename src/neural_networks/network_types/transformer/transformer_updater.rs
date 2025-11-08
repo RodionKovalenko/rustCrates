@@ -6,7 +6,7 @@ use crate::neural_networks::{
     utils::matrix::{normalize_bias, normalize_gradients, normalize_gradients_batch},
 };
 
-pub const VERBOSE: bool = true;
+pub const VERBOSE: bool = false;
 
 fn update_by_norm(transformer: &mut NeuralNetwork) {
     let mut global_weights = Vec::new();

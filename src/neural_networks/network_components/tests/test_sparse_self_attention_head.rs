@@ -100,12 +100,12 @@ mod test_sparse_self_attention_head {
         let analytical_gradient_weights_q = gradient.get_gradient_weights_q();
         let analytical_gradient_weights_k = gradient.get_gradient_weights_k();
         let analytical_gradient_input = gradient.get_gradient_input();
-        let analytical_bias_pos_batch = gradient.get_gradient_bias_pos();
+        // let analytical_bias_pos_batch = gradient.get_gradient_bias_pos();
 
         let weights_v = attention_head_layer.weights_v.clone();
         let weights_q = attention_head_layer.weights_q.clone();
         let weights_k = attention_head_layer.weights_k.clone();
-        let bias_pos = attention_head_layer.bias_pos.clone();
+        // let bias_pos = attention_head_layer.bias_pos.clone();
 
         // // Weight V ------------------------------------------------------------------------------------------- start
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
