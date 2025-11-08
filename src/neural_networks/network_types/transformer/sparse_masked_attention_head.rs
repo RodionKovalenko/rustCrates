@@ -222,37 +222,20 @@ impl SparseMaskedAttentionHead {
     ) -> Vec<Vec<Vec<Complex<f64>>>> {
         let k_windows: Vec<Vec<Vec<Vec<Complex<f64>>>>> = calculate_window_tokens_batch(&k_batch, self.window_size);
 
-        let attention_weights_batch_inactivated_compressed: Vec<Vec<Vec<Complex<f64>>>> = q_batch
+        let attention_weights_activated_compressed: Vec<Vec<Vec<f64>>> = q_batch
             .par_iter()
             .enumerate()
             .map(|(batch_ind, q)| {
-                // println!("q_batch dim: {}, {}", q.len(), q[0].len());
                 let mut sparse_attention_weights_inactivated = self.calculate_local_attention(q, &k_windows[batch_ind], true);
                 self.apply_sparse_causal_mask(&mut sparse_attention_weights_inactivated);
-                sparse_attention_weights_inactivated
+                softmax_complex_padding_real(&sparse_attention_weights_inactivated, &padding_mask_batch[batch_ind])
             })
             .collect();
 
-        // let attention_weights_restored = attention_weights_batch_inactivated_compressed
-        //     .iter()
-        //     .enumerate()
-        //     .map(|(batch_ind, attention_weights)| self.restore_sparse_matrix(&attention_weights, self.window_size, q_batch[batch_ind].len()))
-        //     .collect::<Vec<_>>();
-
-        let attention_weights_activated_compressed: Vec<_> = attention_weights_batch_inactivated_compressed
-            .par_iter()
-            .zip(padding_mask_batch.clone())
-            .map(|(scaled_scores_positioned, padding_mask)| softmax_complex_padding_real(scaled_scores_positioned, &padding_mask))
-            .collect();
-
-        let batch_output_compr: Vec<_> = attention_weights_activated_compressed
+        let batch_output_compr: Vec<Vec<Vec<Complex<f64>>>> = attention_weights_activated_compressed
             .iter()
             .enumerate()
-            .map(|(batch_ind, attention_weights)| {
-                // println!("attention_weights dim: {}, {}", attention_weights.len(), attention_weights[0].len());
-                self.multiply_sparse(attention_weights, &v_batch[batch_ind])
-                //multiply_f64_complex(attention_weights, &v_batch[batch_ind])
-            })
+            .map(|(batch_ind, attention_weights)| self.multiply_sparse(attention_weights, &v_batch[batch_ind]))
             .collect();
 
         self.attention_weights_batch = Some(attention_weights_activated_compressed);
@@ -365,6 +348,22 @@ impl SparseMaskedAttentionHead {
         }
 
         q_v_k_dot
+    }
+
+    pub fn apply_unified_mask(&self, scores: &mut Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) {
+        let seq_len = scores.len();
+
+        for token_ind in 0..seq_len {
+            let (start_ind, _) = calculate_start_end_indices(token_ind, self.window_size, seq_len);
+            let row = &mut scores[token_ind];
+
+            for (local_pos, score) in row.iter_mut().enumerate() {
+                let global_k = start_ind + local_pos;
+                if global_k >= padding_mask.len() || padding_mask[global_k] == 0 || global_k > token_ind {
+                    *score = Complex::new(f64::NEG_INFINITY, f64::NEG_INFINITY);
+                }
+            }
+        }
     }
 
     pub fn apply_sparse_causal_mask(&self, q: &mut Vec<Vec<Complex<f64>>>) {
