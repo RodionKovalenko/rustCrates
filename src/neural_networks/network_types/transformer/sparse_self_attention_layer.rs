@@ -44,8 +44,8 @@ impl SparseSelfAttentionLayer {
         let head_cols = cols / num_heads; // Columns per attention head
 
         for _i in 0..num_heads {
-            let window_overlaping_shift = window_size + (_i) * window_size;
-            let attention_head = SparseMaskedAttentionHead::create_default_attention_layer(rows, head_cols, LayerType::AttentionLayer, window_overlaping_shift, learning_rate);
+            //let window_overlaping_shift = window_size + (_i) * window_size;
+            let attention_head = SparseMaskedAttentionHead::create_default_attention_layer(rows, head_cols, LayerType::AttentionLayer, window_size, learning_rate);
             attention_heads.push(attention_head);
         }
 
@@ -109,10 +109,6 @@ impl SparseSelfAttentionLayer {
         }
 
         layer_input.set_input_batch(batch_output.clone());
-
-        let batch_size = input_batch.len();
-        let sequence_size = input_batch[0].len();
-        let mut batch_output: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![]; sequence_size]; batch_size];
         let batch_size = input_batch.len();
 
         //println!("padding mask batch: {:?}", &padding_mask_batch);
@@ -127,9 +123,13 @@ impl SparseSelfAttentionLayer {
 
         // println!("attention head outputs: {:?}", &attention_head_outputs);
 
+        let seq_len_aligned = attention_head_outputs[0][0].len();
+        let mut batch_output: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![]; seq_len_aligned]; batch_size];
+
+        // [head][batch][sequence][dim]
         // Combine the outputs of the attention heads (e.g., concatenating horizontally)
         for b in 0..batch_size {
-            for i in 0..sequence_size {
+            for i in 0..seq_len_aligned {
                 let mut combined_output: Vec<Complex<f64>> = Vec::new();
                 for head_output in &attention_head_outputs {
                     combined_output.extend_from_slice(&head_output[b][i]);
@@ -156,7 +156,24 @@ impl SparseSelfAttentionLayer {
 
         // Residual connection
         let batch_output_scaled = scale_matrix_3d_by_scalar(&batch_output, self.beta);
-        batch_output = add_matrix_3d(&batch_output_scaled, &input_batch);
+
+        if layer_input.get_forward_only() {
+            let input_batch_aligned = input_batch
+                .iter()
+                .map(|q_seq| {
+                    let seq_len = q_seq.len();
+                    if seq_len > seq_len_aligned {
+                        q_seq[seq_len - seq_len_aligned..].to_vec()
+                    } else {
+                        q_seq.clone()
+                    }
+                })
+                .collect();
+
+            batch_output = add_matrix_3d(&batch_output_scaled, &input_batch_aligned);
+        } else {
+            batch_output = add_matrix_3d(&batch_output_scaled, &input_batch);
+        }
 
         self.input_batch = Some(input_batch.clone());
         self.time_step = layer_input.get_time_step();

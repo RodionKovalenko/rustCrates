@@ -151,61 +151,102 @@ impl SparseMaskedAttentionHead {
         self.padding_mask_batch = Some(padding_mask_batch.clone());
         self.time_step = layer_input.get_time_step();
         self.batch_size = layer_input.get_batch_size();
+        let cache_limit = 2 * self.window_size;
 
         // Step 1: Compute Q for the entire sequence (all tokens up to current step)
         let q_batch: Vec<_> = input_batch.par_iter().map(|input| multiply_complex(input, &self.weights_q)).collect();
 
-        // Step 2: Check if it's the first input or an extended input
+        // Step 1b: Trim Q batch to last cache_limit tokens for inference to align with KV cache
+        let q_batch_trimmed: Vec<Vec<Vec<Complex<f64>>>> = if layer_input.get_calculate_k_v_cache() {
+            q_batch
+                .iter()
+                .map(|q_seq| {
+                    let seq_len = q_seq.len();
+                    if seq_len > cache_limit {
+                        q_seq[seq_len - cache_limit..].to_vec()
+                    } else {
+                        q_seq.clone()
+                    }
+                })
+                .collect()
+        } else {
+            q_batch.clone()
+        };
+
+        // Similarly trim padding mask to align with trimmed Q tokens
+        let padding_mask_batch: Vec<Vec<u32>> = if layer_input.get_calculate_k_v_cache() {
+            padding_mask_batch
+                .iter()
+                .map(|mask_seq| {
+                    let seq_len = mask_seq.len();
+                    if seq_len > cache_limit {
+                        mask_seq[seq_len - cache_limit..].to_vec()
+                    } else {
+                        mask_seq.clone()
+                    }
+                })
+                .collect()
+        } else {
+            padding_mask_batch.clone()
+        };
+
+        // Steps 2 & 3: Compute K and V for new tokens and update KV cache (your existing logic)
         let (k_new_batch, v_new_batch): (Vec<_>, Vec<_>) = if self.k_cache.is_none() || !layer_input.get_calculate_k_v_cache() {
-            // First input (compute for all tokens)
             let k_new_batch: Vec<_> = input_batch.par_iter().map(|input| multiply_complex(input, &self.weights_k)).collect();
             let v_new_batch: Vec<_> = input_batch.par_iter().map(|input| multiply_complex(input, &self.weights_v)).collect();
             (k_new_batch, v_new_batch)
         } else {
             let k_new_batch: Vec<_> = input_batch.last().map_or(vec![], |input| {
-                input.last().map_or(vec![], |last_token: &Vec<Complex<f64>>| {
-                    // Only compute K for the last token
-                    vec![multiply_complex(&vec![last_token.clone()], &self.weights_k)]
-                })
+                input
+                    .last()
+                    .map_or(vec![], |last_token: &Vec<Complex<f64>>| vec![multiply_complex(&vec![last_token.clone()], &self.weights_k)])
             });
 
             let v_new_batch: Vec<_> = input_batch.last().map_or(vec![], |input| {
-                input.last().map_or(vec![], |last_token| {
-                    // Only compute V for the last token
-                    vec![multiply_complex(&vec![last_token.clone()], &self.weights_v)]
-                })
+                input.last().map_or(vec![], |last_token| vec![multiply_complex(&vec![last_token.clone()], &self.weights_v)])
             });
 
             (k_new_batch, v_new_batch)
         };
 
-        // Step 3: Update the K/V cache (only if inference mode)
         let (k_cache, v_cache): (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<Vec<Complex<f64>>>>) = if layer_input.get_calculate_k_v_cache() {
-            // Update K and V cache with new token's values if inference mode
             if self.k_cache.is_none() {
-                self.k_cache = Some(k_new_batch.clone());
-                self.v_cache = Some(v_new_batch.clone());
+                self.k_cache = Some(
+                    k_new_batch
+                        .iter()
+                        .map(|k_batch| k_batch.iter().rev().take(cache_limit).cloned().collect::<Vec<_>>().into_iter().rev().collect())
+                        .collect(),
+                );
+
+                self.v_cache = Some(
+                    v_new_batch
+                        .iter()
+                        .map(|v_batch| v_batch.iter().rev().take(cache_limit).cloned().collect::<Vec<_>>().into_iter().rev().collect())
+                        .collect(),
+                );
             } else {
                 let k_cache = self.k_cache.as_mut().unwrap();
                 let v_cache = self.v_cache.as_mut().unwrap();
-                for (cache_k, new_k) in k_cache.iter_mut().zip(&k_new_batch) {
-                    cache_k.extend_from_slice(&new_k); // Only extend with new K values
-                }
-                for (cache_v, new_v) in v_cache.iter_mut().zip(&v_new_batch) {
-                    cache_v.extend_from_slice(new_v); // Only extend with new V values
+
+                for ((cache_k, new_k), (cache_v, new_v)) in k_cache.iter_mut().zip(&k_new_batch).zip(v_cache.iter_mut().zip(&v_new_batch)) {
+                    cache_k.extend_from_slice(new_k);
+                    cache_v.extend_from_slice(new_v);
+
+                    if cache_k.len() > cache_limit {
+                        let start = cache_k.len() - cache_limit;
+                        *cache_k = cache_k[start..].to_vec();
+                        *cache_v = cache_v[start..].to_vec();
+                    }
                 }
             }
             (self.k_cache.as_ref().unwrap().clone(), self.v_cache.as_ref().unwrap().clone())
         } else {
-            // If it's training mode, we don't use the cache
             (k_new_batch, v_new_batch)
         };
 
-        // Step 4: Compute attention weights in parallel using the entire Q batch and cached K/V
-        let batch_output: Vec<_> = self.calculated_sparse_masked_attention(q_batch, k_cache, v_cache, padding_mask_batch);
+        // Step 4: Use trimmed Q batch and trimmed padding mask for attention computation
+        let batch_output: Vec<_> = self.calculated_sparse_masked_attention(q_batch_trimmed, k_cache, v_cache, padding_mask_batch);
         self.output_batch = Some(batch_output.clone());
-
-        // println!("output_batch in attention head: {} {} {}", batch_output.len(), batch_output[0].len(), batch_output[0][0].len());
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(batch_output);
