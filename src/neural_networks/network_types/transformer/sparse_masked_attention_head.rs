@@ -304,26 +304,24 @@ impl SparseMaskedAttentionHead {
         output
     }
 
-    pub fn multiply_sparse_backward<V, W>(&self, v: &Vec<Vec<V>>, attention_sparse_weights: &Vec<Vec<W>>) -> Vec<Vec<V>>
+    pub fn multiply_sparse_backward<V, W>(&self, v: &[Vec<V>], attention_sparse_weights: &[Vec<W>]) -> Vec<Vec<V>>
     where
-        V: Scalar + Mul<W, Output = V>,
+        V: Scalar + Mul<W, Output = V> + AddAssign + Default + Copy,
         W: Copy,
     {
         let n_rows = v.len();
         let n_cols = attention_sparse_weights.len();
+        let window = self.window_size;
 
         let mut output = vec![vec![V::default(); n_cols]; n_rows];
 
         for k in 0..n_rows {
-            for q in 0..n_cols {
-                for p in 0..n_cols {
-                    let (start_ind, end_ind) = calculate_start_end_indices(p, self.window_size, n_cols);
+            for p in 0..n_cols {
+                let (start_ind, end_ind) = calculate_start_end_indices(p, window, n_cols);
+                let attn_row = &attention_sparse_weights[p];
 
-                    if q >= start_ind && q < end_ind {
-                        let position = (start_ind..end_ind).position(|x| x == q).unwrap();
-
-                        output[k][q] += v[k][p] * attention_sparse_weights[p][position];
-                    }
+                for (local_idx, q) in (start_ind..end_ind).enumerate() {
+                    output[k][q] += v[k][p] * attn_row[local_idx];
                 }
             }
         }
