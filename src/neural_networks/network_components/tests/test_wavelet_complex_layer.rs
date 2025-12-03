@@ -3,9 +3,12 @@ mod test_wavelet_layer {
     use crate::{
         neural_networks::{
             network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
-            network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch, wavelet_complex_layer::ComplexWaveletLayer},
+            network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch, wavelet_complex_layer::ComplexWaveletLayer},
             utils::{
-                derivative::{global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_input, numerical_gradient_input_batch, numerical_gradient_input_batch_sum_without_loss, numerical_gradient_input_batch_without_loss, test_gradient_batch_error, test_gradient_error_2d},
+                derivative::{
+                    global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_input, numerical_gradient_input_batch, numerical_gradient_input_batch_sum_without_loss,
+                    numerical_gradient_input_batch_without_loss, test_gradient_batch_error, test_gradient_error_2d,
+                },
                 random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
             },
         },
@@ -115,8 +118,9 @@ mod test_wavelet_layer {
             layer_input.set_input_batch(input.clone());
             let wavelet_output = wavelet_layer.forward(&layer_input);
 
-            let softmax_batch_output = softmax_layer.forward(&wavelet_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
+            softmax_layer.forward(&wavelet_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
+            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
 
             loss
         };
@@ -196,8 +200,9 @@ mod test_wavelet_layer {
             // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
             let linear_output = linear_layer.forward(&layer_input);
 
-            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
+            softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
+            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
 
             loss
         };
@@ -249,7 +254,12 @@ mod test_wavelet_layer {
         };
 
         let analytical_gradient_batch = cmor_derivative(&input_batch, &wavelet);
-        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Vec<Vec<Vec<Complex<f64>>>> { input.iter().map(|batch| batch.iter().map(|row| row.iter().map(|value| cmorl(&value, &wavelet)).collect()).collect()).collect() };
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
+            input
+                .iter()
+                .map(|batch| batch.iter().map(|row| row.iter().map(|value| cmorl(&value, &wavelet)).collect()).collect())
+                .collect()
+        };
 
         let numerical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
 

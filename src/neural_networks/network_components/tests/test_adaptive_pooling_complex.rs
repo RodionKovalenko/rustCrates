@@ -18,7 +18,7 @@ mod test_adaptive_pooling_complex {
             linear_layer::LinearLayer,
             softmax_output_layer::SoftmaxLayer,
         },
-        network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
+        network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch},
         utils::{
             derivative::{global_relative_error_l2, numerical_gradient_input_batch, test_gradient_batch_error},
             random_arrays::generate_random_u32_batch,
@@ -160,7 +160,14 @@ mod test_adaptive_pooling_complex {
             let decompressed_test = adaptive_pool.decompress(&compressed_test);
 
             let error = calculate_reconstruction_error(&test_input, &decompressed_test);
-            println!("Length {}: {} -> {} -> {} (error: {:.6})", length, test_input[0].len(), compressed_test[0].len(), decompressed_test[0].len(), error);
+            println!(
+                "Length {}: {} -> {} -> {} (error: {:.6})",
+                length,
+                test_input[0].len(),
+                compressed_test[0].len(),
+                decompressed_test[0].len(),
+                error
+            );
         }
     }
 
@@ -204,7 +211,8 @@ mod test_adaptive_pooling_complex {
             let (compressed, _metadata) = (pooling_output.get_output_batch(), pooling_output.get_pooling_metadata().unwrap());
             let _softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&compressed, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
-            let loss = cross_entropy_loss_batch(&_softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
+            let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
+            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
 
             loss
         };
@@ -214,11 +222,21 @@ mod test_adaptive_pooling_complex {
         // Check if gradient batch dimensions match expected shapes
         //println!("\n analytical gradient_weights_batch: {:?}", gradient_weights_batch);
         //println!("\n analytical gradient_input_batch: {:?}", anal_linear_gradient_input_batch);
-        println!("\n anlytical gradient_input_batch dim: {} {} {}", anal_linear_gradient_input_batch.len(), anal_linear_gradient_input_batch[0].len(), anal_linear_gradient_input_batch[0][0].len());
+        println!(
+            "\n anlytical gradient_input_batch dim: {} {} {}",
+            anal_linear_gradient_input_batch.len(),
+            anal_linear_gradient_input_batch[0].len(),
+            anal_linear_gradient_input_batch[0][0].len()
+        );
 
         //println!("\n numerical grad: {:?}", num_gradient_weight_batch);
         //println!("\n numerical num_gradient_input_batch: {:?}", &num_linear_gradient_input_batch);
-        println!("\n numerical num_gradient_input_batch dim: {} {} {}", num_linear_gradient_input_batch.len(), num_linear_gradient_input_batch[0].len(), num_linear_gradient_input_batch[0][0].len());
+        println!(
+            "\n numerical num_gradient_input_batch dim: {} {} {}",
+            num_linear_gradient_input_batch.len(),
+            num_linear_gradient_input_batch[0].len(),
+            num_linear_gradient_input_batch[0][0].len()
+        );
 
         let global_error = global_relative_error_l2(&num_linear_gradient_input_batch, &anal_linear_gradient_input_batch);
 
@@ -285,7 +303,8 @@ mod test_adaptive_pooling_complex {
             let pooling_output_decompression: Vec<Vec<Vec<Complex<f64>>>> = pool.decompress(&linear_output.get_output_batch());
             let _softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&pooling_output_decompression, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
-            let loss = cross_entropy_loss_batch(&_softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
+            let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
+            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
 
             loss
         };
@@ -295,11 +314,21 @@ mod test_adaptive_pooling_complex {
         // Check if gradient batch dimensions match expected shapes
         //println!("\n analytical gradient_weights_batch: {:?}", gradient_weights_batch);
         //println!("\n analytical gradient_input_batch: {:?}", anal_linear_gradient_input_batch);
-        println!("\n anlytical gradient_input_batch dim: {} {} {}", anal_pool_gradient_input_batch.len(), anal_pool_gradient_input_batch[0].len(), anal_pool_gradient_input_batch[0][0].len());
+        println!(
+            "\n anlytical gradient_input_batch dim: {} {} {}",
+            anal_pool_gradient_input_batch.len(),
+            anal_pool_gradient_input_batch[0].len(),
+            anal_pool_gradient_input_batch[0][0].len()
+        );
 
         //println!("\n numerical grad: {:?}", num_gradient_weight_batch);
         //println!("\n numerical num_gradient_input_batch: {:?}", &num_linear_gradient_input_batch);
-        println!("\n numerical num_gradient_input_batch dim: {} {} {}", num_linear_gradient_input_batch.len(), num_linear_gradient_input_batch[0].len(), num_linear_gradient_input_batch[0][0].len());
+        println!(
+            "\n numerical num_gradient_input_batch dim: {} {} {}",
+            num_linear_gradient_input_batch.len(),
+            num_linear_gradient_input_batch[0].len(),
+            num_linear_gradient_input_batch[0][0].len()
+        );
 
         let global_error = global_relative_error_l2(&num_linear_gradient_input_batch, &anal_pool_gradient_input_batch);
 

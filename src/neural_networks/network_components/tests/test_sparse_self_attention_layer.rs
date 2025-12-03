@@ -9,7 +9,7 @@ mod test_sparse_self_attention_layer {
         network_types::{
             feedforward_layer::FeedForwardLayer,
             neural_network_generic::OperationMode,
-            transformer::{sparse_self_attention_layer::SparseSelfAttentionLayer, transformer_network::cross_entropy_loss_batch},
+            transformer::{sparse_self_attention_layer::SparseSelfAttentionLayer, transformer_network::cross_entropy_sum_batch},
             wavelet_complex_layer::ComplexWaveletLayer,
         },
         utils::{
@@ -70,12 +70,11 @@ mod test_sparse_self_attention_layer {
 
         let output_batch = linear_output.get_output_batch();
         println!("Output batch after Linear layer: {} {} {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
-        let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+        softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         //println!("input batch: {:?}", &input_batch);
         println!("padding mask batch in test transformer: {:?}", &padding_mask_batch);
         println!("target tokens ids: {:?}", &target_token_id_batch);
-        println!("final output dim: {} {} {}", _softmax_batch_output.len(), _softmax_batch_output[0].len(), _softmax_batch_output[0][0].len());
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
@@ -117,9 +116,10 @@ mod test_sparse_self_attention_layer {
             layer_input.set_input_batch(wavelet_output.get_output_batch());
 
             let linear_output = linear_layer.forward(&layer_input);
-            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
+            let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
+            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
 
             let seconds_elapsed_end = now.elapsed();
             let duration = seconds_elapsed_end - seconds_elapsed;
@@ -133,10 +133,18 @@ mod test_sparse_self_attention_layer {
 
         // Check if gradient batch dimensions match expected shapes
         //println!("\n analytical grad: {:?}", gradient_input_batch_att_l);
-        println!("\n gradient_input_batch_att_l gradient dim: {} {}", gradient_input_batch_att_l.len(), gradient_input_batch_att_l[0].len());
+        println!(
+            "\n gradient_input_batch_att_l gradient dim: {} {}",
+            gradient_input_batch_att_l.len(),
+            gradient_input_batch_att_l[0].len()
+        );
 
         // println!("\n numerical grad: {:?}", num_gradient_input_batch);
-        println!("\n numerical_gradient_input_batch gradient dim: {} {}", num_gradient_input_batch_aggregated.len(), num_gradient_input_batch_aggregated[0].len());
+        println!(
+            "\n numerical_gradient_input_batch gradient dim: {} {}",
+            num_gradient_input_batch_aggregated.len(),
+            num_gradient_input_batch_aggregated[0].len()
+        );
 
         let global_error = global_relative_error_2d_l2(&num_gradient_input_batch_aggregated, &gradient_input_batch_att_l);
 
@@ -177,9 +185,10 @@ mod test_sparse_self_attention_layer {
             layer_input.set_input_batch(wavelet_output.get_output_batch());
 
             let linear_output = linear_layer.forward(&layer_input);
-            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
+            let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
+            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
 
             let seconds_elapsed_end = now.elapsed();
             let duration = seconds_elapsed_end - seconds_elapsed;
@@ -193,7 +202,11 @@ mod test_sparse_self_attention_layer {
 
         // Check if gradient batch dimensions match expected shapes
         println!("\n analytical grad weight_q_gradient: {:?}", analytical_weight_q_gradient);
-        println!("\n analytical_weight_q_gradient gradient dim: {} {}", analytical_weight_q_gradient.len(), analytical_weight_q_gradient[0].len());
+        println!(
+            "\n analytical_weight_q_gradient gradient dim: {} {}",
+            analytical_weight_q_gradient.len(),
+            analytical_weight_q_gradient[0].len()
+        );
 
         println!("\n numerical grad: {:?}", num_gradient_weights_q);
         println!("\n  num_gradient_weights_q dim: {} {}", num_gradient_weights_q.len(), num_gradient_weights_q[0].len());
@@ -234,9 +247,10 @@ mod test_sparse_self_attention_layer {
             layer_input.set_input_batch(wavelet_output.get_output_batch());
 
             let linear_output = linear_layer.forward(&layer_input);
-            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
+            let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
+            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
 
             let seconds_elapsed_end = now.elapsed();
             let duration = seconds_elapsed_end - seconds_elapsed;
@@ -250,7 +264,11 @@ mod test_sparse_self_attention_layer {
 
         // Check if gradient batch dimensions match expected shapes
         println!("\n analytical grad weight_k_gradient: {:?}", analytical_weight_k_gradient);
-        println!("\n analytical_weight_k_gradient gradient dim: {} {}", analytical_weight_k_gradient.len(), analytical_weight_k_gradient[0].len());
+        println!(
+            "\n analytical_weight_k_gradient gradient dim: {} {}",
+            analytical_weight_k_gradient.len(),
+            analytical_weight_k_gradient[0].len()
+        );
 
         println!("\n numerical grad: {:?}", num_gradient_weights_k);
         println!("\n  num_gradient_weights_k dim: {} {}", num_gradient_weights_k.len(), num_gradient_weights_k[0].len());
@@ -291,9 +309,10 @@ mod test_sparse_self_attention_layer {
             layer_input.set_input_batch(wavelet_output.get_output_batch());
 
             let linear_output = linear_layer.forward(&layer_input);
-            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
+            let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
+            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
 
             let seconds_elapsed_end = now.elapsed();
             let duration = seconds_elapsed_end - seconds_elapsed;
@@ -307,7 +326,11 @@ mod test_sparse_self_attention_layer {
 
         // Check if gradient batch dimensions match expected shapes
         println!("\n analytical grad weight_v_gradient: {:?}", analytical_weight_v_gradient);
-        println!("\n analytical_weight_k_gradient gradient dim: {} {}", analytical_weight_k_gradient.len(), analytical_weight_k_gradient[0].len());
+        println!(
+            "\n analytical_weight_k_gradient gradient dim: {} {}",
+            analytical_weight_k_gradient.len(),
+            analytical_weight_k_gradient[0].len()
+        );
 
         println!("\n numerical grad: {:?}", num_gradient_weights_v);
         println!("\n  num_gradient_weights_v dim: {} {}", num_gradient_weights_v.len(), num_gradient_weights_v[0].len());
@@ -348,9 +371,10 @@ mod test_sparse_self_attention_layer {
             layer_input.set_input_batch(wavelet_output.get_output_batch());
 
             let linear_output = linear_layer.forward(&layer_input);
-            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
+            let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
+            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
 
             let seconds_elapsed_end = now.elapsed();
             let duration = seconds_elapsed_end - seconds_elapsed;
@@ -370,7 +394,11 @@ mod test_sparse_self_attention_layer {
 
         // Check if gradient batch dimensions match expected shapes
         println!("\n analytical grad weight_pos_gradient: {:?}", analytical_weight_pos_gradient);
-        println!("\n analytical_weight_pos_gradient gradient dim: {} {}", analytical_weight_pos_gradient.len(), analytical_weight_pos_gradient[0].len());
+        println!(
+            "\n analytical_weight_pos_gradient gradient dim: {} {}",
+            analytical_weight_pos_gradient.len(),
+            analytical_weight_pos_gradient[0].len()
+        );
 
         println!("\n numerical grad: {:?}", num_gradient_weights_pos);
         println!("\n  num_gradient_weights_pos dim: {} {}", num_gradient_weights_pos.len(), num_gradient_weights_pos[0].len());

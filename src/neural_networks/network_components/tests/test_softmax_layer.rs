@@ -6,8 +6,8 @@ mod test_softmax_layer {
             network_types::{
                 neural_network_generic::OperationMode,
                 transformer::{
-                    sparse_masked_attention_head::{SparseMaskedAttentionHead, calculate_window_tokens},
-                    transformer_network::{cross_entropy_loss_batch, cross_entropy_sum_batch},
+                    sparse_masked_attention_head::{calculate_window_tokens, SparseMaskedAttentionHead},
+                    transformer_network::cross_entropy_sum_batch,
                 },
             },
             utils::{

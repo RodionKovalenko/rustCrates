@@ -4,14 +4,17 @@ mod test_transformer {
 
     use crate::{
         neural_networks::{
-            network_components::{embedding_layer::EmbeddingLayer, gradient_struct::Gradient, input::concat_batches, layer::LayerEnum, layer_input_struct::LayerInput, linear_layer::LinearLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
+            network_components::{
+                embedding_layer::EmbeddingLayer, gradient_struct::Gradient, input::concat_batches, layer::LayerEnum, layer_input_struct::LayerInput, linear_layer::LinearLayer,
+                positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer,
+            },
             network_types::{
                 feedforward_layer::FeedForwardLayer,
                 neural_network_generic::{create, NeuralNetwork, OperationMode},
                 transformer::{
                     masked_attention_head::MaskedAttentionHead,
                     self_attention_layer::SelfAttentionLayer,
-                    transformer_network::{backward, cross_entropy_loss_batch, predict},
+                    transformer_network::{backward, cross_entropy_sum_batch, predict},
                 },
                 wavelet_complex_layer::ComplexWaveletLayer,
                 wavelet_discrete_layer::DiscreteWaveletLayer,
@@ -140,9 +143,7 @@ mod test_transformer {
             first_attention_head.weights_q = weights.clone();
 
             let network_output = predict(&mut transformer_network, &layer_input);
-            let (softmax_batch_output, padding_mask_batch) = (network_output.get_output_batch_f64(), network_output.get_padding_mask_batch());
-            //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_ids, &padding_mask_batch, batch_ids.len());
+            let loss = cross_entropy_sum_batch(&network_output.get_cross_entropy_loss_batch(), &batch_ids);
 
             loss
         };
@@ -156,7 +157,11 @@ mod test_transformer {
         println!("\n dim numerical gradient {:?}, {}", numerical_grad_weight_q_batch.len(), numerical_grad_weight_q_batch[0].len());
 
         println!("\n\nanalytical gradient weight q attention layer {:?}", analytical_gradient_weight_q_batch);
-        println!("\n dim nanalytical gradient {:?}, {}", analytical_gradient_weight_q_batch.len(), analytical_gradient_weight_q_batch[0].len());
+        println!(
+            "\n dim nanalytical gradient {:?}, {}",
+            analytical_gradient_weight_q_batch.len(),
+            analytical_gradient_weight_q_batch[0].len()
+        );
 
         test_gradient_error_2d(&numerical_grad_weight_q_batch, &analytical_gradient_weight_q_batch, 1e-4);
         // Weight Q ------------------------------------------------------------------------------------------- end
@@ -280,9 +285,10 @@ mod test_transformer {
             layer_input.set_input_batch(output_ffn_2.get_output_batch());
 
             let output_linear = linear_layer.forward(&layer_input);
-            let output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_ids.clone()));
+            softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_ids.clone()));
 
-            let loss = cross_entropy_loss_batch(&output_softmax, &target_token_ids, &padding_mask_batch, batch_size);
+            let cross_entropy_loss_batch: &Vec<Vec<Vec<Complex<f64>>>> = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
+            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_ids);
 
             loss
         };

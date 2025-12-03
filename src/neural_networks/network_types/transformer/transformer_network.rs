@@ -615,10 +615,6 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
     layer_output.set_output_batch_f64(output_softmax.unwrap());
     layer_output.set_padding_mask_batch(padding_mask.unwrap());
 
-    let batch_size = transformer_network.get_minibatch_size();
-    let record_ind = layer_input.get_record_index();
-    let update_gradients: bool = (record_ind * batch_ids.len()) % batch_size == 0;
-
     if VERBOSE {
         let whole_duration_forward = now.elapsed();
         println!("TOTAL time elapsed in seconds in forward pass: {}", whole_duration_forward.as_secs_f64().to_string().green().bold());
@@ -866,15 +862,6 @@ pub fn predict_by_text(input: &Vec<String>) -> Vec<String> {
 pub fn cross_entropy_sum_batch(cross_entropy_loss_batch: &Vec<Vec<Vec<Complex<f64>>>>, _targets: &Vec<Vec<u32>>) -> Complex<f64> {
     let mut total_loss: Complex<f64> = Complex::new(0.0, 0.0);
 
-    // let mut normalizer = 0.0;
-    // for target_tokens in targets.iter() {
-    //     for (_t, &target_class) in target_tokens.iter().enumerate() {
-    //         if target_class != 1 {
-    //             normalizer += 1.0;
-    //         }
-    //     }
-    // }
-
     for loss in cross_entropy_loss_batch.iter() {
         for seq_loss in loss.iter() {
             for token_loss in seq_loss.iter() {
@@ -889,65 +876,65 @@ pub fn cross_entropy_sum_batch(cross_entropy_loss_batch: &Vec<Vec<Vec<Complex<f6
     total_loss
 }
 
-pub fn cross_entropy_loss_batch(
-    predicted_softmax_batch: &Vec<Vec<Vec<f64>>>, // Complex-valued softmax output
-    targets: &Vec<Vec<u32>>,
-    padding_mask: &Vec<Vec<u32>>,
-    batch_size: usize,
-) -> Complex<f64> {
-    let mut total_loss: Complex<f64> = Complex::new(0.0, 0.0);
+// pub fn cross_entropy_loss_batch(
+//     predicted_softmax_batch: &Vec<Vec<Vec<f64>>>, // Complex-valued softmax output
+//     targets: &Vec<Vec<u32>>,
+//     padding_mask: &Vec<Vec<u32>>,
+//     batch_size: usize,
+// ) -> Complex<f64> {
+//     let mut total_loss: Complex<f64> = Complex::new(0.0, 0.0);
 
-    // println!("softmax batch inside function cross entropy batch: {:?}", &predicted_softmax_batch);
-    for (batch_ind, prediction) in predicted_softmax_batch.iter().enumerate() {
-        total_loss += cross_entropy_loss(prediction, &targets[batch_ind], &padding_mask[batch_ind]);
-    }
+//     // println!("softmax batch inside function cross entropy batch: {:?}", &predicted_softmax_batch);
+//     for (batch_ind, prediction) in predicted_softmax_batch.iter().enumerate() {
+//         total_loss += cross_entropy_loss(prediction, &targets[batch_ind], &padding_mask[batch_ind]);
+//     }
 
-    total_loss / batch_size as f64
-}
+//     total_loss / batch_size as f64
+// }
 
-fn cross_entropy_loss(predictions: &Vec<Vec<f64>>, target_tokens: &Vec<u32>, padding_mask: &Vec<u32>) -> f64 {
-    let mut loss: f64 = 0.0;
-    // let target_len = target_tokens.len();
-    let mut count = 0.0;
+// fn cross_entropy_loss(predictions: &Vec<Vec<f64>>, target_tokens: &Vec<u32>, padding_mask: &Vec<u32>) -> f64 {
+//     let mut loss: f64 = 0.0;
+//     // let target_len = target_tokens.len();
+//     let mut count = 0.0;
 
-    let mut _sequence_len_unpadded: usize = 0;
-    for padding in padding_mask.iter() {
-        if *padding != 0 {
-            _sequence_len_unpadded += 1;
-        }
-    }
+//     let mut _sequence_len_unpadded: usize = 0;
+//     for padding in padding_mask.iter() {
+//         if *padding != 0 {
+//             _sequence_len_unpadded += 1;
+//         }
+//     }
 
-    let mut target_len_unpadded = 0.0;
-    for (_t, &target_class) in target_tokens.iter().enumerate() {
-        if target_class != 1 {
-            target_len_unpadded += 1.0;
-        }
-    }
+//     let mut target_len_unpadded = 0.0;
+//     for (_t, &target_class) in target_tokens.iter().enumerate() {
+//         if target_class != 1 {
+//             target_len_unpadded += 1.0;
+//         }
+//     }
 
-    let seq_ind_start = _sequence_len_unpadded - target_len_unpadded as usize;
-    let end_ind = _sequence_len_unpadded;
-    // let seq_ind_start = predictions.len() - target_len;
-    // let end_ind = predictions.len();
+//     let seq_ind_start = _sequence_len_unpadded - target_len_unpadded as usize;
+//     let end_ind = _sequence_len_unpadded;
+//     // let seq_ind_start = predictions.len() - target_len;
+//     // let end_ind = predictions.len();
 
-    for (s, &target_idx) in target_tokens.iter().enumerate() {
-        if target_idx == 1 {
-            continue; // skip padding
-        }
+//     for (s, &target_idx) in target_tokens.iter().enumerate() {
+//         if target_idx == 1 {
+//             continue; // skip padding
+//         }
 
-        let seq_ind = seq_ind_start + s;
+//         let seq_ind = seq_ind_start + s;
 
-        if seq_ind >= end_ind {
-            break;
-        }
+//         if seq_ind >= end_ind {
+//             break;
+//         }
 
-        let prob = predictions[seq_ind][target_idx as usize];
-        // for softmax
-        let re_loss = -(prob + 1e-15).ln();
-        //for log softmax
-        //let re_loss = -prob;
-        loss += re_loss;
-        count += 1.0;
-    }
+//         let prob = predictions[seq_ind][target_idx as usize];
+//         // for softmax
+//         let re_loss = -(prob + 1e-15).ln();
+//         //for log softmax
+//         //let re_loss = -prob;
+//         loss += re_loss;
+//         count += 1.0;
+//     }
 
-    loss / count
-}
+//     loss / count
+// }

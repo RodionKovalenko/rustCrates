@@ -9,11 +9,14 @@ mod test_self_attention_layer {
         network_types::{
             feedforward_layer::FeedForwardLayer,
             neural_network_generic::OperationMode,
-            transformer::{masked_attention_head::MaskedAttentionHead, self_attention_layer::SelfAttentionLayer, transformer_network::cross_entropy_loss_batch},
+            transformer::{masked_attention_head::MaskedAttentionHead, self_attention_layer::SelfAttentionLayer, transformer_network::cross_entropy_sum_batch},
             wavelet_complex_layer::ComplexWaveletLayer,
         },
         utils::{
-            derivative::{global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_input_batch, numerical_gradient_input_batch_sum_without_loss, numerical_gradient_weights, numerical_gradient_weights_multiple_layers_without_loss, test_gradient_batch_error, test_gradient_error_2d},
+            derivative::{
+                global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_input_batch, numerical_gradient_input_batch_sum_without_loss, numerical_gradient_weights,
+                numerical_gradient_weights_multiple_layers_without_loss, test_gradient_batch_error, test_gradient_error_2d,
+            },
             random_arrays::{generate_random_complex_3d, generate_u32_batch_from_indices},
         },
     };
@@ -39,9 +42,19 @@ mod test_self_attention_layer {
         let output = attention_head_layer.forward(&layer_input);
         let output_batch = output.get_output_batch();
 
-        println!("\ninput batch in attention head dim : {:?}, {}, {}", &input_batch.len(), &input_batch[0].len(), &input_batch[0][0].len());
+        println!(
+            "\ninput batch in attention head dim : {:?}, {}, {}",
+            &input_batch.len(),
+            &input_batch[0].len(),
+            &input_batch[0][0].len()
+        );
 
-        println!("\noutput_batch in attention head dim : {:?}, {}, {}", &output_batch.len(), &output_batch[0].len(), &output_batch[0][0].len());
+        println!(
+            "\noutput_batch in attention head dim : {:?}, {}, {}",
+            &output_batch.len(),
+            &output_batch[0].len(),
+            &output_batch[0][0].len()
+        );
 
         let previous_gradient = vec![vec![vec![Complex::new(1.0, 0.0); output_batch[0][0].len()]; output_batch[0].len()]; output_batch.len()];
 
@@ -69,10 +82,20 @@ mod test_self_attention_layer {
         let output = attention_head_layer.forward(&layer_input);
         let output_batch = output.get_output_batch();
 
-        println!("\ninput batch in attention head dim : {:?}, {}, {}", &input_batch.len(), &input_batch[0].len(), &input_batch[0][0].len());
+        println!(
+            "\ninput batch in attention head dim : {:?}, {}, {}",
+            &input_batch.len(),
+            &input_batch[0].len(),
+            &input_batch[0][0].len()
+        );
         println!("\ninput batch in attention head :{:?}", &input_batch);
 
-        println!("\noutput_batch in attention head dim : {:?}, {}, {}", &output_batch.len(), &output_batch[0].len(), &output_batch[0][0].len());
+        println!(
+            "\noutput_batch in attention head dim : {:?}, {}, {}",
+            &output_batch.len(),
+            &output_batch[0].len(),
+            &output_batch[0][0].len()
+        );
         println!("\noutput_batch attention head: {:?}", &output_batch);
 
         let previous_gradient = vec![vec![vec![Complex::new(1.0, 0.0); output_batch[0][0].len()]; output_batch[0].len()]; output_batch.len()];
@@ -99,7 +122,8 @@ mod test_self_attention_layer {
             output.get_output_batch()
         };
 
-        let numerical_grad_weight_v_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &weights_v.clone(), output_batch.clone(), epsilon);
+        let numerical_grad_weight_v_batch: Vec<Vec<Vec<Complex<f64>>>> =
+            numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &weights_v.clone(), output_batch.clone(), epsilon);
 
         println!("\n\nnumerical gradient weight v attention layer {:?}", numerical_grad_weight_v_batch);
         println!("\n\nanalytical gradient weight v attention layer {:?}", analytical_gradient_weights_v_batch);
@@ -122,13 +146,24 @@ mod test_self_attention_layer {
             output.get_output_batch()
         };
 
-        let numerical_grad_weight_q_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &weights_q.clone(), output_batch.clone(), epsilon);
+        let numerical_grad_weight_q_batch: Vec<Vec<Vec<Complex<f64>>>> =
+            numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &weights_q.clone(), output_batch.clone(), epsilon);
 
         println!("\n\nnumerical gradient weight q attention layer {:?}", numerical_grad_weight_q_batch);
-        println!("\n dim numerical gradient {:?}, {}, {}", numerical_grad_weight_q_batch.len(), numerical_grad_weight_q_batch[0].len(), numerical_grad_weight_q_batch[0][0].len());
+        println!(
+            "\n dim numerical gradient {:?}, {}, {}",
+            numerical_grad_weight_q_batch.len(),
+            numerical_grad_weight_q_batch[0].len(),
+            numerical_grad_weight_q_batch[0][0].len()
+        );
 
         println!("\n\nanalytical gradient weight q attention layer {:?}", analytical_gradient_weights_q_batch);
-        println!("\n dim nanalytical gradient {:?}, {}, {}", analytical_gradient_weights_q_batch.len(), analytical_gradient_weights_q_batch[0].len(), analytical_gradient_weights_q_batch[0][0].len());
+        println!(
+            "\n dim nanalytical gradient {:?}, {}, {}",
+            analytical_gradient_weights_q_batch.len(),
+            analytical_gradient_weights_q_batch[0].len(),
+            analytical_gradient_weights_q_batch[0][0].len()
+        );
 
         let global_error = global_relative_error_l2(&numerical_grad_weight_q_batch, &analytical_gradient_weights_q_batch);
         println!("\n\n global relative gradient error weight q batch: {:?}", &global_error);
@@ -148,13 +183,24 @@ mod test_self_attention_layer {
             output.get_output_batch()
         };
 
-        let numerical_grad_weight_k_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &weights_k.clone(), output_batch.clone(), epsilon);
+        let numerical_grad_weight_k_batch: Vec<Vec<Vec<Complex<f64>>>> =
+            numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &weights_k.clone(), output_batch.clone(), epsilon);
 
         println!("\n\nnumerical gradient weight k attention layer {:?}", numerical_grad_weight_k_batch);
-        println!("\n dim numerical gradient {:?}, {}, {}", numerical_grad_weight_k_batch.len(), numerical_grad_weight_k_batch[0].len(), numerical_grad_weight_k_batch[0][0].len());
+        println!(
+            "\n dim numerical gradient {:?}, {}, {}",
+            numerical_grad_weight_k_batch.len(),
+            numerical_grad_weight_k_batch[0].len(),
+            numerical_grad_weight_k_batch[0][0].len()
+        );
 
         println!("\n\nanalytical gradient weight k attention layer {:?}", analytical_gradient_weights_k_batch);
-        println!("\n dim nanalytical gradient {:?}, {}, {}", analytical_gradient_weights_k_batch.len(), analytical_gradient_weights_k_batch[0].len(), analytical_gradient_weights_k_batch[0][0].len());
+        println!(
+            "\n dim nanalytical gradient {:?}, {}, {}",
+            analytical_gradient_weights_k_batch.len(),
+            analytical_gradient_weights_k_batch[0].len(),
+            analytical_gradient_weights_k_batch[0][0].len()
+        );
 
         let global_error = global_relative_error_l2(&numerical_grad_weight_k_batch, &analytical_gradient_weights_k_batch);
         println!("\n\n global relative gradient error weight k batch: {:?}", &global_error);
@@ -182,13 +228,24 @@ mod test_self_attention_layer {
             .map(|row| row.iter().take(output_dim).cloned().collect()) // take first 5 columns from each row
             .collect();
 
-        let numerical_bias_pos_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &small_bias_pos.clone(), output_batch.clone(), epsilon);
+        let numerical_bias_pos_batch: Vec<Vec<Vec<Complex<f64>>>> =
+            numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &small_bias_pos.clone(), output_batch.clone(), epsilon);
 
         println!("\n numerical gradient bias positonal attention layer {:?}", numerical_bias_pos_batch);
-        println!("\n numerical gradient bias positonal dim {:?}, {}, {}", numerical_bias_pos_batch.len(), numerical_bias_pos_batch[0].len(), numerical_bias_pos_batch[0][0].len());
+        println!(
+            "\n numerical gradient bias positonal dim {:?}, {}, {}",
+            numerical_bias_pos_batch.len(),
+            numerical_bias_pos_batch[0].len(),
+            numerical_bias_pos_batch[0][0].len()
+        );
 
         println!("\n analytical gradient bias positional attention layer {:?}", analytical_bias_pos_batch);
-        println!("\n analytical gradient bias positional dim: {:?}, {}, {}", analytical_bias_pos_batch.len(), analytical_bias_pos_batch[0].len(), analytical_bias_pos_batch[0][0].len());
+        println!(
+            "\n analytical gradient bias positional dim: {:?}, {}, {}",
+            analytical_bias_pos_batch.len(),
+            analytical_bias_pos_batch[0].len(),
+            analytical_bias_pos_batch[0][0].len()
+        );
 
         let global_error = global_relative_error_l2(&numerical_bias_pos_batch, &analytical_bias_pos_batch);
         println!("\n\n global relative gradient error bias pos batch: {:?}", &global_error);
@@ -284,7 +341,12 @@ mod test_self_attention_layer {
         //println!("input batch: {:?}", &input_batch);
         println!("padding mask batch in test transformer: {:?}", &padding_mask_batch);
         println!("target tokens ids: {:?}", &target_token_id_batch);
-        println!("final output dim: {} {} {}", _softmax_batch_output.len(), _softmax_batch_output[0].len(), _softmax_batch_output[0][0].len());
+        println!(
+            "final output dim: {} {} {}",
+            _softmax_batch_output.len(),
+            _softmax_batch_output[0].len(),
+            _softmax_batch_output[0][0].len()
+        );
 
         let now = Instant::now();
 
@@ -305,9 +367,10 @@ mod test_self_attention_layer {
             layer_input.set_input_batch(wavelet_output.get_output_batch());
 
             let linear_output = linear_layer.forward(&layer_input);
-            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
+            let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
+            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
 
             let seconds_elapsed_end = now.elapsed();
             let duration = seconds_elapsed_end - seconds_elapsed;
@@ -321,10 +384,18 @@ mod test_self_attention_layer {
 
         // Check if gradient batch dimensions match expected shapes
         //println!("\n analytical grad: {:?}", gradient_input_batch_att_l);
-        println!("\n gradient_input_batch_att_l gradient dim: {} {}", gradient_input_batch_att_l.len(), gradient_input_batch_att_l[0].len());
+        println!(
+            "\n gradient_input_batch_att_l gradient dim: {} {}",
+            gradient_input_batch_att_l.len(),
+            gradient_input_batch_att_l[0].len()
+        );
 
         // println!("\n numerical grad: {:?}", num_gradient_input_batch);
-        println!("\n numerical_gradient_input_batch gradient dim: {} {}", num_gradient_input_batch_aggregated.len(), num_gradient_input_batch_aggregated[0].len());
+        println!(
+            "\n numerical_gradient_input_batch gradient dim: {} {}",
+            num_gradient_input_batch_aggregated.len(),
+            num_gradient_input_batch_aggregated[0].len()
+        );
 
         let global_error = global_relative_error_2d_l2(&num_gradient_input_batch_aggregated, &gradient_input_batch_att_l);
 
@@ -362,9 +433,10 @@ mod test_self_attention_layer {
             layer_input.set_input_batch(wavelet_output.get_output_batch());
 
             let linear_output = linear_layer.forward(&layer_input);
-            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
+            let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
+            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
 
             let seconds_elapsed_end = now.elapsed();
             let duration = seconds_elapsed_end - seconds_elapsed;
@@ -378,7 +450,11 @@ mod test_self_attention_layer {
 
         // Check if gradient batch dimensions match expected shapes
         println!("\n analytical grad weight_q_gradient: {:?}", analytical_weight_q_gradient);
-        println!("\n analytical_weight_q_gradient gradient dim: {} {}", analytical_weight_q_gradient.len(), analytical_weight_q_gradient[0].len());
+        println!(
+            "\n analytical_weight_q_gradient gradient dim: {} {}",
+            analytical_weight_q_gradient.len(),
+            analytical_weight_q_gradient[0].len()
+        );
 
         println!("\n numerical grad: {:?}", num_gradient_weights_q);
         println!("\n  num_gradient_weights_q dim: {} {}", num_gradient_weights_q.len(), num_gradient_weights_q[0].len());
