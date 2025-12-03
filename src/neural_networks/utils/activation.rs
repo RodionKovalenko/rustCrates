@@ -474,6 +474,27 @@ pub fn softmax_complex_padding_real(input: &Vec<Vec<Complex<f64>>>, padding_mask
         .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
 }
 
+pub fn softmax_complex_padding_complex(input: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<Complex<f64>>> {
+    // println!("softmax input len {}, {}", input.len(), input[0].len());
+    // println!("padding_mask len {}", padding_mask.len());
+    // println!("padding mask: {:?}", &padding_mask);
+
+    input
+        .par_iter()
+        .enumerate() // Parallel iterator over rows of the input
+        .map(|(row_ind, row)| {
+            if padding_mask.len() <= row_ind {
+                panic!("Row mask is smaller than the index: {}, {}", padding_mask.len(), row_ind);
+            }
+            if padding_mask[row_ind] == 0 {
+                return vec![Complex::new(0.0, 0.0); row.len()];
+            }
+
+            softmax_row_complex(row)
+        })
+        .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
+}
+
 pub fn softmax_backward_real_with_gradient(
     logits: &Vec<Vec<Complex<f64>>>, // shape: seq_len × vocab
     targets: &Vec<u32>,              // length = target_len
@@ -546,7 +567,7 @@ pub fn softmax_ce_grad_complex(logits: &Vec<Complex<f64>>, target: usize) -> (f6
         let p_j = s[j] / sum_s;
         let mut g = p_j.conj();
         if j == target {
-            g -= Complex::new(1.0, 0.0);
+            g -= 1.0;
         }
         grad.push(g);
     }
@@ -598,6 +619,32 @@ pub fn softmax_row_real(input: &Vec<Complex<f64>>) -> Vec<f64> {
     let sum: f64 = exps.iter().sum();
 
     exps.iter().map(|x| x / sum).collect()
+}
+
+pub fn softmax_row_complex(logits: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
+    let n = logits.len();
+
+    // 1️⃣ Find max real part (ignore imaginary)
+    let max_re = logits.iter().map(|z| z.re).fold(f64::NEG_INFINITY, f64::max);
+
+    // 2️⃣ Compute exp(real - max_re) * cis(im)
+    let mut s = Vec::with_capacity(n);
+    let mut sum_s = Complex::new(0.0, 0.0);
+
+    for z in logits.iter() {
+        let real_shifted = (z.re - max_re).max(-700.0); // clamp lower to avoid underflow
+        let scaled = Complex::new(real_shifted, z.im).exp();
+        sum_s += scaled;
+        s.push(scaled);
+    }
+
+    // 3️⃣ Avoid division by zero
+    if !sum_s.norm().is_finite() || sum_s.norm() == 0.0 {
+        return vec![Complex::new(1.0 / n as f64, 0.0); n];
+    }
+
+    // 4️⃣ Normalize
+    s.into_iter().map(|v| v / sum_s).collect()
 }
 
 pub fn log_softmax_row(input: &Vec<Complex<f64>>) -> Vec<f64> {
