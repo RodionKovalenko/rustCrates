@@ -103,7 +103,7 @@ mod test_wavelet_layer {
         layer_input.set_input_batch(input_batch.clone());
 
         let wavelet_output = wavelet_layer.forward(&layer_input);
-        let _softmax_batch_output = softmax_layer.forward(&wavelet_output.get_output_batch(), Some(padding_mask_batch.clone()));
+        let _softmax_batch_output = softmax_layer.forward(&wavelet_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         let softmax_gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
         let wavelet_gradient = wavelet_layer.backward(&softmax_gradient);
@@ -115,7 +115,7 @@ mod test_wavelet_layer {
             layer_input.set_input_batch(input.clone());
             let wavelet_output = wavelet_layer.forward(&layer_input);
 
-            let softmax_batch_output = softmax_layer.forward(&wavelet_output.get_output_batch(), Some(padding_mask_batch.clone()));
+            let softmax_batch_output = softmax_layer.forward(&wavelet_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
 
             loss
@@ -178,7 +178,7 @@ mod test_wavelet_layer {
         // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
         let linear_output = linear_layer.forward(&layer_input);
 
-        let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
+        let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         println!("softmax output batch: {:?}", _softmax_batch_output);
         let softmax_gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
@@ -196,7 +196,7 @@ mod test_wavelet_layer {
             // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
             let linear_output = linear_layer.forward(&layer_input);
 
-            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
+            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
 
             loss

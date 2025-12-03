@@ -234,7 +234,7 @@ mod test_transformer {
         layer_input.set_input_batch(output_ffn_2.get_output_batch());
 
         let output_linear = linear_layer.forward(&layer_input);
-        let _output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()));
+        let _output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_ids.clone()));
 
         // backward
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_ids);
@@ -280,7 +280,7 @@ mod test_transformer {
             layer_input.set_input_batch(output_ffn_2.get_output_batch());
 
             let output_linear = linear_layer.forward(&layer_input);
-            let output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()));
+            let output_softmax = softmax_layer.forward(&output_linear.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_ids.clone()));
 
             let loss = cross_entropy_loss_batch(&output_softmax, &target_token_ids, &padding_mask_batch, batch_size);
 

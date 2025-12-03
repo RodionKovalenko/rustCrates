@@ -5,3 +5,9 @@ Epoch	Loss	Prediction
 50	~1.3	"Mir geht es ..."
 100	<0.5	"Mir geht es gut"
 200	<0.1	Perfect generation
+
+
+Best Combined Strategy:
+
+Adaptive Softmax for training + HNSW for inference
+→ Fast, accurate, scalable, industry-proven.

@@ -5,6 +5,7 @@ pub static B_2: f64 = 0.999;
 pub static EPSILON: f64 = 1e-8;
 pub static WEIGHT_DECAY: f64 = 0.001;
 pub static MAX_NORM: f64 = 2.0;
+pub const MAX_ELEMENT: f64 = 100.0;
 pub static WARMUP_STEPS: usize = 2000;
 
 // Assume this helper function exists or add it

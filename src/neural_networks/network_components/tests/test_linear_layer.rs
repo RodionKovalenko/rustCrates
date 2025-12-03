@@ -6,7 +6,10 @@ mod test_linear_layer {
         network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, linear_layer::LinearLayer, multi_linear_layer::MultiLinearLayer, softmax_output_layer::SoftmaxLayer},
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
         utils::{
-            derivative::{global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_bias, numerical_gradient_input_batch, numerical_gradient_weights, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d},
+            derivative::{
+                global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_bias, numerical_gradient_input_batch, numerical_gradient_weights, test_gradient_batch_error,
+                test_gradient_error_1d, test_gradient_error_2d,
+            },
             random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
         },
     };
@@ -38,7 +41,7 @@ mod test_linear_layer {
 
         // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
         let linear_output = linear_layer.forward(&layer_input);
-        let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
+        let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
@@ -51,7 +54,7 @@ mod test_linear_layer {
             linear_layer.weights = weights.clone();
 
             let linear_output = linear_layer.forward(&layer_input);
-            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
+            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
@@ -91,7 +94,7 @@ mod test_linear_layer {
             linear_layer.bias = bias.clone();
 
             let linear_output = linear_layer.forward(&layer_input);
-            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
+            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None, Some(target_token_id_batch.clone()));
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
@@ -132,7 +135,7 @@ mod test_linear_layer {
         layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
         let linear_output = linear_layer.forward(&layer_input);
-        let _softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&linear_output.get_output_batch(), None);
+        let _softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&linear_output.get_output_batch(), None, Some(target_token_id_batch.clone()));
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
@@ -141,7 +144,12 @@ mod test_linear_layer {
         let gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient_linear.get_gradient_input_batch();
         let weights: Vec<Vec<Complex<f64>>> = linear_layer.weights.clone();
 
-        println!("softmax output dim: {} {} {}", _softmax_batch_output.len(), _softmax_batch_output[0].len(), _softmax_batch_output[0][0].len());
+        println!(
+            "softmax output dim: {} {} {}",
+            _softmax_batch_output.len(),
+            _softmax_batch_output[0].len(),
+            _softmax_batch_output[0][0].len()
+        );
         println!("target_token_id_batch dim: {} {}", target_token_id_batch.len(), target_token_id_batch[0].len());
 
         // Define the loss function
@@ -149,7 +157,7 @@ mod test_linear_layer {
             linear_layer.weights = weights.clone();
 
             let linear_output = linear_layer.forward(&layer_input);
-            let softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&linear_output.get_output_batch(), None);
+            let softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&linear_output.get_output_batch(), None, Some(target_token_id_batch.clone()));
 
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
 
@@ -176,7 +184,7 @@ mod test_linear_layer {
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             layer_input.set_input_batch(input.clone());
             let linear_output = linear_layer.forward(&layer_input);
-            let softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&linear_output.get_output_batch(), None);
+            let softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&linear_output.get_output_batch(), None, Some(target_token_id_batch.clone()));
 
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
 
@@ -188,11 +196,21 @@ mod test_linear_layer {
         // Check if gradient batch dimensions match expected shapes
         //println!("\n analytical gradient_weights_batch: {:?}", gradient_weights_batch);
         println!("\n analytical gradient_input_batch: {:?}", gradient_input_batch);
-        println!("\n anlytical gradient_input_batch dim: {} {} {}", gradient_input_batch.len(), gradient_input_batch[0].len(), gradient_input_batch[0][0].len());
+        println!(
+            "\n anlytical gradient_input_batch dim: {} {} {}",
+            gradient_input_batch.len(),
+            gradient_input_batch[0].len(),
+            gradient_input_batch[0][0].len()
+        );
 
         //println!("\n numerical grad: {:?}", num_gradient_weight_batch);
         println!("\n numerical num_gradient_input_batch: {:?}", &num_gradient_input_batch);
-        println!("\n numerical num_gradient_input_batch dim: {} {} {}", num_gradient_input_batch.len(), num_gradient_input_batch[0].len(), num_gradient_input_batch[0][0].len());
+        println!(
+            "\n numerical num_gradient_input_batch dim: {} {} {}",
+            num_gradient_input_batch.len(),
+            num_gradient_input_batch[0].len(),
+            num_gradient_input_batch[0][0].len()
+        );
 
         for b in 0..num_gradient_input_batch.len() {
             for s in 0..gradient_input_batch[b].len() {
@@ -239,14 +257,19 @@ mod test_linear_layer {
         layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
         let linear_output = multi_linear_layer.forward(&layer_input);
-        let _softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&linear_output.get_output_batch(), None);
+        let _softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&linear_output.get_output_batch(), None, Some(target_token_id_batch.clone()));
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
         let gradient_linear: Gradient = multi_linear_layer.backward(&gradient_softmax);
 
         let anal_multilayer_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient_linear.get_gradient_input_batch();
 
-        println!("softmax output dim: {} {} {}", _softmax_batch_output.len(), _softmax_batch_output[0].len(), _softmax_batch_output[0][0].len());
+        println!(
+            "softmax output dim: {} {} {}",
+            _softmax_batch_output.len(),
+            _softmax_batch_output[0].len(),
+            _softmax_batch_output[0][0].len()
+        );
         println!("target_token_id_batch dim: {} {}", target_token_id_batch.len(), target_token_id_batch[0].len());
 
         // TEST GRADIENT OF THE INPUT BATCH
@@ -254,7 +277,7 @@ mod test_linear_layer {
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             layer_input.set_input_batch(input.clone());
             let linear_output = multi_linear_layer.forward(&layer_input);
-            let softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&linear_output.get_output_batch(), None);
+            let softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&linear_output.get_output_batch(), None, Some(target_token_id_batch.clone()));
 
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
 
@@ -293,14 +316,19 @@ mod test_linear_layer {
         layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
         let linear_output = linear_layer.forward(&layer_input);
-        let _softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&linear_output.get_output_batch(), None);
+        let _softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&linear_output.get_output_batch(), None, Some(target_token_id_batch.clone()));
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
 
         let anal_linear_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient_linear.get_gradient_input_batch();
 
-        println!("softmax output dim: {} {} {}", _softmax_batch_output.len(), _softmax_batch_output[0].len(), _softmax_batch_output[0][0].len());
+        println!(
+            "softmax output dim: {} {} {}",
+            _softmax_batch_output.len(),
+            _softmax_batch_output[0].len(),
+            _softmax_batch_output[0][0].len()
+        );
         println!("target_token_id_batch dim: {} {}", target_token_id_batch.len(), target_token_id_batch[0].len());
 
         // TEST GRADIENT OF THE INPUT BATCH
@@ -308,7 +336,7 @@ mod test_linear_layer {
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             layer_input.set_input_batch(input.clone());
             let linear_output = linear_layer.forward(&layer_input);
-            let softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&linear_output.get_output_batch(), None);
+            let softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&linear_output.get_output_batch(), None, Some(target_token_id_batch.clone()));
 
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
 
@@ -320,11 +348,21 @@ mod test_linear_layer {
         // Check if gradient batch dimensions match expected shapes
         //println!("\n analytical gradient_weights_batch: {:?}", gradient_weights_batch);
         //println!("\n analytical gradient_input_batch: {:?}", anal_linear_gradient_input_batch);
-        println!("\n anlytical gradient_input_batch dim: {} {} {}", anal_linear_gradient_input_batch.len(), anal_linear_gradient_input_batch[0].len(), anal_linear_gradient_input_batch[0][0].len());
+        println!(
+            "\n anlytical gradient_input_batch dim: {} {} {}",
+            anal_linear_gradient_input_batch.len(),
+            anal_linear_gradient_input_batch[0].len(),
+            anal_linear_gradient_input_batch[0][0].len()
+        );
 
         //println!("\n numerical grad: {:?}", num_gradient_weight_batch);
         //println!("\n numerical num_gradient_input_batch: {:?}", &num_linear_gradient_input_batch);
-        println!("\n numerical num_gradient_input_batch dim: {} {} {}", num_linear_gradient_input_batch.len(), num_linear_gradient_input_batch[0].len(), num_linear_gradient_input_batch[0][0].len());
+        println!(
+            "\n numerical num_gradient_input_batch dim: {} {} {}",
+            num_linear_gradient_input_batch.len(),
+            num_linear_gradient_input_batch[0].len(),
+            num_linear_gradient_input_batch[0][0].len()
+        );
 
         let global_error = global_relative_error_l2(&num_linear_gradient_input_batch, &anal_linear_gradient_input_batch);
 

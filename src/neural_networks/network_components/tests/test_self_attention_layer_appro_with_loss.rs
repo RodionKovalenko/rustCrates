@@ -54,13 +54,23 @@ mod test_self_attention_layer_approx_with_loss {
         let output = attention_head_layer.forward(&layer_input);
         let output_batch = output.get_output_batch();
 
-        let _output_softmax = softmax_layer.forward(&output_batch, Some(padding_mask_batch.clone()));
         let target_token_id_batch = vec![vec![0u32, 0u32, 2u32], vec![2u32, 1u32, 2u32]];
+        let _output_softmax = softmax_layer.forward(&output_batch, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
-        println!("\ninput batch in attention head dim : {:?}, {}, {}", &input_batch.len(), &input_batch[0].len(), &input_batch[0][0].len());
+        println!(
+            "\ninput batch in attention head dim : {:?}, {}, {}",
+            &input_batch.len(),
+            &input_batch[0].len(),
+            &input_batch[0][0].len()
+        );
         println!("\ninput batch in attention head :{:?}", &input_batch);
 
-        println!("\noutput_batch in attention head dim : {:?}, {}, {}", &output_batch.len(), &output_batch[0].len(), &output_batch[0][0].len());
+        println!(
+            "\noutput_batch in attention head dim : {:?}, {}, {}",
+            &output_batch.len(),
+            &output_batch[0].len(),
+            &output_batch[0][0].len()
+        );
         println!("\noutput_batch attention head: {:?}", &output_batch);
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
@@ -82,7 +92,8 @@ mod test_self_attention_layer_approx_with_loss {
 
             layer_input.set_input_batch(input.clone());
             let attention_head_output = attention_head_layer.forward(&layer_input);
-            let output_softmax = softmax_layer.forward(&attention_head_output.get_output_batch(), Some(padding_mask_batch.clone()));
+
+            let output_softmax = softmax_layer.forward(&attention_head_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let loss = cross_entropy_loss_batch(&output_softmax, &target_token_id_batch, &padding_mask_batch, batch_size);
 
@@ -108,7 +119,7 @@ mod test_self_attention_layer_approx_with_loss {
 
             layer_input.set_input_batch(input.clone());
             let attention_head_output = attention_head_layer.forward(&layer_input);
-            let output_softmax = softmax_layer.forward(&attention_head_output.get_output_batch(), Some(padding_mask_batch.clone()));
+            let output_softmax = softmax_layer.forward(&attention_head_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let loss = cross_entropy_loss_batch(&output_softmax, &target_token_id_batch, &padding_mask_batch, batch_size);
 
@@ -137,7 +148,7 @@ mod test_self_attention_layer_approx_with_loss {
 
             layer_input.set_input_batch(input.clone());
             let attention_head_output = attention_head_layer.forward(&layer_input);
-            let output_softmax = softmax_layer.forward(&attention_head_output.get_output_batch(), Some(padding_mask_batch.clone()));
+            let output_softmax = softmax_layer.forward(&attention_head_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let loss = cross_entropy_loss_batch(&output_softmax, &target_token_id_batch, &padding_mask_batch, batch_size);
 
@@ -150,7 +161,11 @@ mod test_self_attention_layer_approx_with_loss {
         println!("\n dim numerical gradient weights k {:?}, {}", numerical_grad_weight_k.len(), numerical_grad_weight_k[0].len());
 
         println!("\n\n analytical gradient weight k attention layer {:?}", analytical_gradient_weights_k);
-        println!("\n dim nanalytical gradient weights k {:?}, {} ", analytical_gradient_weights_k.len(), analytical_gradient_weights_k[0].len());
+        println!(
+            "\n dim nanalytical gradient weights k {:?}, {} ",
+            analytical_gradient_weights_k.len(),
+            analytical_gradient_weights_k[0].len()
+        );
 
         let global_error = global_relative_error_2d_l2(&numerical_grad_weight_k, &analytical_gradient_weights_k);
         println!("\n\n global relative gradient error weight k: {:?}", &global_error);
@@ -166,7 +181,7 @@ mod test_self_attention_layer_approx_with_loss {
 
             layer_input.set_input_batch(input.clone());
             let attention_head_output = attention_head_layer.forward(&layer_input);
-            let output_softmax = softmax_layer.forward(&attention_head_output.get_output_batch(), Some(padding_mask_batch.clone()));
+            let output_softmax = softmax_layer.forward(&attention_head_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let loss = cross_entropy_loss_batch(&output_softmax, &target_token_id_batch, &padding_mask_batch, batch_size);
 
@@ -207,7 +222,7 @@ mod test_self_attention_layer_approx_with_loss {
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             layer_input.set_input_batch(input.clone());
             let attention_head_output = attention_head_layer.forward(&layer_input);
-            let output_softmax = softmax_layer.forward(&attention_head_output.get_output_batch(), Some(padding_mask_batch.clone()));
+            let output_softmax = softmax_layer.forward(&attention_head_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let loss = cross_entropy_loss_batch(&output_softmax, &target_token_id_batch, &padding_mask_batch, batch_size);
 

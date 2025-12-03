@@ -6,8 +6,8 @@ mod test_softmax_layer {
             network_types::{
                 neural_network_generic::OperationMode,
                 transformer::{
-                    sparse_masked_attention_head::{calculate_window_tokens, SparseMaskedAttentionHead},
-                    transformer_network::cross_entropy_loss_batch,
+                    sparse_masked_attention_head::{SparseMaskedAttentionHead, calculate_window_tokens},
+                    transformer_network::{cross_entropy_loss_batch, cross_entropy_sum_batch},
                 },
             },
             utils::{
@@ -50,17 +50,17 @@ mod test_softmax_layer {
 
         // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
         let linear_output = linear_layer.forward(&layer_input);
-        let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()));
+        let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         let gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
         let (analytical_grad_batch, analytical_grad) = (gradient.get_gradient_input_batch(), gradient.get_gradient_input());
 
         // Define the loss function
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
-            let softmax_batch_output = softmax_layer.forward(&input, None);
+            softmax_layer.forward(&input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
-            //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
-            let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
+            let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
+            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
 
             loss
         };

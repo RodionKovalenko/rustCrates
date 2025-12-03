@@ -7,6 +7,7 @@ use crate::neural_networks::{
 };
 
 pub const VERBOSE: bool = false;
+pub const SHOW_MAX_PARAMS: bool = false;
 
 fn update_by_norm(transformer: &mut NeuralNetwork) {
     let mut global_weights = Vec::new();
@@ -26,7 +27,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                 normalize_gradients_batch(&mut gradient_input_batch);
                 gradient.set_gradient_input_batch(gradient_input_batch);
 
-                if VERBOSE {
+                if VERBOSE && SHOW_MAX_PARAMS {
                     println!("embedding layer updating gradient");
                     max_weight(&gradient.get_gradient_input());
                 }
@@ -46,7 +47,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                 gradient.set_gradient_gamma(gamma_grad);
                 gradient.set_gradient_beta(beta_grad);
 
-                if VERBOSE {
+                if VERBOSE && SHOW_MAX_PARAMS {
                     println!("norm layer updating gradient");
                     max_bias(&gradient.get_gradient_beta());
                     max_bias(&gradient.get_gradient_gamma());
@@ -67,7 +68,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                 gradient.set_gradient_gamma(gamma_grad);
                 gradient.set_gradient_beta(beta_grad);
 
-                if VERBOSE {
+                if VERBOSE && SHOW_MAX_PARAMS {
                     println!("RMS norm layer updating gradient");
                     max_bias(&gradient.get_gradient_beta());
                     max_bias(&gradient.get_gradient_gamma());
@@ -98,7 +99,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                     gradient.set_gradient_weights_q_batch(gradient_weight_q_batch);
                     gradient.set_gradient_bias_pos_batch(gradient_weight_pos_batch);
 
-                    if VERBOSE {
+                    if VERBOSE && SHOW_MAX_PARAMS {
                         println!("self attention layer updating gradient");
                         max_weight(&gradient.get_gradient_weights_k());
                         max_weight(&gradient.get_gradient_weights_q());
@@ -123,7 +124,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                             gradient.set_gradient_gamma(gamma_grad);
                             gradient.set_gradient_beta(beta_grad);
 
-                            if VERBOSE {
+                            if VERBOSE && SHOW_MAX_PARAMS {
                                 println!("RMS norm layer updating gradient");
                                 max_bias(&gradient.get_gradient_beta());
                                 max_bias(&gradient.get_gradient_gamma());
@@ -144,7 +145,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                             gradient.set_gradient_gamma(gamma_grad);
                             gradient.set_gradient_beta(beta_grad);
 
-                            if VERBOSE {
+                            if VERBOSE && SHOW_MAX_PARAMS {
                                 println!("norm layer updating gradient");
                                 max_bias(&gradient.get_gradient_beta());
                                 max_bias(&gradient.get_gradient_gamma());
@@ -178,7 +179,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                     gradient.set_gradient_weights_q_batch(gradient_weight_q_batch);
                     gradient.set_gradient_bias_pos_batch(gradient_weight_pos_batch);
 
-                    if VERBOSE {
+                    if VERBOSE && SHOW_MAX_PARAMS {
                         println!("self sparse attention layer updating gradient");
                         max_weight(&gradient.get_gradient_weights_k());
                         max_weight(&gradient.get_gradient_weights_q());
@@ -203,7 +204,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                             gradient.set_gradient_gamma(gamma_grad);
                             gradient.set_gradient_beta(beta_grad);
 
-                            if VERBOSE {
+                            if VERBOSE && SHOW_MAX_PARAMS {
                                 println!("rms norm layer updating gradient");
                                 max_bias(&gradient.get_gradient_beta());
                                 max_bias(&gradient.get_gradient_gamma());
@@ -224,7 +225,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                             gradient.set_gradient_gamma(gamma_grad);
                             gradient.set_gradient_beta(beta_grad);
 
-                            if VERBOSE {
+                            if VERBOSE && SHOW_MAX_PARAMS {
                                 println!("norm layer updating gradient");
                                 max_bias(&gradient.get_gradient_beta());
                                 max_bias(&gradient.get_gradient_gamma());
@@ -258,7 +259,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                     gradient.set_gradient_weights_q_batch(gradient_weight_q_batch);
                     gradient.set_gradient_bias_pos_batch(gradient_weight_pos_batch);
 
-                    if VERBOSE {
+                    if VERBOSE && SHOW_MAX_PARAMS {
                         println!("self attention approximation layer updating gradient");
                         max_weight(&gradient.get_gradient_weights_k());
                         max_weight(&gradient.get_gradient_weights_q());
@@ -283,7 +284,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                             gradient.set_gradient_gamma(gamma_grad);
                             gradient.set_gradient_beta(beta_grad);
 
-                            if VERBOSE {
+                            if VERBOSE && SHOW_MAX_PARAMS {
                                 println!("norm layer updating gradient");
                                 max_bias(&gradient.get_gradient_beta());
                                 max_bias(&gradient.get_gradient_gamma());
@@ -304,7 +305,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                             gradient.set_gradient_gamma(gamma_grad);
                             gradient.set_gradient_beta(beta_grad);
 
-                            if VERBOSE {
+                            if VERBOSE && SHOW_MAX_PARAMS {
                                 println!("norm layer updating gradient");
                                 max_bias(&gradient.get_gradient_beta());
                                 max_bias(&gradient.get_gradient_gamma());
@@ -332,7 +333,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                             gradient.set_gradient_weight_batch(weight_gradient_batch);
                             gradient.set_gradient_bias_batch(bias_gradient_batch);
 
-                            if VERBOSE {
+                            if VERBOSE && SHOW_MAX_PARAMS {
                                 println!("dense layer updating gradient");
                                 max_weight(&gradient.get_gradient_weights());
                                 max_bias(&gradient.get_gradient_bias());
@@ -353,7 +354,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                             gradient.set_gradient_weight_batch(weight_gradient_batch);
                             gradient.set_gradient_bias_batch(bias_gradient_batch);
 
-                            if VERBOSE {
+                            if VERBOSE && SHOW_MAX_PARAMS {
                                 println!("linear layer updating gradient");
                                 max_weight(&gradient.get_gradient_weights());
                                 max_bias(&gradient.get_gradient_bias());
@@ -379,7 +380,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                             gradient.set_gradient_gamma(gamma_grad);
                             gradient.set_gradient_beta(beta_grad);
 
-                            if VERBOSE {
+                            if VERBOSE && SHOW_MAX_PARAMS {
                                 println!("RMS norm layer updating gradient");
                                 max_bias(&gradient.get_gradient_beta());
                                 max_bias(&gradient.get_gradient_gamma());
@@ -400,7 +401,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                             gradient.set_gradient_gamma(gamma_grad);
                             gradient.set_gradient_beta(beta_grad);
 
-                            if VERBOSE {
+                            if VERBOSE && SHOW_MAX_PARAMS {
                                 println!("norm layer updating gradient");
                                 max_bias(&gradient.get_gradient_beta());
                                 max_bias(&gradient.get_gradient_gamma());
@@ -425,7 +426,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                 gradient.set_gradient_weight_batch(weight_gradient_batch);
                 gradient.set_gradient_bias_batch(bias_gradient_batch);
 
-                if VERBOSE {
+                if VERBOSE && SHOW_MAX_PARAMS {
                     println!("dense layer updating gradient");
                     max_weight(&gradient.get_gradient_weights());
                     max_bias(&gradient.get_gradient_bias());
@@ -446,7 +447,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                 gradient.set_gradient_weight_batch(weight_gradient_batch);
                 gradient.set_gradient_bias_batch(bias_gradient_batch);
 
-                if VERBOSE {
+                if VERBOSE && SHOW_MAX_PARAMS {
                     println!("linear layer updating gradient");
                     max_weight(&gradient.get_gradient_weights());
                     max_bias(&gradient.get_gradient_bias());
@@ -455,7 +456,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
             LayerEnum::MultiLinear(linear_layer) => {
                 let (weight_grad, bias_grad) = linear_layer.get_combined_gradients();
 
-                if VERBOSE {
+                if VERBOSE && SHOW_MAX_PARAMS {
                     println!("multi linear layer updating gradient");
                     max_weight(&weight_grad);
                     max_bias(&bias_grad);
@@ -467,7 +468,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
             LayerEnum::Wavelet(_wavelet_layer) => {}
             LayerEnum::DiscreteWavelet(_wavelet_layer) => {}
             LayerEnum::Softmax(_softmax_layer) => {
-                if VERBOSE {
+                if VERBOSE && SHOW_MAX_PARAMS {
                     println!("softmax layer - no parameters to update");
                 }
             }
@@ -528,7 +529,7 @@ pub fn max_weight(weights: &Vec<Vec<Complex<f64>>>) -> f64 {
         }
     }
 
-    if VERBOSE {
+    if VERBOSE && SHOW_MAX_PARAMS {
         println!("Max weight: {}", max_weight);
     }
     max_weight
@@ -543,7 +544,7 @@ pub fn max_bias(bias: &[Complex<f64>]) -> f64 {
         }
     }
 
-    if VERBOSE {
+    if VERBOSE && SHOW_MAX_PARAMS {
         println!("Max bias: {}", max_bias);
     }
     max_bias

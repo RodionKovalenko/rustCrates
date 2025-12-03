@@ -474,6 +474,80 @@ pub fn softmax_complex_padding_real(input: &Vec<Vec<Complex<f64>>>, padding_mask
         .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
 }
 
+pub fn softmax_backward_real_with_gradient(
+    logits: &Vec<Vec<Complex<f64>>>, // shape: seq_len × vocab
+    targets: &Vec<u32>,              // length: target_len
+    padding_mask: &Vec<u32>,         // length: seq_len, 1 = valid, 0 = pad
+) -> (Vec<Vec<Complex<f64>>>, Vec<Vec<Complex<f64>>>) {
+    let seq_len = logits.len();
+    let target_len = targets.len();
+
+    assert_eq!(padding_mask.len(), seq_len, "padding_mask must have same length as logits");
+
+    assert!(target_len <= seq_len, "targets length {} cannot exceed logits length {}", target_len, seq_len);
+
+    // The last `target_len` logits positions correspond to targets.
+    // Example: seq_len=15, target_len=7 → offset=8
+    let offset = seq_len - target_len;
+
+    logits
+        .par_iter()
+        .enumerate()
+        .map(|(t, row)| {
+            // If this timestep is padded → no loss, no gradient
+            if padding_mask[t] == 0 {
+                return (vec![Complex::new(0.0, 0.0)], vec![Complex::new(0.0, 0.0); row.len()]);
+            }
+
+            // If t < offset → no target assigned here
+            if t < offset {
+                return (vec![Complex::new(0.0, 0.0)], vec![Complex::new(0.0, 0.0); row.len()]);
+            }
+
+            // Compute which target index corresponds to this t
+            let target_idx = t - offset;
+
+            let target_token = targets[target_idx];
+
+            let (loss_real, grad_real) = softmax_ce_grad_complex(row, target_token);
+
+            let loss_complex = vec![Complex::new(loss_real, 0.0)];
+
+            let grad_complex: Vec<Complex<f64>> = grad_real.into_iter().map(|g| Complex::new(g, 0.0)).collect();
+
+            (loss_complex, grad_complex)
+        })
+        .unzip()
+}
+/// Compute cross-entropy loss and gradient (real)
+fn softmax_ce_grad_complex(logits: &Vec<Complex<f64>>, target: u32) -> (f64, Vec<f64>) {
+    // Take real part
+    let logits_real: Vec<f64> = logits.iter().map(|c| c.re).collect();
+    let target_u = target as usize;
+
+    // Max logit for numerical stability
+    let max_logit = logits_real.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+
+    // Sum of exponentials
+    let mut sum_exp = 0.0;
+    for &z in &logits_real {
+        sum_exp += (z - max_logit).exp();
+    }
+
+    // Cross-entropy loss
+    let logsumexp = max_logit + sum_exp.ln();
+    let loss = -(logits_real[target_u] - logsumexp);
+
+    // Gradient w.r.t logits
+    let mut grad = Vec::with_capacity(logits_real.len());
+    for &z in &logits_real {
+        grad.push((z - max_logit).exp() / sum_exp);
+    }
+    grad[target_u] -= 1.0;
+
+    (loss, grad)
+}
+
 pub fn softmax_matrix_f64(input: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
     input.par_iter().map(|row| softmax_row_f64(row)).collect() // Collect the results into a Vec<Vec<Complex<f64>>>
 }
