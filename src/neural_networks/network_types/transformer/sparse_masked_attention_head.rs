@@ -11,7 +11,7 @@ use crate::{
     neural_networks::{
         network_components::{gradient_struct::Gradient, layer::LayerType, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
         utils::{
-            activation::softmax_complex_padding_real,
+            activation::softmax_complex_padding_complex,
             adam_w::calculate_adam_w,
             matrix::{add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, transpose},
             weights_initializer::initialize_weights_complex,
@@ -55,7 +55,7 @@ pub struct SparseMaskedAttentionHead {
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
-    pub attention_weights_batch: Option<Vec<Vec<Vec<f64>>>>,
+    pub attention_weights_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     pub attention_weights_batch_raw: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
@@ -82,7 +82,7 @@ impl SparseMaskedAttentionHead {
         initialize_weights_complex(rows, cols, &mut weights_k);
         initialize_weights_complex(rows, cols, &mut weights_v);
 
-        initialize_weights_complex( 5,  5, &mut bias_pos);
+        initialize_weights_complex(5, 5, &mut bias_pos);
 
         let bias_q: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
         let bias_k: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
@@ -261,13 +261,13 @@ impl SparseMaskedAttentionHead {
     ) -> Vec<Vec<Vec<Complex<f64>>>> {
         let k_windows: Vec<Vec<Vec<Vec<Complex<f64>>>>> = calculate_window_tokens_batch(&k_batch, self.window_size);
 
-        let attention_weights_activated_compressed: Vec<Vec<Vec<f64>>> = q_batch
+        let attention_weights_activated_compressed: Vec<Vec<Vec<Complex<f64>>>> = q_batch
             .par_iter()
             .enumerate()
             .map(|(batch_ind, q)| {
                 let mut sparse_attention_weights_inactivated = self.calculate_local_attention(q, &k_windows[batch_ind], true);
                 self.apply_sparse_causal_mask(&mut sparse_attention_weights_inactivated);
-                softmax_complex_padding_real(&sparse_attention_weights_inactivated, &padding_mask_batch[batch_ind])
+                softmax_complex_padding_complex(&sparse_attention_weights_inactivated, &padding_mask_batch[batch_ind])
             })
             .collect();
 
@@ -283,7 +283,7 @@ impl SparseMaskedAttentionHead {
         batch_output_compr
     }
 
-    pub fn multiply_sparse(&self, attention_sparse_weights: &Vec<Vec<f64>>, v: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    pub fn multiply_sparse(&self, attention_sparse_weights: &Vec<Vec<Complex<f64>>>, v: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
         let seq_len = attention_sparse_weights.len();
         let embedding_dim = v[0].len();
 
@@ -302,16 +302,13 @@ impl SparseMaskedAttentionHead {
         output
     }
 
-    pub fn multiply_sparse_backward<V, W>(&self, v: &[Vec<V>], attention_sparse_weights: &[Vec<W>]) -> Vec<Vec<V>>
-    where
-        V: Scalar + Mul<W, Output = V> + AddAssign + Default + Copy,
-        W: Copy,
+    pub fn multiply_sparse_backward(&self, v: &[Vec<Complex<f64>>], attention_sparse_weights: &[Vec<Complex<f64>>]) -> Vec<Vec<Complex<f64>>>
     {
         let n_rows = v.len();
         let n_cols = attention_sparse_weights.len();
         let window = self.window_size;
 
-        let mut output = vec![vec![V::default(); n_cols]; n_rows];
+        let mut output = vec![vec![Complex::zero(); n_cols]; n_rows];
 
         for k in 0..n_rows {
             for p in 0..n_cols {
@@ -319,7 +316,7 @@ impl SparseMaskedAttentionHead {
                 let attn_row = &attention_sparse_weights[p];
 
                 for (local_idx, q) in (start_ind..end_ind).enumerate() {
-                    output[k][q] += v[k][p] * attn_row[local_idx];
+                    output[k][q] += v[k][p] * attn_row[local_idx].conj();
                 }
             }
         }
@@ -490,7 +487,7 @@ impl SparseMaskedAttentionHead {
         restored_matrix
     }
 
-    pub fn build_original_indices(&self, input: &Vec<Vec<f64>>) -> Vec<Vec<usize>> {
+    pub fn build_original_indices(&self, input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<usize>> {
         let mut indices_matrix: Vec<Vec<usize>> = Vec::new();
 
         for token_index in 0..input.len() {
@@ -568,10 +565,10 @@ impl SparseMaskedAttentionHead {
 
     pub fn softmax_backward_sparse_compressed(
         &self,
-        softmax_vals: &Vec<Vec<f64>>,   // sparse softmax values per row
-        softmax_idx: &Vec<Vec<usize>>,  // original column indices
-        dl_do: &Vec<Vec<Complex<f64>>>, // ∂L/∂o
-        do_ds: &Vec<Vec<Complex<f64>>>, // ∂o/∂s
+        softmax_vals: &Vec<Vec<Complex<f64>>>, // sparse softmax values per row
+        softmax_idx: &Vec<Vec<usize>>,         // original column indices
+        dl_do: &Vec<Vec<Complex<f64>>>,        // ∂L/∂o
+        do_ds: &Vec<Vec<Complex<f64>>>,        // ∂o/∂s
         padding_mask: &Vec<u32>,
     ) -> (Vec<Vec<Complex<f64>>>, Vec<Vec<usize>>) // sparse ∂L/∂z
     {
@@ -610,7 +607,7 @@ impl SparseMaskedAttentionHead {
             }
 
             // Compute dot = Σ s[k] * u_k
-            let mut dot = 0.0;
+            let mut dot = Complex::new(0.0, 0.0);
             for (p, _) in cols.iter().enumerate() {
                 dot += values[p] * u_vals[p];
             }
@@ -618,7 +615,7 @@ impl SparseMaskedAttentionHead {
             // Compute final dl/dz only for sparse entries
             let mut grad_vals = Vec::with_capacity(cols.len());
             for (p, _) in cols.iter().enumerate() {
-                grad_vals.push(Complex::new(values[p] * (u_vals[p] - dot), 0.0));
+                grad_vals.push(values[p] * (u_vals[p] - dot));
             }
 
             dl_dz_vals.push(grad_vals);
@@ -635,7 +632,7 @@ impl SparseMaskedAttentionHead {
         let padding_mask_batch = self.padding_mask_batch.as_ref().expect("Padding mask batch is missing in attention head ");
 
         // dimensions [seq_len][seq_len] -> A
-        let attention_weights_batch: &Vec<Vec<Vec<f64>>> = self.attention_weights_batch.as_ref().expect("Attention weights batch is missing in attention head");
+        let attention_weights_batch: &Vec<Vec<Vec<Complex<f64>>>> = self.attention_weights_batch.as_ref().expect("Attention weights batch is missing in attention head");
 
         let batch_size = output_batch.len();
 
