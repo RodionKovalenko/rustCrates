@@ -11,7 +11,10 @@ pub mod test_ffn_swiglu {
         },
         network_types::{feedforward_layer::FeedForwardLayer, neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
         utils::{
-            derivative::{global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_bias, numerical_gradient_input_batch, numerical_gradient_weights, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d},
+            derivative::{
+                global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_bias, numerical_gradient_input_batch, numerical_gradient_weights, test_gradient_batch_error,
+                test_gradient_error_1d, test_gradient_error_2d,
+            },
             random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
         },
     };
@@ -77,8 +80,13 @@ pub mod test_ffn_swiglu {
         println!("linear layer process");
         let linear_output: LayerOutput = linear_layer.forward(&layer_input);
 
-        println!("linear output batch dim: {}, {}, {}", linear_output.get_output_batch().len(), linear_output.get_output_batch()[0].len(), linear_output.get_output_batch()[0][0].len());
-        let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
+        println!(
+            "linear output batch dim: {}, {}, {}",
+            linear_output.get_output_batch().len(),
+            linear_output.get_output_batch()[0].len(),
+            linear_output.get_output_batch()[0][0].len()
+        );
+        let _softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None, Some(target_token_id_batch.clone()));
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
@@ -99,7 +107,7 @@ pub mod test_ffn_swiglu {
             layer_input.set_input_batch(ffn_batch_output.get_output_batch());
             let linear_output: LayerOutput = linear_layer.forward(&layer_input);
 
-            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
+            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None, Some(target_token_id_batch.clone()));
 
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, input.len());
 
@@ -113,8 +121,18 @@ pub mod test_ffn_swiglu {
         println!("\n\n numerical grad input ffn: {:?}", &numerical_grad_input_ffn);
 
         // Check if gradient batch dimensions match expected shapes
-        println!("\n analytical grad input dim: {:?}, {} {}", analytical_grad_input_ffn.len(), analytical_grad_input_ffn[0].len(), analytical_grad_input_ffn[0][0].len());
-        println!("numerical grad input dim: {:?}, {} {}", numerical_grad_input_ffn.len(), numerical_grad_input_ffn[0].len(), numerical_grad_input_ffn[0][0].len());
+        println!(
+            "\n analytical grad input dim: {:?}, {} {}",
+            analytical_grad_input_ffn.len(),
+            analytical_grad_input_ffn[0].len(),
+            analytical_grad_input_ffn[0][0].len()
+        );
+        println!(
+            "numerical grad input dim: {:?}, {} {}",
+            numerical_grad_input_ffn.len(),
+            numerical_grad_input_ffn[0].len(),
+            numerical_grad_input_ffn[0][0].len()
+        );
 
         for b in 0..analytical_grad_input_ffn.len() {
             for s in 0..analytical_grad_input_ffn[b].len() {
@@ -161,7 +179,7 @@ pub mod test_ffn_swiglu {
             layer_input.set_input_batch(ffn_batch_output.get_output_batch());
             let linear_output: LayerOutput = linear_layer.forward(&layer_input);
 
-            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
+            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None, Some(target_token_id_batch.clone()));
 
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, input.len());
 
@@ -201,7 +219,7 @@ pub mod test_ffn_swiglu {
             let linear_output: LayerOutput = linear_layer.forward(&layer_input);
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
-            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None);
+            let softmax_batch_output = softmax_layer.forward(&linear_output.get_output_batch(), None, Some(target_token_id_batch.clone()));
 
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, input.len());
 

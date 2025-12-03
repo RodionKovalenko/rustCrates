@@ -13,6 +13,7 @@ pub struct LayerOutput {
     input_gradient_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     padding_mask_batch: Option<Vec<Vec<u32>>>,
     pooling_metadata: Option<CompressionMetadata>,
+    cross_entropy_loss_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
 }
 
 impl LayerOutput {
@@ -25,6 +26,7 @@ impl LayerOutput {
             input_gradient_batch: None,
             padding_mask_batch: None,
             pooling_metadata: None,
+            cross_entropy_loss_batch: None,
         }
     }
 
@@ -45,6 +47,10 @@ impl LayerOutput {
     }
     pub fn set_padding_mask_batch(&mut self, padding_mask_batch: Vec<Vec<u32>>) {
         self.padding_mask_batch = Some(padding_mask_batch);
+    }
+
+    pub fn set_cross_entropy_loss_batch(&mut self, cross_entropy_loss_batch: Vec<Vec<Vec<Complex<f64>>>>) {
+        self.cross_entropy_loss_batch = Some(cross_entropy_loss_batch);
     }
 
     pub fn get_output_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
@@ -70,5 +76,8 @@ impl LayerOutput {
     }
     pub fn get_pooling_metadata(&self) -> Option<CompressionMetadata> {
         self.pooling_metadata.clone()
+    }
+    pub fn get_cross_entropy_loss_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
+        self.cross_entropy_loss_batch.clone().unwrap_or_else(|| vec![])
     }
 }

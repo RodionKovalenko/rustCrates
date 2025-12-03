@@ -1,10 +1,14 @@
 #[cfg(test)]
 mod test_positional_encoding_layer {
     use crate::neural_networks::{
-        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer}, network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch}, utils::{
-            derivative::{global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_input, numerical_gradient_input_batch_sum_without_loss, test_gradient_batch_error, test_gradient_error_2d},
+        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
+        network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_loss_batch},
+        utils::{
+            derivative::{
+                global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_input, numerical_gradient_input_batch_sum_without_loss, test_gradient_batch_error, test_gradient_error_2d,
+            },
             random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
-        }
+        },
     };
 
     use num::Complex;
@@ -62,7 +66,7 @@ mod test_positional_encoding_layer {
         test_gradient_batch_error(&numerical_grad_batch, &analytical_grad_batch, epsilon_test);
     }
 
-  #[test]
+    #[test]
     fn test_softmax_positional_layer_backward() {
         // Define some small batch size and input dimensions for simplicity
         let batch_size = 1;
@@ -95,7 +99,7 @@ mod test_positional_encoding_layer {
         layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
         let positonal_encoding = positional_enc_layer.forward(&layer_input);
-        let _softmax_batch_output = softmax_layer.forward(&positonal_encoding, Some(padding_mask_batch.clone()));
+        let _softmax_batch_output = softmax_layer.forward(&positonal_encoding, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         let softmax_gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
         let positional_enc_gradient: Gradient = positional_enc_layer.backward(&softmax_gradient.get_gradient_input_batch());
@@ -107,7 +111,7 @@ mod test_positional_encoding_layer {
             layer_input.set_input_batch(input.clone());
             let wavelet_output = positional_enc_layer.forward(&layer_input);
 
-            let softmax_batch_output = softmax_layer.forward(&wavelet_output, Some(padding_mask_batch.clone()));
+            let softmax_batch_output = softmax_layer.forward(&wavelet_output, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
             let loss = cross_entropy_loss_batch(&softmax_batch_output, &target_token_id_batch, &padding_mask_batch, batch_size);
 
             loss

@@ -16,7 +16,7 @@ pub fn get_storage_path_embedding_db(filename: &str) -> PathBuf {
 pub fn get_storage_path_transformer_db(filename: &str) -> PathBuf {
     // STORAGE/SLED_TRANSFORMER
     let path = Path::new(STORAGE_DIR).join(filename);
-    println!("path in transformer: {:?}", path.to_str());
+    // println!("path in transformer: {:?}", path.to_str());
     path
 }
 

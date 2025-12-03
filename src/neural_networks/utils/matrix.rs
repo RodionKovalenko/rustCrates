@@ -12,10 +12,25 @@ use std::ops::{Add, Mul, Sub};
 use std::sync::{Arc, Mutex};
 
 use crate::neural_networks::network_types::transformer::transformer_updater::VERBOSE;
+use crate::neural_networks::utils::adam_w::MAX_ELEMENT;
 use crate::neural_networks::utils::adam_w::MAX_NORM;
 
 extern "C" {
-    fn zgemm_(transa: *const c_char, transb: *const c_char, m: *const i64, n: *const i64, k: *const i64, alpha: *const Complex<f64>, a: *const Complex<f64>, lda: *const i64, b: *const Complex<f64>, ldb: *const i64, beta: *const Complex<f64>, c: *mut Complex<f64>, ldc: *const i64);
+    fn zgemm_(
+        transa: *const c_char,
+        transb: *const c_char,
+        m: *const i64,
+        n: *const i64,
+        k: *const i64,
+        alpha: *const Complex<f64>,
+        a: *const Complex<f64>,
+        lda: *const i64,
+        b: *const Complex<f64>,
+        ldb: *const i64,
+        beta: *const Complex<f64>,
+        c: *mut Complex<f64>,
+        ldc: *const i64,
+    );
 }
 pub fn multiply_complex(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<f64>>]) -> Vec<Vec<Complex<f64>>> {
     let m = matrix_a.len() as i64;
@@ -58,7 +73,21 @@ pub fn multiply_complex(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<
     //println!("Calling zgemm_ with m={}, n={}, k={}, lda={}, ldb={}, ldc={}", m, n, k, lda, ldb, ldc);
 
     unsafe {
-        zgemm_(&transa as *const u8 as *const c_char, &transb as *const u8 as *const c_char, &m, &n, &k, &alpha, a.as_ptr(), &lda, b.as_ptr(), &ldb, &beta, c.as_mut_ptr(), &ldc);
+        zgemm_(
+            &transa as *const u8 as *const c_char,
+            &transb as *const u8 as *const c_char,
+            &m,
+            &n,
+            &k,
+            &alpha,
+            a.as_ptr(),
+            &lda,
+            b.as_ptr(),
+            &ldb,
+            &beta,
+            c.as_mut_ptr(),
+            &ldc,
+        );
     }
 
     let mut result = vec![vec![Complex::<f64>::new(0.0, 0.0); n as usize]; m as usize];
@@ -621,7 +650,10 @@ pub fn add_matrix<T: std::ops::Add<Output = T> + Copy>(a: &[Vec<T>], b: &[Vec<T>
 pub fn add_matrix_3d<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<Vec<Vec<T>>>, matrix_b: &Vec<Vec<Vec<T>>>) -> Vec<Vec<Vec<T>>> {
     let mut matrix_result: Vec<Vec<Vec<T>>> = matrix_a.clone();
 
-    assert!(matrix_a.len() == matrix_b.len() && matrix_a[0].len() == matrix_b[0].len() && matrix_a[0][0].len() == matrix_b[0][0].len(), "Input matrices must not be empty");
+    assert!(
+        matrix_a.len() == matrix_b.len() && matrix_a[0].len() == matrix_b[0].len() && matrix_a[0][0].len() == matrix_b[0][0].len(),
+        "Input matrices must not be empty"
+    );
     for i in 0..matrix_a.len() {
         for j in 0..matrix_a[i].len() {
             for k in 0..matrix_a[i][j].len() {
@@ -906,7 +938,12 @@ pub fn compute_global_norm(grads: &Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Vec<C
 
     if VERBOSE {
         println!("Total norm: {:8e}", total_norm.sqrt());
-        println!("Real norm: {:}, Imag norm: {:}, ratio: {:}", total_real.sqrt(), total_imag.sqrt(), total_imag.sqrt() / total_real.sqrt());
+        println!(
+            "Real norm: {:}, Imag norm: {:}, ratio: {:}",
+            total_real.sqrt(),
+            total_imag.sqrt(),
+            total_imag.sqrt() / total_real.sqrt()
+        );
     }
 
     total_norm.sqrt()
@@ -955,10 +992,54 @@ pub fn normalize_gradients_batch(gradients_batch: &mut Vec<Vec<Vec<Complex<f64>>
     }
 }
 
-pub fn normalize_gradients(gradients: &mut Vec<Vec<Complex<f64>>>) {
-    let norm: f64 = gradients.iter().flatten().map(|g| g.norm_sqr()).sum::<f64>().sqrt();
+fn clamp_complex(z: &mut Complex<f64>) {
+    if z.re.abs() > MAX_ELEMENT {
+        z.re = z.re.signum() * MAX_ELEMENT;
+    }
+    if z.im.abs() > MAX_ELEMENT {
+        z.im = z.im.signum() * MAX_ELEMENT;
+    }
+}
 
-    if norm > MAX_NORM {
+fn stable_l2_norm(values: impl Iterator<Item = Complex<f64>>) -> f64 {
+    // First pass: find max magnitude
+    let mut max_val = 0.0;
+    let vals: Vec<Complex<f64>> = values
+        .inspect(|g| {
+            let n = g.norm();
+            if n > max_val {
+                max_val = n;
+            }
+        })
+        .collect();
+
+    if max_val == 0.0 {
+        return 0.0;
+    }
+
+    // Second pass: accumulate scaled squares
+    let mut sum = 0.0;
+    for g in vals.iter() {
+        let scaled = g.norm() / max_val;
+        sum += scaled * scaled;
+    }
+
+    max_val * sum.sqrt()
+}
+
+pub fn normalize_gradients(gradients: &mut Vec<Vec<Complex<f64>>>) {
+    // Step 1: elementwise clamp to avoid explosions before norm
+    for row in gradients.iter_mut() {
+        for val in row.iter_mut() {
+            clamp_complex(val);
+        }
+    }
+
+    // Step 2: compute stable L2 norm
+    let norm = stable_l2_norm(gradients.iter().flatten().cloned());
+
+    // Step 3: scale if necessary
+    if norm > MAX_NORM && norm > 0.0 {
         let scale = MAX_NORM / norm;
         for row in gradients.iter_mut() {
             for val in row.iter_mut() {
@@ -969,15 +1050,23 @@ pub fn normalize_gradients(gradients: &mut Vec<Vec<Complex<f64>>>) {
 }
 
 pub fn normalize_bias(bias: &mut Vec<Complex<f64>>) {
-    let norm: f64 = bias.iter().map(|g| g.norm_sqr()).sum::<f64>().sqrt();
+    // Step 1: clamp
+    for val in bias.iter_mut() {
+        clamp_complex(val);
+    }
 
-    if norm > MAX_NORM {
+    // Step 2: stable norm
+    let norm = stable_l2_norm(bias.iter().cloned());
+
+    // Step 3: scale
+    if norm > MAX_NORM && norm > 0.0 {
         let scale = MAX_NORM / norm;
         for val in bias.iter_mut() {
             *val *= scale;
         }
     }
 }
+
 pub fn is_nan_or_inf(z: &Complex<f64>) -> bool {
     z.re.is_nan() || z.re.is_infinite() || z.im.is_nan() || z.im.is_infinite()
 }

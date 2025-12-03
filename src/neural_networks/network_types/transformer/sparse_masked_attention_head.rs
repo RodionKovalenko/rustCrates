@@ -21,8 +21,6 @@ use crate::{
 };
 use std::fmt::Debug;
 
-use super::transformer_network::MAX_CONTEXT_WINDOW_SIZE;
-
 // Layer struct
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SparseMaskedAttentionHead {
@@ -78,13 +76,13 @@ impl SparseMaskedAttentionHead {
         let mut weights_k: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
         let mut weights_v: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
 
-        let mut bias_pos: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); MAX_CONTEXT_WINDOW_SIZE * 5]; MAX_CONTEXT_WINDOW_SIZE * 5];
+        let mut bias_pos: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); 5]; 5];
 
         initialize_weights_complex(rows, cols, &mut weights_q);
         initialize_weights_complex(rows, cols, &mut weights_k);
         initialize_weights_complex(rows, cols, &mut weights_v);
 
-        initialize_weights_complex(MAX_CONTEXT_WINDOW_SIZE * 5, MAX_CONTEXT_WINDOW_SIZE * 5, &mut bias_pos);
+        initialize_weights_complex( 5,  5, &mut bias_pos);
 
         let bias_q: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
         let bias_k: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
@@ -732,7 +730,7 @@ impl SparseMaskedAttentionHead {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("Gradient is missing in attention head layer");
         let (mut grad_w_q, mut grad_w_v, mut grad_w_k) = (gradient.get_gradient_weights_q(), gradient.get_gradient_weights_v(), gradient.get_gradient_weights_k());
 
-        let mut grad_bias_pos = gradient.get_gradient_bias_pos();
+        // let mut grad_bias_pos = gradient.get_gradient_bias_pos();
         let input_batch = gradient.get_gradient_input_batch();
         let mut batch_size = input_batch.len() as f64;
 
@@ -743,12 +741,12 @@ impl SparseMaskedAttentionHead {
         grad_w_q = average_matrix_by_scalar(&grad_w_q, batch_size);
         grad_w_v = average_matrix_by_scalar(&grad_w_v, batch_size);
         grad_w_k = average_matrix_by_scalar(&grad_w_k, batch_size);
-        grad_bias_pos = average_matrix_by_scalar(&grad_bias_pos, batch_size);
+        //  grad_bias_pos = average_matrix_by_scalar(&grad_bias_pos, batch_size);
 
         clip_all_gradients_by_global_norm_2d(&mut grad_w_q, &mut vec![], self.global_norm, self.max_norm);
         clip_all_gradients_by_global_norm_2d(&mut grad_w_v, &mut vec![], self.global_norm, self.max_norm);
         clip_all_gradients_by_global_norm_2d(&mut grad_w_k, &mut vec![], self.global_norm, self.max_norm);
-        clip_all_gradients_by_global_norm_2d(&mut grad_bias_pos, &mut vec![], self.global_norm, self.max_norm);
+        // clip_all_gradients_by_global_norm_2d(&mut grad_bias_pos, &mut vec![], self.global_norm, self.max_norm);
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
