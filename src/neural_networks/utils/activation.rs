@@ -476,74 +476,80 @@ pub fn softmax_complex_padding_real(input: &Vec<Vec<Complex<f64>>>, padding_mask
 
 pub fn softmax_backward_real_with_gradient(
     logits: &Vec<Vec<Complex<f64>>>, // shape: seq_len × vocab
-    targets: &Vec<u32>,              // length: target_len
-    padding_mask: &Vec<u32>,         // length: seq_len, 1 = valid, 0 = pad
+    targets: &Vec<u32>,              // length = target_len
+    padding_mask: &Vec<u32>,         // 1 = valid
 ) -> (Vec<Vec<Complex<f64>>>, Vec<Vec<Complex<f64>>>) {
     let seq_len = logits.len();
     let target_len = targets.len();
 
-    assert_eq!(padding_mask.len(), seq_len, "padding_mask must have same length as logits");
+    assert_eq!(padding_mask.len(), seq_len);
+    assert!(target_len <= seq_len);
 
-    assert!(target_len <= seq_len, "targets length {} cannot exceed logits length {}", target_len, seq_len);
-
-    // The last `target_len` logits positions correspond to targets.
-    // Example: seq_len=15, target_len=7 → offset=8
     let offset = seq_len - target_len;
 
     logits
         .par_iter()
         .enumerate()
         .map(|(t, row)| {
-            // If this timestep is padded → no loss, no gradient
             if padding_mask[t] == 0 {
                 return (vec![Complex::new(0.0, 0.0)], vec![Complex::new(0.0, 0.0); row.len()]);
             }
 
-            // If t < offset → no target assigned here
             if t < offset {
                 return (vec![Complex::new(0.0, 0.0)], vec![Complex::new(0.0, 0.0); row.len()]);
             }
 
-            // Compute which target index corresponds to this t
             let target_idx = t - offset;
+            let target_token = targets[target_idx] as usize;
 
-            let target_token = targets[target_idx];
-
-            let (loss_real, grad_real) = softmax_ce_grad_complex(row, target_token);
+            let (loss_real, grad_complex) = softmax_ce_grad_complex(row, target_token);
 
             let loss_complex = vec![Complex::new(loss_real, 0.0)];
-
-            let grad_complex: Vec<Complex<f64>> = grad_real.into_iter().map(|g| Complex::new(g, 0.0)).collect();
 
             (loss_complex, grad_complex)
         })
         .unzip()
 }
-/// Compute cross-entropy loss and gradient (real)
-fn softmax_ce_grad_complex(logits: &Vec<Complex<f64>>, target: u32) -> (f64, Vec<f64>) {
-    // Take real part
-    let logits_real: Vec<f64> = logits.iter().map(|c| c.re).collect();
-    let target_u = target as usize;
 
-    // Max logit for numerical stability
-    let max_logit = logits_real.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+/// COMPLEX-SAFE softmax + CE + gradient using Wirtinger calculus
+pub fn softmax_ce_grad_complex(logits: &Vec<Complex<f64>>, target: usize) -> (f64, Vec<Complex<f64>>) {
+    let n = logits.len();
+    assert!(target < n);
 
-    // Sum of exponentials
-    let mut sum_exp = 0.0;
-    for &z in &logits_real {
-        sum_exp += (z - max_logit).exp();
+    // === CHANGE #1: subtract max of |logit|, not only max(real) ===
+    let max_norm = logits.iter().map(|z| z.norm()).fold(f64::NEG_INFINITY, f64::max);
+
+    // === CHANGE #2: subtract this from the REAL PART only (imag is unchanged),
+    // because exp(a + i b) = exp(a)*cis(b). Exponent only cares about real part.
+    // But "max_real" must now be "max_norm".
+    let mut s = Vec::with_capacity(n);
+    let mut sum_s = Complex::new(0.0, 0.0);
+
+    for z in logits.iter() {
+        let scaled = Complex::new(z.re - max_norm, z.im).exp();
+        sum_s += scaled;
+        s.push(scaled);
     }
 
-    // Cross-entropy loss
-    let logsumexp = max_logit + sum_exp.ln();
-    let loss = -(logits_real[target_u] - logsumexp);
+    // complex softmax p_j
+    let p_k = s[target] / sum_s;
 
-    // Gradient w.r.t logits
-    let mut grad = Vec::with_capacity(logits_real.len());
-    for &z in &logits_real {
-        grad.push((z - max_logit).exp() / sum_exp);
+    // === CHANGE #3: loss is -log(|p_k|) (not squared) ===
+    // |p_k|^2 exaggerates gradient and is not a standard complex CE form.
+    let pk_norm = p_k.norm();
+    let pk_norm = if pk_norm > 0.0 { pk_norm } else { 1e-300 };
+    let loss = -pk_norm.ln();
+
+    // === CHANGE #4: true Wirtinger gradient dL/d conj(z_m) ===
+    let mut grad = Vec::with_capacity(n);
+    for j in 0..n {
+        let p_j = s[j] / sum_s;
+        let mut g = p_j.conj();
+        if j == target {
+            g -= Complex::new(1.0, 0.0);
+        }
+        grad.push(g);
     }
-    grad[target_u] -= 1.0;
 
     (loss, grad)
 }
