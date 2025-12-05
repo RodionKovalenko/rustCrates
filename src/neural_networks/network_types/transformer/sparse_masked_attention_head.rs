@@ -9,7 +9,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     neural_networks::{
-        network_components::{gradient_struct::Gradient, layer::LayerType, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+        network_components::{
+            complex_to_linear_layer::{self, ComplexToLinearLayer},
+            gradient_struct::Gradient,
+            layer::LayerType,
+            layer_input_struct::LayerInput,
+            layer_output_struct::LayerOutput,
+        },
         utils::{
             activation::softmax_complex_padding_complex,
             adam_w::calculate_adam_w,
@@ -48,6 +54,7 @@ pub struct SparseMaskedAttentionHead {
 
     pub window_size: usize,
 
+    pub complex_to_linear_layer: ComplexToLinearLayer,
     #[serde(skip)]
     pub gradient: Option<Gradient>,
     #[serde(skip)]
@@ -88,6 +95,8 @@ impl SparseMaskedAttentionHead {
         let bias_k: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
         let bias_v: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
 
+        let complex_to_linear_layer = ComplexToLinearLayer::new(learning_rate, cols, rows);
+
         SparseMaskedAttentionHead {
             weights_q,
             weights_k,
@@ -103,6 +112,7 @@ impl SparseMaskedAttentionHead {
             smoothing: 0.99,
             ema: 0.0,
             window_size: window_size,
+            complex_to_linear_layer,
 
             global_norm: 0.0,
             max_norm: 0.0,
@@ -267,7 +277,19 @@ impl SparseMaskedAttentionHead {
             .map(|(batch_ind, q)| {
                 let mut sparse_attention_weights_inactivated = self.calculate_local_attention(q, &k_windows[batch_ind], true);
                 self.apply_sparse_causal_mask(&mut sparse_attention_weights_inactivated);
-                softmax_complex_padding_complex(&sparse_attention_weights_inactivated, &padding_mask_batch[batch_ind])
+                sparse_attention_weights_inactivated
+            })
+            .collect();
+
+        let mut linear_layer = LayerInput::new_default();
+        linear_layer.set_input_batch(attention_weights_activated_compressed.clone());
+        let complex_to_linear_layer_output: Vec<Vec<Vec<Complex<f64>>>> = self.complex_to_linear_layer.forward(&linear_layer).get_output_batch();
+
+        let attention_weights_activated_compressed: Vec<Vec<Vec<Complex<f64>>>> = complex_to_linear_layer_output
+            .iter()
+            .enumerate()
+            .map(|(batch_ind, attention_weights)| {
+                softmax_complex_padding_complex(&attention_weights, &padding_mask_batch[batch_ind])
             })
             .collect();
 
@@ -302,8 +324,7 @@ impl SparseMaskedAttentionHead {
         output
     }
 
-    pub fn multiply_sparse_backward(&self, v: &[Vec<Complex<f64>>], attention_sparse_weights: &[Vec<Complex<f64>>]) -> Vec<Vec<Complex<f64>>>
-    {
+    pub fn multiply_sparse_backward(&self, v: &[Vec<Complex<f64>>], attention_sparse_weights: &[Vec<Complex<f64>>]) -> Vec<Vec<Complex<f64>>> {
         let n_rows = v.len();
         let n_cols = attention_sparse_weights.len();
         let window = self.window_size;
@@ -666,7 +687,7 @@ impl SparseMaskedAttentionHead {
 
             let dl_da_transposed: Vec<Vec<Complex<f64>>> = self.transpose_sparse(&dl_da, &_dl_da_inds);
             let dl_dq: Vec<Vec<Complex<f64>>> = self.multiply_sparse_backward(&k_scaled, &dl_da_transposed);
-            let dl_dwq: Vec<Vec<Complex<f64>>> = multiply_complex(&conjugate_transpose(&input_batch[batch_ind]), &conjugate_transpose(&dl_dq));
+            let dl_dwq: Vec<Vec<Complex<f64>>> = multiply_complex(&conjugate_transpose(&input_batch[batch_ind]), &transpose(&dl_dq));
             // println!("dl_dwq dim: {}, {}", &dl_dwq.len(), &dl_dwq[0].len());
             gradient_q_batch[batch_ind] = dl_dwq;
 
