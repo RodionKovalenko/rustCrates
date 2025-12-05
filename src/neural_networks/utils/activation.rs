@@ -537,39 +537,30 @@ pub fn softmax_ce_grad_complex(logits: &Vec<Complex<f64>>, target: usize) -> (f6
     let n = logits.len();
     assert!(target < n);
 
-    // === CHANGE #1: subtract max of |logit|, not only max(real) ===
-    let max_norm = logits.iter().map(|z| z.norm()).fold(f64::NEG_INFINITY, f64::max);
+    let max_norm: f64 = logits.iter().map(|z| z.re).fold(f64::NEG_INFINITY, f64::max);
 
-    // === CHANGE #2: subtract this from the REAL PART only (imag is unchanged),
-    // because exp(a + i b) = exp(a)*cis(b). Exponent only cares about real part.
-    // But "max_real" must now be "max_norm".
-    let mut s = Vec::with_capacity(n);
-    let mut sum_s = Complex::new(0.0, 0.0);
+    let mut s: Vec<f64> = Vec::with_capacity(n);
+    let mut sum_s: f64 = 0.0;
 
     for z in logits.iter() {
-        let scaled = Complex::new(z.re - max_norm, z.im).exp();
+        let scaled = (z.re - max_norm).exp();
         sum_s += scaled;
         s.push(scaled);
     }
 
-    // complex softmax p_j
     let p_k = s[target] / sum_s;
 
-    // === CHANGE #3: loss is -log(|p_k|) (not squared) ===
-    // |p_k|^2 exaggerates gradient and is not a standard complex CE form.
-    let pk_norm = p_k.norm();
-    let pk_norm = if pk_norm > 0.0 { pk_norm } else { 1e-300 };
-    let loss = -pk_norm.ln();
+    let pk_norm: f64 = if p_k > 0.0 { p_k } else { 1e-300 };
+    let loss: f64 = -pk_norm.ln();
 
-    // === CHANGE #4: true Wirtinger gradient dL/d conj(z_m) ===
-    let mut grad = Vec::with_capacity(n);
+    let mut grad: Vec<Complex<f64>> = Vec::with_capacity(n);
     for j in 0..n {
-        let p_j = s[j] / sum_s;
-        let mut g = p_j.conj();
+        let p_j: f64 = s[j] / sum_s;
+        let mut g: f64 = p_j;
         if j == target {
             g -= 1.0;
         }
-        grad.push(g);
+        grad.push(Complex::new(g, 0.0));
     }
 
     (loss, grad)
@@ -624,27 +615,37 @@ pub fn softmax_row_real(input: &Vec<Complex<f64>>) -> Vec<f64> {
 pub fn softmax_row_complex(logits: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
     let n = logits.len();
 
-    // 1️⃣ Find max real part (ignore imaginary)
+    // 1) Stability shift — use ONLY real parts
     let max_re = logits.iter().map(|z| z.re).fold(f64::NEG_INFINITY, f64::max);
 
-    // 2️⃣ Compute exp(real - max_re) * cis(im)
-    let mut s = Vec::with_capacity(n);
-    let mut sum_s = Complex::new(0.0, 0.0);
+    // 2) Compute exp(z - max_re) safely
+    let mut exps = Vec::with_capacity(n);
+    let mut sum = Complex::new(0.0, 0.0);
 
-    for z in logits.iter() {
-        let real_shifted = (z.re - max_re).max(-700.0); // clamp lower to avoid underflow
-        let scaled = Complex::new(real_shifted, z.im).exp();
-        sum_s += scaled;
-        s.push(scaled);
+    for &z in logits.iter() {
+        let shifted = Complex::new(z.re - max_re, z.im);
+        let e = shifted.exp(); // Complex exp doesn't blow up because real part ≤ 0
+        if e.re.is_finite() && e.im.is_finite() {
+            sum += e;
+            exps.push(e);
+        } else {
+            // fallback for bad numbers
+            let safe = Complex::new(0.0, 0.0);
+            exps.push(safe);
+        }
     }
 
-    // 3️⃣ Avoid division by zero
-    if !sum_s.norm().is_finite() || sum_s.norm() == 0.0 {
-        return vec![Complex::new(1.0 / n as f64, 0.0); n];
-    }
-
-    // 4️⃣ Normalize
-    s.into_iter().map(|v| v / sum_s).collect()
+    // 3) Normalize
+    exps.into_iter()
+        .map(|e| {
+            if sum.norm() == 0.0 || !sum.re.is_finite() || !sum.im.is_finite() {
+                // fallback to uniform distribution
+                Complex::new(1.0 / n as f64, 0.0)
+            } else {
+                e / sum
+            }
+        })
+        .collect()
 }
 
 pub fn log_softmax_row(input: &Vec<Complex<f64>>) -> Vec<f64> {
