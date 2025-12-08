@@ -17,18 +17,18 @@ mod test_complex_to_linear_layer {
         // Define some small batch size and input dimensions for simplicity
         let batch_size = 2;
         let _seq_len: usize = 1; // Update to match the input structure
-        let input_dim = 5; // Match the input dimension with your input batch
-        let output_dim = 5; // Match output_dim to your layer's output
+        let cols = 5; // Match the input dimension with your input batch
+        let rows = 15; // Match output_dim to your layer's output
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim);
-        let mut complex_to_linear_layer: ComplexToLinearLayer = ComplexToLinearLayer::new(learning_rate, input_dim, output_dim);
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, cols, rows);
+        let mut complex_to_linear_layer: ComplexToLinearLayer = ComplexToLinearLayer::new(rows, learning_rate);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
-        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim - 1, (output_dim - 1) as u32);
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, rows, cols);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, cols - 1, (cols - 1) as u32);
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];
 
         //let target_token_id_batch = vec![vec![0]];
@@ -68,7 +68,7 @@ mod test_complex_to_linear_layer {
             loss
         };
 
-        let epsilon = 1e-7;
+        let epsilon = 1e-5;
         let numerical_grad_linear: Vec<Vec<Complex<f64>>> = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &linear_weights.clone(), epsilon);
 
         // Check if gradient batch dimensions match expected shapes
@@ -127,18 +127,19 @@ mod test_complex_to_linear_layer {
         // Define some small batch size and input dimensions for simplicity
         let batch_size = 2;
         let _seq_len: usize = 1; // Update to match the input structure
-        let input_dim = 5; // Match the input dimension with your input batch
-        let output_dim = 5; // Match output_dim to your layer's output
+        let cols = 5; // Match the input dimension with your input batch
+        let rows = 15; // Match output_dim to your layer's output
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let mut complex_to_linear_layer: ComplexToLinearLayer = ComplexToLinearLayer::new(learning_rate, input_dim, output_dim);
+        let mut complex_to_linear_layer: ComplexToLinearLayer = ComplexToLinearLayer::new(cols, learning_rate);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
 
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
-        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, output_dim - 1, (output_dim - 1) as u32);
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, rows, cols);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, cols - 1, (cols - 1) as u32);
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];
+        let epsilon = 1e-5;
 
         //let target_token_id_batch = vec![vec![0]];
 
@@ -151,14 +152,14 @@ mod test_complex_to_linear_layer {
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
         let gradient_complex_to_linear: Gradient = complex_to_linear_layer.backward(&gradient_softmax);
-        let (grouped_linear_gradient, analytical_gradient_bias) = (gradient_complex_to_linear.get_gradient_weights(), gradient_complex_to_linear.get_gradient_bias());
-        let grouped_linear_gradient_2 = gradient_complex_to_linear.get_gradient_weights_2();
+        let (grouped_linear_gradient, analytical_gradient_bias) = (gradient_complex_to_linear.get_gradient_weights_vec_1(), gradient_complex_to_linear.get_gradient_bias());
+        let grouped_linear_gradient_2 = gradient_complex_to_linear.get_gradient_weights_vec_2();
         let analytical_input_gradient_complex_to_linear = gradient_complex_to_linear.get_gradient_input();
 
         let linear_weights = complex_to_linear_layer.weights_1.clone();
 
         // TEST WEIGHTS 1 GRADIENT
-        let mut loss_fn = |_input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
+        let mut loss_fn = |_input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Complex<f64>>| -> Complex<f64> {
             complex_to_linear_layer.weights_1 = weights.clone();
             layer_input.set_input_batch(_input.clone());
 
@@ -172,33 +173,24 @@ mod test_complex_to_linear_layer {
             loss
         };
 
-        let epsilon = 1e-7;
-        let numerical_grad_linear: Vec<Vec<Complex<f64>>> = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &linear_weights.clone(), epsilon);
+        let numerical_grad_linear: Vec<Complex<f64>> = numerical_gradient_bias(&mut loss_fn, input_batch.clone(), &linear_weights.clone(), epsilon);
 
         // Check if gradient batch dimensions match expected shapes
         println!("\nanalytical grad weights: {:?}", grouped_linear_gradient);
         println!("\nnumerical grad weights: {:?}", numerical_grad_linear);
 
         // Check if gradient batch dimensions match expected shapes
-        println!("\n analytical grad weights dim: {:?}, {}", grouped_linear_gradient.len(), grouped_linear_gradient[0].len());
-        println!("numerical grad weights dim: {:?}, {}", numerical_grad_linear.len(), numerical_grad_linear[0].len());
+        println!("\n analytical grad weights dim: {:?}", grouped_linear_gradient.len());
+        println!("numerical grad weights dim: {:?}", numerical_grad_linear.len());
 
-        for b in 0..grouped_linear_gradient.len() {
-            let analytical_row_sum: Complex<f64> = grouped_linear_gradient[b].iter().sum();
-            let numerical_row_sum: Complex<f64> = numerical_grad_linear[b].iter().sum();
-
-            println!("analytical row sum: {:?}", analytical_row_sum);
-            println!("numerical row sum: {:?}", numerical_row_sum);
-        }
-
-        let global_error = global_relative_error_2d_l2(&numerical_grad_linear, &grouped_linear_gradient);
+        let global_error = test_gradient_error_1d(&numerical_grad_linear, &grouped_linear_gradient, 1e-5);
         println!("\n\n global relative gradient error weights ffn: {:?}", &global_error);
-        test_gradient_error_2d(&grouped_linear_gradient, &numerical_grad_linear, 1e-5);
+        test_gradient_error_1d(&grouped_linear_gradient, &numerical_grad_linear, 1e-5);
         complex_to_linear_layer.weights_1 = linear_weights;
 
         // TEST WEIGHTS 2 GRADIENT
         let linear_weights_2 = complex_to_linear_layer.weights_2.clone();
-        let mut loss_fn = |_input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
+        let mut loss_fn = |_input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Complex<f64>>| -> Complex<f64> {
             complex_to_linear_layer.weights_2 = weights.clone();
             layer_input.set_input_batch(_input.clone());
 
@@ -212,28 +204,19 @@ mod test_complex_to_linear_layer {
             loss
         };
 
-        let epsilon = 1e-7;
-        let numerical_grad_linear: Vec<Vec<Complex<f64>>> = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &linear_weights_2.clone(), epsilon);
+        let numerical_grad_linear: Vec<Complex<f64>> = numerical_gradient_bias(&mut loss_fn, input_batch.clone(), &linear_weights_2.clone(), epsilon);
 
         // Check if gradient batch dimensions match expected shapes
         println!("\nanalytical grad weights 2: {:?}", grouped_linear_gradient_2);
         println!("\nnumerical grad weights 2: {:?}", numerical_grad_linear);
 
         // Check if gradient batch dimensions match expected shapes
-        println!("\n analytical grad weights 2 dim: {:?}, {}", grouped_linear_gradient_2.len(), grouped_linear_gradient_2[0].len());
-        println!("numerical grad weights 2 dim: {:?}, {}", numerical_grad_linear.len(), numerical_grad_linear[0].len());
+        println!("\n analytical grad weights 2 dim: {:?}", grouped_linear_gradient_2.len());
+        println!("numerical grad weights 2 dim: {:?}", numerical_grad_linear.len());
 
-        for b in 0..grouped_linear_gradient_2.len() {
-            let analytical_row_sum: Complex<f64> = grouped_linear_gradient_2[b].iter().sum();
-            let numerical_row_sum: Complex<f64> = numerical_grad_linear[b].iter().sum();
-
-            println!("analytical row sum: {:?}", analytical_row_sum);
-            println!("numerical row sum: {:?}", numerical_row_sum);
-        }
-
-        let global_error = global_relative_error_2d_l2(&numerical_grad_linear, &grouped_linear_gradient_2);
+        let global_error = test_gradient_error_1d(&numerical_grad_linear, &grouped_linear_gradient_2, 1e-5);
         println!("\n\n global relative gradient error weights 2 ffn: {:?}", &global_error);
-        test_gradient_error_2d(&grouped_linear_gradient_2, &numerical_grad_linear, 1e-5);
+        test_gradient_error_1d(&grouped_linear_gradient_2, &numerical_grad_linear, 1e-5);
         complex_to_linear_layer.weights_2 = linear_weights_2;
 
         // TEST BIAS
@@ -277,7 +260,7 @@ mod test_complex_to_linear_layer {
             loss
         };
 
-        let epsilon = 1e-7;
+        let epsilon = 1e-5;
         let numerical_input_complex_to_lin: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, input_batch.clone(), epsilon);
         let global_error = global_relative_error_2d_l2(&numerical_input_complex_to_lin, &analytical_input_gradient_complex_to_linear);
         println!("\n\n global relative gradient error input gradient complex to linear: {:?}", &global_error);

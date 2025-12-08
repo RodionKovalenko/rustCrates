@@ -83,6 +83,17 @@ pub fn initialize_weights_complex(rows: usize, cols: usize, weight_matrix: &mut 
     }
 }
 
+// Initialize weights for Vec<Vec<Complex<f64>>>
+pub fn initialize_bias(rows: usize, weight_matrix: &mut Vec<Complex<f64>>) {
+    let fan_in = rows as f64;
+    let mut rng = rand::rng();
+
+    for i in 0..rows {
+        let random_value = Complex::new(xavier_init(fan_in, fan_in, &mut rng), xavier_init(fan_in, fan_in, &mut rng));
+        weight_matrix[i] = random_value;
+    }
+}
+
 fn xavier_init(fan_in: f64, fan_out: f64, rng: &mut ThreadRng) -> f64 {
     let limit = (6.0 / (fan_in + fan_out)).sqrt();
     rng.random_range(-limit..limit)

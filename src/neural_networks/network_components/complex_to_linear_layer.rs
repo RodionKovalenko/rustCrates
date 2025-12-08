@@ -4,17 +4,17 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
-    adam_w::{calculate_adam_w, calculate_adam_w_bias},
-    matrix::{add_matrix_2d_c, add_matrix_3d, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d},
-    weights_initializer::initialize_weights_complex,
+    adam_w::calculate_adam_w_bias,
+    matrix::{add_matrix_2d_c, average_vector_by_scalar},
+    weights_initializer::initialize_bias,
 };
 
 use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComplexToLinearLayer {
-    pub weights_1: Vec<Vec<Complex<f64>>>,
-    pub weights_2: Vec<Vec<Complex<f64>>>,
+    pub weights_1: Vec<Complex<f64>>,
+    pub weights_2: Vec<Complex<f64>>,
     pub learning_rate: f64,
     pub bias: Vec<Complex<f64>>,
     pub smoothing: f64,
@@ -38,13 +38,13 @@ pub struct ComplexToLinearLayer {
 }
 
 impl ComplexToLinearLayer {
-    pub fn new(learning_rate: f64, rows: usize, cols: usize) -> Self {
-        let mut weights_1: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
-        let mut weights_2: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
+    pub fn new(cols: usize, learning_rate: f64) -> Self {
+        let mut weights_1: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); cols];
+        let mut weights_2: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); cols];
         let bias: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
 
-        initialize_weights_complex(rows, cols, &mut weights_1);
-        initialize_weights_complex(rows, cols, &mut weights_2);
+        initialize_bias(cols, &mut weights_1);
+        initialize_bias(cols, &mut weights_2);
 
         Self {
             weights_1,
@@ -76,22 +76,15 @@ impl ComplexToLinearLayer {
                 input
                     .iter() // over time steps
                     .map(|row| {
-                        let features_in = row.len();
-                        let features_out = self.weights_1[0].len();
+                        let mut output_row = Vec::new();
+                        for i in 0..row.len() {
+                            let z = row[i];
+                            let linear_v = z.re * self.weights_1[i].re + z.im * self.weights_2[i].re;
+                            output_row.push(Complex::new(linear_v + self.bias[i].re, 0.0));
+                        }
 
-                        (0..features_out)
-                            .map(|o| {
-                                let mut acc = self.bias[o];
-
-                                for i in 0..features_in {
-                                    let z = row[i];
-                                    acc += z.re * self.weights_1[i][o].re + z.im * self.weights_2[i][o].re;
-                                }
-
-                                // println!("ComplexToLinearLayer forward output acc {:?}", acc);
-                                acc
-                            })
-                            .collect()
+                        // println!("ComplexToLinearLayer forward output acc {:?}", acc);
+                        output_row
                     })
                     .collect()
             })
@@ -104,102 +97,120 @@ impl ComplexToLinearLayer {
 
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
         let input_batch = self.input_batch.as_ref().expect("Input batch is missing in linear layer");
-        let mut gradient = Gradient::new_default();
+        let previous_input_gradient = previous_gradient.get_gradient_input_batch();
 
-        let previous_input_gradient: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
-
-        // Initialize gradients for weights and biases
-        let mut weight_gradients: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_1[0].len()]; self.weights_1.len()]; input_batch.len()];
-        let mut weight_gradients_2: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_1[0].len()]; self.weights_1.len()]; input_batch.len()];
-        let mut bias_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.bias.len()]; input_batch.len()];
-        let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
+        let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::with_capacity(input_batch.len());
+        let mut weight_gradients_1: Vec<Vec<Complex<f64>>> = Vec::with_capacity(input_batch.len());
+        let mut weight_gradients_2: Vec<Vec<Complex<f64>>> = Vec::with_capacity(input_batch.len());
+        let mut bias_gradients: Vec<Vec<Complex<f64>>> = Vec::with_capacity(input_batch.len());
 
         for (b, input) in input_batch.iter().enumerate() {
             let prev_gradient = &previous_input_gradient[b];
 
+            // Per-batch storage
+            let mut grad_input_batch_b: Vec<Vec<Complex<f64>>> = Vec::with_capacity(input.len());
+            let mut weight_grad_1 = vec![Complex::new(0.0, 0.0); self.weights_1.len()];
+            let mut weight_grad_2 = vec![Complex::new(0.0, 0.0); self.weights_2.len()];
+            let mut bias_grad_b = vec![Complex::new(0.0, 0.0); self.bias.len()];
+
             for s in 0..input.len() {
-                for f in 0..self.weights_1[0].len() {
+                let row_len = input[s].len();
+                let mut grad_input_row = vec![Complex::new(0.0, 0.0); row_len];
+
+                for f in 0..input[s].len() {
                     // Bias gradient
-                    bias_gradients[b][f] += prev_gradient[s][f];
+                    bias_grad_b[f] += prev_gradient[s][f];
 
-                    for i in 0..self.weights_1.len() {
-                        // Weight gradients
-                        weight_gradients[b][i][f] += prev_gradient[s][f] * input[s][i].re;
-                        weight_gradients_2[b][i][f] += prev_gradient[s][f] * input[s][i].im;
+                    // Weight gradients
+                    weight_grad_1[f] += prev_gradient[s][f] * input[s][f].re;
+                    weight_grad_2[f] += prev_gradient[s][f] * input[s][f].im;
 
-                        // Input gradient
-                        gradient_input_batch[b][s][i] += Complex::new((prev_gradient[s][f] * self.weights_1[i][f].re).re, (prev_gradient[s][f] * self.weights_2[i][f].re).re);
-                    }
+                    // Input gradient
+                    grad_input_row[f] += Complex::new((prev_gradient[s][f] * self.weights_1[f].re).re, (prev_gradient[s][f] * self.weights_2[f].re).re);
                 }
+
+                grad_input_batch_b.push(grad_input_row);
             }
+
+            gradient_input_batch.push(grad_input_batch_b);
+            weight_gradients_1.push(weight_grad_1);
+            weight_gradients_2.push(weight_grad_2);
+            bias_gradients.push(bias_grad_b);
         }
 
-        gradient.set_gradient_input_batch(gradient_input_batch.clone());
-
-        if self.gradient.is_some() {
-            let previous_gradient = self.gradient.as_ref().expect("");
-            // gradient_input_batch = add_matrix_3d(&gradient_input_batch, &previous_gradient.get_gradient_input_batch());
-            weight_gradients = add_matrix_3d(&weight_gradients, &previous_gradient.get_gradient_weight_batch());
-            weight_gradients_2 = add_matrix_3d(&weight_gradients_2, &previous_gradient.get_gradient_weight_2_batch());
-            bias_gradients = add_matrix_2d_c(&bias_gradients, &previous_gradient.get_gradient_bias_batch());
+        // Combine with previous stored gradients if needed
+        if let Some(prev_grad) = &self.gradient {
+            weight_gradients_1 = add_matrix_2d_c(&weight_gradients_1, &prev_grad.get_gradient_weights_vec_batch_1());
+            weight_gradients_2 = add_matrix_2d_c(&weight_gradients_2, &prev_grad.get_gradient_weights_vec_batch_2());
+            bias_gradients = add_matrix_2d_c(&bias_gradients, &prev_grad.get_gradient_bias_batch());
         }
-        //  println!("batch size in linear layer: {}", self.batch_size);
 
+        let mut gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(gradient_input_batch.clone());
-        gradient.set_gradient_weight_batch(weight_gradients);
-        gradient.set_gradient_weight_2_batch(weight_gradients_2);
+        gradient.set_gradient_weights_vec_batch_1(weight_gradients_1);
+        gradient.set_gradient_weights_vec_batch_2(weight_gradients_2);
         gradient.set_gradient_bias_batch(bias_gradients);
 
         self.gradient = Some(gradient.clone());
-
         gradient
     }
 
     pub fn update_parameters(&mut self) {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("No Gradient found in linear layer");
-        let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
-        let mut weight_gradients_2 = gradient.get_gradient_weights_2();
-        let input_batch = gradient.get_gradient_input_batch();
+
+        let mut weight_gradeints_vec_1: Vec<Complex<f64>> = gradient.get_gradient_weights_vec_1();
+        let mut weight_gradients_vec_2: Vec<Complex<f64>> = gradient.get_gradient_weights_vec_2();
+        let mut bias_gradients: Vec<Complex<f64>> = gradient.get_gradient_bias();
+
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_input_batch();
         let mut batch_size = input_batch.len() as f64;
 
         if self.batch_size > 0 {
             batch_size = self.batch_size as f64;
         }
 
-        weight_gradients = average_matrix_by_scalar(&weight_gradients, batch_size);
-        weight_gradients_2 = average_matrix_by_scalar(&weight_gradients_2, batch_size);
+        weight_gradeints_vec_1 = average_vector_by_scalar(&weight_gradeints_vec_1, batch_size);
+        weight_gradients_vec_2 = average_vector_by_scalar(&weight_gradients_vec_2, batch_size);
         bias_gradients = average_vector_by_scalar(&bias_gradients, batch_size);
-
-        clip_all_gradients_by_global_norm_2d(&mut weight_gradients, &mut bias_gradients, self.global_norm, self.max_norm);
-        clip_all_gradients_by_global_norm_2d(&mut weight_gradients_2, &mut bias_gradients, self.global_norm, self.max_norm);
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
-        let (mut prev_m_bias, mut prev_v_bias, mut prev_m_weights, mut prev_v_weights, mut prev_m_weights_2, mut prev_v_weights_2, mut prev_v_weights_hat, mut prev_v_bias_hat) =
-            if let Some(previous_gradient) = &mut self.previous_gradient {
-                (
-                    previous_gradient.get_prev_m_bias(),
-                    previous_gradient.get_prev_v_bias(),
-                    previous_gradient.get_prev_m_weights(),
-                    previous_gradient.get_prev_v_weights(),
-                    previous_gradient.get_prev_m_weights_2(),
-                    previous_gradient.get_prev_v_weights_2(),
-                    previous_gradient.get_prev_v_weights_hat(),
-                    previous_gradient.get_prev_v_bias_hat(),
-                )
-            } else {
-                // Initialize to zeros on first step
-                (
-                    vec![Complex::new(0.0, 0.0); self.bias.len()],
-                    vec![Complex::new(0.0, 0.0); self.bias.len()],
-                    vec![vec![Complex::new(0.0, 0.0); self.weights_1[0].len()]; self.weights_1.len()],
-                    vec![vec![Complex::new(0.0, 0.0); self.weights_1[0].len()]; self.weights_1.len()],
-                    vec![vec![Complex::new(0.0, 0.0); self.weights_1[0].len()]; self.weights_1.len()],
-                    vec![vec![Complex::new(0.0, 0.0); self.weights_1[0].len()]; self.weights_1.len()],
-                    vec![vec![Complex::new(0.0, 0.0); self.weights_1[0].len()]; self.weights_1.len()],
-                    vec![Complex::new(0.0, 0.0); self.bias.len()],
-                )
-            };
+        let (
+            mut prev_m_bias,
+            mut prev_v_bias,
+            mut prev_v_bias_hat,
+            mut prev_m_weights_vec_1,
+            mut prev_v_weights_vec_1,
+            mut prev_v_weights_vec_hat_1,
+            mut prev_m_weights_vec_2,
+            mut prev_v_weights_vec_2,
+            mut prev_v_weights_vec_hat_2,
+        ) = if let Some(previous_gradient) = &mut self.previous_gradient {
+            (
+                previous_gradient.get_prev_m_bias(),
+                previous_gradient.get_prev_v_bias(),
+                previous_gradient.get_prev_v_bias_hat(),
+                previous_gradient.get_prev_m_weights_vec_1(),
+                previous_gradient.get_prev_v_weights_vec_1(),
+                previous_gradient.get_prev_v_weights_vec_hat_1(),
+                previous_gradient.get_prev_m_weights_vec_2(),
+                previous_gradient.get_prev_v_weights_vec_2(),
+                previous_gradient.get_prev_v_weights_vec_hat_2(),
+            )
+        } else {
+            // Initialize to zeros on first step
+            (
+                vec![Complex::new(0.0, 0.0); self.bias.len()],
+                vec![Complex::new(0.0, 0.0); self.bias.len()],
+                vec![Complex::new(0.0, 0.0); self.bias.len()],
+                vec![Complex::new(0.0, 0.0); self.weights_1.len()],
+                vec![Complex::new(0.0, 0.0); self.weights_1.len()],
+                vec![Complex::new(0.0, 0.0); self.weights_1.len()],
+                vec![Complex::new(0.0, 0.0); self.weights_1.len()],
+                vec![Complex::new(0.0, 0.0); self.weights_1.len()],
+                vec![Complex::new(0.0, 0.0); self.weights_1.len()],
+            )
+        };
         calculate_adam_w_bias(
             &mut self.bias,
             &gradient.get_gradient_bias(),
@@ -209,36 +220,41 @@ impl ComplexToLinearLayer {
             learning_rate,
             time_step,
         );
-        calculate_adam_w(
+        calculate_adam_w_bias(
             &mut self.weights_1,
-            &gradient.get_gradient_weights(),
-            &mut prev_m_weights,
-            &mut prev_v_weights,
-            &mut prev_v_weights_hat,
+            &gradient.get_gradient_weights_vec_1(),
+            &mut prev_m_weights_vec_1,
+            &mut prev_v_weights_vec_1,
+            &mut prev_v_weights_vec_hat_1,
             learning_rate,
             time_step,
         );
-
-        calculate_adam_w(
+        calculate_adam_w_bias(
             &mut self.weights_2,
-            &weight_gradients_2,
-            &mut prev_m_weights_2,
-            &mut prev_v_weights_2,
-            &mut prev_v_weights_hat,
+            &gradient.get_gradient_weights_vec_2(),
+            &mut prev_m_weights_vec_2,
+            &mut prev_v_weights_vec_2,
+            &mut prev_v_weights_vec_hat_2,
             learning_rate,
             time_step,
         );
 
         gradient.set_prev_m_bias(prev_m_bias);
         gradient.set_prev_v_bias(prev_v_bias);
-        gradient.set_prev_m_weights(prev_m_weights);
-        gradient.set_prev_v_weights(prev_v_weights);
-        gradient.set_prev_m_weights_2(prev_m_weights_2);
-        gradient.set_prev_v_weights_2(prev_v_weights_2);
-        gradient.set_prev_v_weights_hat(prev_v_weights_hat);
         gradient.set_prev_v_bias_hat(prev_v_bias_hat);
-        gradient.set_gradient_weights(weight_gradients.clone());
+
+        gradient.set_prev_m_weights_vec_1(prev_m_weights_vec_1);
+        gradient.set_prev_v_weights_vec_1(prev_v_weights_vec_1);
+        gradient.set_prev_v_weights_vec_hat_1(prev_v_weights_vec_hat_1);
+
+        gradient.set_prev_m_weights_vec_2(prev_m_weights_vec_2);
+        gradient.set_prev_v_weights_vec_2(prev_v_weights_vec_2);
+        gradient.set_prev_v_weights_vec_hat_2(prev_v_weights_vec_hat_2);
+
+        gradient.set_gradient_weights_vec_1(weight_gradeints_vec_1.clone());
+        gradient.set_gradient_weights_vec_2(weight_gradients_vec_2.clone());
         gradient.set_gradient_bias(bias_gradients.clone());
+
         self.previous_gradient = Some(gradient.clone());
     }
 }

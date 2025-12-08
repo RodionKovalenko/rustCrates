@@ -618,16 +618,17 @@ pub fn softmax_row_complex(logits: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
     // 1) Stability shift — use ONLY real parts
     let max_re = logits.iter().map(|z| z.re).fold(f64::NEG_INFINITY, f64::max);
 
+    println!("Max real part for stability shift: {}", max_re);
+
     // 2) Compute exp(z - max_re) safely
-    let mut exps = Vec::with_capacity(n);
-    let mut sum = Complex::new(0.0, 0.0);
+    let mut exps: Vec<Complex<f64>> = Vec::with_capacity(n);
+    let mut sum = 0.0;
 
     for &z in logits.iter() {
-        let shifted = Complex::new(z.re - max_re, z.im);
-        let e = shifted.exp(); // Complex exp doesn't blow up because real part ≤ 0
-        if e.re.is_finite() && e.im.is_finite() {
+        let e = (z.re - max_re).exp();
+        if e.is_finite() {
             sum += e;
-            exps.push(e);
+            exps.push(Complex::new(e, 0.0));
         } else {
             // fallback for bad numbers
             let safe = Complex::new(0.0, 0.0);
@@ -638,11 +639,11 @@ pub fn softmax_row_complex(logits: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
     // 3) Normalize
     exps.into_iter()
         .map(|e| {
-            if sum.norm() == 0.0 || !sum.re.is_finite() || !sum.im.is_finite() {
+            if !e.is_finite() || sum == 0.0 || !sum.is_finite() {
                 // fallback to uniform distribution
-                Complex::new(1.0 / n as f64, 0.0)
+                Complex::new(0.0, 0.0)
             } else {
-                e / sum
+                Complex::new(e.re / sum, 0.0)
             }
         })
         .collect()
