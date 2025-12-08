@@ -23,7 +23,7 @@ mod test_self_attention_layer_approx_with_loss {
         let learning_rate = 0.0001;
 
         let mut attention_head_layer: MaskedAttentionHeadApproximation = MaskedAttentionHeadApproximation::new(input_dim, output_dim, learning_rate);
-        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING);
+        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING, output_dim);
 
         let input_batch = vec![
             vec![

@@ -10,7 +10,10 @@ use crate::neural_networks::{
         activation::{activate_output_complex, swish},
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         derivative::{get_gradient_complex, get_gradient_swish},
-        matrix::{add_matrix, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate, conjugate_transpose, hadamard_product_2d_c, multiply_complex, split_data_by_columns},
+        matrix::{
+            add_matrix, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate, conjugate_transpose, hadamard_product_2d_c,
+            multiply_complex, split_data_by_columns,
+        },
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -20,8 +23,8 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput, linear_layer::LinearLayer, norm_layer::NormalNormLayer, positional_encoding_layer::PositionalEncodingLayer,
-    softmax_output_layer::SoftmaxLayer,
+    add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput, linear_layer::LinearLayer,
+    norm_layer::NormalNormLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer,
 };
 
 impl Default for ActivationType {
@@ -330,8 +333,24 @@ impl Layer {
             )
         };
 
-        calculate_adam_w_bias(&mut self.bias, &gradient.get_gradient_bias(), &mut prev_m_bias, &mut prev_v_bias, &mut prev_v_bias_hat, learning_rate, time_step);
-        calculate_adam_w(&mut self.weights, &gradient.get_gradient_weights(), &mut prev_m_weights, &mut prev_v_weights, &mut prev_v_weights_hat,learning_rate, time_step);
+        calculate_adam_w_bias(
+            &mut self.bias,
+            &gradient.get_gradient_bias(),
+            &mut prev_m_bias,
+            &mut prev_v_bias,
+            &mut prev_v_bias_hat,
+            learning_rate,
+            time_step,
+        );
+        calculate_adam_w(
+            &mut self.weights,
+            &gradient.get_gradient_weights(),
+            &mut prev_m_weights,
+            &mut prev_v_weights,
+            &mut prev_v_weights_hat,
+            learning_rate,
+            time_step,
+        );
 
         gradient.set_prev_m_bias(prev_m_bias);
         gradient.set_prev_v_bias(prev_v_bias);

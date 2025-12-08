@@ -4,6 +4,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
+    network_components::{complex_to_linear_layer::ComplexToLinearLayer, layer_input_struct::LayerInput},
     network_types::neural_network_generic::OperationMode,
     utils::activation::{softmax_backward_real_with_gradient, softmax_last_row},
 };
@@ -15,10 +16,10 @@ use super::gradient_struct::Gradient;
 pub struct SoftmaxLayer {
     pub learning_rate: f64,
     pub operation_mode: OperationMode,
+    pub complex_to_linear_layer: Option<ComplexToLinearLayer>,
 
     #[serde(skip)]
     pub softmax_output_batch: Option<Vec<Vec<Vec<f64>>>>,
-
     #[serde(skip)]
     pub cross_entropy_loss_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
@@ -34,10 +35,14 @@ pub struct SoftmaxLayer {
 }
 
 impl SoftmaxLayer {
-    pub fn new(learning_rate: f64, operation_mode: OperationMode) -> Self {
+    pub fn new(learning_rate: f64, operation_mode: OperationMode, feature_dim: usize) -> Self {
+        let _complex_to_linear_layer = ComplexToLinearLayer::new(feature_dim, learning_rate);
+
         Self {
             learning_rate,
             operation_mode,
+            // complex_to_linear_layer: Some(_complex_to_linear_layer),
+            complex_to_linear_layer: None,
             softmax_output_batch: None,
             input_batch: None,
             gradient: None,
@@ -55,7 +60,15 @@ impl SoftmaxLayer {
 
         let target_token_batch_ids = target_token_ids.unwrap_or(Vec::new());
 
-        let (layer_output_batch, losses, input_gradient_batch) = match self.operation_mode {
+        let input_batch_linear = if let Some(complex_to_linear_layer) = &mut self.complex_to_linear_layer {
+            let mut layer_input = LayerInput::new_default();
+            layer_input.set_input_batch(input_batch.clone());
+            complex_to_linear_layer.forward(&layer_input).get_output_batch()
+        } else {
+            input_batch.clone()
+        };
+
+        let (layer_output_batch, losses, mut input_gradient_batch) = match self.operation_mode {
             OperationMode::PRODUCTION => {
                 let output: Vec<Vec<Vec<f64>>> = input_batch
                     .par_iter()
@@ -68,7 +81,7 @@ impl SoftmaxLayer {
                 let output_gradients = (0..batch_size)
                     .into_par_iter()
                     .map(|batch_ind| {
-                        let outputs = softmax_backward_real_with_gradient(&input_batch[batch_ind], &target_token_batch_ids[batch_ind], &padding_mask_batch[batch_ind]);
+                        let outputs = softmax_backward_real_with_gradient(&input_batch_linear[batch_ind], &target_token_batch_ids[batch_ind], &padding_mask_batch[batch_ind]);
                         outputs
                     })
                     .unzip();
@@ -76,6 +89,14 @@ impl SoftmaxLayer {
                 (Vec::new(), output_gradients.0, output_gradients.1)
             }
         };
+
+        if let Some(complex_to_linear_layer) = &mut self.complex_to_linear_layer {
+            let mut complex_to_linear_gradient = Gradient::new_default();
+            complex_to_linear_gradient.set_gradient_input_batch(input_gradient_batch);
+
+            complex_to_linear_gradient = complex_to_linear_layer.backward(&complex_to_linear_gradient);
+            input_gradient_batch = complex_to_linear_gradient.get_gradient_input_batch()
+        }
 
         self.padding_mask_batch = Some(padding_mask_batch);
         self.softmax_output_batch = Some(layer_output_batch.clone());

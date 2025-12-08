@@ -191,7 +191,7 @@ mod test_adaptive_pooling_complex {
 
         // Adaptive pooling to exactly 45 tokens
         let mut pool: AdaptiveAvgPool1dLayer = AdaptiveAvgPool1dLayer::new(compressed_dim);
-        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
+        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, compressed_dim);
 
         let pooling_output = pool.forward(&layer_input);
         let (compressed, metadata) = (pooling_output.get_output_batch(), pooling_output.get_pooling_metadata().unwrap());
@@ -268,7 +268,7 @@ mod test_adaptive_pooling_complex {
         // Adaptive pooling to exactly 45 tokens
         let mut pool: AdaptiveAvgPool1dLayer = AdaptiveAvgPool1dLayer::new(compression_dim);
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, linear_hidden_dim);
-        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
+        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, linear_hidden_dim);
 
         // Input e.g. 36x64
         // 1. Pooling Compression -> dim 12x64

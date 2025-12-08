@@ -64,7 +64,7 @@ mod test_sparse_self_attention_head {
 
         let mut attention_head_layer: SparseMaskedAttentionHead = SparseMaskedAttentionHead::new(input_dim, input_dim, 1, learning_rate);
         let mut complex_to_linear_layer: ComplexToLinearLayer = ComplexToLinearLayer::new(input_dim, learning_rate);
-        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING);
+        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING, input_dim);
 
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; output_dim]; batch_size];

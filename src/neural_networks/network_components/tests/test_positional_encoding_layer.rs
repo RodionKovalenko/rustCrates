@@ -80,7 +80,7 @@ mod test_positional_encoding_layer {
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut positional_enc_layer: PositionalEncodingLayer = PositionalEncodingLayer::new(input_dim);
-        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
+        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, input_dim);
 
         // Define a small input batch, [2][2][3]
         // input includes target tokens + padding already !
