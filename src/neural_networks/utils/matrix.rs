@@ -978,17 +978,8 @@ pub fn clip_all_gradients_by_global_norm_2d(grads: &mut Vec<Vec<Complex<f64>>>, 
 }
 
 pub fn normalize_gradients_batch(gradients_batch: &mut Vec<Vec<Vec<Complex<f64>>>>) {
-    let norm: f64 = gradients_batch.iter().flatten().flatten().map(|g| g.norm_sqr()).sum::<f64>().sqrt();
-
-    if norm > MAX_NORM {
-        let scale = MAX_NORM / norm;
-        for gradients in gradients_batch.iter_mut() {
-            for row in gradients.iter_mut() {
-                for val in row.iter_mut() {
-                    *val *= scale;
-                }
-            }
-        }
+    for gradients in gradients_batch.iter_mut() {
+        normalize_gradients(gradients);
     }
 }
 
