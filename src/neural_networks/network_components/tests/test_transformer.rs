@@ -56,7 +56,7 @@ mod test_transformer {
 
         let rows: usize = 16;
         let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
-        let softmax_layer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING);
+        let softmax_layer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING, vocab_size);
 
         layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
         layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
@@ -184,7 +184,7 @@ mod test_transformer {
         let mut discrete_wavelet_layer = DiscreteWaveletLayer::new();
         let mut complex_wavelet_layer = ComplexWaveletLayer::new();
         let mut linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
-        let mut softmax_layer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING);
+        let mut softmax_layer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING, vocab_size);
 
         let rows: usize = 16;
         let hidden_dim = 16;

@@ -65,7 +65,7 @@ mod test_wavelet_discrete_layer {
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut wavelet_layer: DiscreteWaveletLayer = DiscreteWaveletLayer::new();
-        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
+        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, input_dim);
 
         // Define a small input batch, [2][2][3]
         // input includes target tokens + padding already !
@@ -140,7 +140,7 @@ mod test_wavelet_discrete_layer {
         // Create a simple LinearLayer with the given input and output dimensions
         let mut wavelet_layer: DiscreteWaveletLayer = DiscreteWaveletLayer::new();
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, linear_output_dim);
-        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
+        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, linear_output_dim);
 
         // Define a small input batch, [2][2][3]
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
@@ -225,7 +225,7 @@ mod test_wavelet_discrete_layer {
         let mut wavelet_layer: DiscreteWaveletLayer = DiscreteWaveletLayer::new();
         let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(input_dim, linear_output_dim, learning_rate);
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, linear_output_dim);
-        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
+        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, linear_output_dim);
 
         // Define a small input batch, [2][2][3]
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
@@ -326,7 +326,7 @@ mod test_wavelet_discrete_layer {
         // Create a simple LinearLayer with the given input and output dimensions
         let mut wavelet_layer: DiscreteWaveletLayer = DiscreteWaveletLayer::new();
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, linear_output_dim);
-        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode);
+        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, linear_output_dim);
 
         // Define a small input batch, [2][2][3]
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);

@@ -80,7 +80,7 @@ impl ComplexToLinearLayer {
                         for i in 0..row.len() {
                             let z = row[i];
                             let linear_v = z.re * self.weights_1[i].re + z.im * self.weights_2[i].re;
-                            output_row.push(Complex::new(linear_v + self.bias[i].re, 0.0));
+                            output_row.push(Complex::new(linear_v, 0.0));
                         }
 
                         // println!("ComplexToLinearLayer forward output acc {:?}", acc);
@@ -111,7 +111,7 @@ impl ComplexToLinearLayer {
             let mut grad_input_batch_b: Vec<Vec<Complex<f64>>> = Vec::with_capacity(input.len());
             let mut weight_grad_1 = vec![Complex::new(0.0, 0.0); self.weights_1.len()];
             let mut weight_grad_2 = vec![Complex::new(0.0, 0.0); self.weights_2.len()];
-            let mut bias_grad_b = vec![Complex::new(0.0, 0.0); self.bias.len()];
+            // let mut bias_grad_b = vec![Complex::new(0.0, 0.0); self.bias.len()];
 
             for s in 0..input.len() {
                 let row_len = input[s].len();
@@ -119,7 +119,7 @@ impl ComplexToLinearLayer {
 
                 for f in 0..input[s].len() {
                     // Bias gradient
-                    bias_grad_b[f] += prev_gradient[s][f];
+                    //bias_grad_b[f] += prev_gradient[s][f];
 
                     // Weight gradients
                     weight_grad_1[f] += prev_gradient[s][f] * input[s][f].re;
@@ -135,7 +135,7 @@ impl ComplexToLinearLayer {
             gradient_input_batch.push(grad_input_batch_b);
             weight_gradients_1.push(weight_grad_1);
             weight_gradients_2.push(weight_grad_2);
-            bias_gradients.push(bias_grad_b);
+            // bias_gradients.push(bias_grad_b);
         }
 
         // Combine with previous stored gradients if needed

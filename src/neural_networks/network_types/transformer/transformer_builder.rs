@@ -46,7 +46,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let num_self_attention_layer: usize = NUM_SELF_ATT_LAYERS;
     // let origin_hidden_dim = 512;
     let window_size = 2;
-    let hidden_dim = 1024;
+    let hidden_dim = 128;
     for _i in 0..num_self_attention_layer {
         let num_attention_heads: usize = 4;
 
@@ -79,7 +79,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let linear_layer = LinearLayer::new(learning_rate, compressed_hidden, vocab_size);
     layers.push(LayerEnum::Linear(Box::new(linear_layer)));
 
-    let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode);
+    let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode, vocab_size);
     layers.push(LayerEnum::Softmax(Box::new(softmax_layer)));
 
     transformer_network.layers = layers;

@@ -30,7 +30,7 @@ mod test_norm_layer {
 
         let mut norm_layer = NormalNormLayer::new(input_batch[0][0].len(), 1e-8, learning_rate);
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, _input_dim, _output_dim);
-        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING);
+        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING, _output_dim);
 
         let mut layer_input = LayerInput::new_default();
         layer_input.set_input_batch(input_batch.clone());
