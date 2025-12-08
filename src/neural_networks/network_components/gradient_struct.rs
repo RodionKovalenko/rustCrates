@@ -21,6 +21,12 @@ pub struct Gradient {
     gradient_beta_batch: Option<Vec<Vec<Complex<f64>>>>,
 
     gradient_weights: Option<Vec<Vec<Complex<f64>>>>,
+    gradient_weights_vec_batch_1: Option<Vec<Vec<Complex<f64>>>>,
+    gradient_weights_vec_batch_2: Option<Vec<Vec<Complex<f64>>>>,
+
+    gradient_weights_vec_1: Option<Vec<Complex<f64>>>,
+    gradient_weights_vec_2: Option<Vec<Complex<f64>>>,
+
     gradient_weights_2: Option<Vec<Vec<Complex<f64>>>>,
     gradient_input: Option<Vec<Vec<Complex<f64>>>>,
     gradient_bias: Option<Vec<Complex<f64>>>,
@@ -54,6 +60,15 @@ pub struct Gradient {
 
     prev_m_weights_2: Option<Vec<Vec<Complex<f64>>>>,
     prev_v_weights_2: Option<Vec<Vec<Complex<f64>>>>,
+
+    prev_m_weights_vec_1: Option<Vec<Complex<f64>>>,
+    prev_v_weights_vec_1: Option<Vec<Complex<f64>>>,
+
+    prev_v_weights_vec_hat_1: Option<Vec<Complex<f64>>>,
+    prev_v_weights_vec_hat_2: Option<Vec<Complex<f64>>>,
+
+    prev_m_weights_vec_2: Option<Vec<Complex<f64>>>,
+    prev_v_weights_vec_2: Option<Vec<Complex<f64>>>,
 
     prev_v_weights_hat: Option<Vec<Vec<Complex<f64>>>>,
 
@@ -91,7 +106,19 @@ impl Gradient {
             gradient_beta_batch: None,
 
             gradient_weights: None,
+            gradient_weights_vec_batch_1: None,
+            gradient_weights_vec_batch_2: None,
+            gradient_weights_vec_1: None,
+            gradient_weights_vec_2: None,
             gradient_weights_2: None,
+
+            prev_m_weights_vec_1: None,
+            prev_v_weights_vec_1: None,
+            prev_m_weights_vec_2: None,
+            prev_v_weights_vec_2: None,
+            prev_v_weights_vec_hat_1: None,
+            prev_v_weights_vec_hat_2: None,
+
             gradient_input: None,
             gradient_bias: None,
             gradient_gamma: None,
@@ -228,6 +255,39 @@ impl Gradient {
     pub fn set_prev_v_weights_2(&mut self, prev_v_weights_2: Vec<Vec<Complex<f64>>>) {
         self.prev_v_weights_2 = Some(prev_v_weights_2);
     }
+    pub fn set_gradient_weights_vec_batch_1(&mut self, gradient_weights_vec_1: Vec<Vec<Complex<f64>>>) {
+        self.gradient_weights_vec_batch_1 = Some(gradient_weights_vec_1);
+    }
+    pub fn set_gradient_weights_vec_batch_2(&mut self, gradient_weights_vec_2: Vec<Vec<Complex<f64>>>) {
+        self.gradient_weights_vec_batch_2 = Some(gradient_weights_vec_2);
+    }
+    pub fn set_gradient_weights_vec_1(&mut self, gradient_weights_vec_1: Vec<Complex<f64>>) {
+        self.gradient_weights_vec_1 = Some(gradient_weights_vec_1);
+    }
+    pub fn set_gradient_weights_vec_2(&mut self, gradient_weights_vec_2: Vec<Complex<f64>>) {
+        self.gradient_weights_vec_2 = Some(gradient_weights_vec_2);
+    }
+
+    pub fn set_prev_m_weights_vec_1(&mut self, prev_m_weights_vec_1: Vec<Complex<f64>>) {
+        self.prev_m_weights_vec_1 = Some(prev_m_weights_vec_1);
+    }
+    pub fn set_prev_v_weights_vec_1(&mut self, prev_v_weights_vec_1: Vec<Complex<f64>>) {
+        self.prev_v_weights_vec_1 = Some(prev_v_weights_vec_1);
+    }
+
+    pub fn set_prev_m_weights_vec_2(&mut self, prev_m_weights_vec_2: Vec<Complex<f64>>) {
+        self.prev_m_weights_vec_2 = Some(prev_m_weights_vec_2);
+    }
+    pub fn set_prev_v_weights_vec_2(&mut self, prev_v_weights_vec_2: Vec<Complex<f64>>) {
+        self.prev_v_weights_vec_2 = Some(prev_v_weights_vec_2);
+    }
+
+    pub fn set_prev_v_weights_vec_hat_1(&mut self, prev_v_weights_vec_hat_1: Vec<Complex<f64>>) {
+        self.prev_v_weights_vec_hat_1 = Some(prev_v_weights_vec_hat_1);
+    }
+    pub fn set_prev_v_weights_vec_hat_2(&mut self, prev_v_weights_vec_hat_2: Vec<Complex<f64>>) {
+        self.prev_v_weights_vec_hat_2 = Some(prev_v_weights_vec_hat_2);
+    }
 
     pub fn set_prev_m_weights_q(&mut self, prev_m_weights_q: Vec<Vec<Complex<f64>>>) {
         self.prev_m_weights_q = Some(prev_m_weights_q);
@@ -363,6 +423,32 @@ impl Gradient {
     }
     pub fn get_prev_v_weights_2(&self) -> Vec<Vec<Complex<f64>>> {
         self.prev_v_weights_2.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_prev_v_weights_vec_hat_1(&self) -> Vec<Complex<f64>> {
+        self.prev_v_weights_vec_hat_1.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_prev_v_weights_vec_hat_2(&self) -> Vec<Complex<f64>> {
+        self.prev_v_weights_vec_hat_2.clone().unwrap_or_else(|| vec![])
+    }
+
+    pub fn get_gradient_weights_vec_batch_1(&self) -> Vec<Vec<Complex<f64>>> {
+        self.gradient_weights_vec_batch_1.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_gradient_weights_vec_batch_2(&self) -> Vec<Vec<Complex<f64>>> {
+        self.gradient_weights_vec_batch_2.clone().unwrap_or_else(|| vec![])
+    }
+
+    pub fn get_prev_m_weights_vec_1(&self) -> Vec<Complex<f64>> {
+        self.prev_m_weights_vec_1.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_prev_v_weights_vec_1(&self) -> Vec<Complex<f64>> {
+        self.prev_v_weights_vec_1.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_prev_m_weights_vec_2(&self) -> Vec<Complex<f64>> {
+        self.prev_m_weights_vec_2.clone().unwrap_or_else(|| vec![])
+    }
+    pub fn get_prev_v_weights_vec_2(&self) -> Vec<Complex<f64>> {
+        self.prev_v_weights_vec_2.clone().unwrap_or_else(|| vec![])
     }
 
     pub fn get_prev_m_weigths_q(&self) -> Vec<Vec<Complex<f64>>> {
@@ -503,6 +589,21 @@ impl Gradient {
             self.group_gradient_batch_bias(&gradient_bias_batch)
         } else {
             self.gradient_bias.clone().unwrap_or_else(|| vec![])
+        }
+    }
+
+    pub fn get_gradient_weights_vec_1(&self) -> Vec<Complex<f64>> {
+        if let Some(gradient_weights_vec_batch_1) = self.gradient_weights_vec_batch_1.clone() {
+            self.group_gradient_batch_bias(&gradient_weights_vec_batch_1)
+        } else {
+            vec![]
+        }
+    }
+    pub fn get_gradient_weights_vec_2(&self) -> Vec<Complex<f64>> {
+        if let Some(gradient_weights_vec_batch_2) = self.gradient_weights_vec_batch_2.clone() {
+            self.group_gradient_batch_bias(&gradient_weights_vec_batch_2)
+        } else {
+            vec![]
         }
     }
 
