@@ -99,7 +99,9 @@ mod test_positional_encoding_layer {
         layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
         let positonal_encoding = positional_enc_layer.forward(&layer_input);
-        softmax_layer.forward(&positonal_encoding, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+
+        layer_input.set_input_batch(positonal_encoding);
+        softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         let softmax_gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
         let positional_enc_gradient: Gradient = positional_enc_layer.backward(&softmax_gradient.get_gradient_input_batch());
@@ -111,7 +113,8 @@ mod test_positional_encoding_layer {
             layer_input.set_input_batch(input.clone());
             let positonal_encoding = positional_enc_layer.forward(&layer_input);
 
-            softmax_layer.forward(&positonal_encoding, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            layer_input.set_input_batch(positonal_encoding);
+            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);

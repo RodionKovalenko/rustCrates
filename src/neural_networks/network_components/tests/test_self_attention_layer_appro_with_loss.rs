@@ -55,7 +55,9 @@ mod test_self_attention_layer_approx_with_loss {
         let output_batch = output.get_output_batch();
 
         let target_token_id_batch = vec![vec![0u32, 0u32, 2u32], vec![2u32, 1u32, 2u32]];
-        let _output_softmax = softmax_layer.forward(&output_batch, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+
+        layer_input.set_input_batch(output_batch.clone());
+        let _output_softmax = softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         println!(
             "\ninput batch in attention head dim : {:?}, {}, {}",
@@ -93,7 +95,8 @@ mod test_self_attention_layer_approx_with_loss {
             layer_input.set_input_batch(input.clone());
             let attention_head_output = attention_head_layer.forward(&layer_input);
 
-            softmax_layer.forward(&attention_head_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            layer_input.set_input_batch(attention_head_output.get_output_batch());
+            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -120,7 +123,9 @@ mod test_self_attention_layer_approx_with_loss {
 
             layer_input.set_input_batch(input.clone());
             let attention_head_output = attention_head_layer.forward(&layer_input);
-            softmax_layer.forward(&attention_head_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+
+            layer_input.set_input_batch(attention_head_output.get_output_batch());
+            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -150,7 +155,9 @@ mod test_self_attention_layer_approx_with_loss {
 
             layer_input.set_input_batch(input.clone());
             let attention_head_output = attention_head_layer.forward(&layer_input);
-            softmax_layer.forward(&attention_head_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+
+            layer_input.set_input_batch(attention_head_output.get_output_batch());
+            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -184,7 +191,9 @@ mod test_self_attention_layer_approx_with_loss {
 
             layer_input.set_input_batch(input.clone());
             let attention_head_output = attention_head_layer.forward(&layer_input);
-            softmax_layer.forward(&attention_head_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+
+            layer_input.set_input_batch(attention_head_output.get_output_batch());
+            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -226,7 +235,9 @@ mod test_self_attention_layer_approx_with_loss {
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             layer_input.set_input_batch(input.clone());
             let attention_head_output = attention_head_layer.forward(&layer_input);
-            softmax_layer.forward(&attention_head_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+
+            layer_input.set_input_batch(attention_head_output.get_output_batch());
+            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
