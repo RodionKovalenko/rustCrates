@@ -81,12 +81,10 @@ mod test_self_attention_layer_approx_with_loss {
         let analytical_gradient_weights_q = gradient.get_gradient_weights_q();
         let analytical_gradient_weights_k = gradient.get_gradient_weights_k();
         let analytical_gradient_input = gradient.get_gradient_input();
-        let analytical_bias_pos_batch = gradient.get_gradient_bias_pos();
 
         let weights_v = attention_head_layer.weights_v.clone();
         let weights_q = attention_head_layer.weights_q.clone();
         let weights_k = attention_head_layer.weights_k.clone();
-        let bias_pos = attention_head_layer.bias_pos.clone();
 
         // // Weight V ------------------------------------------------------------------------------------------- start
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
@@ -184,52 +182,6 @@ mod test_self_attention_layer_approx_with_loss {
         //test_gradient_error_2d(&numerical_grad_weight_k, &analytical_gradient_weights_k, epsilon);
         attention_head_layer.weights_k = weights_k.clone();
         // Weight K ------------------------------------------------------------------------------------------- end
-
-        // Bias Positional gradient ------------------------------------------------------------------------------------------- start
-        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
-            attention_head_layer.bias_pos = weights.clone();
-
-            layer_input.set_input_batch(input.clone());
-            let attention_head_output = attention_head_layer.forward(&layer_input);
-
-            layer_input.set_input_batch(attention_head_output.get_output_batch());
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
-
-            let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
-            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
-
-            loss
-        };
-
-        let small_bias_pos: Vec<Vec<Complex<f64>>> = bias_pos
-            .iter()
-            .take(output_dim) // take first 5 rows
-            .map(|row| row.iter().take(output_dim).cloned().collect()) // take first 5 columns from each row
-            .collect();
-
-        let numerical_grad_bias_pos = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &small_bias_pos.clone(), epsilon);
-
-        println!("\n numerical gradient bias pos attention layer {:?}", numerical_grad_bias_pos);
-        println!("\n dim numerical gradient bias pos {:?}, {}", numerical_grad_bias_pos.len(), numerical_grad_bias_pos[0].len());
-
-        println!("\n\n analytical gradient bias pos attention layer {:?}", analytical_bias_pos_batch);
-        println!("\n dim nanalytical gradient bias pos {:?}, {} ", analytical_bias_pos_batch.len(), analytical_bias_pos_batch[0].len());
-
-        let global_error = global_relative_error_2d_l2(&numerical_grad_bias_pos, &analytical_bias_pos_batch);
-        println!("\n\n global relative gradient error bias pos: {:?}", &global_error);
-
-        for s in 0..analytical_bias_pos_batch.len() {
-            let analytical_row_sum: Complex<f64> = analytical_bias_pos_batch[s].iter().sum();
-            let numerical_row_sum: Complex<f64> = numerical_grad_bias_pos[s].iter().sum();
-
-            println!("analytical row bias pos sum: {:?}", analytical_row_sum);
-            println!("numerical row bias pos sum: {:?}", numerical_row_sum);
-        }
-
-        // For Gelu it can a little more deviation
-        // test_gradient_error_2d(&numerical_grad_bias_pos, &analytical_bias_pos_batch, epsilon);
-        attention_head_layer.bias_pos = bias_pos.clone();
-        // Bias Positional gradient ------------------------------------------------------------------------------------------- end
 
         // Input gradient ------------------------------------------------------------------------------------------- start
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
