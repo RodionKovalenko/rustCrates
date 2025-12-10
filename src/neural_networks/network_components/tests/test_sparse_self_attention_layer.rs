@@ -96,7 +96,6 @@ mod test_sparse_self_attention_layer {
         let analytical_weight_q_gradient = gradient.get_gradient_weights_q();
         let analytical_weight_k_gradient = gradient.get_gradient_weights_k();
         let analytical_weight_v_gradient = gradient.get_gradient_weights_v();
-        let analytical_weight_pos_gradient = gradient.get_gradient_bias_pos();
 
         let now = Instant::now();
 

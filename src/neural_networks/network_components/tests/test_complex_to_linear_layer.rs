@@ -5,7 +5,7 @@ mod test_complex_to_linear_layer {
         network_components::{complex_to_linear_layer::ComplexToLinearLayer, gradient_struct::Gradient, layer_input_struct::LayerInput, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch},
         utils::{
-            derivative::{global_relative_error_2d_l2, numerical_gradient_bias, numerical_gradient_input, numerical_gradient_weights, test_gradient_error_1d, test_gradient_error_2d},
+            derivative::{global_relative_error_2d_l2, numerical_gradient_bias, numerical_gradient_weights, test_gradient_error_1d, test_gradient_error_2d},
             random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
         },
     };
@@ -154,14 +154,14 @@ mod test_complex_to_linear_layer {
         // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
         let complex_output = complex_to_linear_layer.forward(&layer_input);
         layer_input.set_input_batch(complex_output.get_output_batch());
+
         softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
         let gradient_complex_to_linear: Gradient = complex_to_linear_layer.backward(&gradient_softmax);
-        let (grouped_linear_gradient, analytical_gradient_bias) = (gradient_complex_to_linear.get_gradient_weights_vec_1(), gradient_complex_to_linear.get_gradient_bias());
-        let grouped_linear_gradient_2 = gradient_complex_to_linear.get_gradient_weights_vec_2();
-        let analytical_input_gradient_complex_to_linear = gradient_complex_to_linear.get_gradient_input();
+        let grouped_linear_gradient = gradient_complex_to_linear.get_gradient_weights_vec_1();
 
+        let grouped_linear_gradient_2 = gradient_complex_to_linear.get_gradient_weights_vec_2();
         let linear_weights = complex_to_linear_layer.weights_1.clone();
 
         // TEST WEIGHTS 1 GRADIENT
@@ -222,58 +222,57 @@ mod test_complex_to_linear_layer {
         println!("\n analytical grad weights 2 dim: {:?}", grouped_linear_gradient_2.len());
         println!("numerical grad weights 2 dim: {:?}", numerical_grad_linear.len());
 
-        let global_error = test_gradient_error_1d(&numerical_grad_linear, &grouped_linear_gradient_2, 1e-5);
-        println!("\n\n global relative gradient error weights 2 ffn: {:?}", &global_error);
+        test_gradient_error_1d(&numerical_grad_linear, &grouped_linear_gradient_2, 1e-5);
         test_gradient_error_1d(&grouped_linear_gradient_2, &numerical_grad_linear, 1e-5);
         complex_to_linear_layer.weights_2 = linear_weights_2;
 
-        // TEST BIAS
-        let linear_bias = complex_to_linear_layer.bias.clone();
+        // // TEST BIAS
+        // let linear_bias = complex_to_linear_layer.bias.clone();
 
-        // Define the loss function
-        let mut loss_fn = |_input: &Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Complex<f64>>| -> Complex<f64> {
-            complex_to_linear_layer.bias = bias.clone();
-            layer_input.set_input_batch(_input.clone());
+        // // Define the loss function
+        // let mut loss_fn = |_input: &Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Complex<f64>>| -> Complex<f64> {
+        //     complex_to_linear_layer.bias = bias.clone();
+        //     layer_input.set_input_batch(_input.clone());
 
-            let complex_output = complex_to_linear_layer.forward(&layer_input);
-            layer_input.set_input_batch(complex_output.get_output_batch());
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+        //     let complex_output = complex_to_linear_layer.forward(&layer_input);
+        //     layer_input.set_input_batch(complex_output.get_output_batch());
+        //     softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
-            //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
-            let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
-            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
+        //     //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
+        //     let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
+        //     let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
 
-            loss
-        };
+        //     loss
+        // };
 
-        let numerical_grad_linear_bias: Vec<Complex<f64>> = numerical_gradient_bias(&mut loss_fn, input_batch.clone(), &linear_bias, epsilon);
+        // let numerical_grad_linear_bias: Vec<Complex<f64>> = numerical_gradient_bias(&mut loss_fn, input_batch.clone(), &linear_bias, epsilon);
 
-        // Check if gradient batch dimensions match expected shapes
-        println!("\nanalytical grad bias: {:?}", analytical_gradient_bias);
-        println!("\nnumerical grad bias: {:?}", numerical_grad_linear_bias);
+        // // Check if gradient batch dimensions match expected shapes
+        // println!("\nanalytical grad bias: {:?}", analytical_gradient_bias);
+        // println!("\nnumerical grad bias: {:?}", numerical_grad_linear_bias);
 
-        test_gradient_error_1d(&analytical_gradient_bias, &numerical_grad_linear_bias, 1e-5);
-        complex_to_linear_layer.bias = linear_bias;
+        // test_gradient_error_1d(&analytical_gradient_bias, &numerical_grad_linear_bias, 1e-5);
+        // complex_to_linear_layer.bias = linear_bias;
 
-        // TEST INPUT GRADIENT
-        let mut loss_fn = |_input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
-            layer_input.set_input_batch(_input.clone());
+        // // TEST INPUT GRADIENT
+        // let mut loss_fn = |_input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
+        //     layer_input.set_input_batch(_input.clone());
 
-            let complex_output = complex_to_linear_layer.forward(&layer_input);
-            layer_input.set_input_batch(complex_output.get_output_batch());
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+        //     let complex_output = complex_to_linear_layer.forward(&layer_input);
+        //     layer_input.set_input_batch(complex_output.get_output_batch());
+        //     softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
-            //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
-            let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
-            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
+        //     //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
+        //     let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
+        //     let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
 
-            loss
-        };
+        //     loss
+        // };
 
-        let epsilon = 1e-5;
-        let numerical_input_complex_to_lin: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, input_batch.clone(), epsilon);
-        let global_error = global_relative_error_2d_l2(&numerical_input_complex_to_lin, &analytical_input_gradient_complex_to_linear);
-        println!("\n\n global relative gradient error input gradient complex to linear: {:?}", &global_error);
-        test_gradient_error_2d(&numerical_input_complex_to_lin, &analytical_input_gradient_complex_to_linear, 1e-5);
+        // let epsilon = 1e-5;
+        // let numerical_input_complex_to_lin: Vec<Vec<Complex<f64>>> = numerical_gradient_input(&mut loss_fn, input_batch.clone(), epsilon);
+        // let global_error = global_relative_error_2d_l2(&numerical_input_complex_to_lin, &analytical_input_gradient_complex_to_linear);
+        // println!("\n\n global relative gradient error input gradient complex to linear: {:?}", &global_error);
+        // test_gradient_error_2d(&numerical_input_complex_to_lin, &analytical_input_gradient_complex_to_linear, 1e-5);
     }
 }

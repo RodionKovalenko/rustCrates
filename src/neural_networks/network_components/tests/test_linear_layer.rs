@@ -55,6 +55,7 @@ mod test_linear_layer {
         let mut loss_fn = |_input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
             linear_layer.weights = weights.clone();
 
+            layer_input.set_input_batch(_input.clone());
             let linear_output = linear_layer.forward(&layer_input);
 
             layer_input.set_input_batch(linear_output.get_output_batch());
@@ -98,6 +99,7 @@ mod test_linear_layer {
         let mut loss_fn = |_input: &Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Complex<f64>>| -> Complex<f64> {
             linear_layer.bias = bias.clone();
 
+            layer_input.set_input_batch(_input.clone());
             let linear_output = linear_layer.forward(&layer_input);
 
             layer_input.set_input_batch(linear_output.get_output_batch());
@@ -143,23 +145,23 @@ mod test_linear_layer {
         layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
         let linear_output = linear_layer.forward(&layer_input);
-        
+
         layer_input.set_input_batch(linear_output.get_output_batch());
         softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
+
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
 
         let gradient_weights_batch: Vec<Vec<Complex<f64>>> = gradient_linear.get_gradient_weights();
         let gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient_linear.get_gradient_input_batch();
         let weights: Vec<Vec<Complex<f64>>> = linear_layer.weights.clone();
 
-        println!("target_token_id_batch dim: {} {}", target_token_id_batch.len(), target_token_id_batch[0].len());
-
         // Define the loss function
         let mut loss_fn = |_input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
             linear_layer.weights = weights.clone();
 
+            layer_input.set_input_batch(_input.clone());
             let linear_output = linear_layer.forward(&layer_input);
 
             layer_input.set_input_batch(linear_output.get_output_batch());
@@ -181,8 +183,7 @@ mod test_linear_layer {
         println!("\n num_gradient_weight_batch {:?}", num_gradient_weight_batch);
 
         let global_error = global_relative_error_2d_l2(&num_gradient_weight_batch, &gradient_weights_batch);
-
-        println!("global relative gradient error gradient_weights_batch: {:?}", &global_error);
+        println!("global relative gradient error weights ffn: {:?}", &global_error);
 
         test_gradient_error_2d(&num_gradient_weight_batch, &gradient_weights_batch, 1e-5);
 
