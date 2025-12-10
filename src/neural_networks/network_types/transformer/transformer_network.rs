@@ -590,8 +590,10 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                 if let Some(previous_output) = &output {
                     //println!("forward softmax start");
                     let start = Instant::now();
+
+                    layer_input.set_input_batch(previous_output.clone());
                     if !forward_only {
-                        let softmax_result: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&previous_output, padding_mask.clone(), target_batch_ids_option.clone());
+                        let softmax_result: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&layer_input, padding_mask.clone(), target_batch_ids_option.clone());
                         output_softmax = Some(softmax_result);
                         layer_output.set_cross_entropy_loss_batch(softmax_layer.cross_entropy_loss_batch.clone().unwrap());
                     } else {

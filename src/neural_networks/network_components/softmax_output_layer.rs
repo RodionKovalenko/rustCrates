@@ -52,7 +52,8 @@ impl SoftmaxLayer {
             batch_size: 1,
         }
     }
-    pub fn forward(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>, padding_mask_option: Option<Vec<Vec<u32>>>, target_token_ids: Option<Vec<Vec<u32>>>) -> Vec<Vec<Vec<f64>>> {
+    pub fn forward(&mut self, layer_input: &LayerInput, padding_mask_option: Option<Vec<Vec<u32>>>, target_token_ids: Option<Vec<Vec<u32>>>) -> Vec<Vec<Vec<f64>>> {
+        let input_batch = layer_input.get_input_batch();
         let batch_size = input_batch.len();
         let seq_len = input_batch[0].len();
 
@@ -61,8 +62,6 @@ impl SoftmaxLayer {
         let target_token_batch_ids = target_token_ids.unwrap_or(Vec::new());
 
         let input_batch_linear = if let Some(complex_to_linear_layer) = &mut self.complex_to_linear_layer {
-            let mut layer_input = LayerInput::new_default();
-            layer_input.set_input_batch(input_batch.clone());
             complex_to_linear_layer.forward(&layer_input).get_output_batch()
         } else {
             input_batch.clone()

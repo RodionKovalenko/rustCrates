@@ -41,7 +41,9 @@ mod test_linear_layer {
 
         // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
         let linear_output = linear_layer.forward(&layer_input);
-        softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+
+        layer_input.set_input_batch(linear_output.get_output_batch());
+        softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
@@ -54,7 +56,9 @@ mod test_linear_layer {
             linear_layer.weights = weights.clone();
 
             let linear_output = linear_layer.forward(&layer_input);
-            softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+
+            layer_input.set_input_batch(linear_output.get_output_batch());
+            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
@@ -95,7 +99,9 @@ mod test_linear_layer {
             linear_layer.bias = bias.clone();
 
             let linear_output = linear_layer.forward(&layer_input);
-            softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+
+            layer_input.set_input_batch(linear_output.get_output_batch());
+            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
@@ -138,7 +144,8 @@ mod test_linear_layer {
 
         let linear_output = linear_layer.forward(&layer_input);
         
-        softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+        layer_input.set_input_batch(linear_output.get_output_batch());
+        softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
@@ -154,7 +161,9 @@ mod test_linear_layer {
             linear_layer.weights = weights.clone();
 
             let linear_output = linear_layer.forward(&layer_input);
-            softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+
+            layer_input.set_input_batch(linear_output.get_output_batch());
+            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -182,7 +191,9 @@ mod test_linear_layer {
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             layer_input.set_input_batch(input.clone());
             let linear_output = linear_layer.forward(&layer_input);
-            softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+
+            layer_input.set_input_batch(linear_output.get_output_batch());
+            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -256,7 +267,9 @@ mod test_linear_layer {
         layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
         let linear_output = multi_linear_layer.forward(&layer_input);
-        softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+
+        layer_input.set_input_batch(linear_output.get_output_batch());
+        softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
         let gradient_linear: Gradient = multi_linear_layer.backward(&gradient_softmax);
@@ -270,7 +283,9 @@ mod test_linear_layer {
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             layer_input.set_input_batch(input.clone());
             let linear_output = multi_linear_layer.forward(&layer_input);
-            softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+
+            layer_input.set_input_batch(linear_output.get_output_batch());
+            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -310,7 +325,9 @@ mod test_linear_layer {
         layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
         let linear_output = linear_layer.forward(&layer_input);
-        softmax_layer.forward(&linear_output.get_output_batch(), None, Some(target_token_id_batch.clone()));
+
+        layer_input.set_input_batch(linear_output.get_output_batch());
+        softmax_layer.forward(&layer_input, None, Some(target_token_id_batch.clone()));
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
@@ -324,7 +341,9 @@ mod test_linear_layer {
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             layer_input.set_input_batch(input.clone());
             let linear_output = linear_layer.forward(&layer_input);
-            softmax_layer.forward(&linear_output.get_output_batch(), Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+
+            layer_input.set_input_batch(linear_output.get_output_batch());
+            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
