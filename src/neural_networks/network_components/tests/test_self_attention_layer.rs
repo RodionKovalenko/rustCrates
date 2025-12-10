@@ -105,12 +105,10 @@ mod test_self_attention_layer {
         let analytical_gradient_weights_q_batch = gradient.get_gradient_weights_q_batch();
         let analytical_gradient_weights_k_batch = gradient.get_gradient_weights_k_batch();
         let analytical_gradient_input = gradient.get_gradient_input();
-        let analytical_bias_pos_batch = gradient.get_gradient_bias_pos_batch();
 
         let weights_v = attention_head_layer.weights_v.clone();
         let weights_q = attention_head_layer.weights_q.clone();
         let weights_k = attention_head_layer.weights_k.clone();
-        let bias_pos = attention_head_layer.bias_pos.clone();
 
         // // Weight V ------------------------------------------------------------------------------------------- start
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
@@ -210,52 +208,6 @@ mod test_self_attention_layer {
         attention_head_layer.weights_k = weights_k.clone();
         // Weight K ------------------------------------------------------------------------------------------- end
 
-        // Bias Positional gradient ------------------------------------------------------------------------------------------- start
-        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, bias_pos: &Vec<Vec<Complex<f64>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
-            //println!("bias pos dim: {} {}", bias_pos.len(), bias_pos[0].len());
-            attention_head_layer.bias_pos = bias_pos.clone();
-
-            layer_input.set_calculate_gradient(false);
-            layer_input.set_input_batch(input.clone());
-            let output = attention_head_layer.forward(&layer_input);
-
-            output.get_output_batch()
-        };
-
-        let small_bias_pos: Vec<Vec<Complex<f64>>> = bias_pos
-            .iter()
-            .take(output_dim) // take first 5 rows
-            .map(|row| row.iter().take(output_dim).cloned().collect()) // take first 5 columns from each row
-            .collect();
-
-        let numerical_bias_pos_batch: Vec<Vec<Vec<Complex<f64>>>> =
-            numerical_gradient_weights_multiple_layers_without_loss(&mut loss_fn, input_batch.clone(), &small_bias_pos.clone(), output_batch.clone(), epsilon);
-
-        println!("\n numerical gradient bias positonal attention layer {:?}", numerical_bias_pos_batch);
-        println!(
-            "\n numerical gradient bias positonal dim {:?}, {}, {}",
-            numerical_bias_pos_batch.len(),
-            numerical_bias_pos_batch[0].len(),
-            numerical_bias_pos_batch[0][0].len()
-        );
-
-        println!("\n analytical gradient bias positional attention layer {:?}", analytical_bias_pos_batch);
-        println!(
-            "\n analytical gradient bias positional dim: {:?}, {}, {}",
-            analytical_bias_pos_batch.len(),
-            analytical_bias_pos_batch[0].len(),
-            analytical_bias_pos_batch[0][0].len()
-        );
-
-        let global_error = global_relative_error_l2(&numerical_bias_pos_batch, &analytical_bias_pos_batch);
-        println!("\n\n global relative gradient error bias pos batch: {:?}", &global_error);
-
-        // For Gelu it can a little more deviation
-        test_gradient_batch_error(&numerical_bias_pos_batch, &analytical_bias_pos_batch, epsilon);
-
-        attention_head_layer.bias_pos = bias_pos.clone();
-        // Bias Positional gradient ------------------------------------------------------------------------------------------- end
-
         // Input gradient ------------------------------------------------------------------------------------------- start
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
             layer_input.set_input_batch(input.clone());
@@ -343,12 +295,6 @@ mod test_self_attention_layer {
         //println!("input batch: {:?}", &input_batch);
         println!("padding mask batch in test transformer: {:?}", &padding_mask_batch);
         println!("target tokens ids: {:?}", &target_token_id_batch);
-        println!(
-            "final output dim: {} {} {}",
-            _softmax_batch_output.len(),
-            _softmax_batch_output[0].len(),
-            _softmax_batch_output[0][0].len()
-        );
 
         let now = Instant::now();
 

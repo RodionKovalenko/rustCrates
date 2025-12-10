@@ -2,21 +2,19 @@ use num::Complex;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    neural_networks::{
-        network_components::{gradient_struct::Gradient, layer::LayerType, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
-        utils::{
-            activation::softmax_complex_padding_real,
-            adam_w::calculate_adam_w,
-            derivative::{backpropagate_softmax_masked_real, softmax_derivative_complex_jacobian},
-            matrix::{add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, get_reduced_matrix, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
-            weights_initializer::initialize_weights_complex,
+use crate::neural_networks::{
+    network_components::{gradient_struct::Gradient, layer::LayerType, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+    utils::{
+        activation::softmax_complex_padding_real,
+        adam_w::calculate_adam_w,
+        derivative::{backpropagate_softmax_masked_real, softmax_derivative_complex_jacobian},
+        matrix::{
+            add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, multiply_complex_with_f64, multiply_f64_complex,
+            transpose,
         },
+        weights_initializer::initialize_weights_complex,
     },
-    utils::data_converter::convert_to_c_f64_2d,
 };
-
-use super::transformer_network::MAX_CONTEXT_WINDOW_SIZE;
 
 // Layer struct
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,13 +69,13 @@ impl MaskedAttentionHead {
         let mut weights_k: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
         let mut weights_v: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
 
-        let mut bias_pos: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); MAX_CONTEXT_WINDOW_SIZE * 5]; MAX_CONTEXT_WINDOW_SIZE * 5];
+        let mut bias_pos: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); 5]; 5];
 
         initialize_weights_complex(rows, cols, &mut weights_q);
         initialize_weights_complex(rows, cols, &mut weights_k);
         initialize_weights_complex(rows, cols, &mut weights_v);
 
-        initialize_weights_complex(MAX_CONTEXT_WINDOW_SIZE * 5, MAX_CONTEXT_WINDOW_SIZE * 5, &mut bias_pos);
+        initialize_weights_complex(5, 5, &mut bias_pos);
 
         let bias_q: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
         let bias_k: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
@@ -201,13 +199,10 @@ impl MaskedAttentionHead {
             .map(|(batch_ind, q)| {
                 let mask = create_causal_mask(q.len());
                 let attn_scores = multiply_complex(q, &transpose(&k_cache[batch_ind])); // Use the full K cache
-                let scaled_scores = scale_attention_scores(&attn_scores, k_cache[batch_ind][0].len() as f64);
+                let mut scaled_scores = scale_attention_scores(&attn_scores, k_cache[batch_ind][0].len() as f64);
 
-                let reduced_bias_pos = get_reduced_matrix(&self.bias_pos, scaled_scores.len(), scaled_scores[0].len());
-                let mut scaled_scores_positioned = add_matrix::<Complex<f64>>(&scaled_scores, &reduced_bias_pos);
-
-                apply_attention_mask_inplace(&mut scaled_scores_positioned, &mask);
-                scaled_scores_positioned
+                apply_attention_mask_inplace(&mut scaled_scores, &mask);
+                scaled_scores
             })
             .collect();
 
@@ -218,14 +213,17 @@ impl MaskedAttentionHead {
             .collect();
 
         // Step 5: Compute final output using cached V values
-        let batch_output: Vec<_> = attention_weights_activated.par_iter().enumerate().map(|(batch_ind, attention_weights)| multiply_f64_complex(attention_weights, &v_cache[batch_ind])).collect();
+        let batch_output: Vec<_> = attention_weights_activated
+            .par_iter()
+            .enumerate()
+            .map(|(batch_ind, attention_weights)| multiply_f64_complex(attention_weights, &v_cache[batch_ind]))
+            .collect();
         // Step 6: Store intermediate results
         self.attention_weights_batch = Some(attention_weights_activated);
         self.attention_weights_batch_raw = Some(attention_weights_batch_inactivated);
         self.output_batch = Some(batch_output.clone());
 
         // println!("output_batch in attention head: {} {} {}", batch_output.len(), batch_output[0].len(), batch_output[0][0].len());
-
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(batch_output);
 
@@ -249,8 +247,6 @@ impl MaskedAttentionHead {
         let mut gradient_q_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_q[0].len()]; self.weights_q.len()]; batch_size];
         let mut gradient_k_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_k[0].len()]; self.weights_k.len()]; batch_size];
         let mut gradient_v_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_v[0].len()]; self.weights_v.len()]; batch_size];
-
-        let mut gradient_bias_pos_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_v.len()]; self.weights_v.len()]; batch_size];
 
         for (batch_ind, previous_gradient) in previous_gradient_batch.iter().enumerate() {
             let q: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &self.weights_q);
@@ -338,17 +334,13 @@ impl MaskedAttentionHead {
             // 4,2 * 5, 4 = 2, 4 * 4, 5 = 2,5
             let dl_dvx = multiply_complex(&transpose(&grad_wv), &conjugate_transpose(&self.weights_v));
 
-            gradient_bias_pos_batch[batch_ind] = convert_to_c_f64_2d(&dl_da);
             gradient_input_batch[batch_ind] = add_matrix(&dl_dqx, &dl_dkx);
-            // println!("dl_dqx dim: {}, {}", &dl_dqx.len(), &dl_dqx[0].len());
-            // println!("dl_dkx dim: {}, {}", &dl_dkx.len(), &dl_dkx[0].len());
             gradient_input_batch[batch_ind] = add_matrix(&gradient_input_batch[batch_ind], &dl_dvx);
         }
 
         if self.gradient.is_some() {
             let previous_gradient = self.gradient.as_ref().expect("");
             // gradient_input_batch = add_matrix_3d(&gradient_input_batch, &previous_gradient.get_gradient_input_batch());
-            gradient_bias_pos_batch = add_matrix_3d(&gradient_bias_pos_batch, &&previous_gradient.get_gradient_bias_pos_batch());
             gradient_v_batch = add_matrix_3d(&gradient_v_batch, &&previous_gradient.get_gradient_weights_v_batch());
             gradient_q_batch = add_matrix_3d(&gradient_q_batch, &&previous_gradient.get_gradient_weights_q_batch());
             gradient_k_batch = add_matrix_3d(&gradient_k_batch, &&previous_gradient.get_gradient_weights_k_batch());
@@ -360,7 +352,6 @@ impl MaskedAttentionHead {
         gradient.set_gradient_weights_q_batch(gradient_q_batch);
         gradient.set_gradient_weights_k_batch(gradient_k_batch);
         gradient.set_gradient_input_batch(gradient_input_batch);
-        gradient.set_gradient_bias_pos_batch(gradient_bias_pos_batch);
 
         self.gradient = Some(gradient.clone());
 
@@ -370,7 +361,6 @@ impl MaskedAttentionHead {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("Gradient is missing in attention head layer");
         let (mut grad_w_q, mut grad_w_v, mut grad_w_k) = (gradient.get_gradient_weights_q(), gradient.get_gradient_weights_v(), gradient.get_gradient_weights_k());
 
-        let mut grad_bias_pos = gradient.get_gradient_bias_pos();
         let input_batch = gradient.get_gradient_input_batch();
         let mut batch_size = input_batch.len() as f64;
 
@@ -381,78 +371,90 @@ impl MaskedAttentionHead {
         grad_w_q = average_matrix_by_scalar(&grad_w_q, batch_size);
         grad_w_v = average_matrix_by_scalar(&grad_w_v, batch_size);
         grad_w_k = average_matrix_by_scalar(&grad_w_k, batch_size);
-        grad_bias_pos = average_matrix_by_scalar(&grad_bias_pos, batch_size);
 
         clip_all_gradients_by_global_norm_2d(&mut grad_w_q, &mut vec![], self.global_norm, self.max_norm);
         clip_all_gradients_by_global_norm_2d(&mut grad_w_v, &mut vec![], self.global_norm, self.max_norm);
         clip_all_gradients_by_global_norm_2d(&mut grad_w_k, &mut vec![], self.global_norm, self.max_norm);
-        clip_all_gradients_by_global_norm_2d(&mut grad_bias_pos, &mut vec![], self.global_norm, self.max_norm);
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
 
-        let (mut prev_m_weights_q, mut prev_v_weights_q, mut prev_m_weights_k, mut prev_v_weights_k, mut prev_m_weights_v, mut prev_v_weights_v, mut prev_m_bias_pos, mut prev_v_bias_pos, mut prev_v_weights_q_hat, mut prev_v_weights_k_hat, mut prev_v_weights_v_hat, mut prev_v_weights_p_hat) =
-            if let Some(previous_gradient) = &mut self.previous_gradient {
-                (
-                    previous_gradient.get_prev_m_weigths_q(),
-                    previous_gradient.get_prev_v_weigths_q(),
-                    previous_gradient.get_prev_m_weigths_k(),
-                    previous_gradient.get_prev_v_weights_k(),
-                    previous_gradient.get_prev_m_weigths_v(),
-                    previous_gradient.get_prev_v_weights_v(),
-                    previous_gradient.get_prev_m_bias_pos(),
-                    previous_gradient.get_prev_v_bias_pos(),
-                    // vec![vec![Complex::new(0.0, 0.0); self.bias_pos[0].len()]; self.bias_pos.len()],
-                    // vec![vec![Complex::new(0.0, 0.0); self.bias_pos[0].len()]; self.bias_pos.len()],
-                    previous_gradient.get_prev_v_weights_q_hat(),
-                    previous_gradient.get_prev_v_weights_k_hat(),
-                    previous_gradient.get_prev_v_weights_v_hat(),
-                    previous_gradient.get_prev_v_weights_p_hat(),
-                )
-            } else {
-                (
-                    vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()],
-                    vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()],
-                    vec![vec![Complex::new(0.0, 0.0); grad_w_k[0].len()]; grad_w_k.len()],
-                    vec![vec![Complex::new(0.0, 0.0); grad_w_k[0].len()]; grad_w_k.len()],
-                    vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
-                    vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
-                    vec![vec![Complex::new(0.0, 0.0); self.bias_pos[0].len()]; self.bias_pos.len()],
-                    vec![vec![Complex::new(0.0, 0.0); self.bias_pos[0].len()]; self.bias_pos.len()],
-                    vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
-                    vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
-                    vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
-                    vec![vec![Complex::new(0.0, 0.0); self.bias_pos[0].len()]; self.bias_pos.len()],
-                )
-            };
+        let (
+            mut prev_m_weights_q,
+            mut prev_v_weights_q,
+            mut prev_m_weights_k,
+            mut prev_v_weights_k,
+            mut prev_m_weights_v,
+            mut prev_v_weights_v,
+            mut prev_v_weights_q_hat,
+            mut prev_v_weights_k_hat,
+            mut prev_v_weights_v_hat,
+        ) = if let Some(previous_gradient) = &mut self.previous_gradient {
+            (
+                previous_gradient.get_prev_m_weigths_q(),
+                previous_gradient.get_prev_v_weigths_q(),
+                previous_gradient.get_prev_m_weigths_k(),
+                previous_gradient.get_prev_v_weights_k(),
+                previous_gradient.get_prev_m_weigths_v(),
+                previous_gradient.get_prev_v_weights_v(),
+                previous_gradient.get_prev_v_weights_q_hat(),
+                previous_gradient.get_prev_v_weights_k_hat(),
+                previous_gradient.get_prev_v_weights_v_hat(),
+            )
+        } else {
+            (
+                vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()],
+                vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()],
+                vec![vec![Complex::new(0.0, 0.0); grad_w_k[0].len()]; grad_w_k.len()],
+                vec![vec![Complex::new(0.0, 0.0); grad_w_k[0].len()]; grad_w_k.len()],
+                vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
+                vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
+                vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
+                vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
+                vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
+            )
+        };
 
-        calculate_adam_w(&mut self.weights_q, &grad_w_q, &mut prev_m_weights_q, &mut prev_v_weights_q, &mut prev_v_weights_q_hat, learning_rate, time_step);
-        calculate_adam_w(&mut self.weights_k, &grad_w_k, &mut prev_m_weights_k, &mut prev_v_weights_k, &mut prev_v_weights_k_hat, learning_rate, time_step);
-        calculate_adam_w(&mut self.weights_v, &grad_w_v, &mut prev_m_weights_v, &mut prev_v_weights_v, &mut prev_v_weights_v_hat, learning_rate, time_step);
-
-        let seq_len = grad_bias_pos.len();
-        let mut bias_pos_slice: Vec<Vec<Complex<f64>>> = self.bias_pos[0..seq_len].iter().map(|row| row[0..seq_len].to_vec()).collect();
-        calculate_adam_w(&mut bias_pos_slice, &grad_bias_pos, &mut prev_m_bias_pos, &mut prev_v_bias_pos, &mut prev_v_weights_p_hat, learning_rate, time_step);
-
-        for i in 0..seq_len {
-            for j in 0..seq_len {
-                self.bias_pos[i][j] = bias_pos_slice[i][j];
-            }
-        }
+        calculate_adam_w(
+            &mut self.weights_q,
+            &grad_w_q,
+            &mut prev_m_weights_q,
+            &mut prev_v_weights_q,
+            &mut prev_v_weights_q_hat,
+            learning_rate,
+            time_step,
+        );
+        calculate_adam_w(
+            &mut self.weights_k,
+            &grad_w_k,
+            &mut prev_m_weights_k,
+            &mut prev_v_weights_k,
+            &mut prev_v_weights_k_hat,
+            learning_rate,
+            time_step,
+        );
+        calculate_adam_w(
+            &mut self.weights_v,
+            &grad_w_v,
+            &mut prev_m_weights_v,
+            &mut prev_v_weights_v,
+            &mut prev_v_weights_v_hat,
+            learning_rate,
+            time_step,
+        );
 
         gradient.set_prev_m_weights_q(prev_m_weights_q);
         gradient.set_prev_v_weights_q(prev_v_weights_q);
+
         gradient.set_prev_m_weights_k(prev_m_weights_k);
         gradient.set_prev_v_weights_k(prev_v_weights_k);
+
         gradient.set_prev_m_weights_v(prev_m_weights_v);
         gradient.set_prev_v_weights_v(prev_v_weights_v);
-        gradient.set_prev_m_bias_pos(prev_m_bias_pos);
-        gradient.set_prev_v_bias_pos(prev_v_bias_pos);
 
         gradient.set_prev_v_weights_q_hat(prev_v_weights_q_hat);
         gradient.set_prev_v_weights_k_hat(prev_v_weights_k_hat);
         gradient.set_prev_v_weights_v_hat(prev_v_weights_v_hat);
-        gradient.set_prev_v_weights_p_hat(prev_v_weights_p_hat);
 
         self.previous_gradient = Some(gradient.clone());
     }

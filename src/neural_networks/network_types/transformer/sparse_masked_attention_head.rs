@@ -762,8 +762,6 @@ impl SparseMaskedAttentionHead {
                 previous_gradient.get_prev_v_weights_k(),
                 previous_gradient.get_prev_m_weigths_v(),
                 previous_gradient.get_prev_v_weights_v(),
-                // vec![vec![Complex::new(0.0, 0.0); self.bias_pos[0].len()]; self.bias_pos.len()],
-                // vec![vec![Complex::new(0.0, 0.0); self.bias_pos[0].len()]; self.bias_pos.len()],
                 previous_gradient.get_prev_v_weights_q_hat(),
                 previous_gradient.get_prev_v_weights_k_hat(),
                 previous_gradient.get_prev_v_weights_v_hat(),

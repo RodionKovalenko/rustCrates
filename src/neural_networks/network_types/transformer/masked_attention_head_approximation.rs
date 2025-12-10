@@ -13,8 +13,6 @@ use crate::neural_networks::{
     },
 };
 
-use super::transformer_network::MAX_CONTEXT_WINDOW_SIZE;
-
 // Precomputed gradient caches for optimization
 #[derive(Clone)]
 struct PrecomputedGradients {
@@ -81,8 +79,8 @@ impl MaskedAttentionHeadApproximation {
         initialize_weights_complex(rows, cols, &mut weights_q);
         initialize_weights_complex(rows, cols, &mut weights_k);
         initialize_weights_complex(rows, cols, &mut weights_v);
-        let mut bias_pos = vec![vec![Complex::new(0.0, 0.0); MAX_CONTEXT_WINDOW_SIZE * 5]; MAX_CONTEXT_WINDOW_SIZE * 5];
-        initialize_weights_complex(MAX_CONTEXT_WINDOW_SIZE * 5, MAX_CONTEXT_WINDOW_SIZE * 5, &mut bias_pos);
+        let mut bias_pos = vec![vec![Complex::new(0.0, 0.0); 5]; 5];
+        initialize_weights_complex(5, 5, &mut bias_pos);
         let bias_q = vec![Complex::new(1.0, 0.0); cols];
         let bias_k = bias_q.clone();
         let bias_v = bias_q.clone();
@@ -293,7 +291,6 @@ impl MaskedAttentionHeadApproximation {
         let mut grad_wq = vec![vec![vec![Complex::new(0.0, 0.0); d_k]; d_model]; bsz];
         let mut grad_wk = grad_wq.clone();
         let mut grad_wv = grad_wq.clone();
-        let mut grad_bp = vec![vec![vec![Complex::new(0.0, 0.0); seq]; seq]; bsz];
 
         // Per-batch scratch buffers in parallel
         let scratch: Vec<_> = (0..bsz)
@@ -303,7 +300,6 @@ impl MaskedAttentionHeadApproximation {
                 let mut local_wk = vec![vec![Complex::new(0.0, 0.0); d_k]; d_model];
                 let mut local_wv = vec![vec![Complex::new(0.0, 0.0); d_k]; d_model];
                 let mut local_in = vec![vec![Complex::new(0.0, 0.0); d_model]; seq];
-                let mut local_bp = vec![vec![Complex::new(0.0, 0.0); seq]; seq];
 
                 // Q path
                 for t in 0..seq {
@@ -319,7 +315,6 @@ impl MaskedAttentionHeadApproximation {
                                 local_wq[j][i] += (gq * self.input_batch[b][t][j]).conj();
                                 local_in[t][j] += (gq * self.weights_q[j][i]).conj();
                             }
-                            local_bp[t][i] += gq.conj();
                         }
                     }
                     // V path
@@ -359,17 +354,16 @@ impl MaskedAttentionHeadApproximation {
                                 local_wk[j][i] += (gk * self.input_batch[b][tau][j]).conj();
                                 local_in[tau][j] += (gk * self.weights_k[j][i]).conj();
                             }
-                            local_bp[tau][i] += gk.conj();
                         }
                     }
                 }
 
-                (local_wq, local_wk, local_wv, local_in, local_bp)
+                (local_wq, local_wk, local_wv, local_in)
             })
             .collect();
 
         // Merge scratch into global
-        for (b, (lwq, lwk, lwv, lin, lbp)) in scratch.into_iter().enumerate() {
+        for (b, (lwq, lwk, lwv, lin)) in scratch.into_iter().enumerate() {
             for j in 0..d_model {
                 for i in 0..d_k {
                     grad_wq[b][j][i] += lwq[j][i];
@@ -381,9 +375,6 @@ impl MaskedAttentionHeadApproximation {
                 for j in 0..d_model {
                     grad_in[b][t][j] += lin[t][j];
                 }
-                for i in 0..seq {
-                    grad_bp[b][t][i] += lbp[t][i];
-                }
             }
         }
 
@@ -392,7 +383,6 @@ impl MaskedAttentionHeadApproximation {
         grad.set_gradient_weights_q_batch(grad_wq);
         grad.set_gradient_weights_k_batch(grad_wk);
         grad.set_gradient_weights_v_batch(grad_wv);
-        grad.set_gradient_bias_pos_batch(grad_bp);
         grad.set_gradient_input_batch(grad_in);
 
         self.gradient = Some(grad.clone());
@@ -403,7 +393,6 @@ impl MaskedAttentionHeadApproximation {
     pub fn update_parameters(&mut self) {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("Gradient is missing in attention head layer");
         let (mut grad_w_q, mut grad_w_v, mut grad_w_k) = (gradient.get_gradient_weights_q(), gradient.get_gradient_weights_v(), gradient.get_gradient_weights_k());
-        let mut grad_bias_pos = gradient.get_gradient_bias_pos();
         let input_batch = gradient.get_gradient_input_batch();
         let mut batch_size = input_batch.len() as f64;
 
@@ -414,14 +403,23 @@ impl MaskedAttentionHeadApproximation {
         grad_w_q = average_matrix_by_scalar(&grad_w_q, batch_size);
         grad_w_v = average_matrix_by_scalar(&grad_w_v, batch_size);
         grad_w_k = average_matrix_by_scalar(&grad_w_k, batch_size);
-        grad_bias_pos = average_matrix_by_scalar(&grad_bias_pos, batch_size);
 
         clip_all_gradients_by_global_norm_2d(&mut grad_w_q, &mut vec![], self.global_norm, self.max_norm);
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
 
-        let (mut prev_m_weights_q, mut prev_v_weights_q, mut prev_m_weights_k, mut prev_v_weights_k, mut prev_m_weights_v, mut prev_v_weights_v, mut prev_m_bias_pos, mut prev_v_bias_pos, mut prev_v_weights_q_hat, mut prev_v_weights_k_hat, mut prev_v_weights_v_hat, mut prev_v_weights_p_hat) = if let Some(previous_gradient) = &mut self.previous_gradient {
+        let (
+            mut prev_m_weights_q,
+            mut prev_v_weights_q,
+            mut prev_m_weights_k,
+            mut prev_v_weights_k,
+            mut prev_m_weights_v,
+            mut prev_v_weights_v,
+            mut prev_v_weights_q_hat,
+            mut prev_v_weights_k_hat,
+            mut prev_v_weights_v_hat,
+        ) = if let Some(previous_gradient) = &mut self.previous_gradient {
             (
                 previous_gradient.get_prev_m_weigths_q(),
                 previous_gradient.get_prev_v_weigths_q(),
@@ -429,16 +427,9 @@ impl MaskedAttentionHeadApproximation {
                 previous_gradient.get_prev_v_weights_k(),
                 previous_gradient.get_prev_m_weigths_v(),
                 previous_gradient.get_prev_v_weights_v(),
-
-                previous_gradient.get_prev_m_bias_pos(),
-                previous_gradient.get_prev_v_bias_pos(),
-                // vec![vec![Complex::new(0.0, 0.0); self.bias_pos[0].len()]; self.bias_pos.len()],
-                // vec![vec![Complex::new(0.0, 0.0); self.bias_pos[0].len()]; self.bias_pos.len()],
-
                 previous_gradient.get_prev_v_weights_q_hat(),
                 previous_gradient.get_prev_v_weights_k_hat(),
                 previous_gradient.get_prev_v_weights_v_hat(),
-                previous_gradient.get_prev_v_weights_p_hat(),
             )
         } else {
             (
@@ -448,28 +439,39 @@ impl MaskedAttentionHeadApproximation {
                 vec![vec![Complex::new(0.0, 0.0); grad_w_k[0].len()]; grad_w_k.len()],
                 vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
                 vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
-                vec![vec![Complex::new(0.0, 0.0); self.bias_pos[0].len()]; self.bias_pos.len()],
-                vec![vec![Complex::new(0.0, 0.0); self.bias_pos[0].len()]; self.bias_pos.len()],
                 vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
                 vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
                 vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
-                vec![vec![Complex::new(0.0, 0.0); self.bias_pos[0].len()]; self.bias_pos.len()],
             )
         };
 
-        calculate_adam_w(&mut self.weights_q, &grad_w_q, &mut prev_m_weights_q, &mut prev_v_weights_q, &mut prev_v_weights_q_hat,learning_rate, time_step);
-        calculate_adam_w(&mut self.weights_k, &grad_w_k, &mut prev_m_weights_k, &mut prev_v_weights_k, &mut prev_v_weights_k_hat, learning_rate, time_step);
-        calculate_adam_w(&mut self.weights_v, &grad_w_v, &mut prev_m_weights_v, &mut prev_v_weights_v, &mut prev_v_weights_v_hat, learning_rate, time_step);
-
-        let seq_len = grad_bias_pos.len();
-        let mut bias_pos_slice: Vec<Vec<Complex<f64>>> = self.bias_pos[0..seq_len].iter().map(|row| row[0..seq_len].to_vec()).collect();
-        calculate_adam_w(&mut bias_pos_slice, &grad_bias_pos, &mut prev_m_bias_pos, &mut prev_v_bias_pos, &mut prev_v_weights_p_hat, learning_rate, time_step);
-
-        for i in 0..seq_len {
-            for j in 0..seq_len {
-                self.bias_pos[i][j] = bias_pos_slice[i][j];
-            }
-        }
+        calculate_adam_w(
+            &mut self.weights_q,
+            &grad_w_q,
+            &mut prev_m_weights_q,
+            &mut prev_v_weights_q,
+            &mut prev_v_weights_q_hat,
+            learning_rate,
+            time_step,
+        );
+        calculate_adam_w(
+            &mut self.weights_k,
+            &grad_w_k,
+            &mut prev_m_weights_k,
+            &mut prev_v_weights_k,
+            &mut prev_v_weights_k_hat,
+            learning_rate,
+            time_step,
+        );
+        calculate_adam_w(
+            &mut self.weights_v,
+            &grad_w_v,
+            &mut prev_m_weights_v,
+            &mut prev_v_weights_v,
+            &mut prev_v_weights_v_hat,
+            learning_rate,
+            time_step,
+        );
 
         gradient.set_prev_m_weights_q(prev_m_weights_q);
         gradient.set_prev_v_weights_q(prev_v_weights_q);
@@ -477,13 +479,10 @@ impl MaskedAttentionHeadApproximation {
         gradient.set_prev_v_weights_k(prev_v_weights_k);
         gradient.set_prev_m_weights_v(prev_m_weights_v);
         gradient.set_prev_v_weights_v(prev_v_weights_v);
-        gradient.set_prev_m_bias_pos(prev_m_bias_pos);
-        gradient.set_prev_v_bias_pos(prev_v_bias_pos);
 
         gradient.set_prev_v_weights_q_hat(prev_v_weights_q_hat);
         gradient.set_prev_v_weights_k_hat(prev_v_weights_k_hat);
         gradient.set_prev_v_weights_v_hat(prev_v_weights_v_hat);
-        gradient.set_prev_v_weights_p_hat(prev_v_weights_p_hat);
 
         self.previous_gradient = Some(gradient.clone());
     }
