@@ -618,7 +618,7 @@ pub fn softmax_row_complex(logits: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
     // 1) Stability shift — use ONLY real parts
     let max_re = logits.iter().map(|z| z.re).fold(f64::NEG_INFINITY, f64::max);
 
-    println!("Max real part for stability shift: {}", max_re);
+    // println!("Max real part for stability shift: {}", max_re);
 
     // 2) Compute exp(z - max_re) safely
     let mut exps: Vec<Complex<f64>> = Vec::with_capacity(n);
