@@ -8,12 +8,14 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIter
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
-    network_components::{complex_to_linear_layer::ComplexToLinearLayer, gradient_struct::Gradient, layer::LayerType, layer_input_struct::LayerInput, layer_output_struct::LayerOutput}, network_types::transformer::transformer_network::MAX_CONTEXT_WINDOW_SIZE, utils::{
+    network_components::{complex_to_linear_layer::ComplexToLinearLayer, gradient_struct::Gradient, layer::LayerType, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+    network_types::transformer::transformer_network::MAX_CONTEXT_WINDOW_SIZE,
+    utils::{
         activation::softmax_complex_padding_complex,
         adam_w::calculate_adam_w,
         matrix::{add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate, conjugate_transpose, multiply_complex, transpose},
         weights_initializer::initialize_weights_complex,
-    }
+    },
 };
 use std::fmt::Debug;
 
@@ -651,6 +653,10 @@ impl SparseMaskedAttentionHead {
         let attention_weights_batch: &Vec<Vec<Vec<Complex<f64>>>> = self.attention_weights_batch.as_ref().expect("Attention weights batch is missing in attention head");
         let batch_size = output_batch.len();
 
+        let mut softmax_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
+        let mut softmax_sparse_indices_batch: Vec<Vec<Vec<usize>>> = Vec::new();
+        let mut grad_wv_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
+
         // Initialize gradients for each parameter (weights and biases)
         let mut gradient_input_batch = vec![vec![vec![Complex::new(0.0, 0.0); previous_gradient_batch[0][0].len()]; previous_gradient_batch[0].len()]; input_batch.len()];
         let mut gradient_q_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_q[0].len()]; self.weights_q.len()]; batch_size];
@@ -658,47 +664,50 @@ impl SparseMaskedAttentionHead {
         let mut gradient_v_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_v[0].len()]; self.weights_v.len()]; batch_size];
 
         for (batch_ind, previous_gradient) in previous_gradient_batch.iter().enumerate() {
-            let q: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &self.weights_q);
-            let k: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &self.weights_k);
             let v: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &self.weights_v);
 
             let grad_wv: Vec<Vec<Complex<f64>>> = self.multiply_sparse_backward(&transpose(&previous_gradient), &attention_weights_batch[batch_ind], false);
             gradient_v_batch[batch_ind] = multiply_complex(&conjugate_transpose(&input_batch[batch_ind]), &transpose(&grad_wv));
+
+            let sparse_attention_idxs = self.build_original_indices(&attention_weights_batch[batch_ind]);
+            let (dl_da, _dl_da_inds) = self.softmax_backward_sparse_compressed(&attention_weights_batch[batch_ind], &sparse_attention_idxs, &previous_gradient, &v, &padding_mask_batch[batch_ind]);
+
+            softmax_gradient_batch.push(dl_da);
+            softmax_sparse_indices_batch.push(sparse_attention_idxs);
+            grad_wv_batch.push(grad_wv);
+        }
+
+        let mut previous_gradient_d_a = Gradient::new_default();
+        previous_gradient_d_a.set_gradient_input_batch(softmax_gradient_batch);
+        let dl_da_linear = self.complex_to_linear_layer.as_mut().expect("Complex to linear layer is missing").backward(&previous_gradient_d_a);
+        let dl_da_batch: Vec<Vec<Vec<Complex<f64>>>> = dl_da_linear.get_gradient_input_batch();
+
+        for batch_ind in 0..previous_gradient_batch.len() {
+            let q: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &self.weights_q);
+            let k: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &self.weights_k);
 
             let d_k = k[0].len() as f64;
             // Compute gradient of k_scaled w.r.t. k
             let k_scaled: Vec<Vec<Complex<f64>>> = scale_attention_scores(&transpose(&k), d_k);
             let q_scaled: Vec<Vec<Complex<f64>>> = scale_attention_scores(&q, d_k);
 
-            // 16x16 original
-            let sparse_attention_idxs = self.build_original_indices(&attention_weights_batch[batch_ind]);
-            // 16x(2/3)
-            let (dl_da, _dl_da_inds) = self.softmax_backward_sparse_compressed(&attention_weights_batch[batch_ind], &sparse_attention_idxs, &previous_gradient, &v, &padding_mask_batch[batch_ind]);
-            // let dl_da_restored: Vec<Vec<Complex<f64>>> = self.restore_sparse_matrix_zeroes(&dl_da, self.window_size, input_batch[batch_ind].len());
-            // let dl_dq: Vec<Vec<Complex<f64>>> = multiply_complex(&k_scaled, &transpose(&dl_da_restored));
-
-            let mut previous_gradient_d_a = Gradient::new_default();
-            previous_gradient_d_a.set_gradient_input_batch(vec![dl_da.clone()]);
-            let dl_da_linear = self.complex_to_linear_layer.as_mut().expect("Complex to linear layer is missing").backward(&previous_gradient_d_a);
-            let dl_da: Vec<Vec<Complex<f64>>> = dl_da_linear.get_gradient_input_batch()[0].clone();
-
-            let dl_da_transposed: Vec<Vec<Complex<f64>>> = self.transpose_sparse(&dl_da, &_dl_da_inds);
+            let dl_da_transposed: Vec<Vec<Complex<f64>>> = self.transpose_sparse(&dl_da_batch[batch_ind], &softmax_sparse_indices_batch[batch_ind]);
             let dl_dq: Vec<Vec<Complex<f64>>> = self.multiply_sparse_backward(&k_scaled, &dl_da_transposed, true);
             let dl_dwq: Vec<Vec<Complex<f64>>> = multiply_complex(&conjugate_transpose(&input_batch[batch_ind]), &conjugate_transpose(&dl_dq));
             gradient_q_batch[batch_ind] = dl_dwq;
 
             // Gradient Wk
-            let dl_dk: Vec<Vec<Complex<f64>>> = self.multiply_sparse_backward(&transpose(&q_scaled), &dl_da, true);
+            let dl_dk: Vec<Vec<Complex<f64>>> = self.multiply_sparse_backward(&transpose(&q_scaled), &dl_da_batch[batch_ind], true);
             let dl_dwk: Vec<Vec<Complex<f64>>> = multiply_complex(&transpose(&input_batch[batch_ind]), &transpose(&dl_dk));
             gradient_k_batch[batch_ind] = conjugate(&dl_dwk);
 
             let dl_dqx = multiply_complex(&transpose(&dl_dq), &transpose(&self.weights_q));
             let dl_dkx = multiply_complex(&transpose(&dl_dk), &transpose(&self.weights_k));
-            let dl_dvx = multiply_complex(&transpose(&grad_wv), &transpose(&self.weights_v));
+            let dl_dvx = multiply_complex(&transpose(&grad_wv_batch[batch_ind]), &transpose(&self.weights_v));
 
             gradient_input_batch[batch_ind] = add_matrix(&dl_dqx, &dl_dkx);
             gradient_input_batch[batch_ind] = add_matrix(&gradient_input_batch[batch_ind], &dl_dvx);
-            
+
             gradient_input_batch[batch_ind] = conjugate(&gradient_input_batch[batch_ind]);
         }
 
