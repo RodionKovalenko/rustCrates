@@ -46,7 +46,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let num_self_attention_layer: usize = NUM_SELF_ATT_LAYERS;
     // let origin_hidden_dim = 512;
     let window_size = 2;
-    let hidden_dim = 128;
+    let hidden_dim = 512;
     for _i in 0..num_self_attention_layer {
         let num_attention_heads: usize = 4;
 

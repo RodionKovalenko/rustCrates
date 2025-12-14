@@ -28,7 +28,7 @@ use crate::{
     utils::{data_converter::convert_c_to_f64_3d, sampling_methods::greedy_decoding},
 };
 
-pub const MAX_CONTEXT_WINDOW_SIZE: usize = 12000;
+pub const MAX_CONTEXT_WINDOW_SIZE: usize = 50280;
 pub const CONTEXT_OVERLAPPING: usize = 16;
 pub const EMA_SCALER: f64 = 1.1;
 
