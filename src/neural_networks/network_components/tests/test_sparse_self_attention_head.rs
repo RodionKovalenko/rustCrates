@@ -7,8 +7,8 @@ mod test_sparse_self_attention_head {
         network_types::{
             neural_network_generic::OperationMode,
             transformer::{
-                sparse_masked_attention_head::{calculate_window_tokens, calculate_window_tokens_batch, SparseMaskedAttentionHead},
-                transformer_network::cross_entropy_sum_batch,
+                sparse_masked_attention_head::{SparseMaskedAttentionHead, calculate_window_tokens, calculate_window_tokens_batch},
+                transformer_network::{MAX_CONTEXT_WINDOW_SIZE, cross_entropy_sum_batch},
             },
         },
         utils::{
@@ -55,7 +55,7 @@ mod test_sparse_self_attention_head {
 
     #[test]
     fn test_loss_sparse_attention_head_backward() {
-        let batch_size = 1;
+        let batch_size = 2;
         let input_dim = 4;
         let output_dim = 16;
         let epsilon: f64 = 1e-4;
@@ -63,7 +63,7 @@ mod test_sparse_self_attention_head {
         let learning_rate = 0.0001;
 
         let mut attention_head_layer: SparseMaskedAttentionHead = SparseMaskedAttentionHead::new(input_dim, input_dim, 1, learning_rate);
-        let mut complex_to_linear_layer: ComplexToLinearLayer = ComplexToLinearLayer::new(input_dim, learning_rate);
+        let mut complex_to_linear_layer: ComplexToLinearLayer = ComplexToLinearLayer::new(MAX_CONTEXT_WINDOW_SIZE, learning_rate);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING, input_dim);
 
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
