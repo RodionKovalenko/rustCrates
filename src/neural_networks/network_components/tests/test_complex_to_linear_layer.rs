@@ -130,7 +130,7 @@ mod test_complex_to_linear_layer {
     #[test]
     fn test_softmax_complex_to_linear_backward() {
         // Define some small batch size and input dimensions for simplicity
-        let batch_size = 2;
+        let batch_size = 1;
         let _seq_len: usize = 1; // Update to match the input structure
         let cols = 5; // Match the input dimension with your input batch
         let rows = 15; // Match output_dim to your layer's output

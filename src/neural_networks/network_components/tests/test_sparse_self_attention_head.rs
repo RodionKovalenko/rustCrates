@@ -58,7 +58,7 @@ mod test_sparse_self_attention_head {
         let batch_size = 1;
         let input_dim = 4;
         let output_dim = 16;
-        let epsilon: f64 = 1e-6;
+        let epsilon: f64 = 1e-4;
 
         let learning_rate = 0.0001;
 

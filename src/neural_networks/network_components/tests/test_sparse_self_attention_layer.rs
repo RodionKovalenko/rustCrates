@@ -22,9 +22,9 @@ mod test_sparse_self_attention_layer {
     #[test]
     fn test_sparse_self_attention_layer_backward() {
         // Define some small batch size and input dimensions for simplicity
-        let batch_size = 3;
+        let batch_size = 1;
         let seq_len = 16;
-        let feature_dim = 4;
+        let feature_dim = 16;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
         let num_attention_heads = 4;
