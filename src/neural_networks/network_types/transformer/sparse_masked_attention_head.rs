@@ -606,8 +606,8 @@ impl SparseMaskedAttentionHead {
 
         for i in 0..n {
             if padding_mask[i] == 0 {
-                dl_dz_vals.push(vec![]);
-                dl_dz_idx.push(vec![]);
+                dl_dz_vals.push(vec![Complex::new(0.0, 0.0); softmax_vals[i].len()]);
+                dl_dz_idx.push(vec![0; softmax_vals[i].len()]);
                 continue;
             }
 
@@ -679,6 +679,7 @@ impl SparseMaskedAttentionHead {
 
         let mut previous_gradient_d_a = Gradient::new_default();
         previous_gradient_d_a.set_gradient_input_batch(softmax_gradient_batch);
+
         let dl_da_linear = self.complex_to_linear_layer.as_mut().expect("Complex to linear layer is missing").backward(&previous_gradient_d_a);
         let dl_da_batch: Vec<Vec<Vec<Complex<f64>>>> = dl_da_linear.get_gradient_input_batch();
 
@@ -829,6 +830,8 @@ impl SparseMaskedAttentionHead {
         gradient.set_prev_v_weights_v_hat(prev_v_weights_v_hat);
 
         self.previous_gradient = Some(gradient.clone());
+
+        self.gradient = None;
     }
 }
 

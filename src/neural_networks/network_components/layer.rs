@@ -280,7 +280,6 @@ impl Layer {
 
         if self.gradient.is_some() {
             let previous_gradient = self.gradient.as_ref().expect("");
-            // input_gradient_batch = add_matrix_3d(&input_gradient_batch, &previous_gradient.get_gradient_input_batch());
             weight_gradients = add_matrix_3d(&weight_gradients, &previous_gradient.get_gradient_weight_batch());
             bias_gradients = add_matrix(&bias_gradients, &previous_gradient.get_gradient_bias_batch());
         }
@@ -361,6 +360,8 @@ impl Layer {
         gradient.set_gradient_weights(weight_gradients.clone());
         gradient.set_gradient_bias(bias_gradients.clone());
         self.previous_gradient = Some(gradient.clone());
+
+        self.gradient = None;
     }
 }
 

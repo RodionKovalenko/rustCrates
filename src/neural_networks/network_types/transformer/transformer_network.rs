@@ -34,7 +34,7 @@ pub const EMA_SCALER: f64 = 1.1;
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize, batch_size: usize) {
     let mut total_loss: Complex<f64>;
-    let loss_threshold: f64 = 0.08;
+    let loss_threshold: f64 = 0.04;
     let now = Instant::now();
     let mut previous_last_losses: Vec<f64> = Vec::new();
     let mut total_loss_exp_ma = 0.0;
@@ -82,15 +82,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                     shifted
                 })
                 .collect();
-
-            // println!("batch_ids tokens: {:?}", &batch_ids);
-            // println!("target tokens: {:?}", &target_ids);
-            // println!("batch id len: {:?}", batch_ids[0].len());
-            // println!("target id len: {:?}", target_ids[0].len());
-            // println!("extended input tokens: {:?}", &batch_ids);
-            // let original_text_extended: Vec<String> = batch_ids.par_iter().map(|token_indices| detokenize(token_indices, false).unwrap()).collect();
-            // println!("original text: {:?}", &original_text_extended);
-
+            
             let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap();
 
             if max_seq_len > MAX_CONTEXT_WINDOW_SIZE {
@@ -862,20 +854,26 @@ pub fn predict_by_text(input: &Vec<String>) -> Vec<String> {
 }
 
 pub fn cross_entropy_sum_batch(cross_entropy_loss_batch: &Vec<Vec<Vec<Complex<f64>>>>, _targets: &Vec<Vec<u32>>) -> Complex<f64> {
-    let mut total_loss: Complex<f64> = Complex::new(0.0, 0.0);
+    let mut total_loss = Complex::new(0.0, 0.0);
+    let mut count = 0.0;
 
-    for loss in cross_entropy_loss_batch.iter() {
-        for seq_loss in loss.iter() {
-            for token_loss in seq_loss.iter() {
+    for batch in cross_entropy_loss_batch {
+        for seq in batch {
+            for token_loss in seq {
                 if token_loss.is_nan() || token_loss.is_infinite() {
                     continue;
                 }
                 total_loss += *token_loss;
+                count += 1.0;
             }
         }
     }
 
-    total_loss
+    if count > 0.0 {
+        total_loss / count
+    } else {
+        Complex::new(0.0, 0.0)
+    }
 }
 
 // pub fn cross_entropy_loss_batch(

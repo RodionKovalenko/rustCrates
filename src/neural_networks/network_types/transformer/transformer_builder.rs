@@ -33,7 +33,6 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let vocab_size: usize = 50280;
     let epsilon: f64 = 1e-8;
     let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
-
     let positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
 
     layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));

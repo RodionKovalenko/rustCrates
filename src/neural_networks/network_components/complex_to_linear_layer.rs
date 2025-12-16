@@ -257,5 +257,7 @@ impl ComplexToLinearLayer {
         gradient.set_gradient_bias(bias_gradients.clone());
 
         self.previous_gradient = Some(gradient.clone());
+
+        self.gradient = None;
     }
 }

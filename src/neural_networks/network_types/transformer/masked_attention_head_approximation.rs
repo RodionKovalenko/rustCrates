@@ -485,5 +485,7 @@ impl MaskedAttentionHeadApproximation {
         gradient.set_prev_v_weights_v_hat(prev_v_weights_v_hat);
 
         self.previous_gradient = Some(gradient.clone());
+
+        self.gradient = None;
     }
 }
