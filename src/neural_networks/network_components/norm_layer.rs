@@ -39,7 +39,7 @@ pub struct NormalNormLayer {
     pub var_batch: Option<Vec<Vec<Complex<f64>>>>,
     #[serde(skip)]
     pub gradient: Option<Gradient>,
-  
+
     #[serde(skip)]
     pub time_step: usize,
     #[serde(skip)]
@@ -256,7 +256,14 @@ impl NormalNormLayer {
         let time_step = gradient.get_time_step();
 
         let (mut prev_m_gamma, mut prev_v_gamma, mut prev_m_beta, mut prev_v_beta, mut prev_v_gamma_hat, mut prev_v_beta_hat) = if let Some(previous_gradient) = &mut self.previous_gradient {
-            (previous_gradient.get_prev_m_gamma(), previous_gradient.get_prev_v_gamma(), previous_gradient.get_prev_m_beta(), previous_gradient.get_prev_v_beta(), previous_gradient.get_prev_v_gamma_hat(), previous_gradient.get_prev_v_beta_hat())
+            (
+                previous_gradient.get_prev_m_gamma(),
+                previous_gradient.get_prev_v_gamma(),
+                previous_gradient.get_prev_m_beta(),
+                previous_gradient.get_prev_v_beta(),
+                previous_gradient.get_prev_v_gamma_hat(),
+                previous_gradient.get_prev_v_beta_hat(),
+            )
         } else {
             // Initialize to zeros on first step
             (
@@ -269,8 +276,24 @@ impl NormalNormLayer {
             )
         };
 
-        calculate_adam_w_bias(&mut self.gamma, &gradient.get_gradient_gamma(), &mut prev_m_gamma, &mut prev_v_gamma, &mut prev_v_gamma_hat, learning_rate, time_step);
-        calculate_adam_w_bias(&mut self.beta, &gradient.get_gradient_beta(), &mut prev_m_beta, &mut prev_v_beta, &mut prev_v_beta_hat, learning_rate, time_step);
+        calculate_adam_w_bias(
+            &mut self.gamma,
+            &gradient.get_gradient_gamma(),
+            &mut prev_m_gamma,
+            &mut prev_v_gamma,
+            &mut prev_v_gamma_hat,
+            learning_rate,
+            time_step,
+        );
+        calculate_adam_w_bias(
+            &mut self.beta,
+            &gradient.get_gradient_beta(),
+            &mut prev_m_beta,
+            &mut prev_v_beta,
+            &mut prev_v_beta_hat,
+            learning_rate,
+            time_step,
+        );
 
         gradient.set_prev_m_gamma(prev_m_gamma);
         gradient.set_prev_v_gamma(prev_v_gamma);
@@ -281,5 +304,7 @@ impl NormalNormLayer {
         gradient.set_gradient_beta(gradient_beta.clone());
         gradient.set_gradient_gamma(gradient_gamma.clone());
         self.previous_gradient = Some(gradient.clone());
+
+        self.gradient = None;
     }
 }

@@ -5,7 +5,7 @@ pub static B_2: f64 = 0.999;
 pub static EPSILON: f64 = 1e-8;
 pub static WEIGHT_DECAY: f64 = 0.001;
 pub static MAX_NORM: f64 = 2.0;
-pub const MAX_ELEMENT: f64 = 100.0;
+pub const MAX_ELEMENT: f64 = 20.0;
 pub static WARMUP_STEPS: usize = 2000;
 
 // Assume this helper function exists or add it
@@ -27,7 +27,7 @@ pub fn calculate_adam_w(
     let current_lr = get_current_learning_rate(learning_rate, t as usize);
 
     // hyperparameters for explosion control
-    let max_grad = 1.0; // max norm for gradient
+    let max_grad = 15.0; // max norm for gradient
     let max_m = 100.0; // optional cap for prev_m
     let max_vhat = 1e6; // optional cap for prev_v_hat
 
@@ -96,7 +96,7 @@ pub fn calculate_adam_w_bias(
     let current_lr = get_current_learning_rate(learning_rate, t_i as usize);
 
     // hyperparameters for explosion control
-    let max_grad = 1.0;
+    let max_grad = 15.0;
     let max_m = 100.0;
     let max_vhat = 1e6;
 

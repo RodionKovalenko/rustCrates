@@ -142,7 +142,6 @@ impl RMSNormLayer {
 
         if self.gradient.is_some() {
             let previous_gradient = self.gradient.as_ref().expect("");
-            // input_batch_gradients = add_matrix_3d(&input_batch_gradients, &previous_gradient.get_gradient_input_batch());
             gradient_gamma_batch = add_matrix_2d_c(&gradient_gamma_batch, &previous_gradient.get_gradient_gamma_batch());
         }
 
@@ -183,5 +182,7 @@ impl RMSNormLayer {
         gradient.set_prev_v_gamma_hat(prev_v_gamma_hat);
         gradient.set_gradient_gamma(gradient_gamma.clone());
         self.previous_gradient = Some(gradient.clone());
+
+        self.gradient = None;
     }
 }

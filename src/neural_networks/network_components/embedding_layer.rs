@@ -13,8 +13,7 @@ use std::sync::Arc;
 
 use crate::database::sled_db::{get_db_embedding, get_storage_path_embedding_db};
 use crate::neural_networks::network_types::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
-use crate::neural_networks::utils::matrix::{add_matrix_3d, clip_all_gradients_by_global_norm_3d, is_nan_or_inf};
-use crate::utils::normalization::normalize;
+use crate::neural_networks::utils::matrix::{clip_all_gradients_by_global_norm_3d, is_nan_or_inf};
 
 use super::gradient_struct::Gradient;
 use super::layer_input_struct::LayerInput;
@@ -230,14 +229,7 @@ impl EmbeddingLayer {
     // Update embeddings using gradients
     pub fn backward(&mut self, previous_gradients: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
         let mut gradient = Gradient::new_default();
-        let mut previous_grads = previous_gradients.clone();
-
-        if self.gradient.is_some() {
-            let previous_gradient = self.gradient.as_ref().expect("");
-            previous_grads = add_matrix_3d(&previous_grads, &previous_gradient.get_gradient_input_batch());
-        }
-
-        gradient.set_gradient_input_batch(previous_grads);
+        gradient.set_gradient_input_batch(previous_gradients.clone());
 
         self.gradient = Some(gradient.clone());
 
@@ -261,18 +253,20 @@ impl EmbeddingLayer {
         // println!("max in backward embedding layer gradient batch: {:?}", max);
         // println!("min in backward embedding layer gradient batch: {:?}", min);
 
+        let max_embedding_norm: f64 = 30.0;
+
         for (batch_idx, token_ids) in token_id_batches.iter().enumerate() {
             for (i, &token_id) in token_ids.iter().enumerate() {
                 let mut token_embedding: Vec<Complex<f64>> = Self::get_embedding(&db, token_id).unwrap();
 
-                // Assuming previous_gradients[batch_idx][i] contains a single gradient
                 let gradient = &previous_gradients[batch_idx][i];
 
-                // println!("gradient embedding: {:?}", gradient);
+                // SGD update
                 for j in 0..self.embedding_dim {
                     if is_nan_or_inf(&gradient[j]) {
                         panic!("gradient in embedding is invalid, contains NaN or infinity values: {:?}", &gradient[j]);
                     }
+
                     token_embedding[j] -= learning_rate * (gradient[j] / batch_size);
 
                     if is_nan_or_inf(&token_embedding[j]) {
@@ -280,16 +274,24 @@ impl EmbeddingLayer {
                     }
                 }
 
-                let embedding_normalized = normalize(&token_embedding);
+                // ---- 🔒 Embedding norm clipping (NOT normalization) ----
+                let norm: f64 = token_embedding.iter().map(|z| z.norm_sqr()).sum::<f64>().sqrt();
+
+                if norm > max_embedding_norm {
+                    let scale = max_embedding_norm / norm;
+                    for z in &mut token_embedding {
+                        *z *= scale;
+                    }
+                }
+                // -------------------------------------------------------
 
                 if let Ok(mut cache) = self.cache.write() {
-                    cache.insert(token_id, embedding_normalized.clone());
+                    cache.insert(token_id, token_embedding.clone());
                 } else {
                     panic!("embedding was not updated in cache");
                 }
 
-                Self::update_embedding(db, &token_id, &embedding_normalized);
-                // println!("new token embedding: {:?}", token_embedding);
+                Self::update_embedding(db, &token_id, &token_embedding);
             }
         }
     }

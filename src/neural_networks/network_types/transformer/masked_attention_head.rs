@@ -340,10 +340,9 @@ impl MaskedAttentionHead {
 
         if self.gradient.is_some() {
             let previous_gradient = self.gradient.as_ref().expect("");
-            // gradient_input_batch = add_matrix_3d(&gradient_input_batch, &previous_gradient.get_gradient_input_batch());
-            gradient_v_batch = add_matrix_3d(&gradient_v_batch, &&previous_gradient.get_gradient_weights_v_batch());
-            gradient_q_batch = add_matrix_3d(&gradient_q_batch, &&previous_gradient.get_gradient_weights_q_batch());
-            gradient_k_batch = add_matrix_3d(&gradient_k_batch, &&previous_gradient.get_gradient_weights_k_batch());
+            gradient_v_batch = add_matrix_3d(&gradient_v_batch, &previous_gradient.get_gradient_weights_v_batch());
+            gradient_q_batch = add_matrix_3d(&gradient_q_batch, &previous_gradient.get_gradient_weights_q_batch());
+            gradient_k_batch = add_matrix_3d(&gradient_k_batch, &previous_gradient.get_gradient_weights_k_batch());
         }
 
         // Compute the gradients for the parameters and store them
@@ -457,6 +456,8 @@ impl MaskedAttentionHead {
         gradient.set_prev_v_weights_v_hat(prev_v_weights_v_hat);
 
         self.previous_gradient = Some(gradient.clone());
+
+        self.gradient = None;
     }
 }
 

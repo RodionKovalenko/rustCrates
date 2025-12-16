@@ -983,12 +983,10 @@ pub fn normalize_gradients_batch(gradients_batch: &mut Vec<Vec<Vec<Complex<f64>>
     }
 }
 
-fn clamp_complex(z: &mut Complex<f64>) {
-    if z.re.abs() > MAX_ELEMENT {
-        z.re = z.re.signum() * MAX_ELEMENT;
-    }
-    if z.im.abs() > MAX_ELEMENT {
-        z.im = z.im.signum() * MAX_ELEMENT;
+fn clamp_complex_norm(z: &mut Complex<f64>, max_norm: f64) {
+    let norm = z.norm(); // sqrt(re^2 + im^2)
+    if norm > max_norm && norm > 0.0 {
+        *z *= max_norm / norm;
     }
 }
 
@@ -1022,7 +1020,7 @@ pub fn normalize_gradients(gradients: &mut Vec<Vec<Complex<f64>>>) {
     // Step 1: elementwise clamp to avoid explosions before norm
     for row in gradients.iter_mut() {
         for val in row.iter_mut() {
-            clamp_complex(val);
+            clamp_complex_norm(val, MAX_ELEMENT);
         }
     }
 
@@ -1043,7 +1041,7 @@ pub fn normalize_gradients(gradients: &mut Vec<Vec<Complex<f64>>>) {
 pub fn normalize_bias(bias: &mut Vec<Complex<f64>>) {
     // Step 1: clamp
     for val in bias.iter_mut() {
-        clamp_complex(val);
+        clamp_complex_norm(val, MAX_ELEMENT);
     }
 
     // Step 2: stable norm

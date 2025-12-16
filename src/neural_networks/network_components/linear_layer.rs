@@ -201,7 +201,6 @@ impl LinearLayer {
 
         if self.gradient.is_some() {
             let previous_gradient = self.gradient.as_ref().expect("");
-            // gradient_input_batch = add_matrix_3d(&gradient_input_batch, &previous_gradient.get_gradient_input_batch());
             weight_gradients = add_matrix_3d(&weight_gradients, &previous_gradient.get_gradient_weight_batch());
             bias_gradients = add_matrix_2d_c(&bias_gradients, &previous_gradient.get_gradient_bias_batch());
         }
@@ -269,6 +268,8 @@ impl LinearLayer {
         gradient.set_gradient_weights(weight_gradients.clone());
         gradient.set_gradient_bias(bias_gradients.clone());
         self.previous_gradient = Some(gradient.clone());
+
+        self.gradient = None;
     }
 
     pub fn group_gradient_batch(&self, weight_gradients_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Complex<f64>>> {
