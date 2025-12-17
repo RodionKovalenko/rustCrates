@@ -510,7 +510,9 @@ pub fn update_transformer(transformer_network: &mut NeuralNetwork, target_batch_
             LayerEnum::DiscreteWavelet(wavelet_layer) => {
                 wavelet_layer.update_parameters();
             }
-            LayerEnum::Softmax(_softmax_layer) => {}
+            LayerEnum::Softmax(_softmax_layer) => {
+                _softmax_layer.update_parameters();
+            }
             _ => {
                 println!("Layer type not supported for backward pass");
             }

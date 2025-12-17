@@ -753,6 +753,10 @@ impl SparseMaskedAttentionHead {
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
 
+        if self.complex_to_linear_layer.is_some() {
+            self.complex_to_linear_layer.as_mut().expect("Complex to linear layer is missing").update_parameters();
+        }
+
         let (
             mut prev_m_weights_q,
             mut prev_v_weights_q,
