@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
     adam_w::calculate_adam_w_bias,
-    matrix::{add_matrix_2d_c, average_vector_by_scalar},
+    matrix::{add_matrix_2d_c, average_vector_by_scalar, normalize_bias},
     weights_initializer::initialize_bias,
 };
 
@@ -120,11 +120,20 @@ impl ComplexToLinearLayer {
 
                 for f in 0..input[s].len() {
                     // Bias gradient
+                    if input[s][f].re.is_nan() || input[s][f].im.is_nan() || input[s][f].re.is_infinite() || input[s][f].im.is_infinite() {
+                        continue;
+                    }
                     bias_grad_b[f] += prev_gradient[s][f];
 
                     // Weight gradients
                     weight_grad_1[f] += prev_gradient[s][f] * input[s][f].re;
                     weight_grad_2[f] += prev_gradient[s][f] * input[s][f].im;
+
+                    // if weight_grad_1[f].is_nan() || weight_grad_2[f].is_nan() || bias_grad_b[f].is_nan() {
+                    //     println!("weights and bias gradients at batch {}, step {}, feature {} are NaN: weight_grad_1: {:?}, weight_grad_2: {:?}, bias_grad: {:?}", b, s, f, weight_grad_1[f], weight_grad_2[f], bias_grad_b[f]);
+                    //     println!("input[s][f]: {:?}, prev_gradient[s][f]: {:?}", input[s][f], prev_gradient[s][f]);
+                    //     panic!("NaN detected in gradients of ComplexToLinearLayer backward pass at batch {}, step {}, feature {}", b, s, f);
+                    // }
 
                     // Input gradient
                     grad_input_row[f] += Complex::new((prev_gradient[s][f] * self.weights_1[f].re).re, (prev_gradient[s][f] * self.weights_2[f].re).re);
@@ -159,7 +168,7 @@ impl ComplexToLinearLayer {
     pub fn update_parameters(&mut self) {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("No Gradient found in linear layer");
 
-        let mut weight_gradeints_vec_1: Vec<Complex<f64>> = gradient.get_gradient_weights_vec_1();
+        let mut weight_gradients_vec_1: Vec<Complex<f64>> = gradient.get_gradient_weights_vec_1();
         let mut weight_gradients_vec_2: Vec<Complex<f64>> = gradient.get_gradient_weights_vec_2();
         let mut bias_gradients: Vec<Complex<f64>> = gradient.get_gradient_bias();
 
@@ -170,9 +179,24 @@ impl ComplexToLinearLayer {
             batch_size = self.batch_size as f64;
         }
 
-        weight_gradeints_vec_1 = average_vector_by_scalar(&weight_gradeints_vec_1, batch_size);
-        weight_gradients_vec_2 = average_vector_by_scalar(&weight_gradients_vec_2, batch_size);
-        bias_gradients = average_vector_by_scalar(&bias_gradients, batch_size);
+        // Get sequence length from the first batch item
+        let mut seq_len = 1.0;
+
+        for input in input_batch.iter() {
+            seq_len += input.len() as f64;
+        }
+
+        // Normalize by batch_size * seq_len to account for accumulation over both dimensions
+        let normalization_factor = batch_size * seq_len;
+
+        weight_gradients_vec_1 = average_vector_by_scalar(&weight_gradients_vec_1, normalization_factor);
+        weight_gradients_vec_2 = average_vector_by_scalar(&weight_gradients_vec_2, normalization_factor);
+        bias_gradients = average_vector_by_scalar(&bias_gradients, normalization_factor);
+
+        // normalize gradients
+        normalize_bias(&mut weight_gradients_vec_1);
+        normalize_bias(&mut weight_gradients_vec_2);
+        normalize_bias(&mut bias_gradients);
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
@@ -252,7 +276,7 @@ impl ComplexToLinearLayer {
         gradient.set_prev_v_weights_vec_2(prev_v_weights_vec_2);
         gradient.set_prev_v_weights_vec_hat_2(prev_v_weights_vec_hat_2);
 
-        gradient.set_gradient_weights_vec_1(weight_gradeints_vec_1.clone());
+        gradient.set_gradient_weights_vec_1(weight_gradients_vec_1.clone());
         gradient.set_gradient_weights_vec_2(weight_gradients_vec_2.clone());
         gradient.set_gradient_bias(bias_gradients.clone());
 

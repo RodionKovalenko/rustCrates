@@ -93,7 +93,6 @@ impl SoftmaxLayer {
             let mut complex_to_linear_gradient = Gradient::new_default();
             complex_to_linear_gradient.set_gradient_input_batch(input_gradient_batch);
 
-            println!("Forward pass through complex to linear layer in softmax layer");
             complex_to_linear_gradient = complex_to_linear_layer.backward(&complex_to_linear_gradient);
             input_gradient_batch = complex_to_linear_gradient.get_gradient_input_batch()
         }
@@ -108,6 +107,12 @@ impl SoftmaxLayer {
         self.gradient = Some(gradient);
 
         layer_output_batch
+    }
+
+    pub fn update_parameters(&mut self) {
+        if let Some(complex_to_linear_layer) = &mut self.complex_to_linear_layer {
+            complex_to_linear_layer.update_parameters();
+        }
     }
 
     pub fn backward(&mut self, _target_token_ids: &Vec<Vec<u32>>) -> Gradient {
@@ -192,7 +197,6 @@ impl SoftmaxLayer {
         // self.gradient = Some(gradient.clone());
 
         // gradient
-
         self.gradient.as_ref().unwrap().clone()
     }
 }
