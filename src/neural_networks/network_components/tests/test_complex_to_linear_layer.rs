@@ -141,6 +141,8 @@ mod test_complex_to_linear_layer {
         let mut complex_to_linear_layer: ComplexToLinearLayer = ComplexToLinearLayer::new(cols, learning_rate);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, cols);
 
+        //softmax_layer.complex_to_linear_layer = None;
+
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, rows, cols);
         let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, cols - 1, (cols - 1) as u32);
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];

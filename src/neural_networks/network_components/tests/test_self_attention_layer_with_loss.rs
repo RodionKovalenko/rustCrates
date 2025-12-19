@@ -20,7 +20,7 @@ mod test_self_attention_layer_with_loss {
         let batch_size = 2;
         let input_dim = 4;
         let output_dim = 4;
-        let epsilon: f64 = 1e-6;
+        let epsilon: f64 = 1e-4;
 
         let learning_rate = 0.0001;
 

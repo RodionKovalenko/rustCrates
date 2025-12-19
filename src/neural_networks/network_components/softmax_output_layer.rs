@@ -41,8 +41,8 @@ impl SoftmaxLayer {
         Self {
             learning_rate,
             operation_mode,
-            // complex_to_linear_layer: Some(_complex_to_linear_layer),
-            complex_to_linear_layer: None,
+            complex_to_linear_layer: Some(_complex_to_linear_layer),
+            //complex_to_linear_layer: None,
             softmax_output_batch: None,
             input_batch: None,
             gradient: None,
