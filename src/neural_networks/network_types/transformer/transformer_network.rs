@@ -858,7 +858,6 @@ pub fn predict_by_text(input: &Vec<String>) -> Vec<String> {
 
 pub fn cross_entropy_sum_batch(cross_entropy_loss_batch: &Vec<Vec<Vec<Complex<f64>>>>, _targets: &Vec<Vec<u32>>) -> Complex<f64> {
     let mut total_loss = Complex::new(0.0, 0.0);
-    let mut count = 0.0;
 
     for batch in cross_entropy_loss_batch {
         for seq in batch {
@@ -867,17 +866,11 @@ pub fn cross_entropy_sum_batch(cross_entropy_loss_batch: &Vec<Vec<Vec<Complex<f6
                     continue;
                 }
                 total_loss += *token_loss;
-                count += 1.0;
             }
         }
     }
 
     total_loss
-    // if count > 0.0 {
-    //     total_loss / count
-    // } else {
-    //     Complex::new(0.0, 0.0)
-    // }
 }
 
 // pub fn cross_entropy_loss_batch(

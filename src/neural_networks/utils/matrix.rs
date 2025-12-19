@@ -32,72 +32,72 @@ extern "C" {
         ldc: *const i64,
     );
 }
-// pub fn multiply_complex(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<f64>>]) -> Vec<Vec<Complex<f64>>> {
-//     let m = matrix_a.len() as i64;
-//     let k = matrix_a[0].len() as i64;
-//     let n = matrix_b[0].len() as i64;
+pub fn multiply_complex(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<f64>>]) -> Vec<Vec<Complex<f64>>> {
+    let m = matrix_a.len() as i64;
+    let k = matrix_a[0].len() as i64;
+    let n = matrix_b[0].len() as i64;
 
-//     // println!("multiply_complex: A is {}x{}, B is {}x{}", m, k, matrix_b.len(), n);
+    // println!("multiply_complex: A is {}x{}, B is {}x{}", m, k, matrix_b.len(), n);
 
-//     assert!(m > 0 && n > 0 && k > 0, "Matrices must not be empty");
-//     assert!(matrix_b.len() as i64 == k, "A's columns must match B's rows");
-//     for row in matrix_a {
-//         assert_eq!(row.len(), k as usize, "All rows of A must have the same length");
-//     }
-//     for row in matrix_b {
-//         assert_eq!(row.len(), n as usize, "All rows of B must have the same length");
-//     }
+    assert!(m > 0 && n > 0 && k > 0, "Matrices must not be empty");
+    assert!(matrix_b.len() as i64 == k, "A's columns must match B's rows");
+    for row in matrix_a {
+        assert_eq!(row.len(), k as usize, "All rows of A must have the same length");
+    }
+    for row in matrix_b {
+        assert_eq!(row.len(), n as usize, "All rows of B must have the same length");
+    }
 
-//     fn flatten_col_major(mat: &[Vec<Complex<f64>>], rows: i64, cols: i64) -> Vec<Complex<f64>> {
-//         let mut v = Vec::with_capacity((rows * cols) as usize);
-//         for col in 0..cols {
-//             for row in 0..rows {
-//                 v.push(mat[row as usize][col as usize]);
-//             }
-//         }
-//         v
-//     }
+    fn flatten_col_major(mat: &[Vec<Complex<f64>>], rows: i64, cols: i64) -> Vec<Complex<f64>> {
+        let mut v = Vec::with_capacity((rows * cols) as usize);
+        for col in 0..cols {
+            for row in 0..rows {
+                v.push(mat[row as usize][col as usize]);
+            }
+        }
+        v
+    }
 
-//     let a = flatten_col_major(matrix_a, m, k);
-//     let b = flatten_col_major(matrix_b, k, n);
-//     let mut c = vec![Complex::<f64>::new(0.0, 0.0); (m * n) as usize];
+    let a = flatten_col_major(matrix_a, m, k);
+    let b = flatten_col_major(matrix_b, k, n);
+    let mut c = vec![Complex::<f64>::new(0.0, 0.0); (m * n) as usize];
 
-//     let transa = b'N';
-//     let transb = b'N';
-//     let lda = m;
-//     let ldb = k;
-//     let ldc = m;
-//     let alpha = Complex::<f64>::new(1.0, 0.0);
-//     let beta = Complex::<f64>::new(0.0, 0.0);
+    let transa = b'N';
+    let transb = b'N';
+    let lda = m;
+    let ldb = k;
+    let ldc = m;
+    let alpha = Complex::<f64>::new(1.0, 0.0);
+    let beta = Complex::<f64>::new(0.0, 0.0);
 
-//     //println!("Calling zgemm_ with m={}, n={}, k={}, lda={}, ldb={}, ldc={}", m, n, k, lda, ldb, ldc);
+    //println!("Calling zgemm_ with m={}, n={}, k={}, lda={}, ldb={}, ldc={}", m, n, k, lda, ldb, ldc);
 
-//     unsafe {
-//         zgemm_(
-//             &transa as *const u8 as *const c_char,
-//             &transb as *const u8 as *const c_char,
-//             &m,
-//             &n,
-//             &k,
-//             &alpha,
-//             a.as_ptr(),
-//             &lda,
-//             b.as_ptr(),
-//             &ldb,
-//             &beta,
-//             c.as_mut_ptr(),
-//             &ldc,
-//         );
-//     }
+    unsafe {
+        zgemm_(
+            &transa as *const u8 as *const c_char,
+            &transb as *const u8 as *const c_char,
+            &m,
+            &n,
+            &k,
+            &alpha,
+            a.as_ptr(),
+            &lda,
+            b.as_ptr(),
+            &ldb,
+            &beta,
+            c.as_mut_ptr(),
+            &ldc,
+        );
+    }
 
-//     let mut result = vec![vec![Complex::<f64>::new(0.0, 0.0); n as usize]; m as usize];
-//     for col in 0..n as usize {
-//         for row in 0..m as usize {
-//             result[row][col] = c[col * m as usize + row];
-//         }
-//     }
-//     result
-// }
+    let mut result = vec![vec![Complex::<f64>::new(0.0, 0.0); n as usize]; m as usize];
+    for col in 0..n as usize {
+        for row in 0..m as usize {
+            result[row][col] = c[col * m as usize + row];
+        }
+    }
+    result
+}
 
 // pub fn multiply_complex(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<f64>>]) -> Vec<Vec<Complex<f64>>> {
 //     let m = matrix_a.len();
@@ -360,35 +360,35 @@ pub fn multiply_complex_fear(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<V
     // result_matrix
 }
 
-pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-    let num_rows = matrix_a.len();
-    let num_columns = matrix_b[0].len();
-    let matrix_a_clone = matrix_a.clone();
-    let matrix_b_clone = matrix_b.clone();
+// pub fn multiply_complex(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+//     let num_rows = matrix_a.len();
+//     let num_columns = matrix_b[0].len();
+//     let matrix_a_clone = matrix_a.clone();
+//     let matrix_b_clone = matrix_b.clone();
 
-    // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
-    if matrix_a[0].len() != matrix_b.len() {
-        panic!("Matrix A does not have the same number of columns as Matrix B rows.");
-    }
+//     // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
+//     if matrix_a[0].len() != matrix_b.len() {
+//         panic!("Matrix A does not have the same number of columns as Matrix B rows.");
+//     }
 
-    // Initialize result matrix with 0.0 values
-    let mut result_matrix: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
+//     // Initialize result matrix with 0.0 values
+//     let mut result_matrix: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
 
-    // println!("anzahl cput {}", num_cpus::get());
+//     // println!("anzahl cput {}", num_cpus::get());
 
-    let pool = ThreadPoolBuilder::new().num_threads(num_cpus::get()).build().unwrap();
+//     let pool = ThreadPoolBuilder::new().num_threads(num_cpus::get()).build().unwrap();
 
-    pool.install(|| {
-        result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
-            for j in 0..num_columns {
-                //row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
-                row[j] = (0..matrix_b_clone.len()).map(|k| Complex::new(matrix_a_clone[i][k].re * matrix_b_clone[k][j].re, 0.0)).sum();
-            }
-        });
-    });
+//     pool.install(|| {
+//         result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
+//             for j in 0..num_columns {
+//                 //row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
+//                 row[j] = (0..matrix_b_clone.len()).map(|k| Complex::new(matrix_a_clone[i][k].re * matrix_b_clone[k][j].re, 0.0)).sum();
+//             }
+//         });
+//     });
 
-    result_matrix
-}
+//     result_matrix
+// }
 
 pub fn multiply_complex_with_f64(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<f64>>) -> Vec<Vec<Complex<f64>>> {
     let num_rows = matrix_a.len();
