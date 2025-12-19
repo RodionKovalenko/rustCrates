@@ -34,7 +34,7 @@ mod test_softmax_layer {
         let output_dim = 5; // Match output_dim to your layer's output
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
-        let epsilon = 1e-6;
+        let epsilon = 1e-4;
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim);
