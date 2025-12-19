@@ -495,11 +495,7 @@ pub fn softmax_complex_padding_complex(input: &Vec<Vec<Complex<f64>>>, padding_m
         .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
 }
 
-pub fn softmax_backward_real_with_gradient(
-    logits: &Vec<Vec<Complex<f64>>>, // shape: seq_len × vocab
-    targets: &Vec<u32>,              // length = target_len
-    padding_mask: &Vec<u32>,         // 1 = valid
-) -> (Vec<Vec<Complex<f64>>>, Vec<Vec<Complex<f64>>>) {
+pub fn softmax_backward_real_with_gradient(logits: &Vec<Vec<Complex<f64>>>, targets: &Vec<u32>, padding_mask: &Vec<u32>) -> (Vec<Vec<Complex<f64>>>, Vec<Vec<Complex<f64>>>) {
     let seq_len = logits.len();
     let target_len = targets.len();
 
@@ -508,15 +504,15 @@ pub fn softmax_backward_real_with_gradient(
 
     let offset = seq_len - target_len;
 
+    let num_valid: f64 = padding_mask.iter().skip(offset).filter(|&&m| m == 1).count().max(1) as f64;
+
+    let scale = 1.0 / num_valid;
+
     logits
         .par_iter()
         .enumerate()
         .map(|(t, row)| {
-            if padding_mask[t] == 0 {
-                return (vec![Complex::new(0.0, 0.0)], vec![Complex::new(0.0, 0.0); row.len()]);
-            }
-
-            if t < offset {
+            if padding_mask[t] == 0 || t < offset {
                 return (vec![Complex::new(0.0, 0.0)], vec![Complex::new(0.0, 0.0); row.len()]);
             }
 
@@ -525,9 +521,11 @@ pub fn softmax_backward_real_with_gradient(
 
             let (loss_real, grad_complex) = softmax_ce_grad_complex(row, target_token);
 
-            let loss_complex = vec![Complex::new(loss_real, 0.0)];
+            let loss_complex = vec![Complex::new(loss_real * scale, 0.0)];
 
-            (loss_complex, grad_complex)
+            let grad_scaled: Vec<Complex<f64>> = grad_complex.into_iter().map(|g| g * scale).collect();
+
+            (loss_complex, grad_scaled)
         })
         .unzip()
 }

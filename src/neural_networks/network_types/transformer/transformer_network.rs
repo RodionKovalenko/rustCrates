@@ -82,6 +82,9 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                     shifted
                 })
                 .collect();
+
+            // print!("\n batch ids: {:?}\n", &batch_ids);
+            // print!("\n target ids: {:?}\n", &target_ids);
             
             let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap();
 
@@ -869,11 +872,12 @@ pub fn cross_entropy_sum_batch(cross_entropy_loss_batch: &Vec<Vec<Vec<Complex<f6
         }
     }
 
-    if count > 0.0 {
-        total_loss / count
-    } else {
-        Complex::new(0.0, 0.0)
-    }
+    total_loss
+    // if count > 0.0 {
+    //     total_loss / count
+    // } else {
+    //     Complex::new(0.0, 0.0)
+    // }
 }
 
 // pub fn cross_entropy_loss_batch(
