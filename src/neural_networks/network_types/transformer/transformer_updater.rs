@@ -487,7 +487,9 @@ pub fn update_transformer(transformer_network: &mut NeuralNetwork, target_batch_
                 embedding_layer.update_parameters(&target_batch_ids, transformer_network.learning_rate);
             }
             LayerEnum::PositionalEncoding(_positional_encoding_layer) => {}
-            LayerEnum::Norm(_norm_layer) => {}
+            LayerEnum::Norm(_norm_layer) => {
+                _norm_layer.update_parameters();
+            }
             LayerEnum::SelfAttention(attention_layer) => {
                 attention_layer.update_parameters();
             }

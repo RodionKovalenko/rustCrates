@@ -46,25 +46,25 @@ pub fn test_train_transformer() {
     // let target_2: &str = "136";
     // let target_3: &str = "118";
 
-    let input_str1: &str = "Was ist die Hauptstadt von Deutschland? Kannst du bitte eine kurze Antwort geben?";
+    //let input_str1: &str = "Was ist die Hauptstadt von Deutschland? Kannst du bitte eine kurze Antwort geben?";
     //Context: Am 28. Februar 2008 unterzeichneten Kibaki und Odinga eine Vereinbarung zur Gründung einer Koalitionsregierung, in welcher Odinga Kenias zweiter Premierminister werden sollte. Gemäß dieser Abmachung sollte der Präsident Kabinettminister aus den Lagern sowohl der PNU als auch der ODM ernennen, in Abhängigkeit davon, wie stark jede der Parteien im Parlament vertreten wäre. Die Vereinbarung legte fest, dass das Kabinett einen Vizepräsidenten und zwei stellvertretende Premierminister enthalten sollte. Nach Debatten wurde sie vom Parlament verabschiedet. Die Koalition sollte bis zum Ende des aktuellen Parlaments andauern oder früher enden, falls eine der beiden Parteien aus der Abmachung aussteigen würde. <sep> Question: Wann unterzeichneten Kibaki und Odinga eine Vereinbarung zur Bildung einer Regierung?
     // let input_str3:
-    //let input_str2: &str = "Context: Die australische Mitte-Links-Partei Australian Labour Party (ALP), die Mitte-Rechts-Partei Australiens Liberal Party, die in ländlichen Gebieten verbreitete National Party of Australia und die Umweltschutzpartei Australian Greens sind die wichtigsten politischen Parteien in Victoria. <sep> Question: Welche Partei ist in den nordwestlichen und östlichen Regionen Victorias am stärksten?";
+    let input_str2: &str = "Context: Die australische Mitte-Links-Partei Australian Labour Party (ALP), die Mitte-Rechts-Partei Australiens Liberal Party, die in ländlichen Gebieten verbreitete National Party of Australia und die Umweltschutzpartei Australian Greens sind die wichtigsten politischen Parteien in Victoria. <sep> Question: Welche Partei ist in den nordwestlichen und östlichen Regionen Victorias am stärksten?";
     // let input_str3: &str = "Was macht 2 + 3 aus?";
 
     //let target1: &str = " Mir geht es gut.";
-    let target_1: &str = "Berlin ist die Hauptstadt und ein Land der Bundesrepublik Deutschland.";
-    //let target_2: &str = "National Party";
+    //let target_1: &str = "Berlin ist die Hauptstadt und ein Land der Bundesrepublik Deutschland.";
+    let target_2: &str = "National Party";
     // let target_3: &str = "2 + 3 macht 5";
 
     let mut input: Vec<String> = Vec::new();
-    input.push(input_str1.to_string());
-    //input.push(input_str2.to_string());
+    //input.push(input_str1.to_string());
+    input.push(input_str2.to_string());
     // input.push(input_str3.to_string());
 
     let mut target: Vec<String> = Vec::new();
-    target.push(target_1.to_string());
-    //target.push(target_2.to_string());
+    //target.push(target_1.to_string());
+    target.push(target_2.to_string());
     // target.push(target_3.to_string());
 
     let _batch_size = target.len();

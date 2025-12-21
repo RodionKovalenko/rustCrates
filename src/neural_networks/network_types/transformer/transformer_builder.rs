@@ -5,13 +5,13 @@ use crate::neural_networks::{
     },
     network_types::{
         feedforward_layer::FeedForwardLayer,
-        neural_network_generic::{create, NeuralNetwork, OperationMode},
-        transformer::sparse_self_attention_layer::SparseSelfAttentionLayer,
+        neural_network_generic::{NeuralNetwork, OperationMode, create},
+        transformer::{self_attention_layer::SelfAttentionLayer, sparse_self_attention_layer::SparseSelfAttentionLayer},
         wavelet_network::DECOMPOSITION_LEVELS,
     },
 };
 
-pub const NUM_SELF_ATT_LAYERS: usize = 7;
+pub const NUM_SELF_ATT_LAYERS: usize = 1;
 
 pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let number_inputs: usize = 32;
@@ -44,7 +44,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     // Transformer block start
     let num_self_attention_layer: usize = NUM_SELF_ATT_LAYERS;
     // let origin_hidden_dim = 512;
-    let window_size = 2;
+    let _window_size = 2;
     let hidden_dim = 512;
     for _i in 0..num_self_attention_layer {
         let num_attention_heads: usize = 4;
@@ -52,11 +52,11 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
         // Colums are divided into number of heads
         let cols: usize = embedding_dim_compressed;
 
-        let attention_layer: SparseSelfAttentionLayer = SparseSelfAttentionLayer::new(num_attention_heads, rows, cols, window_size, learning_rate);
-        layers.push(LayerEnum::SparseSelfAttention(Box::new(attention_layer)));
+        let _attention_layer: SparseSelfAttentionLayer = SparseSelfAttentionLayer::new(num_attention_heads, rows, cols, _window_size, learning_rate);
+        //layers.push(LayerEnum::SparseSelfAttention(Box::new(_attention_layer)));
 
-        // let attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
-        // layers.push(LayerEnum::SelfAttention(Box::new(attention_layer)));
+        let _attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
+        layers.push(LayerEnum::SelfAttention(Box::new(_attention_layer)));
 
         // let hidden_dim = origin_hidden_dim * (_i + 1);
 
