@@ -253,7 +253,7 @@ impl EmbeddingLayer {
         // println!("max in backward embedding layer gradient batch: {:?}", max);
         // println!("min in backward embedding layer gradient batch: {:?}", min);
 
-        let max_embedding_norm: f64 = 30.0;
+        let max_embedding_norm: f64 = 1.0;
 
         for (batch_idx, token_ids) in token_id_batches.iter().enumerate() {
             for (i, &token_id) in token_ids.iter().enumerate() {

@@ -4,9 +4,9 @@ pub static B_1: f64 = 0.9;
 pub static B_2: f64 = 0.999;
 pub static EPSILON: f64 = 1e-8;
 pub static WEIGHT_DECAY: f64 = 0.001;
-pub static MAX_NORM: f64 = 2.0;
-pub const MAX_ELEMENT: f64 = 4.0;
-pub static WARMUP_STEPS: usize = 2000;
+pub static MAX_NORM: f64 = 1.0;
+pub const MAX_ELEMENT: f64 = 1.0;
+pub static WARMUP_STEPS: usize = 200;
 
 // Assume this helper function exists or add it
 pub fn is_nan_or_inf(c: &Complex<f64>) -> bool {
@@ -18,139 +18,101 @@ pub fn calculate_adam_w(
     weights: &mut Vec<Vec<Complex<f64>>>,
     weight_gradients: &Vec<Vec<Complex<f64>>>,
     prev_m: &mut Vec<Vec<Complex<f64>>>,
-    prev_v: &mut Vec<Vec<Complex<f64>>>,
-    prev_v_hat: &mut Vec<Vec<Complex<f64>>>,
+    prev_v: &mut Vec<Vec<Complex<f64>>>,     // stays Complex<f64>
+    prev_v_hat: &mut Vec<Vec<Complex<f64>>>, // stays Complex<f64>
     learning_rate: f64,
     t: usize,
 ) {
     let t = t.max(1) as i32;
     let current_lr = get_current_learning_rate(learning_rate, t as usize);
 
-    // hyperparameters for explosion control
-    let max_grad = 15.0; // max norm for gradient
-    let max_m = 100.0; // optional cap for prev_m
-    let max_vhat = 1e6; // optional cap for prev_v_hat
-
     for i in 0..weights.len() {
         for j in 0..weights[i].len() {
-            let mut g_t = weight_gradients[i][j];
+            let g = weight_gradients[i][j];
 
-            // ---------- 0️⃣ Clip gradient ----------
-            if g_t.norm() > max_grad {
-                g_t = g_t / g_t.norm() * max_grad;
+            if is_nan_or_inf(&g) {
+                panic!("Gradient contains NaN or Inf in adam w weights: {:?}", g);
             }
 
-            if is_nan_or_inf(&g_t) {
-                println!("Gradient contains NaN or Inf in adam w weights: {:?}", g_t);
-                continue;
+            // 1️⃣ First moment (complex)
+            prev_m[i][j] = prev_m[i][j] * B_1 + (1.0 - B_1) * g;
+
+            // 2️⃣ Second moment (REAL stored in Complex.re)
+            let g2 = g.norm_sqr(); // |g|² ≥ 0
+            prev_v[i][j] = Complex::new(prev_v[i][j].re * B_2 + (1.0 - B_2) * g2, 0.0);
+
+            // 3️⃣ AMSGrad (compare REAL parts only)
+            if prev_v_hat[i][j].re < prev_v[i][j].re {
+                prev_v_hat[i][j] = prev_v[i][j];
             }
 
-            // ---------- 1️⃣ First moment update ----------
-            prev_m[i][j] = prev_m[i][j] * B_1 + (1.0 - B_1) * g_t;
+            // 4️⃣ Bias correction
+            let m_hat = prev_m[i][j] / (1.0 - B_1.powi(t));
+            let v_hat_re = prev_v_hat[i][j].re / (1.0 - B_2.powi(t));
 
-            // optional cap on prev_m
-            if prev_m[i][j].norm() > max_m {
-                prev_m[i][j] = prev_m[i][j] / prev_m[i][j].norm() * max_m;
-            }
+            // 5️⃣ Adaptive step (complex / real)
+            let denom = v_hat_re.sqrt() + EPSILON;
+            let adaptive_step = (current_lr * m_hat) / denom;
 
-            // ---------- 2️⃣ Second moment update (real part only) ----------
-            let g_norm2 = g_t.norm_sqr();
-            prev_v[i][j].re = prev_v[i][j].re * B_2 + (1.0 - B_2) * g_norm2;
-
-            // ---------- 3️⃣ AMSGrad ----------
-            prev_v_hat[i][j].re = prev_v_hat[i][j].re.max(prev_v[i][j].re);
-            prev_v_hat[i][j].re = prev_v_hat[i][j].re.min(max_vhat);
-
-            // ---------- 4️⃣ Bias-corrected moments (FIXED: cap bias correction) ----------
-            let t_safe = t.min(10000) as i32;
-            let bias_correct_m = (1.0 - B_1.powi(t_safe)).recip().min(1e6);
-            let bias_correct_v = (1.0 - B_2.powi(t_safe)).recip().min(1e6);
-
-            let m_t_hat = prev_m[i][j] * bias_correct_m;
-            let v_t_hat = prev_v_hat[i][j].re * bias_correct_v;
-
-            // ---------- 5️⃣ Adaptive learning rate (FIXED: clip by norm) ----------
-            let adaptive_lr_raw = m_t_hat / (v_t_hat.sqrt().max(EPSILON));
-            let adaptive_lr = if adaptive_lr_raw.norm() > 1.0 {
-                adaptive_lr_raw / adaptive_lr_raw.norm() * 1.0
-            } else {
-                adaptive_lr_raw
-            };
-
-            // ---------- 6️⃣ AdamW update ----------
-            weights[i][j] = weights[i][j] - (current_lr * WEIGHT_DECAY * weights[i][j]) - (current_lr * adaptive_lr);
+            // 6️⃣ AdamW update (decoupled weight decay)
+            weights[i][j] = weights[i][j] - current_lr * WEIGHT_DECAY * weights[i][j] - adaptive_step;
         }
     }
 }
-
+// AdamW optimizer for complex biases (vector)
 pub fn calculate_adam_w_bias(
     bias: &mut Vec<Complex<f64>>,
-    gradient: &[Complex<f64>],
+    gradient: &Vec<Complex<f64>>,
     prev_m: &mut Vec<Complex<f64>>,
-    prev_v: &mut Vec<Complex<f64>>,
-    prev_v_hat: &mut Vec<Complex<f64>>,
+    prev_v: &mut Vec<Complex<f64>>,     // stays Complex<f64>
+    prev_v_hat: &mut Vec<Complex<f64>>, // stays Complex<f64>
     learning_rate: f64,
     time_step: usize,
 ) {
-    let t_i = time_step.max(1) as i32;
-    let current_lr = get_current_learning_rate(learning_rate, t_i as usize);
+    let t = time_step.max(1) as i32;
+    let current_lr = get_current_learning_rate(learning_rate, t as usize);
 
-    // hyperparameters for explosion control
-    let max_grad = 15.0;
-    let max_m = 100.0;
-    let max_vhat = 1e6;
+    for i in 0..bias.len() {
+        let g = gradient[i];
 
-    for (i, b) in bias.iter_mut().enumerate() {
-        let mut g_t = gradient[i];
-
-        // ---------- 0️⃣ Clip gradient ----------
-        if g_t.norm() > max_grad {
-            g_t = g_t / g_t.norm() * max_grad;
+        if is_nan_or_inf(&g) {
+            panic!("Gradient contains NaN or Inf in adam w bias: {:?}", g);
         }
 
-        if is_nan_or_inf(&g_t) {
-            println!("Gradient contains NaN or Inf in adam w bias: {:?}", g_t);
-            continue;
+        // 1️⃣ First moment (complex)
+        prev_m[i] = prev_m[i] * B_1 + (1.0 - B_1) * g;
+
+        // 2️⃣ Second moment (REAL stored in Complex.re)
+        let g2 = g.norm_sqr();
+        prev_v[i] = Complex::new(prev_v[i].re * B_2 + (1.0 - B_2) * g2, 0.0);
+
+        // 3️⃣ AMSGrad
+        if prev_v_hat[i].re < prev_v[i].re {
+            prev_v_hat[i] = prev_v[i];
         }
 
-        // ---------- 1️⃣ First moment update ----------
-        prev_m[i] = prev_m[i] * B_1 + (1.0 - B_1) * g_t;
+        // 4️⃣ Bias correction
+        let m_hat = prev_m[i] / (1.0 - B_1.powi(t));
+        let v_hat_re = prev_v_hat[i].re / (1.0 - B_2.powi(t));
 
-        // optional cap on prev_m
-        if prev_m[i].norm() > max_m {
-            prev_m[i] = prev_m[i] / prev_m[i].norm() * max_m;
-        }
+        // 5️⃣ Adaptive step
+        let denom = v_hat_re.sqrt() + EPSILON;
+        let adaptive_step = (current_lr * m_hat) / denom;
 
-        // ---------- 2️⃣ Second moment update (real part only) ----------
-        let g_norm2 = g_t.norm_sqr();
-        prev_v[i].re = prev_v[i].re * B_2 + (1.0 - B_2) * g_norm2;
-
-        // ---------- 3️⃣ AMSGrad ----------
-        prev_v_hat[i].re = prev_v_hat[i].re.max(prev_v[i].re);
-        prev_v_hat[i].re = prev_v_hat[i].re.min(max_vhat);
-
-        // ---------- 4️⃣ Bias-corrected moments (FIXED: cap bias correction) ----------
-        let t_safe = t_i.min(10000) as i32;
-        let bias_correct_m = (1.0 - B_1.powi(t_safe)).recip().min(1e6);
-        let bias_correct_v = (1.0 - B_2.powi(t_safe)).recip().min(1e6);
-
-        let m_hat = prev_m[i] * bias_correct_m;
-        let v_hat = prev_v_hat[i].re * bias_correct_v;
-
-        // ---------- 5️⃣ Adaptive learning rate (FIXED: clip by norm) ----------
-        let adaptive_lr_raw = m_hat / (v_hat.sqrt().max(EPSILON));
-        let adaptive_lr = if adaptive_lr_raw.norm() > 1.0 {
-            adaptive_lr_raw / adaptive_lr_raw.norm() * 1.0
-        } else {
-            adaptive_lr_raw
-        };
-
-        // ---------- 6️⃣ AdamW update ----------
-        *b = *b - (current_lr * WEIGHT_DECAY * *b) - (current_lr * adaptive_lr);
+        // 6️⃣ AdamW update
+        bias[i] = bias[i] - current_lr * WEIGHT_DECAY * bias[i] - adaptive_step;
     }
 }
 
-// pub fn calculate_adam_w(weights: &mut Vec<Vec<Complex<f64>>>, weight_gradients: &Vec<Vec<Complex<f64>>>, prev_m: &mut Vec<Vec<Complex<f64>>>, prev_v: &mut Vec<Vec<Complex<f64>>>, prev_v_hat: &mut Vec<Vec<Complex<f64>>>, learning_rate: f64, t: usize) {
+// pub fn calculate_adam_w(
+//     weights: &mut Vec<Vec<Complex<f64>>>,
+//     weight_gradients: &Vec<Vec<Complex<f64>>>,
+//     prev_m: &mut Vec<Vec<Complex<f64>>>,
+//     prev_v: &mut Vec<Vec<Complex<f64>>>,
+//     prev_v_hat: &mut Vec<Vec<Complex<f64>>>,
+//     learning_rate: f64,
+//     t: usize,
+// ) {
 //     let t = t.max(1) as i32;
 //     let current_lr = get_current_learning_rate(learning_rate, t as usize);
 
@@ -169,8 +131,7 @@ pub fn calculate_adam_w_bias(
 //             // }
 
 //             if is_nan_or_inf(&g_t) {
-//                 println!("Gradient contains NaN or Inf in adam w weights: {:?}, original g_t: {:?}", g_t, orig_gt);
-//                 continue;
+//                 panic!("Gradient contains NaN or Inf in adam w weights: {:?}, original g_t: {:?}", g_t, orig_gt);
 //             }
 
 //             // 2️⃣ First moment update (A)
@@ -218,8 +179,7 @@ pub fn calculate_adam_w_bias(
 //         // }
 
 //         if is_nan_or_inf(&g_t) {
-//             println!("Gradient contains NaN or Inf in adam w bias: {:?}", g_t);
-//             continue;
+//             panic!("Gradient contains NaN or Inf in adam w bias: {:?}", g_t);
 //         }
 
 //         // 1️⃣ First moment update

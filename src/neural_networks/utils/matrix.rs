@@ -381,8 +381,8 @@ pub fn multiply_complex_fear(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<V
 //     pool.install(|| {
 //         result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
 //             for j in 0..num_columns {
-//                 //row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
-//                 row[j] = (0..matrix_b_clone.len()).map(|k| Complex::new(matrix_a_clone[i][k].re * matrix_b_clone[k][j].re, 0.0)).sum();
+//                 row[j] = (0..matrix_b_clone.len()).map(|k| matrix_a_clone[i][k] * matrix_b_clone[k][j]).sum();
+//                 //row[j] = (0..matrix_b_clone.len()).map(|k| Complex::new(matrix_a_clone[i][k].re * matrix_b_clone[k][j].re, 0.0)).sum();
 //             }
 //         });
 //     });
@@ -1007,59 +1007,27 @@ pub fn clip_all_gradients_by_global_norm_2d(grads: &mut Vec<Vec<Complex<f64>>>, 
     }
 }
 
-pub fn normalize_gradients_batch(gradients_batch: &mut Vec<Vec<Vec<Complex<f64>>>>) {
-    for gradients in gradients_batch.iter_mut() {
-        normalize_gradients(gradients);
-    }
-}
-
-fn clamp_complex_norm(z: &mut Complex<f64>, max_norm: f64) {
-    let norm = z.norm(); // sqrt(re^2 + im^2)
-    if norm > max_norm && norm > 0.0 {
-        *z *= max_norm / norm;
-    }
-}
-
-fn stable_l2_norm(values: impl Iterator<Item = Complex<f64>>) -> f64 {
-    // First pass: find max magnitude
-    let mut max_val = 0.0;
-    let vals: Vec<Complex<f64>> = values
-        .inspect(|g| {
-            let n = g.norm();
-            if n > max_val {
-                max_val = n;
-            }
-        })
-        .collect();
-
-    if max_val == 0.0 {
-        return 0.0;
-    }
-
-    // Second pass: accumulate scaled squares
-    let mut sum = 0.0;
-    for g in vals.iter() {
-        let scaled = g.norm() / max_val;
-        sum += scaled * scaled;
-    }
-
-    max_val * sum.sqrt()
-}
-
 pub fn normalize_gradients(gradients: &mut Vec<Vec<Complex<f64>>>) {
-    // Step 1: elementwise clamp to avoid explosions before norm
+    // Step 1: elementwise clamp
     for row in gradients.iter_mut() {
         for val in row.iter_mut() {
-            clamp_complex_norm(val, MAX_ELEMENT);
+            let norm = val.norm();
+            if norm > MAX_ELEMENT && norm > 0.0 {
+                *val *= MAX_ELEMENT / norm;
+            }
         }
     }
 
-    // Step 2: compute stable L2 norm
-    let norm = stable_l2_norm(gradients.iter().flatten().cloned());
+    // Step 2: compute global L2 norm
+    let global_norm: f64 = gradients.iter()
+        .flat_map(|row| row.iter())
+        .map(|g| g.norm_sqr())
+        .sum::<f64>()
+        .sqrt();
 
-    // Step 3: scale if necessary
-    if norm > MAX_NORM && norm > 0.0 {
-        let scale = MAX_NORM / norm;
+    // Step 3: scale proportionally if global norm exceeds MAX_NORM
+    if global_norm > MAX_NORM && global_norm > 0.0 {
+        let scale = MAX_NORM / global_norm;
         for row in gradients.iter_mut() {
             for val in row.iter_mut() {
                 *val *= scale;
@@ -1069,20 +1037,32 @@ pub fn normalize_gradients(gradients: &mut Vec<Vec<Complex<f64>>>) {
 }
 
 pub fn normalize_bias(bias: &mut Vec<Complex<f64>>) {
-    // Step 1: clamp
+    // Step 1: elementwise clamp
     for val in bias.iter_mut() {
-        clamp_complex_norm(val, MAX_ELEMENT);
+        let norm = val.norm();
+        if norm > MAX_ELEMENT && norm > 0.0 {
+            *val *= MAX_ELEMENT / norm;
+        }
     }
 
-    // Step 2: stable norm
-    let norm = stable_l2_norm(bias.iter().cloned());
+    // Step 2: compute global L2 norm
+    let global_norm: f64 = bias.iter()
+        .map(|g| g.norm_sqr())
+        .sum::<f64>()
+        .sqrt();
 
-    // Step 3: scale
-    if norm > MAX_NORM && norm > 0.0 {
-        let scale = MAX_NORM / norm;
+    // Step 3: scale proportionally
+    if global_norm > MAX_NORM && global_norm > 0.0 {
+        let scale = MAX_NORM / global_norm;
         for val in bias.iter_mut() {
             *val *= scale;
         }
+    }
+}
+
+pub fn normalize_gradients_batch(gradients_batch: &mut Vec<Vec<Vec<Complex<f64>>>>) {
+    for gradients in gradients_batch.iter_mut() {
+        normalize_gradients(gradients);
     }
 }
 

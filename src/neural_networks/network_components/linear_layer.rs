@@ -1,4 +1,4 @@
-use core::fmt::Debug;
+use core::{fmt::Debug, panic};
 use num::Complex;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,7 @@ use crate::neural_networks::{
     network_types::wavelet_discrete_layer::DiscreteWaveletLayer,
     utils::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
-        matrix::{add_matrix_2d_c, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
+        matrix::{add_matrix_2d_c, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -160,19 +160,20 @@ impl LinearLayer {
                     gradient_input_batch[batch_ind] = multiply_complex(&previous_gradient, &conjugate_transpose(&self.weights));
                 }
             }
-            GradientBatch::Real(previous_gradient_input_batch) => {
-                // For each input sample in the batch
-                for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_input_batch).enumerate() {
-                    weight_gradients[batch_ind] = multiply_complex_with_f64(&transpose(input_sample), &previous_gradient);
-                    //Accumulate gradients for biases
-                    for grad_row in previous_gradient.iter() {
-                        for (k, grad_val) in grad_row.iter().enumerate() {
-                            bias_gradients[batch_ind][k] += grad_val;
-                        }
-                    }
+            GradientBatch::Real(_previous_gradient_input_batch) => {
+                panic!("Backward with real gradients is not supported in LinearLayer");
+                // // For each input sample in the batch
+                // for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_input_batch).enumerate() {
+                //     weight_gradients[batch_ind] = multiply_complex_with_f64(&transpose(input_sample), &previous_gradient);
+                //     //Accumulate gradients for biases
+                //     for grad_row in previous_gradient.iter() {
+                //         for (k, grad_val) in grad_row.iter().enumerate() {
+                //             bias_gradients[batch_ind][k] += grad_val;
+                //         }
+                //     }
 
-                    gradient_input_batch[batch_ind] = multiply_f64_complex(&previous_gradient, &transpose(&self.weights));
-                }
+                //     gradient_input_batch[batch_ind] = multiply_f64_complex(&previous_gradient, &transpose(&self.weights));
+                // }
             }
         }
 
@@ -256,8 +257,24 @@ impl LinearLayer {
         // prev_v_bias = average_gradient_polar_1d(&previous_gradient.get_prev_v_bias(), batch_size);
         // prev_m_weights = average_gradient_polar(&previous_gradient.get_prev_m_weights(), batch_size);
         // prev_v_weights = average_gradient_polar(&previous_gradient.get_prev_v_weights(), batch_size);
-        calculate_adam_w_bias(&mut self.bias, &gradient.get_gradient_bias(), &mut prev_m_bias, &mut prev_v_bias, &mut prev_v_bias_hat, learning_rate, time_step);
-        calculate_adam_w(&mut self.weights, &gradient.get_gradient_weights(), &mut prev_m_weights, &mut prev_v_weights, &mut prev_v_weights_hat, learning_rate, time_step);
+        calculate_adam_w_bias(
+            &mut self.bias,
+            &gradient.get_gradient_bias(),
+            &mut prev_m_bias,
+            &mut prev_v_bias,
+            &mut prev_v_bias_hat,
+            learning_rate,
+            time_step,
+        );
+        calculate_adam_w(
+            &mut self.weights,
+            &gradient.get_gradient_weights(),
+            &mut prev_m_weights,
+            &mut prev_v_weights,
+            &mut prev_v_weights_hat,
+            learning_rate,
+            time_step,
+        );
 
         gradient.set_prev_m_bias(prev_m_bias);
         gradient.set_prev_v_bias(prev_v_bias);

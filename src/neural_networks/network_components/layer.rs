@@ -155,6 +155,7 @@ impl Layer {
         self.batch_size = input.get_batch_size();
 
         self.input_batch = Some(input_batch.clone());
+        self.time_step = input.get_time_step();
 
         let inactivated_batch_output: Vec<Vec<Vec<Complex<f64>>>> = input_batch
             .par_iter()

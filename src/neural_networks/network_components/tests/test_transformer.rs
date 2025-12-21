@@ -6,7 +6,7 @@ mod test_transformer {
         neural_networks::{
             network_components::{
                 embedding_layer::EmbeddingLayer, gradient_struct::Gradient, input::concat_batches, layer::LayerEnum, layer_input_struct::LayerInput, linear_layer::LinearLayer,
-                positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer,
+                norm_layer::NormalNormLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer,
             },
             network_types::{
                 feedforward_layer::FeedForwardLayer,
@@ -22,12 +22,114 @@ mod test_transformer {
             },
             utils::{
                 derivative::{global_relative_error_2d_l2, numerical_gradient_input, numerical_gradient_weights, test_gradient_error_2d},
-                random_arrays::generate_random_u32_batch,
+                random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
                 tokenizer::tokenize_batch,
             },
         },
         utils::data_converter::convert_to_c_f64_3d,
     };
+
+    #[test]
+    #[ignore]
+    fn test_simple_training() {
+        let batch_size = 1;
+        let seq_len = 5;
+        let learning_rate = 0.01;
+        let operation_mode = OperationMode::TRAINING;
+
+        let feature_dim = 64;
+        let col_dim = 128;
+
+        let hidden_dim = 256;
+
+        let epsilon = 1e-8;
+        let num_attention_heads: usize = 4;
+        // Create a simple LinearLayer with the given input and output dimensions
+
+        let mut norm_layer = NormalNormLayer::new(feature_dim, epsilon, learning_rate);
+        let mut positional_encoding_layer = PositionalEncodingLayer::new(feature_dim);
+
+        let mut attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, feature_dim, feature_dim, learning_rate);
+        let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(feature_dim, hidden_dim, learning_rate);
+
+        let compressed_hidden = 16;
+        let mut linear_layer_1 = LinearLayer::new(learning_rate, feature_dim, compressed_hidden);
+        let mut linear_layer_2: LinearLayer = LinearLayer::new(learning_rate, compressed_hidden, col_dim);
+        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, col_dim);
+
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, seq_len, feature_dim);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, seq_len - 1, (seq_len - 1) as u32);
+        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];
+
+        let mut layer_input = LayerInput::new_default();
+
+        // Forward pass
+
+        let num_epochs = 20000;
+
+        for epoch in 0..num_epochs {
+            layer_input.set_input_batch(input_batch.clone());
+            layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+
+            let norm_output = norm_layer.forward(&layer_input);
+            layer_input.set_input_batch(norm_output.get_output_batch());
+
+            let positional_encoding_output = positional_encoding_layer.forward(&layer_input);
+            layer_input.set_input_batch(positional_encoding_output.clone());
+
+            let attention_output = attention_layer.forward(&layer_input);
+            layer_input.set_input_batch(attention_output.get_output_batch());
+
+            let ffn_output = ffn_layer.forward(&layer_input);
+            layer_input.set_input_batch(ffn_output.get_output_batch());
+
+            let linear_output_1 = linear_layer_1.forward(&layer_input);
+            layer_input.set_input_batch(linear_output_1.get_output_batch());
+
+            let linear_output = linear_layer_2.forward(&layer_input);
+            layer_input.set_input_batch(linear_output.get_output_batch());
+
+            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+
+            // Backward pass
+            let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
+            let gradient_linear_2: Gradient = linear_layer_2.backward(&gradient_softmax);
+            let gradient_linear_1: Gradient = linear_layer_1.backward(&gradient_linear_2);
+            let ffn_gradient: Gradient = ffn_layer.backward(&gradient_linear_1.get_gradient_input_batch());
+            let gradient_attention_layer: Gradient = attention_layer.backward(&ffn_gradient.get_gradient_input_batch());
+            let positional_encoding_gradient = positional_encoding_layer.backward(&gradient_attention_layer.get_gradient_input_batch());
+            norm_layer.backward(&positional_encoding_gradient);
+
+            let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
+            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
+
+            if epoch % 10 == 0 {
+                println!("Epoch {}: Loss = {:?}", epoch, loss);
+            }
+
+            if loss.re < 0.001 {
+                println!("Early stopping at epoch {}: Loss = {:?}", epoch, loss);
+                break;
+            }
+
+            // softmax_layer.time_step = epoch + 1;
+            // linear_layer_1.time_step = epoch + 1;
+            // linear_layer_2.time_step = epoch + 1;
+            // attention_layer.time_step = epoch + 1;
+            // ffn_layer.time_step = epoch + 1;
+            // norm_layer.time_step = epoch + 1;
+
+            layer_input.set_time_step(epoch + 1);
+
+            // update parameters
+            softmax_layer.update_parameters();
+            linear_layer_1.update_parameters();
+            linear_layer_2.update_parameters();
+            attention_layer.update_parameters();
+            ffn_layer.update_parameters();
+            norm_layer.update_parameters();
+        }
+    }
 
     #[test]
     #[ignore]

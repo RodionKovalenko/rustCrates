@@ -85,7 +85,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
             // print!("\n batch ids: {:?}\n", &batch_ids);
             // print!("\n target ids: {:?}\n", &target_ids);
-            
+
             let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap();
 
             if max_seq_len > MAX_CONTEXT_WINDOW_SIZE {
@@ -260,6 +260,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         if time_step > 0 && layer_input.get_forward_only() {
             // let last_tokens: Vec<Vec<u32>> = batch_ids.iter().map(|seq| vec![*seq.last().unwrap()]).collect();
             let last_n = 4; // window_size * 2
+            // let last_n = 1; // window_size * 2
 
             let last_tokens_batch: Vec<Vec<u32>> = batch_ids
                 .iter()

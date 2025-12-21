@@ -253,7 +253,7 @@ impl NormalNormLayer {
         clip_all_gradients_by_global_norm_2d(&mut vec![], &mut gradient_beta, self.global_norm, self.max_norm);
 
         let learning_rate = self.learning_rate;
-        let time_step = gradient.get_time_step();
+        let time_step = self.time_step;
 
         let (mut prev_m_gamma, mut prev_v_gamma, mut prev_m_beta, mut prev_v_beta, mut prev_v_gamma_hat, mut prev_v_beta_hat) = if let Some(previous_gradient) = &mut self.previous_gradient {
             (
