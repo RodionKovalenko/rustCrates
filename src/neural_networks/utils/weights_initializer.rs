@@ -70,6 +70,22 @@ pub fn initialize_weights(num_layer_inputs_dim2: usize, number_hidden_neurons: u
 }
 
 // Initialize weights for Vec<Vec<Complex<f64>>>
+pub fn initialize_weights_complex_only_real(rows: usize, cols: usize, weight_matrix: &mut Vec<Vec<Complex<f64>>>) {
+    let fan_in = rows as f64;
+    let fan_out = cols as f64;
+    let mut rng = rand::rng(); // Use the thread-local RNG
+
+    for i in 0..rows {
+        for j in 0..cols {
+            let random_value = Complex::new(xavier_init(fan_in, fan_out, &mut rng), 0.0);
+            set_weights(weight_matrix, i, j, random_value);
+        }
+    }
+}
+
+
+
+// Initialize weights for Vec<Vec<Complex<f64>>>
 pub fn initialize_weights_complex(rows: usize, cols: usize, weight_matrix: &mut Vec<Vec<Complex<f64>>>) {
     let fan_in = rows as f64;
     let fan_out = cols as f64;

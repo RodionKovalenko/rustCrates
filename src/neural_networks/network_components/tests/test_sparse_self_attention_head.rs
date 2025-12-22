@@ -3,12 +3,12 @@ mod test_sparse_self_attention_head {
     use num::Complex;
 
     use crate::neural_networks::{
-        network_components::{complex_to_linear_layer::ComplexToLinearLayer, gradient_struct::Gradient, layer_input_struct::LayerInput, softmax_output_layer::SoftmaxLayer},
+        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, softmax_output_layer::SoftmaxLayer},
         network_types::{
             neural_network_generic::OperationMode,
             transformer::{
-                sparse_masked_attention_head::{SparseMaskedAttentionHead, calculate_window_tokens, calculate_window_tokens_batch},
-                transformer_network::{MAX_CONTEXT_WINDOW_SIZE, cross_entropy_sum_batch},
+                sparse_masked_attention_head::{calculate_window_tokens, calculate_window_tokens_batch, SparseMaskedAttentionHead},
+                transformer_network::cross_entropy_sum_batch,
             },
         },
         utils::{
@@ -63,7 +63,6 @@ mod test_sparse_self_attention_head {
         let learning_rate = 0.0001;
 
         let mut attention_head_layer: SparseMaskedAttentionHead = SparseMaskedAttentionHead::new(input_dim, input_dim, 1, learning_rate);
-        let mut complex_to_linear_layer: ComplexToLinearLayer = ComplexToLinearLayer::new(MAX_CONTEXT_WINDOW_SIZE, learning_rate);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING, input_dim);
 
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
@@ -76,8 +75,7 @@ mod test_sparse_self_attention_head {
         let output = attention_head_layer.forward(&layer_input);
 
         layer_input.set_input_batch(output.get_output_batch());
-        let output_complex_to_linear = complex_to_linear_layer.forward(&layer_input);
-        let output_batch = output_complex_to_linear.get_output_batch();
+        let output_batch = output.get_output_batch();
 
         let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, input_dim, input_dim as u32);
 
@@ -101,8 +99,7 @@ mod test_sparse_self_attention_head {
         println!("\noutput_batch attention head: {:?}", &output_batch);
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
-        let complex_to_linear_gradient = complex_to_linear_layer.backward(&gradient_softmax);
-        let gradient = attention_head_layer.backward(&complex_to_linear_gradient.get_gradient_input_batch());
+        let gradient = attention_head_layer.backward(&gradient_softmax.get_gradient_input_batch());
         let analytical_gradient_weights_v = gradient.get_gradient_weights_v();
         let analytical_gradient_weights_q = gradient.get_gradient_weights_q();
         let analytical_gradient_weights_k = gradient.get_gradient_weights_k();
@@ -119,12 +116,10 @@ mod test_sparse_self_attention_head {
             attention_head_layer.weights_v = weights.clone();
 
             layer_input.set_input_batch(input.clone());
+
             let attention_head_output = attention_head_layer.forward(&layer_input);
-
             layer_input.set_input_batch(attention_head_output.get_output_batch());
-            let output_complex_to_linear = complex_to_linear_layer.forward(&layer_input);
 
-            layer_input.set_input_batch(output_complex_to_linear.get_output_batch());
             softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
@@ -160,11 +155,8 @@ mod test_sparse_self_attention_head {
 
             layer_input.set_input_batch(input.clone());
             let attention_head_output = attention_head_layer.forward(&layer_input);
-
             layer_input.set_input_batch(attention_head_output.get_output_batch());
-            let output_complex_to_linear = complex_to_linear_layer.forward(&layer_input);
 
-            layer_input.set_input_batch(output_complex_to_linear.get_output_batch());
             softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
@@ -195,11 +187,8 @@ mod test_sparse_self_attention_head {
 
             layer_input.set_input_batch(input.clone());
             let attention_head_output = attention_head_layer.forward(&layer_input);
-
             layer_input.set_input_batch(attention_head_output.get_output_batch());
-            let output_complex_to_linear = complex_to_linear_layer.forward(&layer_input);
 
-            layer_input.set_input_batch(output_complex_to_linear.get_output_batch());
             softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
@@ -275,11 +264,8 @@ mod test_sparse_self_attention_head {
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             layer_input.set_input_batch(input.clone());
             let attention_head_output = attention_head_layer.forward(&layer_input);
-
             layer_input.set_input_batch(attention_head_output.get_output_batch());
-            let output_complex_to_linear = complex_to_linear_layer.forward(&layer_input);
 
-            layer_input.set_input_batch(output_complex_to_linear.get_output_batch());
             softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();

@@ -8,8 +8,7 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIter
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
-    network_components::{complex_to_linear_layer::ComplexToLinearLayer, gradient_struct::Gradient, layer::LayerType, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
-    network_types::transformer::transformer_network::MAX_CONTEXT_WINDOW_SIZE,
+    network_components::{gradient_struct::Gradient, layer::LayerType, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     utils::{
         activation::softmax_complex_padding_complex,
         adam_w::calculate_adam_w,
@@ -44,8 +43,6 @@ pub struct SparseMaskedAttentionHead {
 
     pub window_size: usize,
 
-    pub complex_to_linear_layer: Option<ComplexToLinearLayer>,
-
     #[serde(skip)]
     pub gradient: Option<Gradient>,
     #[serde(skip)]
@@ -74,8 +71,6 @@ impl SparseMaskedAttentionHead {
         let mut weights_k: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
         let mut weights_v: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
 
-        let complex_to_linear_layer = Some(ComplexToLinearLayer::new(MAX_CONTEXT_WINDOW_SIZE, learning_rate));
-
         initialize_weights_complex(rows, cols, &mut weights_q);
         initialize_weights_complex(rows, cols, &mut weights_k);
         initialize_weights_complex(rows, cols, &mut weights_v);
@@ -93,7 +88,6 @@ impl SparseMaskedAttentionHead {
             bias_k,
             bias_v,
             layer_type: LayerType::InputLayer,
-            complex_to_linear_layer,
             learning_rate: learning_rate,
 
             smoothing: 0.99,
@@ -257,7 +251,7 @@ impl SparseMaskedAttentionHead {
     ) -> Vec<Vec<Vec<Complex<f64>>>> {
         let k_windows: Vec<Vec<Vec<Vec<Complex<f64>>>>> = calculate_window_tokens_batch(&k_batch, self.window_size);
 
-        let mut attention_weights_inactivated_compressed: Vec<Vec<Vec<Complex<f64>>>> = q_batch
+        let attention_weights_inactivated_compressed: Vec<Vec<Vec<Complex<f64>>>> = q_batch
             .par_iter()
             .enumerate()
             .map(|(batch_ind, q)| {
@@ -266,14 +260,6 @@ impl SparseMaskedAttentionHead {
                 sparse_attention_weights_inactivated
             })
             .collect();
-
-        if let Some(complex_to_linear_layer) = &mut self.complex_to_linear_layer {
-            let mut layer_input = LayerInput::new_default();
-            layer_input.set_input_batch(attention_weights_inactivated_compressed.clone());
-
-            let complex_to_linear_output = complex_to_linear_layer.forward(&layer_input);
-            attention_weights_inactivated_compressed = complex_to_linear_output.get_output_batch();
-        }
 
         let attention_weights_activated_compressed: Vec<Vec<Vec<Complex<f64>>>> = attention_weights_inactivated_compressed
             .par_iter()
@@ -677,11 +663,7 @@ impl SparseMaskedAttentionHead {
             grad_wv_batch.push(grad_wv);
         }
 
-        let mut previous_gradient_d_a = Gradient::new_default();
-        previous_gradient_d_a.set_gradient_input_batch(softmax_gradient_batch);
-
-        let dl_da_linear = self.complex_to_linear_layer.as_mut().expect("Complex to linear layer is missing").backward(&previous_gradient_d_a);
-        let dl_da_batch: Vec<Vec<Vec<Complex<f64>>>> = dl_da_linear.get_gradient_input_batch();
+        let dl_da_batch: Vec<Vec<Vec<Complex<f64>>>> = softmax_gradient_batch;
 
         for batch_ind in 0..previous_gradient_batch.len() {
             let q: Vec<Vec<Complex<f64>>> = multiply_complex(&input_batch[batch_ind], &self.weights_q);
@@ -752,10 +734,6 @@ impl SparseMaskedAttentionHead {
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
-
-        if self.complex_to_linear_layer.is_some() {
-            self.complex_to_linear_layer.as_mut().expect("Complex to linear layer is missing").update_parameters();
-        }
 
         let (
             mut prev_m_weights_q,

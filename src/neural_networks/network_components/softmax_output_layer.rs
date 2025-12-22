@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
     network_components::{complex_to_linear_layer::ComplexToLinearLayer, layer_input_struct::LayerInput},
-    network_types::{neural_network_generic::OperationMode, transformer::transformer_network::MAX_CONTEXT_WINDOW_SIZE},
+    network_types::neural_network_generic::OperationMode,
     utils::activation::{softmax_backward_real_with_gradient, softmax_last_row},
 };
 
@@ -36,12 +36,10 @@ pub struct SoftmaxLayer {
 
 impl SoftmaxLayer {
     pub fn new(learning_rate: f64, operation_mode: OperationMode, _feature_dim: usize) -> Self {
-        let _complex_to_linear_layer = ComplexToLinearLayer::new(MAX_CONTEXT_WINDOW_SIZE, learning_rate);
 
         Self {
             learning_rate,
             operation_mode,
-            //complex_to_linear_layer: Some(_complex_to_linear_layer),
             complex_to_linear_layer: None,
             softmax_output_batch: None,
             input_batch: None,
