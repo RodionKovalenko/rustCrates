@@ -104,9 +104,6 @@ impl ComplexToLinearLayer {
         let mut grad_w1 = vec![vec![vec![Complex::new(0.0, 0.0); out_f]; in_f]; batch];
         let mut grad_w2 = vec![vec![vec![Complex::new(0.0, 0.0); out_f]; in_f]; batch];
 
-        println!("input batch dim: {}, {}, {}", batch, time, in_f);
-        println!("prev grad batch dim: {}, {}, {}", prev_grad_batch.len(), prev_grad_batch[0].len(), prev_grad_batch[0][0].len());
-
         for b in 0..batch {
             for t in 0..time {
                 for f in 0..out_f {
