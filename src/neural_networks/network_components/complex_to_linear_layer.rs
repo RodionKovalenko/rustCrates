@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::utils::{
     adam_w::calculate_adam_w,
-    matrix::{add_matrix_3d, average_matrix_by_scalar, normalize_gradients},
+    matrix::{add_matrix_3d, average_matrix_by_scalar},
     weights_initializer::initialize_weights_complex_only_real,
 };
 
@@ -73,11 +73,8 @@ impl ComplexToLinearLayer {
                 // perform matrix multiplication for each time step
                 let mut output = vec![vec![Complex::new(0.0, 0.0); self.weights_1[0].len()]; input.len()];
 
-                println!("input len: {} {}", input.len(), input[0].len());
-                println!("weights_1 len: {} {}", self.weights_1.len(), self.weights_1[0].len());
-
                 for t in 0..input.len() {
-                    for f in 0..self.weights_1.len() {
+                    for f in 0..self.weights_1[0].len() {
                         let mut sum_real = Complex::new(0.0, 0.0);
                         for k in 0..self.weights_1.len() {
                             sum_real += input[t][k].re * self.weights_1[k][f].re + input[t][k].im * self.weights_2[k][f].re;
@@ -95,24 +92,34 @@ impl ComplexToLinearLayer {
     }
 
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
-        let input_batch = self.input_batch.as_ref().expect("Input batch is missing in linear layer");
-        let previous_input_gradient = previous_gradient.get_gradient_input_batch();
+        let input_batch = self.input_batch.as_ref().unwrap();
+        let prev_grad_batch = previous_gradient.get_gradient_input_batch();
 
-        let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_1.len()]; input_batch[0].len()]; input_batch.len()];
-        let mut weight_gradients_1: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_1[0].len()]; self.weights_1.len()]; input_batch.len()];
-        let mut weight_gradients_2: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_2[0].len()]; self.weights_2.len()]; input_batch.len()];
+        let batch = input_batch.len();
+        let time = input_batch[0].len();
+        let in_f = self.weights_1.len();
+        let out_f = self.weights_1[0].len();
 
-        for (b, input) in input_batch.iter().enumerate() {
-            let prev_gradient = &previous_input_gradient[b];
+        let mut grad_input = vec![vec![vec![Complex::new(0.0, 0.0); in_f]; time]; batch];
+        let mut grad_w1 = vec![vec![vec![Complex::new(0.0, 0.0); out_f]; in_f]; batch];
+        let mut grad_w2 = vec![vec![vec![Complex::new(0.0, 0.0); out_f]; in_f]; batch];
 
-            for t in 0..input.len() {
-                for f in 0..self.weights_1[0].len() {
-                    for k in 0..self.weights_1.len() {
-                        gradient_input_batch[b][t][k].re += prev_gradient[t][f].re * self.weights_1[k][f].re;
-                        gradient_input_batch[b][t][k].im += prev_gradient[t][f].re * self.weights_2[k][f].re;
+        println!("input batch dim: {}, {}, {}", batch, time, in_f);
+        println!("prev grad batch dim: {}, {}, {}", prev_grad_batch.len(), prev_grad_batch[0].len(), prev_grad_batch[0][0].len());
 
-                        weight_gradients_1[b][k][f].re += input[t][k].re * prev_gradient[t][f].re;
-                        weight_gradients_2[b][k][f].re += input[t][k].im * prev_gradient[t][f].re;
+        for b in 0..batch {
+            for t in 0..time {
+                for f in 0..out_f {
+                    let g = prev_grad_batch[b][t][f].re;
+
+                    for k in 0..in_f {
+                        // input gradients
+                        grad_input[b][t][k].re += g * self.weights_1[k][f].re;
+                        grad_input[b][t][k].im += g * self.weights_2[k][f].re;
+
+                        // weight gradients
+                        grad_w1[b][k][f].re += input_batch[b][t][k].re * g;
+                        grad_w2[b][k][f].re += input_batch[b][t][k].im * g;
                     }
                 }
             }
@@ -120,14 +127,14 @@ impl ComplexToLinearLayer {
 
         // Combine with previous stored gradients if needed
         if let Some(prev_grad) = &self.gradient {
-            weight_gradients_1 = add_matrix_3d(&weight_gradients_1, &prev_grad.get_gradient_weight_batch());
-            weight_gradients_2 = add_matrix_3d(&weight_gradients_2, &prev_grad.get_gradient_weight_2_batch());
+            grad_w1 = add_matrix_3d(&grad_w1, &prev_grad.get_gradient_weight_batch());
+            grad_w2 = add_matrix_3d(&grad_w2, &prev_grad.get_gradient_weight_2_batch());
         }
 
         let mut gradient = Gradient::new_default();
-        gradient.set_gradient_input_batch(gradient_input_batch.clone());
-        gradient.set_gradient_weight_batch(weight_gradients_1);
-        gradient.set_gradient_weight_2_batch(weight_gradients_2);
+        gradient.set_gradient_input_batch(grad_input.clone());
+        gradient.set_gradient_weight_batch(grad_w1);
+        gradient.set_gradient_weight_2_batch(grad_w2);
 
         self.gradient = Some(gradient.clone());
         gradient
@@ -158,10 +165,6 @@ impl ComplexToLinearLayer {
 
         weight_gradients_1 = average_matrix_by_scalar(&weight_gradients_1, normalization_factor);
         weight_gradients_2 = average_matrix_by_scalar(&weight_gradients_2, normalization_factor);
-
-        // normalize gradients
-        normalize_gradients(&mut weight_gradients_1);
-        normalize_gradients(&mut weight_gradients_2);
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
