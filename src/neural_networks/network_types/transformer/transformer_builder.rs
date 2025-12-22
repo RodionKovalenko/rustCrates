@@ -5,7 +5,7 @@ use crate::neural_networks::{
     },
     network_types::{
         feedforward_layer::FeedForwardLayer,
-        neural_network_generic::{NeuralNetwork, OperationMode, create},
+        neural_network_generic::{create, NeuralNetwork, OperationMode},
         transformer::{self_attention_layer::SelfAttentionLayer, sparse_self_attention_layer::SparseSelfAttentionLayer},
         wavelet_network::DECOMPOSITION_LEVELS,
     },
@@ -75,7 +75,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let linear_layer = LinearLayer::new(learning_rate, rows, compressed_hidden);
     layers.push(LayerEnum::Linear(Box::new(linear_layer)));
 
-    let linear_layer = LinearLayer::new(learning_rate, compressed_hidden, vocab_size);
+    let mut linear_layer = LinearLayer::new(learning_rate, compressed_hidden, vocab_size);
     layers.push(LayerEnum::Linear(Box::new(linear_layer)));
 
     let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode, vocab_size);
