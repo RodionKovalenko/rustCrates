@@ -16,7 +16,7 @@ use crate::{
         network_types::{
             neural_network_generic::{get_from_db, print_networt_structure, save_to_sled, NeuralNetwork, OperationMode},
             transformer::{
-                transformer_builder::create_transformer,
+                transformer_builder::{create_transformer, SPARSE_WINDOW_SIZE},
                 transformer_updater::{update_transformer, VERBOSE},
             },
         },
@@ -259,8 +259,9 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
 
         if time_step > 0 && layer_input.get_forward_only() {
             // let last_tokens: Vec<Vec<u32>> = batch_ids.iter().map(|seq| vec![*seq.last().unwrap()]).collect();
-            let last_n = 4; // window_size * 2
-                            // let last_n = 1; // window_size * 2
+            // window_size * 2
+            let last_n = SPARSE_WINDOW_SIZE * 2;
+            // let last_n = 1;
 
             let last_tokens_batch: Vec<Vec<u32>> = batch_ids
                 .iter()
