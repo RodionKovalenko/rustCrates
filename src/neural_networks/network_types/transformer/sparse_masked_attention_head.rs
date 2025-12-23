@@ -13,7 +13,7 @@ use crate::neural_networks::{
         activation::softmax_complex_padding_complex,
         adam_w::calculate_adam_w,
         low_rank_approx::transpose,
-        matrix::{add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex},
+        matrix::{add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, normalize_gradients},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -675,7 +675,7 @@ impl SparseMaskedAttentionHead {
         let attention_weights_batch: &Vec<Vec<Vec<Complex<f64>>>> = self.attention_weights_batch.as_ref().expect("Attention weights batch is missing in attention head");
         let batch_size = output_batch.len();
 
-        let mut softmax_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
+        let mut dl_da_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
         let mut softmax_sparse_indices_batch: Vec<Vec<Vec<usize>>> = Vec::new();
         let mut grad_wv_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
 
@@ -694,12 +694,11 @@ impl SparseMaskedAttentionHead {
             let sparse_attention_idxs = self.build_original_indices(&attention_weights_batch[batch_ind]);
             let (dl_da, _dl_da_inds) = self.softmax_backward_sparse_compressed(&attention_weights_batch[batch_ind], &sparse_attention_idxs, &previous_gradient, &v, &padding_mask_batch[batch_ind]);
 
-            softmax_gradient_batch.push(dl_da);
+            dl_da_batch.push(dl_da);
             softmax_sparse_indices_batch.push(sparse_attention_idxs);
             grad_wv_batch.push(grad_wv);
         }
-
-        let dl_da_batch: Vec<Vec<Vec<Complex<f64>>>> = softmax_gradient_batch;
+    
         let mut dl_dq_ctl_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); dl_da_batch[0][0].len()]; dl_da_batch[0].len()]; batch_size];
         let mut dl_dk_ctl_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); dl_da_batch[0][0].len()]; dl_da_batch[0].len()]; batch_size];
 
@@ -796,6 +795,10 @@ impl SparseMaskedAttentionHead {
         clip_all_gradients_by_global_norm_2d(&mut grad_w_q, &mut vec![], self.global_norm, self.max_norm);
         clip_all_gradients_by_global_norm_2d(&mut grad_w_v, &mut vec![], self.global_norm, self.max_norm);
         clip_all_gradients_by_global_norm_2d(&mut grad_w_k, &mut vec![], self.global_norm, self.max_norm);
+
+        normalize_gradients(&mut grad_w_q);
+        normalize_gradients(&mut grad_w_v);
+        normalize_gradients(&mut grad_w_k);
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;

@@ -23,7 +23,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                 gradient = _embedding_layer.gradient.as_mut().expect("No gradient found");
 
                 let mut gradient_input_batch = gradient.get_gradient_input_batch();
-                
+
                 normalize_gradients_batch(&mut gradient_input_batch);
                 gradient.set_gradient_input_batch(gradient_input_batch);
 
@@ -362,6 +362,53 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                         }
                         _ => {}
                     }
+                    if let Some(norm_layer) = ffn_layer.norm_layer.as_mut() {
+                        match norm_layer {
+                            LayerEnum::RMSNorm(norm_layer) => {
+                                gradient = norm_layer.gradient.as_mut().expect("No gradient found");
+
+                                global_biases.push(gradient.get_gradient_beta());
+                                global_biases.push(gradient.get_gradient_gamma());
+
+                                let mut gamma_grad = gradient.get_gradient_gamma();
+                                let mut beta_grad = gradient.get_gradient_beta();
+                                // Normalize gradients
+                                normalize_bias(&mut beta_grad);
+                                normalize_bias(&mut gamma_grad);
+
+                                gradient.set_gradient_gamma(gamma_grad);
+                                gradient.set_gradient_beta(beta_grad);
+
+                                if VERBOSE && SHOW_MAX_PARAMS {
+                                    println!("RMS norm layer updating gradient");
+                                    max_bias(&gradient.get_gradient_beta());
+                                    max_bias(&gradient.get_gradient_gamma());
+                                }
+                            }
+                            LayerEnum::Norm(norm_layer) => {
+                                gradient = norm_layer.gradient.as_mut().expect("No gradient found");
+
+                                global_biases.push(gradient.get_gradient_beta());
+                                global_biases.push(gradient.get_gradient_gamma());
+
+                                let mut gamma_grad = gradient.get_gradient_gamma();
+                                let mut beta_grad = gradient.get_gradient_beta();
+                                // Normalize gradients
+                                normalize_bias(&mut beta_grad);
+                                normalize_bias(&mut gamma_grad);
+
+                                gradient.set_gradient_gamma(gamma_grad);
+                                gradient.set_gradient_beta(beta_grad);
+
+                                if VERBOSE && SHOW_MAX_PARAMS {
+                                    println!("norm layer updating gradient");
+                                    max_bias(&gradient.get_gradient_beta());
+                                    max_bias(&gradient.get_gradient_gamma());
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
                 }
                 if let Some(norm_layer) = ffn_layer.norm_layer.as_mut() {
                     match norm_layer {
@@ -467,6 +514,18 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
             }
             LayerEnum::Wavelet(_wavelet_layer) => {}
             LayerEnum::DiscreteWavelet(_wavelet_layer) => {}
+            LayerEnum::ComplexToLinear(ctl_layer) => {
+                gradient = ctl_layer.gradient.as_mut().expect("No gradient found");
+
+                let mut weight_gradient_batch_1 = gradient.get_gradient_weight_batch();
+                let mut weight_gradient_batch_2 = gradient.get_gradient_weight_2_batch();
+
+                normalize_gradients_batch(&mut weight_gradient_batch_1);
+                normalize_gradients_batch(&mut weight_gradient_batch_2);
+
+                gradient.set_gradient_weight_batch(weight_gradient_batch_1);
+                gradient.set_gradient_weight_2_batch(weight_gradient_batch_2);
+            }
             LayerEnum::Softmax(_softmax_layer) => {
                 if VERBOSE && SHOW_MAX_PARAMS {
                     println!("softmax layer - no parameters to update");
@@ -511,6 +570,9 @@ pub fn update_transformer(transformer_network: &mut NeuralNetwork, target_batch_
             LayerEnum::Wavelet(_wavelet_layer) => {}
             LayerEnum::DiscreteWavelet(wavelet_layer) => {
                 wavelet_layer.update_parameters();
+            }
+            LayerEnum::ComplexToLinear(ctl_layer) => {
+                ctl_layer.update_parameters();
             }
             LayerEnum::Softmax(_softmax_layer) => {
                 _softmax_layer.update_parameters();
