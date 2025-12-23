@@ -53,8 +53,8 @@ mod test_transformer {
         let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(feature_dim, hidden_dim, learning_rate);
 
         let compressed_hidden = 16;
-        let mut linear_layer_1 = LinearLayer::new(learning_rate, feature_dim, compressed_hidden);
-        let mut linear_layer_2: LinearLayer = LinearLayer::new(learning_rate, compressed_hidden, col_dim);
+        let mut linear_layer_1 = LinearLayer::new(learning_rate, feature_dim, compressed_hidden, true);
+        let mut linear_layer_2: LinearLayer = LinearLayer::new(learning_rate, compressed_hidden, col_dim, true);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, col_dim);
 
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, seq_len, feature_dim);
@@ -157,7 +157,7 @@ mod test_transformer {
         let positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
 
         let rows: usize = 16;
-        let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
+        let linear_layer = LinearLayer::new(learning_rate, rows, vocab_size, true);
         let softmax_layer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING, vocab_size);
 
         layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
@@ -285,7 +285,7 @@ mod test_transformer {
         let mut positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
         let mut discrete_wavelet_layer = DiscreteWaveletLayer::new();
         let mut complex_wavelet_layer = ComplexWaveletLayer::new();
-        let mut linear_layer = LinearLayer::new(learning_rate, rows, vocab_size);
+        let mut linear_layer = LinearLayer::new(learning_rate, rows, vocab_size, true);
         let mut softmax_layer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING, vocab_size);
 
         let rows: usize = 16;

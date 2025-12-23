@@ -28,7 +28,7 @@ pub mod test_ffn_layer {
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(input_dim, output_dim, learning_rate);
-        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim);
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim, true);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, output_dim);
 
         // Define a small input batch, [2][3][4]
@@ -133,7 +133,7 @@ pub mod test_ffn_layer {
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(input_dim, output_dim, learning_rate);
-        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim);
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim, true);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, output_dim);
 
         // Define a small input batch, [2][3][4]

@@ -251,7 +251,7 @@ mod test_self_attention_layer {
 
         let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(feature_dim, hidden_dim, learning_rate);
         let mut wavelet_layer: ComplexWaveletLayer = ComplexWaveletLayer::new();
-        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, hidden_dim, feature_dim);
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, hidden_dim, feature_dim, true);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, feature_dim);
 
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, seq_len, feature_dim);

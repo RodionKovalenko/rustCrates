@@ -29,7 +29,7 @@ mod test_norm_layer {
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];
 
         let mut norm_layer = NormalNormLayer::new(input_batch[0][0].len(), 1e-8, learning_rate);
-        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, _input_dim, _output_dim);
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, _input_dim, _output_dim, true);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING, _output_dim);
 
         let mut layer_input = LayerInput::new_default();

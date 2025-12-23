@@ -37,7 +37,7 @@ mod test_softmax_layer {
         let epsilon = 1e-4;
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim);
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim, true);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, output_dim);
 
         // Define a small input batch, [2][2][3]

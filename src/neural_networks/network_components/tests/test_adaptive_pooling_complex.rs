@@ -270,7 +270,7 @@ mod test_adaptive_pooling_complex {
 
         // Adaptive pooling to exactly 45 tokens
         let mut pool: AdaptiveAvgPool1dLayer = AdaptiveAvgPool1dLayer::new(compression_dim);
-        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, linear_hidden_dim);
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, linear_hidden_dim, true);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, linear_hidden_dim);
 
         // Input e.g. 36x64

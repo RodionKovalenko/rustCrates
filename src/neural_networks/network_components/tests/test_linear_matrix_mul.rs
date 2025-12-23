@@ -22,9 +22,9 @@ mod test_linear_matrix_mul {
         let output_dim = (vocab_size as f64 / compression as f64) as usize;
 
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, seq_len, dim);
-        let mut linear_layer = LinearLayer::new(learning_rate, dim, vocab_size);
+        let mut linear_layer = LinearLayer::new(learning_rate, dim, vocab_size, true);
 
-        let mut lin_layers: Vec<LinearLayer> = (0..compression).map(|_| LinearLayer::new(learning_rate, dim, output_dim)).collect();
+        let mut lin_layers: Vec<LinearLayer> = (0..compression).map(|_| LinearLayer::new(learning_rate, dim, output_dim, true)).collect();
 
         test_forward_pass(&input_batch, &mut linear_layer, &mut lin_layers);
 

@@ -137,6 +137,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                 let duration = seconds_elapsed_end - seconds_elapsed;
                 let seconds = duration.as_secs_f64();
                 println!("batch size: {}", batch_ids.len());
+                println!("total number of tokens: {}", batch_ids.iter().map(|seq| seq.len()).sum::<usize>());
                 println!("TOTAL time elapsed for FORWARD AND BACKWARD pass in seconds: {}", seconds.to_string().green().bold());
             }
 

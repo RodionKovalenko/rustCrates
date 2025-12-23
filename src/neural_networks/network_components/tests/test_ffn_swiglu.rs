@@ -58,7 +58,7 @@ pub mod test_ffn_swiglu {
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(input_dim, output_dim, learning_rate);
-        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, hidden_dim);
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, hidden_dim, true);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, hidden_dim);
 
         // Define a small input batch, [2][3][4]

@@ -167,7 +167,7 @@ mod test_wavelet_layer {
         let linear_output_dim = 7;
         // Create a simple LinearLayer with the given input and output dimensions
         let mut wavelet_layer: ComplexWaveletLayer = ComplexWaveletLayer::new();
-        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, linear_output_dim);
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, linear_output_dim, true);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, linear_output_dim);
 
         // Define a small input batch, [2][2][3]

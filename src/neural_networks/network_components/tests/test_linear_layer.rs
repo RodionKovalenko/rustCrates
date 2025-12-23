@@ -27,7 +27,7 @@ mod test_linear_layer {
         let operation_mode = OperationMode::TRAINING;
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim);
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim, true);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, output_dim);
 
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, output_dim, input_dim);
@@ -132,7 +132,7 @@ mod test_linear_layer {
         let epsilon = 1e-8;
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim);
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim, true);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, output_dim);
 
         // Define a small input batch, [2][6][4]
@@ -251,7 +251,7 @@ mod test_linear_layer {
 
         // Create a simple MultiLinearLayer with the given input and output dimensions
         let mut multi_linear_layer: MultiLinearLayer = MultiLinearLayer::new(learning_rate, input_dim, output_dim, 5);
-        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim);
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim, true);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, output_dim);
 
         let (combined_weights, combined_bias) = multi_linear_layer.get_combined_weights();
@@ -396,7 +396,7 @@ mod test_linear_layer {
         let mut multi_linear_layer: MultiLinearLayer = MultiLinearLayer::new(learning_rate, input_dim, output_dim, 15);
         let (weights, bias) = multi_linear_layer.get_combined_weights();
 
-        let mut linear_layer = LinearLayer::new(learning_rate, input_dim, output_dim);
+        let mut linear_layer = LinearLayer::new(learning_rate, input_dim, output_dim, true);
         linear_layer.weights = weights.clone();
         linear_layer.bias = bias.clone();
 
