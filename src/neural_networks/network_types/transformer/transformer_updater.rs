@@ -179,6 +179,31 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                     gradient.set_gradient_weights_q_batch(gradient_weight_q_batch);
                     gradient.set_gradient_bias_pos_batch(gradient_weight_pos_batch);
 
+                    if let Some(ctl) = &mut attention_head.ctl_k {
+                        if let Some(ctl_gradient) = ctl.gradient.as_mut() {
+                            let mut weight_gradient_batch_1 = ctl_gradient.get_gradient_weight_batch();
+                            let mut weight_gradient_batch_2 = ctl_gradient.get_gradient_weight_2_batch();
+
+                            normalize_gradients_batch(&mut weight_gradient_batch_1);
+                            normalize_gradients_batch(&mut weight_gradient_batch_2);
+
+                            ctl_gradient.set_gradient_weight_batch(weight_gradient_batch_1);
+                            ctl_gradient.set_gradient_weight_2_batch(weight_gradient_batch_2);
+                        }
+                    }
+                    if let Some(ctl) = &mut attention_head.ctl_q {
+                        if let Some(ctl_gradient) = ctl.gradient.as_mut() {
+                            let mut weight_gradient_batch_1 = ctl_gradient.get_gradient_weight_batch();
+                            let mut weight_gradient_batch_2 = ctl_gradient.get_gradient_weight_2_batch();
+
+                            normalize_gradients_batch(&mut weight_gradient_batch_1);
+                            normalize_gradients_batch(&mut weight_gradient_batch_2);
+
+                            ctl_gradient.set_gradient_weight_batch(weight_gradient_batch_1);
+                            ctl_gradient.set_gradient_weight_2_batch(weight_gradient_batch_2);
+                        }
+                    }
+
                     if VERBOSE && SHOW_MAX_PARAMS {
                         println!("self sparse attention layer updating gradient");
                         max_weight(&gradient.get_gradient_weights_k());
