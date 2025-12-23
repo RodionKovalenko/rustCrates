@@ -1,4 +1,3 @@
-use reqwest::ClientBuilder;
 use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, path::Path};
 
