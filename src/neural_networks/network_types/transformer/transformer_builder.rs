@@ -10,7 +10,8 @@ use crate::neural_networks::{
     },
 };
 
-pub const NUM_SELF_ATT_LAYERS: usize = 1;
+pub const NUM_SELF_ATT_LAYERS: usize = 7;
+pub const SPARSE_WINDOW_SIZE: usize = 2;
 
 pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let number_inputs: usize = 32;
@@ -43,19 +44,18 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     // Transformer block start
     let num_self_attention_layer: usize = NUM_SELF_ATT_LAYERS;
     // let origin_hidden_dim = 512;
-    let _window_size = 2;
-    let hidden_dim = 512;
+    let hidden_dim = 256;
     for _i in 0..num_self_attention_layer {
         let num_attention_heads: usize = 4;
 
         // Colums are divided into number of heads
         let cols: usize = embedding_dim_compressed;
 
-        let _attention_layer: SparseSelfAttentionLayer = SparseSelfAttentionLayer::new(num_attention_heads, rows, cols, _window_size, learning_rate);
-        //layers.push(LayerEnum::SparseSelfAttention(Box::new(_attention_layer)));
+        let _attention_layer: SparseSelfAttentionLayer = SparseSelfAttentionLayer::new(num_attention_heads, rows, cols, SPARSE_WINDOW_SIZE, learning_rate);
+        layers.push(LayerEnum::SparseSelfAttention(Box::new(_attention_layer)));
 
         let _attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
-        layers.push(LayerEnum::SelfAttention(Box::new(_attention_layer)));
+        //layers.push(LayerEnum::SelfAttention(Box::new(_attention_layer)));
 
         // let hidden_dim = origin_hidden_dim * (_i + 1);
 
@@ -74,10 +74,11 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let linear_layer = LinearLayer::new(learning_rate, rows, compressed_hidden);
     layers.push(LayerEnum::Linear(Box::new(linear_layer)));
 
-    // let linear_layer = LinearLayer::new(learning_rate, compressed_hidden, vocab_size);
-    // layers.push(LayerEnum::Linear(Box::new(linear_layer)));
-    let ctl_layer = ComplexToLinearLayer::new( compressed_hidden, vocab_size, learning_rate);
-    layers.push(LayerEnum::ComplexToLinear(Box::new(ctl_layer)));
+    let _linear_layer = LinearLayer::new(learning_rate, compressed_hidden, vocab_size);
+    //layers.push(LayerEnum::Linear(Box::new(_linear_layer)));
+
+    let _ctl_layer = ComplexToLinearLayer::new( compressed_hidden, vocab_size, learning_rate);
+    layers.push(LayerEnum::ComplexToLinear(Box::new(_ctl_layer)));
 
     let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode, vocab_size);
     layers.push(LayerEnum::Softmax(Box::new(softmax_layer)));

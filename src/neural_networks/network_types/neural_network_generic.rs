@@ -433,21 +433,15 @@ pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
             }
             LayerEnum::SparseSelfAttention(self_attention_layer) => {
                 for attention_head in self_attention_layer.attention_heads.iter_mut() {
-                    // attention_head.previous_gradient = None;
-                    attention_head.gradient = None;
-                    attention_head.batch_size = 0;
+                    println!("self attention head weigths: {} {}", attention_head.weights_k.len(), attention_head.weights_k[0].len());
                 }
                 if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
                     match norm_layer {
-                        LayerEnum::RMSNorm(_norm_layer) => {
-                            //_norm_layer.previous_gradient = None;
-                            _norm_layer.gradient = None;
-                            _norm_layer.batch_size = 0;
+                        LayerEnum::RMSNorm(rms_norm_layer) => {
+                            println!("rms_norm_layer in ffn layer: {:?}", &rms_norm_layer.learning_rate);
                         }
-                        LayerEnum::Norm(_norm_layer) => {
-                            //_norm_layer.previous_gradient = None;
-                            _norm_layer.gradient = None;
-                            _norm_layer.batch_size = 0;
+                        LayerEnum::Norm(norm_layer) => {
+                            println!("norm_layer in ffn layer: {:?}", &norm_layer.learning_rate);
                         }
                         _ => {}
                     }
