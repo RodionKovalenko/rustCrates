@@ -9,8 +9,7 @@ use crate::neural_networks::{
         adam_w::calculate_adam_w,
         derivative::{backpropagate_softmax_masked_real, softmax_derivative_complex_jacobian},
         matrix::{
-            add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, multiply_complex_with_f64, multiply_f64_complex,
-            transpose,
+            add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, normalize_gradients, transpose
         },
         weights_initializer::initialize_weights_complex,
     },
@@ -374,6 +373,10 @@ impl MaskedAttentionHead {
         clip_all_gradients_by_global_norm_2d(&mut grad_w_q, &mut vec![], self.global_norm, self.max_norm);
         clip_all_gradients_by_global_norm_2d(&mut grad_w_v, &mut vec![], self.global_norm, self.max_norm);
         clip_all_gradients_by_global_norm_2d(&mut grad_w_k, &mut vec![], self.global_norm, self.max_norm);
+
+        normalize_gradients(&mut grad_w_q);
+        normalize_gradients(&mut grad_w_v);
+        normalize_gradients(&mut grad_w_k);
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;

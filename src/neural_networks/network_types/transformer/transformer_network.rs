@@ -260,7 +260,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         if time_step > 0 && layer_input.get_forward_only() {
             // let last_tokens: Vec<Vec<u32>> = batch_ids.iter().map(|seq| vec![*seq.last().unwrap()]).collect();
             let last_n = 4; // window_size * 2
-            // let last_n = 1; // window_size * 2
+                            // let last_n = 1; // window_size * 2
 
             let last_tokens_batch: Vec<Vec<u32>> = batch_ids
                 .iter()
@@ -582,6 +582,22 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     println!("No previous output for Dense layer");
                 }
             }
+            LayerEnum::ComplexToLinear(ctl_layer) => {
+                if let Some(previous_output) = &output {
+                    //println!("forward complex to linear layer start");
+                    layer_input.set_input_batch(previous_output.clone());
+
+                    let start = Instant::now();
+                    let output_ctl = ctl_layer.forward(&layer_input);
+
+                    if VERBOSE {
+                        println!("time elapsed in seconds in complex to linear layer: {:?}", start.elapsed().as_secs_f64());
+                    }
+                    output = Some(output_ctl.get_output_batch());
+                } else {
+                    println!("No previous output for Complex to Linear layer");
+                }
+            }
             LayerEnum::Softmax(softmax_layer) => {
                 if let Some(previous_output) = &output {
                     //println!("forward softmax start");
@@ -605,7 +621,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                 }
             }
             _ => {
-                println!("Layer type not supported for backward pass");
+                panic!("Layer type not supported for backward pass");
             }
         }
     }
@@ -802,6 +818,19 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     println!("No previous gradient in Linear Layer");
                 }
             }
+            LayerEnum::ComplexToLinear(complex_to_linear_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    let start = Instant::now();
+                    let gradient_batch: Gradient = complex_to_linear_layer.backward(&previous_gradient);
+                    gradient = Some(gradient_batch);
+
+                    if VERBOSE {
+                        println!("time elapsed in seconds in complex to linear layer backward: {:?}", start.elapsed().as_secs_f64());
+                    }
+                } else {
+                    println!("No previous gradient in Complex to Linear Layer");
+                }
+            }
             LayerEnum::Softmax(softmax_layer) => {
                 softmax_layer.batch_size = batch_size;
                 // println!("backward softmax start");
@@ -812,7 +841,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                 // println!("backward softmax end");
             }
             _ => {
-                println!("Layer type not supported for backward pass");
+                panic!("Layer type not supported for backward pass");
             }
         }
     }

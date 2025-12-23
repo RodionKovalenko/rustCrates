@@ -1,3 +1,4 @@
+use reqwest::ClientBuilder;
 use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, path::Path};
 
@@ -232,6 +233,7 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
             }
             LayerEnum::Wavelet(_wavelet_layer) => {}
             LayerEnum::DiscreteWavelet(_wavelet_layer) => {}
+            LayerEnum::ComplexToLinear(ctl) => {}
             LayerEnum::Softmax(_softmax_layer) => {}
             LayerEnum::PositionalEncoding(_positional_encoding_layer) => {}
         }
@@ -380,6 +382,9 @@ pub fn reset_previous_gradient(transformer: &mut NeuralNetwork) {
             LayerEnum::DiscreteWavelet(_wavelet_layer) => {
                 _wavelet_layer.gradient = None;
             }
+            LayerEnum::ComplexToLinear(ctl) => {
+                ctl.gradient = None;
+            }
             LayerEnum::Softmax(_softmax_layer) => {
                 _softmax_layer.gradient = None;
             }
@@ -498,6 +503,9 @@ pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
             }
             LayerEnum::DiscreteWavelet(_wavelet_layer) => {
                 println!("discrete wavelet layer,  {:?}", &_wavelet_layer);
+            }
+            LayerEnum::ComplexToLinear(ctl) => {
+                println!("complex to linear layer,  weights: {} {}", ctl.weights_1.len(), ctl.weights_1.len());
             }
             LayerEnum::Softmax(_softmax_layer) => {
                 println!("softmax layer");
