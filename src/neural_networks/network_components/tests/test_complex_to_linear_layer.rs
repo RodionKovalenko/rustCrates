@@ -23,7 +23,7 @@ mod test_complex_to_linear_layer {
         let operation_mode = OperationMode::TRAINING;
 
         // Create a simple LinearLayer with the given input and output dimensions
-        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, cols, rows);
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, cols, rows, true);
         let mut complex_to_linear_layer: ComplexToLinearLayer = ComplexToLinearLayer::new(rows, rows, learning_rate);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, cols);
 

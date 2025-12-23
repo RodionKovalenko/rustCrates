@@ -9,7 +9,7 @@ use crate::neural_networks::{
     utils::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         matrix::{add_matrix_2d_c, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex},
-        weights_initializer::initialize_weights_complex,
+        weights_initializer::{initialize_weights_complex, initialize_weights_complex_only_real},
     },
 };
 
@@ -49,13 +49,17 @@ pub struct LinearLayer {
 }
 
 impl LinearLayer {
-    pub fn new(learning_rate: f64, rows: usize, cols: usize) -> Self {
+    pub fn new(learning_rate: f64, rows: usize, cols: usize, is_complex: bool) -> Self {
         let mut weights: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
         let bias: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
         let epsilon: f64 = 0.00000001;
         let _norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(cols, epsilon, learning_rate))));
 
-        initialize_weights_complex(rows, cols, &mut weights);
+        if is_complex {
+            initialize_weights_complex(rows, cols, &mut weights);
+        } else {
+            initialize_weights_complex_only_real(rows, cols, &mut weights);
+        }
 
         Self {
             weights,

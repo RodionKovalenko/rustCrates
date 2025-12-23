@@ -55,7 +55,7 @@ impl MultiLinearLayer {
             col_ranges.push((start_col, end_col));
 
             // Create linear layer with proper initialization
-            let mut linear_layer = LinearLayer::new(learning_rate, rows, chunk_size);
+            let mut linear_layer = LinearLayer::new(learning_rate, rows, chunk_size, true);
 
             // Extract weights and bias for this chunk
             linear_layer.weights = weights.iter().map(|row| row[start_col..end_col].to_vec()).collect();

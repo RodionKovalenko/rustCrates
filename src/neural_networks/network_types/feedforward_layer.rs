@@ -51,7 +51,7 @@ impl FeedForwardLayer {
         let dense_layer: Layer = Layer::new(rows, cols_swinglu, &learning_rate, &activation, LayerType::DenseLayer);
 
         let _dense_layer_2: Layer = Layer::new(cols, rows, &learning_rate, &ActivationType::TANH, LayerType::DenseLayer);
-        let _linear_layer = LinearLayer::new(learning_rate, cols, rows);
+        let _linear_layer = LinearLayer::new(learning_rate, cols, rows, true);
         let _norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(rows, epsilon, learning_rate))));
         let _rms_norm_layer = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(rows, epsilon, learning_rate))));
 
