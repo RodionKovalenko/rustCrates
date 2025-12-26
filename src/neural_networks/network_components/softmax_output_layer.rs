@@ -78,7 +78,7 @@ impl SoftmaxLayer {
                 let output_gradients = (0..batch_size)
                     .into_par_iter()
                     .map(|batch_ind| {
-                        let outputs = softmax_backward_real_with_gradient(&input_batch_linear[batch_ind], &target_token_batch_ids[batch_ind], &padding_mask_batch[batch_ind]);
+                        let outputs = softmax_backward_real_with_gradient(&input_batch_linear[batch_ind], &target_token_batch_ids[batch_ind], &padding_mask_batch[batch_ind], batch_size);
                         outputs
                     })
                     .unzip();

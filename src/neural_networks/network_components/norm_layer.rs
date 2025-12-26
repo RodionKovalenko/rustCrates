@@ -103,6 +103,7 @@ impl NormalNormLayer {
         let mut normalized_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
         let mut mean_batch: Vec<Vec<Complex<f64>>> = Vec::new();
         let mut var_batch: Vec<Vec<Complex<f64>>> = Vec::new();
+        let padding_mask_batch = layer_input.get_padding_mask_batch();
 
         self.batch_size = layer_input.get_batch_size();
 

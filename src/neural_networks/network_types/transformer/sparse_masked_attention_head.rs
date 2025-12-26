@@ -813,10 +813,13 @@ impl SparseMaskedAttentionHead {
             (
                 previous_gradient.get_prev_m_weigths_q(),
                 previous_gradient.get_prev_v_weigths_q(),
+
                 previous_gradient.get_prev_m_weigths_k(),
                 previous_gradient.get_prev_v_weights_k(),
+
                 previous_gradient.get_prev_m_weigths_v(),
                 previous_gradient.get_prev_v_weights_v(),
+                
                 previous_gradient.get_prev_v_weights_q_hat(),
                 previous_gradient.get_prev_v_weights_k_hat(),
                 previous_gradient.get_prev_v_weights_v_hat(),
