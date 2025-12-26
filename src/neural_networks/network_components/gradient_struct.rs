@@ -93,6 +93,7 @@ pub struct Gradient {
     pooling_metadata: Option<CompressionMetadata>,
 
     time_step: Option<usize>,
+    total_valid_tokens: Option<usize>,
 }
 
 impl Gradient {
@@ -138,6 +139,7 @@ impl Gradient {
             gradient_weights_k: None,
             gradient_bias_pos: None,
             time_step: None,
+            total_valid_tokens: None,
 
             prev_m_weights: None,
             prev_v_weights: None,
@@ -374,6 +376,10 @@ impl Gradient {
         self.time_step = Some(time_step);
     }
 
+    pub fn set_total_valid_tokens(&mut self, total_valid_tokens: usize) {
+        self.total_valid_tokens = Some(total_valid_tokens);
+    }
+
     pub fn get_gradient_input_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
         self.gradient_input_batch.clone().unwrap_or_else(|| vec![])
     }
@@ -523,6 +529,10 @@ impl Gradient {
     }
     pub fn get_time_step(&self) -> usize {
         self.time_step.clone().unwrap_or_else(|| 0)
+    }
+
+    pub fn get_total_valid_tokens(&self) -> usize {
+        self.total_valid_tokens.clone().unwrap_or_else(|| 1)
     }
 
     pub fn get_prev_m_beta(&self) -> Vec<Complex<f64>> {

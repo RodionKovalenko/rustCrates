@@ -495,19 +495,23 @@ pub fn softmax_complex_padding_complex(input: &Vec<Vec<Complex<f64>>>, padding_m
         .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
 }
 
-pub fn softmax_backward_real_with_gradient(logits: &Vec<Vec<Complex<f64>>>, targets: &Vec<u32>, padding_mask: &Vec<u32>, _batch_size: usize) -> (Vec<Vec<Complex<f64>>>, Vec<Vec<Complex<f64>>>) {
+pub fn softmax_backward_real_with_gradient(
+    logits: &Vec<Vec<Complex<f64>>>,
+    targets: &Vec<u32>,
+    padding_mask: &Vec<u32>,
+    total_valid_tokens: usize,
+) -> (Vec<Vec<Complex<f64>>>, Vec<Vec<Complex<f64>>>) {
     let seq_len = logits.len();
     let target_len = targets.len();
 
     assert_eq!(padding_mask.len(), seq_len);
     assert!(target_len <= seq_len);
 
-    let offset = seq_len - target_len;
+    let seq_len_unpadded = padding_mask.iter().filter(|&&x| x != 0).count();
+    let offset = seq_len_unpadded - target_len;
 
-    let num_valid: f64 = padding_mask.iter().skip(offset).filter(|&&m| m == 1).count().max(1) as f64;
-
-    // Scale by BOTH num_valid tokens AND batch_size to ensure consistent normalization
-    let scale = 1.0 / num_valid;
+    // Normalize by total valid tokens across entire batch for consistent averaging
+    let scale = 1.0 / total_valid_tokens.max(1) as f64;
 
     logits
         .par_iter()

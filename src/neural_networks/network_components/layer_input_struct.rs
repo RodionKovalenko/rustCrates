@@ -21,6 +21,7 @@ pub struct LayerInput {
     record_ind: usize,
     pooling_metadata: Option<CompressionMetadata>,
     calculate_k_v_cache: bool,
+    total_valid_tokens: usize,
 }
 
 impl LayerInput {
@@ -41,6 +42,7 @@ impl LayerInput {
             batch_size: 25,
             pooling_metadata: None,
             calculate_k_v_cache: false,
+            total_valid_tokens: 1,
         }
     }
     pub fn set_input_batch(&mut self, input_batch: Vec<Vec<Vec<Complex<f64>>>>) {
@@ -81,6 +83,10 @@ impl LayerInput {
     }
     pub fn set_target_batch_ids(&mut self, target_ids: Vec<Vec<u32>>) {
         self.target_batch_ids = Some(target_ids);
+    }
+
+    pub fn set_total_valid_tokens(&mut self, total_valid_tokens: usize) {
+        self.total_valid_tokens = total_valid_tokens;
     }
 
     pub fn get_padding_mask_batch(&self) -> Vec<Vec<u32>> {
@@ -134,5 +140,9 @@ impl LayerInput {
     }
     pub fn get_calculate_k_v_cache(&self) -> bool {
         self.calculate_k_v_cache
+    }
+
+    pub fn get_total_valid_tokens(&self) -> usize {
+        self.total_valid_tokens
     }
 }

@@ -298,17 +298,12 @@ impl Layer {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("No Gradient found in linear layer");
         let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
 
-        let input_batch = gradient.get_gradient_input_batch();
-        let mut batch_size = input_batch.len() as f64;
-
-        if self.batch_size > 0 {
-            batch_size = self.batch_size as f64;
-        }
+        let total_valid_tokens = gradient.get_total_valid_tokens().max(1) as f64;
 
         clip_all_gradients_by_global_norm_2d(&mut weight_gradients, &mut bias_gradients, self.global_norm, self.max_norm);
 
-        weight_gradients = average_matrix_by_scalar(&weight_gradients, batch_size);
-        bias_gradients = average_vector_by_scalar(&bias_gradients, batch_size);
+        weight_gradients = average_matrix_by_scalar(&weight_gradients, total_valid_tokens);
+        bias_gradients = average_vector_by_scalar(&bias_gradients, total_valid_tokens);
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;

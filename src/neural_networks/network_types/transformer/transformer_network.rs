@@ -361,6 +361,31 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
     let mut layer_input = layer_input.clone();
     let target_batch_ids_option = Some(layer_input.get_target_batch_ids());
 
+    // Compute total valid tokens across batch for proper gradient normalization
+    if !forward_only {
+        let target_batch_ids = layer_input.get_target_batch_ids();
+        let padding_mask_batch = layer_input.get_padding_mask_batch();
+        
+        let total_valid_tokens: usize = if !target_batch_ids.is_empty() && !padding_mask_batch.is_empty() {
+            target_batch_ids
+                .iter()
+                .zip(padding_mask_batch.iter())
+                .map(|(targets, mask)| {
+                    let seq_len = mask.len();
+                    let target_len = targets.len();
+                    let offset = seq_len.saturating_sub(target_len);
+                    mask.iter().skip(offset).filter(|&&m| m != 0).count()
+                })
+                .sum()
+        } else if !target_batch_ids.is_empty() {
+            target_batch_ids.iter().map(|t| t.len()).sum()
+        } else {
+            batch_ids.iter().map(|b| b.len()).sum()
+        };
+
+        layer_input.set_total_valid_tokens(total_valid_tokens);
+    }
+
     if forward_only {
         layer_input.set_calculate_gradient(false);
     }

@@ -138,6 +138,7 @@ impl LinearLayer {
         let mut gradient = Gradient::new_default();
 
         let mut _previous_input_gradient = Vec::new();
+        let total_valid_tokens = previous_gradient.get_total_valid_tokens();
 
         let previous_gradient_batch: GradientBatch = if !previous_gradient.get_gradient_input_batch().is_empty() {
             _previous_input_gradient = previous_gradient.get_gradient_input_batch();
@@ -217,6 +218,7 @@ impl LinearLayer {
         gradient.set_gradient_input_batch(gradient_input_batch.clone());
         gradient.set_gradient_weight_batch(weight_gradients);
         gradient.set_gradient_bias_batch(bias_gradients);
+        gradient.set_total_valid_tokens(total_valid_tokens);
 
         self.gradient = Some(gradient.clone());
 
@@ -226,15 +228,10 @@ impl LinearLayer {
     pub fn update_parameters(&mut self) {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("No Gradient found in linear layer");
         let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
-        let input_batch = gradient.get_gradient_input_batch();
-        let mut batch_size = input_batch.len() as f64;
+        let total_valid_tokens = gradient.get_total_valid_tokens();
 
-        if self.batch_size > 0 {
-            batch_size = self.batch_size as f64;
-        }
-
-        weight_gradients = average_matrix_by_scalar(&weight_gradients, batch_size);
-        bias_gradients = average_vector_by_scalar(&bias_gradients, batch_size);
+        weight_gradients = average_matrix_by_scalar(&weight_gradients, total_valid_tokens as f64);
+        bias_gradients = average_vector_by_scalar(&bias_gradients, total_valid_tokens as f64);
 
         clip_all_gradients_by_global_norm_2d(&mut weight_gradients, &mut bias_gradients, self.global_norm, self.max_norm);
 

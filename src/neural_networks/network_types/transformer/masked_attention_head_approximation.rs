@@ -37,6 +37,7 @@ pub struct MaskedAttentionHeadApproximation {
     pub smoothing: f64,
     pub ema: f64,
     pub batch_size: usize,
+    pub total_valid_tokens: usize,
     pub global_norm: f64,
     pub max_norm: f64,
     pub previous_gradient: Option<Gradient>,
@@ -100,6 +101,7 @@ impl MaskedAttentionHeadApproximation {
             smoothing: 0.99,
             ema: 0.0,
             batch_size: 0,
+            total_valid_tokens: 1,
             gradient: None,
             previous_gradient: None,
             time_step: 0,
@@ -145,6 +147,7 @@ impl MaskedAttentionHeadApproximation {
         self.input_batch = input.clone();
         self.padding_mask = pad.clone();
         self.batch_size = bsz;
+        self.total_valid_tokens = layer_input.get_total_valid_tokens();
         self.time_step = layer_input.get_time_step();
         let mut q = vec![vec![vec![Complex::new(0.0, 0.0); d_k]; seq]; bsz];
         let mut k = q.clone();
@@ -393,16 +396,12 @@ impl MaskedAttentionHeadApproximation {
     pub fn update_parameters(&mut self) {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("Gradient is missing in attention head layer");
         let (mut grad_w_q, mut grad_w_v, mut grad_w_k) = (gradient.get_gradient_weights_q(), gradient.get_gradient_weights_v(), gradient.get_gradient_weights_k());
-        let input_batch = gradient.get_gradient_input_batch();
-        let mut batch_size = input_batch.len() as f64;
 
-        if self.batch_size > 0 {
-            batch_size = self.batch_size as f64;
-        }
+        let total_valid_tokens = self.total_valid_tokens.max(1) as f64;
 
-        grad_w_q = average_matrix_by_scalar(&grad_w_q, batch_size);
-        grad_w_v = average_matrix_by_scalar(&grad_w_v, batch_size);
-        grad_w_k = average_matrix_by_scalar(&grad_w_k, batch_size);
+        grad_w_q = average_matrix_by_scalar(&grad_w_q, total_valid_tokens);
+        grad_w_v = average_matrix_by_scalar(&grad_w_v, total_valid_tokens);
+        grad_w_k = average_matrix_by_scalar(&grad_w_k, total_valid_tokens);
 
         clip_all_gradients_by_global_norm_2d(&mut grad_w_q, &mut vec![], self.global_norm, self.max_norm);
 
