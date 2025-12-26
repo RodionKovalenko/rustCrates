@@ -156,13 +156,9 @@ impl RMSNormLayer {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("No gradient found in rms norm layer");
         let mut gradient_gamma: Vec<Complex<f64>> = gradient.get_gradient_gamma();
 
-        let mut batch_size = self.batch_size as f64;
+        let total_valid_tokens = gradient.get_total_valid_tokens().max(1) as f64;
 
-        if self.batch_size > 0 {
-            batch_size = self.batch_size as f64;
-        }
-
-        gradient_gamma = average_vector_by_scalar(&gradient_gamma, batch_size);
+        gradient_gamma = average_vector_by_scalar(&gradient_gamma, total_valid_tokens);
 
         clip_all_gradients_by_global_norm_2d(&mut vec![], &mut gradient_gamma, self.global_norm, self.max_norm);
 

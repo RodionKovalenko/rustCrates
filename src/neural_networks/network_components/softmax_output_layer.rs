@@ -36,7 +36,6 @@ pub struct SoftmaxLayer {
 
 impl SoftmaxLayer {
     pub fn new(learning_rate: f64, operation_mode: OperationMode, _feature_dim: usize) -> Self {
-
         Self {
             learning_rate,
             operation_mode,
@@ -75,10 +74,22 @@ impl SoftmaxLayer {
                 (output, Vec::new(), Vec::new())
             }
             OperationMode::TRAINING => {
+                // Compute total valid tokens across entire batch for proper normalization
+                let total_valid_tokens: usize = padding_mask_batch
+                    .iter()
+                    .zip(target_token_batch_ids.iter())
+                    .map(|(mask, targets)| {
+                        let seq_len = mask.len();
+                        let target_len = targets.len();
+                        let offset = seq_len - target_len;
+                        mask.iter().skip(offset).filter(|&&m| m == 1).count()
+                    })
+                    .sum();
+
                 let output_gradients = (0..batch_size)
                     .into_par_iter()
                     .map(|batch_ind| {
-                        let outputs = softmax_backward_real_with_gradient(&input_batch_linear[batch_ind], &target_token_batch_ids[batch_ind], &padding_mask_batch[batch_ind], batch_size);
+                        let outputs = softmax_backward_real_with_gradient(&input_batch_linear[batch_ind], &target_token_batch_ids[batch_ind], &padding_mask_batch[batch_ind], total_valid_tokens);
                         outputs
                     })
                     .unzip();

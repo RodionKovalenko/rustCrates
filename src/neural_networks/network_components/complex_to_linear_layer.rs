@@ -143,25 +143,12 @@ impl ComplexToLinearLayer {
         let mut weight_gradients_1: Vec<Vec<Complex<f64>>> = gradient.get_gradient_weights();
         let mut weight_gradients_2: Vec<Vec<Complex<f64>>> = gradient.get_gradient_weights_2();
 
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_input_batch();
-        let mut batch_size = input_batch.len() as f64;
+        // Get total valid tokens from gradient
+        let gradient: &mut Gradient = self.gradient.as_mut().expect("Gradient is missing in complex_to_linear_layer");
+        let total_valid_tokens = gradient.get_total_valid_tokens().max(1) as f64;
 
-        if self.batch_size > 0 {
-            batch_size = self.batch_size as f64;
-        }
-
-        // Get sequence length from the first batch item
-        let mut seq_len = 1.0;
-
-        for input in input_batch.iter() {
-            seq_len += input.len() as f64;
-        }
-
-        // Normalize by batch_size * seq_len to account for accumulation over both dimensions
-        let normalization_factor = batch_size * seq_len;
-
-        weight_gradients_1 = average_matrix_by_scalar(&weight_gradients_1, normalization_factor);
-        weight_gradients_2 = average_matrix_by_scalar(&weight_gradients_2, normalization_factor);
+        weight_gradients_1 = average_matrix_by_scalar(&weight_gradients_1, total_valid_tokens);
+        weight_gradients_2 = average_matrix_by_scalar(&weight_gradients_2, total_valid_tokens);
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;

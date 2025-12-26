@@ -229,11 +229,12 @@ impl MultiLinearLayer {
         let (mut weight_gradients, mut bias_gradients) = self.get_combined_gradients();
         let (mut combined_weights, mut combined_bias) = self.get_combined_weights();
 
-        // Use batch size for averaging
-        let batch_size_num = if self.batch_size > 0 { self.batch_size as f64 } else { self.input_batch.as_ref().map(|batch| batch.len()).unwrap_or(1) as f64 };
+        // Get total valid tokens from gradient
+        let gradient = self.gradient.as_mut().expect("No gradients available");
+        let total_valid_tokens = gradient.get_total_valid_tokens().max(1) as f64;
 
-        weight_gradients = average_matrix_by_scalar(&weight_gradients, batch_size_num);
-        bias_gradients = average_vector_by_scalar(&bias_gradients, batch_size_num);
+        weight_gradients = average_matrix_by_scalar(&weight_gradients, total_valid_tokens);
+        bias_gradients = average_vector_by_scalar(&bias_gradients, total_valid_tokens);
 
         // Clip gradients
         clip_all_gradients_by_global_norm_2d(&mut weight_gradients, &mut bias_gradients, self.global_norm, self.max_norm);
