@@ -66,8 +66,8 @@ impl NormalNormLayer {
             mean_batch: None,
             var_batch: None,
             gradient: None,
-            previous_gradient: None,
             padding_mask_batch: None,
+            previous_gradient: None,
             is_residual_input_present: false,
             output_batch: None,
             time_step: 0,
@@ -79,28 +79,11 @@ impl NormalNormLayer {
         }
     }
 
-    pub fn normalize(&self, input: &Vec<Complex<f64>>, mask: Option<&Vec<u32>>) -> (Vec<Complex<f64>>, Complex<f64>, Complex<f64>) {
-        // Compute mean only over non-masked positions (where mask != 0)
-        let (sum, count) = if let Some(mask) = mask {
-            input.iter().zip(mask.iter())
-                .filter(|(_, &m)| m != 0)  // 0 = padding, non-zero = real token
-                .fold((Complex::new(0.0, 0.0), 0.0), |(s, c), (x, _)| (s + x, c + 1.0))
-        } else {
-            (input.iter().sum::<Complex<f64>>(), input.len() as f64)
-        };
-        
-        let mean: Complex<f64> = if count > 0.0 { sum / count } else { Complex::new(0.0, 0.0) };
+    pub fn normalize(&self, input: &Vec<Complex<f64>>) -> (Vec<Complex<f64>>, Complex<f64>, Complex<f64>) {
+        let len: f64 = input.len() as f64;
+        let mean: Complex<f64> = input.iter().sum::<Complex<f64>>() / len;
 
-        // Compute variance only over non-masked positions
-        let variance: Complex<f64> = if let Some(mask) = mask {
-            let var_sum = input.iter().zip(mask.iter())
-                .filter(|(_, &m)| m != 0)
-                .map(|(x, _)| (*x - mean).powu(2))
-                .sum::<Complex<f64>>();
-            if count > 0.0 { var_sum / count } else { Complex::new(0.0, 0.0) }
-        } else {
-            input.iter().map(|x| (*x - mean).powu(2)).sum::<Complex<f64>>() / count
-        };
+        let variance: Complex<f64> = input.iter().map(|x| (*x - mean).powu(2)).sum::<Complex<f64>>() / len;
 
         let stddev: Complex<f64> = (variance + Complex::new(self.epsilon, 0.0)).sqrt();
 
@@ -109,6 +92,7 @@ impl NormalNormLayer {
             .enumerate()
             .map(|(i, x)| {
                 let val: Complex<f64> = ((*x - mean) / stddev) * self.gamma[i] + self.beta[i];
+                //Complex::new(val.re, 0.0)
                 val
             })
             .collect();
@@ -134,21 +118,27 @@ impl NormalNormLayer {
         // let input_batch_before = vec![vec![vec![Complex::new(0.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
         // input_batch = add_matrix_3d_c(&input_batch, &input_batch_before);
 
-        for (b, input) in input_batch.iter().enumerate() {
+        for (batch_idx, input) in input_batch.iter().enumerate() {
             let mut norm_seq = Vec::new();
             let mut mean_seq = Vec::new();
             let mut var_seq = Vec::new();
-            for (s, vec) in input.iter().enumerate() {
-                // Get mask for this specific sequence position if available
-                let mask = if !padding_mask_batch.is_empty() && b < padding_mask_batch.len() && s < padding_mask_batch[b].len() {
-                    Some(&padding_mask_batch[b])
-                } else {
-                    None
-                };
+            let padding_mask = if batch_idx < padding_mask_batch.len() {
+                &padding_mask_batch[batch_idx]
+            } else {
+                &vec![1u32; input.len()]
+            };
+            
+            for (seq_idx, vec) in input.iter().enumerate() {
+                let (norm, mean, var) = self.normalize(vec);
                 
-                let (norm, mean, var) = self.normalize(vec, mask);
+                // Apply padding mask: zero out padded positions
+                let masked_norm = if seq_idx < padding_mask.len() && padding_mask[seq_idx] == 0 {
+                    vec![Complex::new(0.0, 0.0); norm.len()]
+                } else {
+                    norm
+                };
 
-                norm_seq.push(norm);
+                norm_seq.push(masked_norm);
                 mean_seq.push(mean);
                 var_seq.push(var);
             }
@@ -162,7 +152,7 @@ impl NormalNormLayer {
         self.normalized_batch = Some(normalized_batch);
         self.mean_batch = Some(mean_batch);
         self.var_batch = Some(var_batch);
-        self.padding_mask_batch = if padding_mask_batch.is_empty() { None } else { Some(padding_mask_batch) };
+        self.padding_mask_batch = Some(padding_mask_batch);
         self.time_step = layer_input.get_time_step();
         self.output_batch = Some(output_batch.clone());
 
@@ -183,8 +173,9 @@ impl NormalNormLayer {
         } else {
             GradientBatch::Real(previous_gradient.get_gradient_input_batch_softmax())
         };
-
-        let total_valid_tokens = previous_gradient.get_total_valid_tokens();
+        
+        let empty_mask = vec![];
+        let padding_mask_batch = self.padding_mask_batch.as_ref().unwrap_or(&empty_mask);
 
         let batch_size = input_batch.len();
         let seq_len = input_batch[0].len();
@@ -201,20 +192,15 @@ impl NormalNormLayer {
         match previous_gradient_batch {
             GradientBatch::Complex(previous_gradient) => {
                 for b in 0..batch_size {
+                    let padding_mask = if b < padding_mask_batch.len() {
+                        &padding_mask_batch[b]
+                    } else {
+                        &vec![1u32; seq_len]
+                    };
+                    
                     for s in 0..seq_len {
-                        // Check if this position is masked (padded)
-                        let is_masked = if let Some(ref mask_batch) = self.padding_mask_batch {
-                            if b < mask_batch.len() && s < mask_batch[b].len() {
-                                mask_batch[b][s] == 0  // 0 = padding
-                            } else {
-                                false
-                            }
-                        } else {
-                            false
-                        };
-                        
                         // Skip gradient computation for padded positions
-                        if is_masked {
+                        if s < padding_mask.len() && padding_mask[s] == 0 {
                             continue;
                         }
                         
@@ -272,7 +258,6 @@ impl NormalNormLayer {
 
         let mut gradient = Gradient::new_default();
         gradient.set_time_step(self.time_step);
-        gradient.set_total_valid_tokens(total_valid_tokens);
         gradient.set_gradient_input_batch(input_grads);
         gradient.set_gradient_gamma(conjugate_1d(&gamma_grad));
         gradient.set_gradient_beta(conjugate_1d(&beta_grad));
@@ -285,10 +270,16 @@ impl NormalNormLayer {
         let gradient = self.gradient.as_mut().expect("No gradient found in NormalNormLayer");
         let mut gradient_gamma = gradient.get_gradient_gamma();
         let mut gradient_beta = gradient.get_gradient_beta();
-        let total_valid_tokens = gradient.get_total_valid_tokens();
+        let input_batch = self.input_batch.as_ref().expect("no input batch in norm layer");
 
-        gradient_beta = average_vector_by_scalar(&gradient_beta, total_valid_tokens as f64);
-        gradient_gamma = average_vector_by_scalar(&gradient_gamma, total_valid_tokens as f64);
+        let mut batch_size = input_batch.len() as f64;
+
+        if self.batch_size > 0 {
+            batch_size = self.batch_size as f64;
+        }
+
+        gradient_beta = average_vector_by_scalar(&gradient_beta, batch_size);
+        gradient_gamma = average_vector_by_scalar(&gradient_gamma, batch_size);
 
         clip_all_gradients_by_global_norm_2d(&mut vec![], &mut gradient_gamma, self.global_norm, self.max_norm);
         clip_all_gradients_by_global_norm_2d(&mut vec![], &mut gradient_beta, self.global_norm, self.max_norm);
