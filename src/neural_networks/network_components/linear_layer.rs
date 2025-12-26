@@ -32,7 +32,7 @@ pub struct LinearLayer {
     pub max_norm: f64,
     pub previous_gradient: Option<Gradient>,
 
-    pub ist_complex: bool,
+    pub is_complex: bool,
 
     #[serde(skip)]
     pub gradients: Vec<Vec<Complex<f64>>>,
@@ -78,7 +78,7 @@ impl LinearLayer {
             ema: 0.0,
             global_norm: 0.0,
             max_norm: 0.0,
-            ist_complex: true,
+            is_complex,
         }
     }
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {

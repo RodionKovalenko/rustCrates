@@ -34,7 +34,7 @@ pub const EMA_SCALER: f64 = 1.1;
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize, batch_size: usize) {
     let mut total_loss: Complex<f64>;
-    let loss_threshold: f64 = 0.004;
+    let loss_threshold: f64 = 0.01;
     let now = Instant::now();
     let mut previous_last_losses: Vec<f64> = Vec::new();
     let mut total_loss_exp_ma = 0.0;
@@ -895,7 +895,7 @@ pub fn cross_entropy_sum_batch(cross_entropy_loss_batch: &Vec<Vec<Vec<Complex<f6
         for seq in batch {
             for token_loss in seq {
                 if token_loss.is_nan() || token_loss.is_infinite() {
-                    continue;
+                    panic!("Invalid token loss value encountered in cross-entropy loss computation.");
                 }
                 total_loss += *token_loss;
             }
