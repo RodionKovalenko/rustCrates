@@ -57,7 +57,7 @@ impl SelfAttentionLayer {
         Self {
             attention_heads,
             activated_output: vec![],
-            norm_layer: _norm_layer,
+            norm_layer: None,
             discrete_wavelet_layer: None,
             input_batch: None,
             output_batch: None,
