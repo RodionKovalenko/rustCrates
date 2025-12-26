@@ -371,14 +371,28 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                 .iter()
                 .zip(padding_mask_batch.iter())
                 .map(|(targets, mask)| {
-                    let seq_len = mask.len();
                     let target_len = targets.len();
-                    let offset = seq_len.saturating_sub(target_len);
-                    mask.iter().skip(offset).filter(|&&m| m != 0).count()
+                    // Calculate offset from the VALID sequence length, not total padded length
+                    let valid_seq_len = mask.iter().filter(|&&m| m != 0).count();
+                    let offset = valid_seq_len.saturating_sub(target_len);
+                    
+                    // Count only positions where both:
+                    // 1. Target token is not padding (id != 1)
+                    // 2. Corresponding mask position is non-zero
+                    targets.iter()
+                        .enumerate()
+                        .filter(|(i, &target_id)| {
+                            target_id != 1 && // not padding token
+                            mask[offset + i] != 0 // mask is valid at this position
+                        })
+                        .count()
                 })
                 .sum()
         } else if !target_batch_ids.is_empty() {
-            target_batch_ids.iter().map(|t| t.len()).sum()
+            // Fallback: count non-padding tokens in targets
+            target_batch_ids.iter()
+                .map(|targets| targets.iter().filter(|&&id| id != 1).count())
+                .sum()
         } else {
             batch_ids.iter().map(|b| b.len()).sum()
         };

@@ -79,10 +79,19 @@ impl SoftmaxLayer {
                     .iter()
                     .zip(target_token_batch_ids.iter())
                     .map(|(mask, targets)| {
-                        let seq_len = mask.len();
                         let target_len = targets.len();
-                        let offset = seq_len - target_len;
-                        mask.iter().skip(offset).filter(|&&m| m == 1).count()
+                        // Calculate offset from the VALID sequence length, not total padded length
+                        let valid_seq_len = mask.iter().filter(|&&m| m != 0).count();
+                        let offset = valid_seq_len.saturating_sub(target_len);
+                        
+                        // Count only valid target tokens (not padding)
+                        targets.iter()
+                            .enumerate()
+                            .filter(|(i, &target_id)| {
+                                target_id != 1 && // not padding token
+                                mask[offset + i] != 0 // mask is valid at this position
+                            })
+                            .count()
                     })
                     .sum();
 
