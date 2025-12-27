@@ -122,7 +122,7 @@ mod tests {
         let mut input: Vec<String> = Vec::new();
         input.push(input_str2.to_string());
 
-        let (_predicted_softmax_targets, all_predicted_tokens) = predict_token_by_token(&mut transformer, &input);
+        let all_predicted_tokens = predict_token_by_token(&mut transformer, &input);
 
         println!("Input: {:?}", input);
         println!("Predictions token by token: {:?}", all_predicted_tokens);

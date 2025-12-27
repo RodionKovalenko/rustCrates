@@ -1,6 +1,5 @@
 use colored::*;
 use num::Complex;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::time::Instant;
 
 use crate::{
@@ -25,7 +24,7 @@ use crate::{
             tokenizer::{detokenize, tokenize_batch},
         },
     },
-    utils::{data_converter::convert_c_to_f64_3d, sampling_methods::greedy_decoding},
+    utils::data_converter::convert_c_to_f64_3d,
 };
 
 pub const MAX_CONTEXT_WINDOW_SIZE: usize = 50280;
@@ -197,8 +196,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
     }
 }
 
-pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String>) -> (Vec<Vec<Vec<f64>>>, Vec<String>) {
-    let mut all_predictions: Vec<Vec<Vec<f64>>> = Vec::new();
+pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String>) -> Vec<String> {
     let mut current_input_batch: Vec<String> = extend_input_with_bos(input_batch);
     let mut count_tokens_prediction = 0;
 
@@ -223,7 +221,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         Ok(res) => res,
         Err(e) => {
             println!("Error tokenizing batch: {:?}", e);
-            return (all_predictions, current_input_batch);
+            return current_input_batch;
         }
     };
 
@@ -285,38 +283,37 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         let network_output = predict(transformer_network, &layer_input);
         let current_predictions = network_output.get_output_batch_f64();
 
+        // let start = Instant::now();
+
         if current_predictions.is_empty() || current_predictions[0].is_empty() {
             println!("Empty predictions. Breaking.");
             break;
         }
 
-        // Store the last predicted token's softmax probabilities
-        all_predictions.push(current_predictions[current_predictions.len() - 1].clone());
-
+        // Get reference to last prediction (avoid clone)
         let last_pred = current_predictions[0].last().unwrap();
 
-        let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = vec![vec![last_pred.clone()]];
+        // Greedy decoding: just find argmax directly
+        let predicted_token_id = last_pred
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(idx, _)| idx as u32)
+            .unwrap_or(0);
 
-        let sampled_tokens = greedy_decoding(&predicted_softmax_targets);
+        batch_ids[0].push(predicted_token_id);
 
-        if batch_ids.is_empty() || sampled_tokens.is_empty() || sampled_tokens[0].is_empty() {
-            println!("Error: batch_ids or sampled_tokens is empty. Breaking.");
-            break;
-        }
+        // let duration = start.elapsed().as_secs_f64();
+        // println!("\ntime elapsed for token prediction in seconds: {}", duration.to_string().red().bold());
 
-        batch_ids[0].push(sampled_tokens[0][0].clone());
-
-        let predicted_token_batch: Vec<String> = sampled_tokens
-            .par_iter()
-            .map(|token_indices| {
-                detokenize(token_indices, false).unwrap_or_else(|e| {
-                    println!("Error detokenizing: {:?}", e);
-                    "<detokenize_error>".to_string()
-                })
-            })
-            .collect();
-
-        let predicted_token = predicted_token_batch.last().unwrap_or(&"<none>".to_string()).clone();
+        // Detokenize single token directly (no parallel overhead)
+        let predicted_token = match detokenize(&vec![predicted_token_id], false) {
+            Ok(token) => token,
+            Err(e) => {
+                println!("Error detokenizing: {:?}", e);
+                "<detokenize_error>".to_string()
+            }
+        };
 
         if predicted_token == "<eos>" {
             println!("\n\n <eos> predicted. Breaking ....");
@@ -324,7 +321,8 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         }
 
         print!("{}", predicted_token);
-        current_input_batch[0] = format!("{}{}", current_input_batch[0], predicted_token);
+        // Use push_str instead of format! for efficiency
+        current_input_batch[0].push_str(&predicted_token);
 
         count_tokens_prediction += 1;
         if count_tokens_prediction > 50 {
@@ -332,11 +330,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
             break;
         }
 
-        if time_step == 0 {
-            time_step = batch_ids[0].len() - 1;
-        } else {
-            time_step += 1;
-        }
+        time_step = if time_step == 0 { batch_ids[0].len() - 1 } else { time_step + 1 };
     }
 
     let seconds_elapsed_end = now.elapsed();
@@ -344,7 +338,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
     let seconds = duration.as_secs_f64();
     println!("\ntime elapsed in seconds: {:?}", seconds);
 
-    (all_predictions, current_input_batch)
+    current_input_batch
 }
 
 pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput) -> LayerOutput {
@@ -365,7 +359,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
     if !forward_only {
         let target_batch_ids = layer_input.get_target_batch_ids();
         let padding_mask_batch = layer_input.get_padding_mask_batch();
-        
+
         let total_valid_tokens: usize = if !target_batch_ids.is_empty() && !padding_mask_batch.is_empty() {
             target_batch_ids
                 .iter()
@@ -375,11 +369,12 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     // Calculate offset from the VALID sequence length, not total padded length
                     let valid_seq_len = mask.iter().filter(|&&m| m != 0).count();
                     let offset = valid_seq_len.saturating_sub(target_len);
-                    
+
                     // Count only positions where both:
                     // 1. Target token is not padding (id != 1)
                     // 2. Corresponding mask position is non-zero
-                    targets.iter()
+                    targets
+                        .iter()
                         .enumerate()
                         .filter(|(i, &target_id)| {
                             target_id != 1 && // not padding token
@@ -390,9 +385,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                 .sum()
         } else if !target_batch_ids.is_empty() {
             // Fallback: count non-padding tokens in targets
-            target_batch_ids.iter()
-                .map(|targets| targets.iter().filter(|&&id| id != 1).count())
-                .sum()
+            target_batch_ids.iter().map(|targets| targets.iter().filter(|&&id| id != 1).count()).sum()
         } else {
             batch_ids.iter().map(|b| b.len()).sum()
         };
@@ -920,7 +913,7 @@ pub fn predict_by_text(input: &Vec<String>) -> Vec<String> {
     };
 
     print_networt_structure(&mut transformer);
-    let (_predicted_softmax_targets, all_predicted_tokens) = predict_token_by_token(&mut transformer, &input);
+    let all_predicted_tokens = predict_token_by_token(&mut transformer, &input);
 
     println!("prediction is: {:?}", all_predicted_tokens);
 

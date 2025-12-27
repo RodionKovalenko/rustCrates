@@ -1,9 +1,18 @@
 use tokenizers::{AddedToken, Tokenizer};
 use std::{error::Error, path::Path};
+use lazy_static::lazy_static;
 
 // https://huggingface.co/togethercomputer/GPT-NeoXT-Chat-Base-20B/tree/main
 // "vocab_size": 50432 defined in https://huggingface.co/togethercomputer/GPT-NeoXT-Chat-Base-20B/blob/main/config.json
 pub const TOKENIZER_GTP_NEOXT_PATH: &str = "src/neural_networks/tokenizers/gtp_neox_tokenizer.json";
+
+// Cache the tokenizer to avoid loading from disk on every call
+lazy_static! {
+    static ref TOKENIZER: Tokenizer = {
+        let path = Path::new(TOKENIZER_GTP_NEOXT_PATH).to_path_buf();
+        Tokenizer::from_file(path).expect("Failed to load tokenizer")
+    };
+}
 
 
 pub fn tokenize_batch(text_batch: &Vec<String>, with_eos: bool) -> Result<(Vec<Vec<String>>, Vec<Vec<u32>>), Box<dyn Error + Send + Sync>> {
@@ -26,12 +35,8 @@ pub fn tokenize_batch(text_batch: &Vec<String>, with_eos: bool) -> Result<(Vec<V
 }
 
 pub fn tokenize(text: &str) -> Result<(Vec<String>, Vec<u32>), Box<dyn Error + Send + Sync>> {
-    let path = Path::new(TOKENIZER_GTP_NEOXT_PATH).to_path_buf();
-    // Load the pretrained tokenizer from the `tokenizer.json` file
-    let tokenizer = Tokenizer::from_file(path).expect("Fehler bei Tokenizer");
-
-    // Tokenize the text
-    let encoding = tokenizer.encode(text, true)?;
+    // Use the cached tokenizer
+    let encoding = TOKENIZER.encode(text, true)?;
     let encoded_tokens= encoding.get_tokens().to_vec();
     let encoded_ids = encoding.get_ids().to_vec();
 
@@ -39,12 +44,8 @@ pub fn tokenize(text: &str) -> Result<(Vec<String>, Vec<u32>), Box<dyn Error + S
 }
 
 pub fn detokenize(ids: &Vec<u32>, skip_speical_tokens: bool) -> Result<String, Box<dyn Error + Send + Sync>> {
-    let path = Path::new(TOKENIZER_GTP_NEOXT_PATH).to_path_buf();
-    // Load the pretrained tokenizer from the `tokenizer.json` file
-    let tokenizer = Tokenizer::from_file(path).expect("Fehler bei Tokenizer");
-
-    // Tokenize the text
-    let decoded_text = tokenizer.decode(ids, skip_speical_tokens)?;
+    // Use the cached tokenizer
+    let decoded_text = TOKENIZER.decode(ids, skip_speical_tokens)?;
     Ok(decoded_text)
 }
 
