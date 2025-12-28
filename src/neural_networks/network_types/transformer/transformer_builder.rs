@@ -1,10 +1,11 @@
 use crate::neural_networks::{
     network_components::{
-        complex_to_linear_layer::ComplexToLinearLayer, embedding_layer::EmbeddingLayer, layer::LayerEnum, linear_layer::LinearLayer, norm_layer::NormalNormLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer
+        complex_to_linear_layer::ComplexToLinearLayer, embedding_layer::EmbeddingLayer, layer::LayerEnum, linear_layer::LinearLayer, norm_layer::NormalNormLayer,
+        positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer,
     },
     network_types::{
         feedforward_layer::FeedForwardLayer,
-        neural_network_generic::{NeuralNetwork, OperationMode, create},
+        neural_network_generic::{create, NeuralNetwork, OperationMode},
         transformer::{self_attention_layer::SelfAttentionLayer, sparse_self_attention_layer::SparseSelfAttentionLayer},
         wavelet_network::DECOMPOSITION_LEVELS,
     },
@@ -63,11 +64,11 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
         layers.push(LayerEnum::FeedForward(Box::new(ffn_layer)));
     }
     // Transformer block end
-    let compressed_hidden = 32;
+    let compressed_hidden = 8;
     // let linear_layer = LinearLayer::new(learning_rate, rows, compressed_hidden);
     // layers.push(LayerEnum::Linear(Box::new(linear_layer)));
 
-    let _ctl_layer = ComplexToLinearLayer::new( rows, compressed_hidden, learning_rate);
+    let _ctl_layer = ComplexToLinearLayer::new(rows, compressed_hidden, learning_rate);
     layers.push(LayerEnum::ComplexToLinear(Box::new(_ctl_layer)));
 
     let mut _linear_layer = LinearLayer::new(learning_rate, compressed_hidden, vocab_size, false);

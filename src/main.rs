@@ -32,6 +32,15 @@ struct AppState {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Test begins");
 
+    #[cfg(feature = "cuda")]
+    {
+        let _ctx = cust::quick_init().expect("CUDA init failed");
+        println!("CUDA initialized successfully 🚀");
+    }
+
+    #[cfg(not(feature = "cuda"))]
+    println!("Running in CPU mode");
+
     let args: Vec<String> = env::args().collect();
     println!("Args: {:?}", args);
 

@@ -15,6 +15,15 @@ use crate::neural_networks::network_types::transformer::transformer_updater::VER
 use crate::neural_networks::utils::adam_w::MAX_ELEMENT;
 use crate::neural_networks::utils::adam_w::MAX_NORM;
 
+#[cfg(feature = "cuda")]
+use super::gpu_matmul::GpuMatmul;
+use once_cell::sync::Lazy;
+
+#[cfg(feature = "cuda")]
+static GPU_MATMUL: Lazy<Mutex<GpuMatmul>> = Lazy::new(|| {
+    Mutex::new(GpuMatmul::new(2048, 2048, 2048)) // Adjust max dimensions as needed
+});
+
 extern "C" {
     fn zgemm_(
         transa: *const c_char,
@@ -32,7 +41,53 @@ extern "C" {
         ldc: *const i64,
     );
 }
+
 pub fn multiply_complex(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<f64>>]) -> Vec<Vec<Complex<f64>>> {
+    let m = matrix_a.len();
+    let k = matrix_a[0].len();
+    let n = matrix_b[0].len();
+
+    // Try GPU path first (if cuda feature enabled and dimensions are reasonable)
+    #[cfg(feature = "cuda")]
+    {
+        if m <= 2048 && k <= 2048 && n <= 2048 {
+            if let Ok(result) = multiply_complex_gpu(matrix_a, matrix_b, m, k, n) {
+                return result;
+            }
+        }
+    }
+
+    // Fallback to CPU BLAS
+    multiply_complex_cpu(matrix_a, matrix_b)
+}
+
+#[cfg(feature = "cuda")]
+fn multiply_complex_gpu(
+    matrix_a: &[Vec<Complex<f64>>], 
+    matrix_b: &[Vec<Complex<f64>>],
+    m: usize,
+    k: usize,
+    n: usize,
+) -> Result<Vec<Vec<Complex<f64>>>, Box<dyn std::error::Error>> {
+    let mut gpu = GPU_MATMUL.lock().unwrap();
+    
+    // Flatten 2D -> 1D (row-major)
+    let a_flat: Vec<Complex<f64>> = matrix_a.iter().flatten().copied().collect();
+    let b_flat: Vec<Complex<f64>> = matrix_b.iter().flatten().copied().collect();
+    
+    // GPU multiply
+    let c_flat = gpu.multiply_complex(&a_flat, &b_flat, m, k, n);
+    
+    // Reshape 1D -> 2D
+    let mut result = Vec::with_capacity(m);
+    for i in 0..m {
+        result.push(c_flat[i * n..(i + 1) * n].to_vec());
+    }
+    
+    Ok(result)
+}
+
+fn multiply_complex_cpu(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<f64>>]) -> Vec<Vec<Complex<f64>>> {
     let m = matrix_a.len() as i64;
     let k = matrix_a[0].len() as i64;
     let n = matrix_b[0].len() as i64;
