@@ -10,10 +10,13 @@ or
 build and run in one go:
 cargo run --release
 
+// build with cuda
+cargo build --release --features cuda
+
 after build: 
 run binary directly
 ./target/release/your_binary_name
 
-
 run specific test under release version: 
 cargo test --release test_train_transformer -- --nocapture --ignored
+

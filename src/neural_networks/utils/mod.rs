@@ -13,3 +13,6 @@ pub mod dataset_loader;
 pub mod array_splitting;
 pub mod matrix_approximation;
 pub mod low_rank_approx;
+
+#[cfg(feature = "cuda")]
+pub mod gpu_matmul;

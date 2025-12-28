@@ -265,3 +265,9 @@ dL/dx = dL/dy * dy/df(z) * df(z)/dN(x) * dN(x)/dx + dL/dy * dy/dx
 simplified: 
 dL/dx = dL/dy * (dy/df(z) * df(z)/dN(x) * dN(x)/dx +  dy/dx)
 
+
+
+Efficiency for linear projection layer with softmax:
+1. Short term: Implement quantization (f16) - easiest, immediate 2-3x speedup
+2. Medium term: Sampled softmax for training - major speedup with minimal accuracy loss
+3. Long term: Adaptive softmax - best for production inference
