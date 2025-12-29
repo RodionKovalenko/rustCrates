@@ -72,7 +72,7 @@ name = "neural_networks"
 [features]
 default = ["cpu"]
 cpu = []
-cuda = ["cust", "cudarc"]
+cuda = ["cust", "cudarc", "cudarc/cuda-12090", "cudarc/cublas"]
 cublas = []
 
 [profile.release]
