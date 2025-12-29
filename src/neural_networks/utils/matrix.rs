@@ -58,10 +58,12 @@ pub fn multiply_complex(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<
     #[cfg(feature = "cuda")]
     {
         // Attempt GPU acceleration for any size
-        if let Ok(result) = multiply_complex_gpu(matrix_a, matrix_b, m, k, n) {
-            return result;
-        } else {
-            println!("Falling back to CPU complex matmul due to GPU error.");
+        if n > 50280 {
+            if let Ok(result) = multiply_complex_gpu(matrix_a, matrix_b, m, k, n) {
+                return result;
+            } else {
+                println!("Falling back to CPU complex matmul due to GPU error.");
+            }
         }
     }
 
@@ -70,13 +72,7 @@ pub fn multiply_complex(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<
 }
 
 #[cfg(feature = "cuda")]
-fn multiply_complex_gpu(
-    matrix_a: &[Vec<Complex<f64>>], 
-    matrix_b: &[Vec<Complex<f64>>],
-    m: usize,
-    k: usize,
-    n: usize,
-) -> Result<Vec<Vec<Complex<f64>>>, Box<dyn std::error::Error>> {
+fn multiply_complex_gpu(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<f64>>], m: usize, k: usize, n: usize) -> Result<Vec<Vec<Complex<f64>>>, Box<dyn std::error::Error>> {
     // Handle poisoned mutex gracefully
     let mut gpu_guard = match GPU_MATMUL.lock() {
         Ok(guard) => guard,
@@ -85,26 +81,26 @@ fn multiply_complex_gpu(
             poisoned.into_inner()
         }
     };
-    
+
     // Check if GPU is available
     let gpu = match gpu_guard.as_mut() {
         Some(g) => g,
-        None => return Err("GPU not available".into())
+        None => return Err("GPU not available".into()),
     };
-    
+
     // Flatten 2D -> 1D (row-major)
     let a_flat: Vec<Complex<f64>> = matrix_a.iter().flatten().copied().collect();
     let b_flat: Vec<Complex<f64>> = matrix_b.iter().flatten().copied().collect();
-    
+
     // GPU multiply
     let c_flat = gpu.multiply_complex(&a_flat, &b_flat, m, k, n)?;
-    
+
     // Reshape 1D -> 2D
     let mut result = Vec::with_capacity(m);
     for i in 0..m {
         result.push(c_flat[i * n..(i + 1) * n].to_vec());
     }
-    
+
     Ok(result)
 }
 
@@ -112,8 +108,6 @@ fn multiply_complex_cpu(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<
     let m = matrix_a.len() as i64;
     let k = matrix_a[0].len() as i64;
     let n = matrix_b[0].len() as i64;
-
-    println!("CPU complex matmul: {}x{} * {}x{}", m, k, k, n);
 
     assert!(m > 0 && n > 0 && k > 0, "Matrices must not be empty");
     assert!(matrix_b.len() as i64 == k, "A's columns must match B's rows");
@@ -1095,11 +1089,7 @@ pub fn normalize_gradients(gradients: &mut Vec<Vec<Complex<f64>>>) {
     }
 
     // Step 2: compute global L2 norm
-    let global_norm: f64 = gradients.iter()
-        .flat_map(|row| row.iter())
-        .map(|g| g.norm_sqr())
-        .sum::<f64>()
-        .sqrt();
+    let global_norm: f64 = gradients.iter().flat_map(|row| row.iter()).map(|g| g.norm_sqr()).sum::<f64>().sqrt();
 
     // Step 3: scale proportionally if global norm exceeds MAX_NORM
     if global_norm > MAX_NORM && global_norm > 0.0 {
@@ -1122,10 +1112,7 @@ pub fn normalize_bias(bias: &mut Vec<Complex<f64>>) {
     }
 
     // Step 2: compute global L2 norm
-    let global_norm: f64 = bias.iter()
-        .map(|g| g.norm_sqr())
-        .sum::<f64>()
-        .sqrt();
+    let global_norm: f64 = bias.iter().map(|g| g.norm_sqr()).sum::<f64>().sqrt();
 
     // Step 3: scale proportionally
     if global_norm > MAX_NORM && global_norm > 0.0 {
