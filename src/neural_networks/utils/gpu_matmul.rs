@@ -75,7 +75,6 @@ impl GpuMatmul {
 
             // 4 GEMMs
             let ac = self.multiply_real(&ar, &br, m, k, n)?;
-
             // Combine
             let mut out = vec![Complex::new(0.0, 0.0); m * n];
             for i in 0..m * n {

@@ -1,11 +1,11 @@
-use core::{fmt::Debug, panic};
+use core::fmt::Debug;
 use num::Complex;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
     network_components::{layer::LayerEnum, norm_layer::NormalNormLayer},
-    network_types::wavelet_discrete_layer::DiscreteWaveletLayer,
+    network_types::{transformer::transformer_updater::VERBOSE, wavelet_discrete_layer::DiscreteWaveletLayer},
     utils::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         matrix::{add_matrix_2d_c, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex},
@@ -13,11 +13,7 @@ use crate::neural_networks::{
     },
 };
 
-use super::{
-    gradient_struct::{Gradient, GradientBatch},
-    layer_input_struct::LayerInput,
-    layer_output_struct::LayerOutput,
-};
+use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinearLayer {
@@ -110,6 +106,7 @@ impl LinearLayer {
             }
         }
 
+        let start = std::time::Instant::now();
         output_batch = output_batch
             .par_iter() // Use a parallel iterator to process inputs in parallel
             .map(|input| {
@@ -121,6 +118,9 @@ impl LinearLayer {
             })
             .collect();
 
+        if VERBOSE && !self.is_complex {
+            println!("Linear layer complex matmul time for batch size {}: {}", self.batch_size, start.elapsed().as_secs_f64());
+        }
         // println!("Output batch size in linear layer after dwt inverse:  {} {} {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
 
         if self.norm_layer.is_some() {
@@ -137,52 +137,24 @@ impl LinearLayer {
         let input_batch = self.input_batch.as_ref().expect("Input batch is missing in linear layer");
         let mut gradient = Gradient::new_default();
 
-        let mut _previous_input_gradient = Vec::new();
+        let previous_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
         let total_valid_tokens = previous_gradient.get_total_valid_tokens();
-
-        let previous_gradient_batch: GradientBatch = if !previous_gradient.get_gradient_input_batch().is_empty() {
-            _previous_input_gradient = previous_gradient.get_gradient_input_batch();
-            GradientBatch::Complex(previous_gradient.get_gradient_input_batch())
-        } else {
-            GradientBatch::Real(previous_gradient.get_gradient_input_batch_softmax())
-        };
 
         // Initialize gradients for weights and biases
         let mut weight_gradients: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()]; input_batch.len()];
         let mut bias_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.bias.len()]; input_batch.len()];
         let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
 
-        match previous_gradient_batch {
-            GradientBatch::Complex(previous_gradient_input_batch) => {
-                let previous_gradient_input_batch_clone = previous_gradient_input_batch.clone();
-
-                for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_input_batch_clone).enumerate() {
-                    weight_gradients[batch_ind] = multiply_complex(&conjugate_transpose(&input_sample), &previous_gradient);
-                    //Accumulate gradients for biases
-                    for grad_row in previous_gradient.iter() {
-                        for (k, grad_val) in grad_row.iter().enumerate() {
-                            bias_gradients[batch_ind][k] += grad_val;
-                        }
-                    }
-
-                    gradient_input_batch[batch_ind] = multiply_complex(&previous_gradient, &conjugate_transpose(&self.weights));
+        for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_input_batch).enumerate() {
+            weight_gradients[batch_ind] = multiply_complex(&conjugate_transpose(&input_sample), &previous_gradient);
+            //Accumulate gradients for biases
+            for grad_row in previous_gradient.iter() {
+                for (k, grad_val) in grad_row.iter().enumerate() {
+                    bias_gradients[batch_ind][k] += grad_val;
                 }
             }
-            GradientBatch::Real(_previous_gradient_input_batch) => {
-                panic!("Backward with real gradients is not supported in LinearLayer");
-                // // For each input sample in the batch
-                // for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_input_batch).enumerate() {
-                //     weight_gradients[batch_ind] = multiply_complex_with_f64(&transpose(input_sample), &previous_gradient);
-                //     //Accumulate gradients for biases
-                //     for grad_row in previous_gradient.iter() {
-                //         for (k, grad_val) in grad_row.iter().enumerate() {
-                //             bias_gradients[batch_ind][k] += grad_val;
-                //         }
-                //     }
 
-                //     gradient_input_batch[batch_ind] = multiply_f64_complex(&previous_gradient, &transpose(&self.weights));
-                // }
-            }
+            gradient_input_batch[batch_ind] = multiply_complex(&previous_gradient, &conjugate_transpose(&self.weights));
         }
 
         gradient.set_gradient_input_batch(gradient_input_batch.clone());
@@ -205,7 +177,7 @@ impl LinearLayer {
         }
 
         if self.norm_layer.is_some() {
-            gradient_input_batch = add_matrix_3d(&gradient_input_batch, &_previous_input_gradient);
+            gradient_input_batch = add_matrix_3d(&gradient_input_batch, &previous_gradient.get_gradient_input_batch());
         }
 
         if self.gradient.is_some() {
