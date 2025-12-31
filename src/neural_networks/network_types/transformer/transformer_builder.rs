@@ -64,7 +64,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
         layers.push(LayerEnum::FeedForward(Box::new(ffn_layer)));
     }
     // Transformer block end
-    let compressed_hidden = 8;
+    let compressed_hidden = 16;
     // let linear_layer = LinearLayer::new(learning_rate, rows, compressed_hidden);
     // layers.push(LayerEnum::Linear(Box::new(linear_layer)));
 

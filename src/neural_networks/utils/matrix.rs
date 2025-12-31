@@ -58,13 +58,13 @@ pub fn multiply_complex(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<
     #[cfg(feature = "cuda")]
     {
         // Attempt GPU acceleration for any size
-        if n > 50280 {
-            if let Ok(result) = multiply_complex_gpu(matrix_a, matrix_b, m, k, n) {
-                return result;
-            } else {
-                println!("Falling back to CPU complex matmul due to GPU error.");
-            }
+        // if n >= 50280 {
+        if let Ok(result) = multiply_complex_gpu(matrix_a, matrix_b, m, k, n) {
+            return result;
+        } else {
+            println!("Falling back to CPU complex matmul due to GPU error.");
         }
+        // }
     }
 
     // Fallback to CPU BLAS
