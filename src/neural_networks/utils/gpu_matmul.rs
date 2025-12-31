@@ -98,17 +98,29 @@ impl GpuMatmul {
                 bi[i] = b[i].im;
             }
 
-            // 4 GEMMs
-            let ac = self.multiply_real(&ar, &br, m, k, n)?;
-            let bd = self.multiply_real(&ai, &bi, m, k, n)?;
-            let ad = self.multiply_real(&ar, &bi, m, k, n)?;
-            let bc = self.multiply_real(&ai, &br, m, k, n)?;
+            // Gauss trick: 3 GEMMs instead of 4
+            // k1 = ar * br, k2 = ai * bi, k3 = (ar+ai) * (br+bi)
+            // real = k1 - k2, imag = k3 - k1 - k2
+            let k1 = self.multiply_real(&ar, &br, m, k, n)?;
+            let k2 = self.multiply_real(&ai, &bi, m, k, n)?;
+            
+            // Compute ar+ai and br+bi
+            let mut ar_plus_ai = vec![0.0; m * k];
+            let mut br_plus_bi = vec![0.0; k * n];
+            for i in 0..m * k {
+                ar_plus_ai[i] = ar[i] + ai[i];
+            }
+            for i in 0..k * n {
+                br_plus_bi[i] = br[i] + bi[i];
+            }
+            
+            let k3 = self.multiply_real(&ar_plus_ai, &br_plus_bi, m, k, n)?;
 
             // Combine
             let mut out = vec![Complex::new(0.0, 0.0); m * n];
             for i in 0..m * n {
-                out[i].re = ac[i] - bd[i];
-                out[i].im = ad[i] + bc[i];
+                out[i].re = k1[i] - k2[i];
+                out[i].im = k3[i] - k1[i] - k2[i];
             }
             Ok(out)
         }
