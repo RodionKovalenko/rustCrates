@@ -243,8 +243,8 @@ mod test_linear_layer {
     fn test_multi_linear_softmax_backward() {
         // Define some small batch size and input dimensions for simplicity
         let batch_size = 3;
-        let input_dim = 64;
-        let output_dim = 224;
+        let input_dim = 12;
+        let output_dim = 20;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
         let epsilon = 1e-8;
@@ -259,7 +259,7 @@ mod test_linear_layer {
         linear_layer.bias = combined_bias.clone();
 
         // Define a small input batch, [2][6][4]
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, 120, input_dim);
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, 12, input_dim);
         let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, 5, (output_dim - 1) as u32);
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];
 

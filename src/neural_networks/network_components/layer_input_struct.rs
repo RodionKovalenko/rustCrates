@@ -2,7 +2,7 @@ use core::fmt::Debug;
 use num::Complex;
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::network_components::adaptive_pooling::adaptive_avg_pool1d_layer::CompressionMetadata;
+use crate::neural_networks::{network_components::adaptive_pooling::adaptive_avg_pool1d_layer::CompressionMetadata, network_types::transformer::transformer_network::TOP_K_SIZE};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LayerInput {
@@ -22,6 +22,8 @@ pub struct LayerInput {
     pooling_metadata: Option<CompressionMetadata>,
     calculate_k_v_cache: bool,
     total_valid_tokens: usize,
+    top_k_size: Option<usize>,
+    output_indices: Option<Vec<Vec<Vec<usize>>>>,
 }
 
 impl LayerInput {
@@ -43,6 +45,8 @@ impl LayerInput {
             pooling_metadata: None,
             calculate_k_v_cache: false,
             total_valid_tokens: 1,
+            top_k_size: None,
+            output_indices: None,
         }
     }
     pub fn set_input_batch(&mut self, input_batch: Vec<Vec<Vec<Complex<f64>>>>) {
@@ -87,6 +91,21 @@ impl LayerInput {
 
     pub fn set_total_valid_tokens(&mut self, total_valid_tokens: usize) {
         self.total_valid_tokens = total_valid_tokens;
+    }
+
+    pub fn set_top_k_size(&mut self, top_k_size: usize) {
+        self.top_k_size = Some(top_k_size);
+    }
+    pub fn get_top_k_size(&self) -> usize {
+        self.top_k_size.unwrap_or(TOP_K_SIZE)
+    }
+
+    pub fn set_output_indices(&mut self, output_indices: Vec<Vec<Vec<usize>>>) {
+        self.output_indices = Some(output_indices);
+    }
+
+    pub fn get_output_indices(&self) -> Vec<Vec<Vec<usize>>> {
+        self.output_indices.clone().unwrap_or_else(|| vec![])
     }
 
     pub fn get_padding_mask_batch(&self) -> Vec<Vec<u32>> {

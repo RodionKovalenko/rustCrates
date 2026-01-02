@@ -55,7 +55,6 @@ impl SoftmaxLayer {
         let seq_len = input_batch[0].len();
 
         let padding_mask_batch = padding_mask_option.unwrap_or_else(|| vec![vec![1; seq_len]; batch_size]);
-
         let target_token_batch_ids = target_token_ids.unwrap_or(Vec::new());
 
         let input_batch_linear = if let Some(complex_to_linear_layer) = &mut self.complex_to_linear_layer {
@@ -83,9 +82,10 @@ impl SoftmaxLayer {
                         // Calculate offset from the VALID sequence length, not total padded length
                         let valid_seq_len = mask.iter().filter(|&&m| m != 0).count();
                         let offset = valid_seq_len.saturating_sub(target_len);
-                        
+
                         // Count only valid target tokens (not padding)
-                        targets.iter()
+                        targets
+                            .iter()
                             .enumerate()
                             .filter(|(i, &target_id)| {
                                 target_id != 1 && // not padding token

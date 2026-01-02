@@ -42,6 +42,8 @@ pub struct LinearLayer {
     pub time_step: usize,
     #[serde(skip)]
     pub batch_size: usize,
+    #[serde(skip)]
+    pub output_indices: Option<Vec<Vec<Vec<usize>>>>,
 }
 
 impl LinearLayer {
@@ -75,6 +77,7 @@ impl LinearLayer {
             global_norm: 0.0,
             max_norm: 0.0,
             is_complex,
+            output_indices: None,
         }
     }
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
@@ -83,6 +86,7 @@ impl LinearLayer {
         self.time_step = input.get_time_step();
         self.batch_size = input.get_batch_size();
         self.input_batch = Some(input_batch.clone());
+        let mut output_indices: Vec<Vec<Vec<usize>>> = vec![];
 
         let mut output_batch: Vec<Vec<Vec<Complex<f64>>>> = input_batch.clone();
         let mut layer_input = input.clone();
@@ -107,16 +111,21 @@ impl LinearLayer {
         }
 
         let start = std::time::Instant::now();
-        output_batch = output_batch
-            .par_iter() // Use a parallel iterator to process inputs in parallel
-            .map(|input| {
-                let mut output = multiply_complex(input, &self.weights);
 
-                // Add the bias vector
-                output = add_vector(&output, &self.bias);
-                output
-            })
-            .collect();
+        if self.is_complex {
+            output_batch = output_batch
+                .par_iter() // Use a parallel iterator to process inputs in parallel
+                .map(|input| {
+                    let mut output = multiply_complex(input, &self.weights);
+
+                    // Add the bias vector
+                    add_vector(&mut output, &self.bias);
+                    output
+                })
+                .collect();
+        } else {
+            (output_batch, output_indices) = self.mutliply_hightest_k_per_row(&input_batch, layer_input.get_top_k_size(), layer_input.get_target_batch_ids());
+        }
 
         if VERBOSE && !self.is_complex {
             println!("Linear layer complex matmul time for batch size {}: {}", self.batch_size, start.elapsed().as_secs_f64());
@@ -129,6 +138,9 @@ impl LinearLayer {
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(output_batch);
+        layer_output.set_output_indices(output_indices);
+
+        self.output_indices = Some(layer_output.get_output_indices());
 
         layer_output
     }
@@ -145,16 +157,58 @@ impl LinearLayer {
         let mut bias_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.bias.len()]; input_batch.len()];
         let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
 
-        for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_input_batch).enumerate() {
-            weight_gradients[batch_ind] = multiply_complex(&conjugate_transpose(&input_sample), &previous_gradient);
-            //Accumulate gradients for biases
-            for grad_row in previous_gradient.iter() {
-                for (k, grad_val) in grad_row.iter().enumerate() {
-                    bias_gradients[batch_ind][k] += grad_val;
+        if self.is_complex {
+            for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_input_batch).enumerate() {
+                weight_gradients[batch_ind] = multiply_complex(&conjugate_transpose(&input_sample), &previous_gradient);
+                //Accumulate gradients for biases
+                for grad_row in previous_gradient.iter() {
+                    for (k, grad_val) in grad_row.iter().enumerate() {
+                        bias_gradients[batch_ind][k] += grad_val;
+                    }
                 }
-            }
 
-            gradient_input_batch[batch_ind] = multiply_complex(&previous_gradient, &conjugate_transpose(&self.weights));
+                gradient_input_batch[batch_ind] = multiply_complex(&previous_gradient, &conjugate_transpose(&self.weights));
+            }
+        } else {
+            // rows are sparse with only top k values
+            let output_indices_batch = self.output_indices.as_ref().expect("Output indices missing in linear layer backward pass");
+
+            for batch_idx in 0..input_batch.len() {
+                let input_sample = &input_batch[batch_idx];
+                let sparse_grad = &previous_gradient_input_batch[batch_idx];
+                let indices = &output_indices_batch[batch_idx];
+
+                // Reconstruct full gradient from sparse gradients using indices
+                let num_output_cols = self.weights[0].len();
+                let mut full_gradient: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_output_cols]; input_sample.len()];
+
+                for row_idx in 0..sparse_grad.len().min(indices.len()) {
+                    let grad_row = &sparse_grad[row_idx];
+                    let idx_row = &indices[row_idx];
+
+                    for (grad_idx, &grad_val) in grad_row.iter().enumerate() {
+                        if grad_idx < idx_row.len() {
+                            let col_idx = idx_row[grad_idx];
+                            if col_idx < num_output_cols {
+                                full_gradient[row_idx][col_idx] = grad_val;
+                            }
+                        }
+                    }
+                }
+
+                // Compute weight gradients: input^H * gradient
+                weight_gradients[batch_idx] = multiply_complex(&conjugate_transpose(&input_sample), &full_gradient);
+
+                // Accumulate gradients for biases
+                for grad_row in full_gradient.iter() {
+                    for (k, grad_val) in grad_row.iter().enumerate() {
+                        bias_gradients[batch_idx][k] += grad_val;
+                    }
+                }
+
+                // Compute input gradients: gradient * weights^H
+                gradient_input_batch[batch_idx] = multiply_complex(&full_gradient, &conjugate_transpose(&self.weights));
+            }
         }
 
         gradient.set_gradient_input_batch(gradient_input_batch.clone());
@@ -195,6 +249,104 @@ impl LinearLayer {
         self.gradient = Some(gradient.clone());
 
         gradient
+    }
+
+    // multiply normally, select highest k per row, return k highest values per row and original indices
+    pub fn mutliply_hightest_k_per_row(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>, k: usize, target_batch: Vec<Vec<u32>>) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<Vec<usize>>>) {
+        let num_output_cols = self.weights[0].len();
+
+        // Parallelize batch processing
+        let results: Vec<_> = input_batch
+            .par_iter()
+            .enumerate()
+            .map(|(batch_idx, input_sample)| {
+                let mut sample_values: Vec<Vec<Complex<f64>>> = vec![];
+                let mut sample_indices: Vec<Vec<usize>> = vec![];
+
+                for (row_idx, input_row) in input_sample.iter().enumerate() {
+                    // Get target token id for this row if it exists
+                    let target_id = if batch_idx < target_batch.len() && row_idx < target_batch[batch_idx].len() {
+                        Some(target_batch[batch_idx][row_idx] as usize)
+                    } else {
+                        None
+                    };
+
+                    // Track top k values: (real_value, value, index)
+                    let mut top_k: Vec<(f64, Complex<f64>, usize)> = Vec::with_capacity(k + 1);
+                    let mut min_value = f64::NEG_INFINITY;
+                    let mut target_value: Option<(f64, Complex<f64>, usize)> = None;
+
+                    // Compute each output element on the fly
+                    for col_idx in 0..num_output_cols {
+                        // Compute dot product: input_row · weights[:, col_idx]
+                        let mut sum = Complex::new(0.0, 0.0);
+                        for (i, &input_val) in input_row.iter().enumerate() {
+                            sum += input_val * self.weights[i][col_idx];
+                        }
+                        // Add bias
+                        sum += self.bias[col_idx];
+
+                        let real_value = sum.re;
+
+                        // Check if this is the target token
+                        if let Some(target_idx) = target_id {
+                            if col_idx == target_idx {
+                                target_value = Some((real_value, sum, col_idx));
+                                continue;
+                            }
+                        }
+
+                        // Maintain top k elements without sorting until the end
+                        if top_k.len() < k {
+                            top_k.push((real_value, sum, col_idx));
+                            if real_value < min_value || top_k.len() == 1 {
+                                min_value = real_value;
+                            }
+                        } else if real_value > min_value {
+                            // Find and replace the minimum element
+                            if let Some(min_pos) = top_k.iter().position(|(v, _, _)| *v == min_value) {
+                                top_k[min_pos] = (real_value, sum, col_idx);
+                                // Update min_value
+                                min_value = top_k.iter().map(|(v, _, _)| *v).fold(f64::INFINITY, f64::min);
+                            }
+                        }
+                    }
+
+                    // Include target token if it exists and isn't already in top_k
+                    if let Some(target) = target_value {
+                        let target_in_topk = top_k.iter().any(|(_, _, idx)| *idx == target.2);
+                        if !target_in_topk {
+                            if top_k.len() < k {
+                                top_k.push(target);
+                            } else if !top_k.is_empty() {
+                                // Replace the smallest element with target
+                                if let Some(min_pos) = top_k.iter().position(|(v, _, _)| *v == min_value) {
+                                    top_k[min_pos] = target;
+                                }
+                            }
+                        } else if top_k.is_empty() {
+                            top_k.push(target);
+                        }
+                    }
+
+                    // Extract values and indices (no need to sort for correctness)
+                    let values: Vec<Complex<f64>> = top_k.iter().map(|(_, val, _)| *val).collect();
+                    let indices: Vec<usize> = top_k.iter().map(|(_, _, idx)| *idx).collect();
+
+                   // println!("Batch {}, Row {}: Top k indices: {}", batch_idx, row_idx, &indices.len());
+
+                    sample_values.push(values);
+                    sample_indices.push(indices);
+                }
+
+                (sample_values, sample_indices)
+            })
+            .collect();
+
+        // Unzip results
+        let (values_batch, indices_batch): (Vec<_>, Vec<_>) = results.into_iter().unzip();
+
+        (values_batch, indices_batch)
     }
 
     pub fn update_parameters(&mut self) {
