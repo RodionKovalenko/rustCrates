@@ -500,6 +500,7 @@ pub fn softmax_backward_real_with_gradient(
     targets: &Vec<u32>,
     padding_mask: &Vec<u32>,
     total_valid_tokens: usize,
+    logit_indices: &Vec<Vec<usize>>,
 ) -> (Vec<Vec<Complex<f64>>>, Vec<Vec<Complex<f64>>>) {
     let seq_len = logits.len();
     let target_len = targets.len();
@@ -524,7 +525,7 @@ pub fn softmax_backward_real_with_gradient(
             let target_idx = t - offset;
             let target_token = targets[target_idx] as usize;
 
-            let (loss_real, grad_complex) = softmax_ce_grad_complex(row, target_token);
+            let (loss_real, grad_complex) = softmax_ce_grad_complex(row, target_token, &logit_indices[t]);
 
             let loss_complex = vec![Complex::new(loss_real * scale, 0.0)];
 
@@ -536,9 +537,9 @@ pub fn softmax_backward_real_with_gradient(
 }
 
 /// COMPLEX-SAFE softmax + CE + gradient using Wirtinger calculus
-pub fn softmax_ce_grad_complex(logits: &Vec<Complex<f64>>, target: usize) -> (f64, Vec<Complex<f64>>) {
+pub fn softmax_ce_grad_complex(logits: &Vec<Complex<f64>>, target: usize, logit_indices: &Vec<usize>) -> (f64, Vec<Complex<f64>>) {
     let n = logits.len();
-    assert!(target < n);
+    // assert!(target < n);
 
     let max_norm: f64 = logits.iter().map(|z| z.re).fold(f64::NEG_INFINITY, f64::max);
 
@@ -551,16 +552,20 @@ pub fn softmax_ce_grad_complex(logits: &Vec<Complex<f64>>, target: usize) -> (f6
         s.push(scaled);
     }
 
-    let p_k = s[target] / sum_s;
+    // println!("target index: {}, logit_indices: {:?}", target, logit_indices);
+
+    let target_ind = logit_indices.iter().position(|&x| x == target).unwrap_or(target);
+
+    let p_k = s[target_ind] / sum_s;
 
     let pk_norm: f64 = if p_k > 0.0 { p_k } else { 1e-300 };
     let loss: f64 = -pk_norm.ln();
 
     let mut grad: Vec<Complex<f64>> = Vec::with_capacity(n);
-    for j in 0..n {
-        let p_j: f64 = s[j] / sum_s;
+    for (sparse_ind, real_ind) in logit_indices.iter().enumerate() {
+        let p_j: f64 = s[sparse_ind] / sum_s;
         let mut g: f64 = p_j;
-        if j == target {
+        if *real_ind == target {
             g -= 1.0;
         }
         grad.push(Complex::new(g, 0.0));

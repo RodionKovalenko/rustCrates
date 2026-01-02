@@ -63,6 +63,8 @@ impl SoftmaxLayer {
             input_batch.clone()
         };
 
+        let output_indices_batch = layer_input.get_output_indices();
+
         let (layer_output_batch, losses, mut input_gradient_batch) = match self.operation_mode {
             OperationMode::PRODUCTION => {
                 let output: Vec<Vec<Vec<f64>>> = input_batch
@@ -98,7 +100,13 @@ impl SoftmaxLayer {
                 let output_gradients = (0..batch_size)
                     .into_par_iter()
                     .map(|batch_ind| {
-                        let outputs = softmax_backward_real_with_gradient(&input_batch_linear[batch_ind], &target_token_batch_ids[batch_ind], &padding_mask_batch[batch_ind], total_valid_tokens);
+                        let output_indices = if !output_indices_batch.is_empty() {
+                            &output_indices_batch[batch_ind]
+                        } else {
+                            &vec![]
+                        };
+
+                        let outputs = softmax_backward_real_with_gradient(&input_batch_linear[batch_ind], &target_token_batch_ids[batch_ind], &padding_mask_batch[batch_ind], total_valid_tokens, &output_indices);
                         outputs
                     })
                     .unzip();
