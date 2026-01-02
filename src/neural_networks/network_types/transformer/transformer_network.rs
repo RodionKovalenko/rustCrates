@@ -30,6 +30,7 @@ use crate::{
 pub const MAX_CONTEXT_WINDOW_SIZE: usize = 50280;
 pub const CONTEXT_OVERLAPPING: usize = 16;
 pub const EMA_SCALER: f64 = 1.1;
+pub const TOP_K_SIZE: usize = 50;
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize, batch_size: usize) {
     let mut total_loss: Complex<f64>;
@@ -56,7 +57,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
             let batch_ids: Vec<Vec<u32>> = concat_batches(&input_ids, &target_ids);
             // shift one position to the right in the array
-            let mut target_ids: Vec<Vec<u32>> = batch_ids
+            let mut target_ids: Vec<Vec<u32>> = target_ids
                 .iter()
                 .map(|seq| {
                     if seq.is_empty() {
@@ -82,8 +83,10 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                 })
                 .collect();
 
-            // print!("\n batch ids: {:?}\n", &batch_ids);
-            // print!("\n target ids: {:?}\n", &target_ids);
+            if VERBOSE {
+                print!("\n batch ids: {:?}\n", &batch_ids);
+                print!("\n target ids: {:?}\n", &target_ids);
+            }
 
             let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap();
 
@@ -100,6 +103,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             layer_input.set_calculate_gradient(true);
             layer_input.set_target_batch_ids(target_ids.clone());
             layer_input.set_record_index(record_ind);
+            layer_input.set_top_k_size(TOP_K_SIZE);
 
             transformer_network.minibatch_size = batch_size;
             transformer_network.time_step = timestep + 1;
@@ -354,6 +358,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
 
     let mut layer_input = layer_input.clone();
     let target_batch_ids_option = Some(layer_input.get_target_batch_ids());
+    let mut linear_output_indices = vec![];
 
     // Compute total valid tokens across batch for proper gradient normalization
     if !forward_only {
@@ -555,6 +560,8 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     let start = Instant::now();
                     let output_linear = linear_layer.forward(&layer_input);
 
+                    linear_output_indices = output_linear.get_output_indices();
+
                     if VERBOSE {
                         println!("time elapsed in seconds in linear layer: {:?}", start.elapsed().as_secs_f64());
                     }
@@ -638,6 +645,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     let start = Instant::now();
 
                     layer_input.set_input_batch(previous_output.clone());
+                    layer_input.set_output_indices(linear_output_indices.clone());
                     if !forward_only {
                         let softmax_result: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&layer_input, padding_mask.clone(), target_batch_ids_option.clone());
                         output_softmax = Some(softmax_result);

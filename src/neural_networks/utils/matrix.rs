@@ -50,21 +50,20 @@ extern "C" {
 }
 
 pub fn multiply_complex(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<f64>>]) -> Vec<Vec<Complex<f64>>> {
-    let m = matrix_a.len();
-    let k = matrix_a[0].len();
-    let n = matrix_b[0].len();
-
     // Try GPU path first (if cuda feature enabled)
     #[cfg(feature = "cuda")]
     {
+        let m = matrix_a.len();
+        let k = matrix_a[0].len();
+        let n = matrix_b[0].len();
         // Attempt GPU acceleration for any size
-        // if n >= 50280 {
-        if let Ok(result) = multiply_complex_gpu(matrix_a, matrix_b, m, k, n) {
-            return result;
-        } else {
-            println!("Falling back to CPU complex matmul due to GPU error.");
+        if n >= 50280 {
+            if let Ok(result) = multiply_complex_gpu(matrix_a, matrix_b, m, k, n) {
+                return result;
+            } else {
+                println!("Falling back to CPU complex matmul due to GPU error.");
+            }
         }
-        // }
     }
 
     // Fallback to CPU BLAS
@@ -804,16 +803,12 @@ pub fn add_matrix_3d_c(matrix_a: &Vec<Vec<Vec<Complex<f64>>>>, matrix_b: &Vec<Ve
     matrix_result
 }
 
-pub fn add_vector<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<T>) -> Vec<Vec<T>> {
-    let mut matrix_result: Vec<Vec<T>> = matrix_a.clone();
-
+pub fn add_vector(matrix_a: &mut Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Complex<f64>>) {
     for i in 0..matrix_a.len() {
         for j in 0..matrix_a[i].len() {
-            matrix_result[i][j] = matrix_result[i][j].clone() + matrix_b[j].clone();
+            matrix_a[i][j] = matrix_a[i][j].clone() + matrix_b[j].clone();
         }
     }
-
-    matrix_result
 }
 
 pub fn add_vectors<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<T>, matrix_b: &Vec<T>) -> Vec<T> {

@@ -161,11 +161,11 @@ impl Layer {
         let inactivated_batch_output: Vec<Vec<Vec<Complex<f64>>>> = input_batch
             .par_iter()
             .map(|input| {
-                let output: Vec<Vec<Complex<f64>>> = multiply_complex(input, &self.weights);
+                let mut output: Vec<Vec<Complex<f64>>> = multiply_complex(input, &self.weights);
 
                 // Add bias to the result
-                let raw_output: Vec<Vec<Complex<f64>>> = add_vector(&output, &self.bias);
-                raw_output
+                add_vector(&mut output, &self.bias);
+                output
             })
             .collect();
 
