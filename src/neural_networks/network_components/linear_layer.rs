@@ -124,7 +124,7 @@ impl LinearLayer {
                 })
                 .collect();
         } else {
-            (output_batch, output_indices) = self.mutliply_hightest_k_per_row(&input_batch, layer_input.get_top_k_size(), layer_input.get_target_batch_ids());
+            (output_batch, output_indices) = self.mutliply_hightest_k_per_row(&input_batch, &layer_input);
         }
 
         if VERBOSE && !self.is_complex {
@@ -252,7 +252,11 @@ impl LinearLayer {
     }
 
     // multiply normally, select highest k per row, return k highest values per row and original indices
-    pub fn mutliply_hightest_k_per_row(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>, k: usize, target_batch: Vec<Vec<u32>>) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<Vec<usize>>>) {
+    pub fn mutliply_hightest_k_per_row(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>, layer_input: &LayerInput) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<Vec<usize>>>) {
+        let target_batch: &Vec<Vec<u32>> = &layer_input.get_target_batch_ids();
+        let k: usize = layer_input.get_top_k_size();
+        let padding_mask_batch: Vec<Vec<u32>> = layer_input.get_padding_mask_batch();
+
         let num_output_cols = self.weights[0].len();
 
         // Parallelize batch processing
@@ -263,10 +267,18 @@ impl LinearLayer {
                 let mut sample_values: Vec<Vec<Complex<f64>>> = vec![];
                 let mut sample_indices: Vec<Vec<usize>> = vec![];
 
+                let seq_len_unpadded = padding_mask_batch[batch_idx].iter().filter(|&&x| x != 0).count();
+                let offset = seq_len_unpadded - target_batch[batch_idx].len();
+
                 for (row_idx, input_row) in input_sample.iter().enumerate() {
                     // Get target token id for this row if it exists
-                    let target_id = if batch_idx < target_batch.len() && row_idx < target_batch[batch_idx].len() {
-                        Some(target_batch[batch_idx][row_idx] as usize)
+                    let target_id = if padding_mask_batch[batch_idx][row_idx] != 0 && row_idx >= offset {
+                        let target_idx = row_idx - offset;
+                        if target_idx < target_batch[batch_idx].len() {
+                            Some(target_batch[batch_idx][target_idx] as usize)
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     };
@@ -288,11 +300,10 @@ impl LinearLayer {
 
                         let real_value = sum.re;
 
-                        // Check if this is the target token
-                        if let Some(target_idx) = target_id {
-                            if col_idx == target_idx {
+                        // Check if this is the target token - save it but still process normally
+                        if let Some(target_token_id) = target_id {
+                            if col_idx == target_token_id {
                                 target_value = Some((real_value, sum, col_idx));
-                                continue;
                             }
                         }
 
@@ -312,20 +323,21 @@ impl LinearLayer {
                         }
                     }
 
-                    // Include target token if it exists and isn't already in top_k
+                    // Always include target token if it exists
                     if let Some(target) = target_value {
                         let target_in_topk = top_k.iter().any(|(_, _, idx)| *idx == target.2);
                         if !target_in_topk {
-                            if top_k.len() < k {
-                                top_k.push(target);
-                            } else if !top_k.is_empty() {
-                                // Replace the smallest element with target
+                            // Add target token, replacing the smallest element if top_k is full
+                            if top_k.len() >= k {
+                                // Find and replace the minimum element
+                                min_value = top_k.iter().map(|(v, _, _)| *v).fold(f64::INFINITY, f64::min);
                                 if let Some(min_pos) = top_k.iter().position(|(v, _, _)| *v == min_value) {
                                     top_k[min_pos] = target;
                                 }
+                            } else {
+                                // Room available, just add
+                                top_k.push(target);
                             }
-                        } else if top_k.is_empty() {
-                            top_k.push(target);
                         }
                     }
 
@@ -333,7 +345,7 @@ impl LinearLayer {
                     let values: Vec<Complex<f64>> = top_k.iter().map(|(_, val, _)| *val).collect();
                     let indices: Vec<usize> = top_k.iter().map(|(_, _, idx)| *idx).collect();
 
-                   // println!("Batch {}, Row {}: Top k indices: {}", batch_idx, row_idx, &indices.len());
+                    // println!("Batch {}, Row {}: Top k indices: {}", batch_idx, row_idx, &indices.len());
 
                     sample_values.push(values);
                     sample_indices.push(indices);
