@@ -57,7 +57,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
             let batch_ids: Vec<Vec<u32>> = concat_batches(&input_ids, &target_ids);
             // shift one position to the right in the array
-            let mut target_ids: Vec<Vec<u32>> = target_ids
+            let mut target_ids: Vec<Vec<u32>> = batch_ids
                 .iter()
                 .map(|seq| {
                     if seq.is_empty() {
@@ -286,6 +286,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
 
         let network_output = predict(transformer_network, &layer_input);
         let current_predictions = network_output.get_output_batch_f64();
+        let output_indices = network_output.get_output_indices();
 
         // let start = Instant::now();
 
@@ -297,13 +298,25 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         // Get reference to last prediction (avoid clone)
         let last_pred = current_predictions[0].last().unwrap();
 
-        // Greedy decoding: just find argmax directly
-        let predicted_token_id = last_pred
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(idx, _)| idx as u32)
-            .unwrap_or(0);
+        // Greedy decoding: find argmax in sparse array, then map to actual token ID
+        let predicted_token_id = if !output_indices.is_empty() && !output_indices[0].is_empty() {
+            let last_indices = output_indices[0].last().unwrap();
+            let sparse_idx = last_pred
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(idx, _)| idx)
+                .unwrap_or(0);
+            last_indices[sparse_idx] as u32
+        } else {
+            // Fallback for non-sparse output
+            last_pred
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(idx, _)| idx as u32)
+                .unwrap_or(0)
+        };
 
         batch_ids[0].push(predicted_token_id);
 
@@ -670,6 +683,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
 
     layer_output.set_output_batch_f64(output_softmax.unwrap());
     layer_output.set_padding_mask_batch(padding_mask.unwrap());
+    layer_output.set_output_indices(linear_output_indices);
 
     if VERBOSE {
         let whole_duration_forward = now.elapsed();

@@ -35,7 +35,7 @@ impl LayerOutput {
     pub fn set_output_batch(&mut self, output_batch: Vec<Vec<Vec<Complex<f64>>>>) {
         self.output_batch = Some(output_batch);
     }
-     pub fn set_output_batch_f64(&mut self, output_batch: Vec<Vec<Vec<f64>>>) {
+    pub fn set_output_batch_f64(&mut self, output_batch: Vec<Vec<Vec<f64>>>) {
         self.output_batch_f64 = Some(output_batch);
     }
     pub fn set_output_record(&mut self, output_record: Vec<Vec<Complex<f64>>>) {
@@ -65,7 +65,7 @@ impl LayerOutput {
     pub fn get_output_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
         self.output_batch.clone().unwrap_or_else(|| vec![])
     }
-     pub fn get_output_batch_f64(&self) -> Vec<Vec<Vec<f64>>> {
+    pub fn get_output_batch_f64(&self) -> Vec<Vec<Vec<f64>>> {
         self.output_batch_f64.clone().unwrap_or_else(|| vec![])
     }
     pub fn get_output_record(&self) -> Vec<Vec<Complex<f64>>> {

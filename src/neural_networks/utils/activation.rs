@@ -525,7 +525,14 @@ pub fn softmax_backward_real_with_gradient(
             let target_idx = t - offset;
             let target_token = targets[target_idx] as usize;
 
-            let (loss_real, grad_complex) = softmax_ce_grad_complex(row, target_token, &logit_indices[t]);
+            // Handle empty logit_indices (non-sparse mode) by creating default full range
+            let indices_for_t = if logit_indices.is_empty() || t >= logit_indices.len() || logit_indices[t].is_empty() {
+                (0..row.len()).collect::<Vec<usize>>()
+            } else {
+                logit_indices[t].clone()
+            };
+
+            let (loss_real, grad_complex) = softmax_ce_grad_complex(row, target_token, &indices_for_t);
 
             let loss_complex = vec![Complex::new(loss_real * scale, 0.0)];
 
