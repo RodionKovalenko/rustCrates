@@ -267,12 +267,21 @@ impl LinearLayer {
                 let mut sample_values: Vec<Vec<Complex<f64>>> = vec![];
                 let mut sample_indices: Vec<Vec<usize>> = vec![];
 
-                let seq_len_unpadded = padding_mask_batch[batch_idx].iter().filter(|&&x| x != 0).count();
-                let offset = seq_len_unpadded - target_batch[batch_idx].len();
+                // Calculate offset only if target_batch has data for this batch
+                let offset = if batch_idx < target_batch.len() && !target_batch[batch_idx].is_empty() {
+                    let seq_len_unpadded = padding_mask_batch[batch_idx].iter().filter(|&&x| x != 0).count();
+                    seq_len_unpadded.saturating_sub(target_batch[batch_idx].len())
+                } else {
+                    usize::MAX // Set to max to ensure no target tokens are selected during inference
+                };
 
                 for (row_idx, input_row) in input_sample.iter().enumerate() {
                     // Get target token id for this row if it exists
-                    let target_id = if padding_mask_batch[batch_idx][row_idx] != 0 && row_idx >= offset {
+                    let target_id = if batch_idx < target_batch.len() 
+                        && !target_batch[batch_idx].is_empty()
+                        && offset != usize::MAX
+                        && padding_mask_batch[batch_idx][row_idx] != 0 
+                        && row_idx >= offset {
                         let target_idx = row_idx - offset;
                         if target_idx < target_batch[batch_idx].len() {
                             Some(target_batch[batch_idx][target_idx] as usize)
