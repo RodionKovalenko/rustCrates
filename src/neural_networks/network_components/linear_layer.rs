@@ -51,7 +51,6 @@ impl LinearLayer {
         let mut weights: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
         let bias: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
         let epsilon: f64 = 0.00000001;
-        let _norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(cols, epsilon, learning_rate))));
 
         if is_complex {
             initialize_weights_complex(rows, cols, &mut weights);
@@ -92,24 +91,6 @@ impl LinearLayer {
         let mut layer_input = input.clone();
         layer_input.set_input_batch(output_batch.clone());
 
-        // Apply the RMS normalization layer
-        if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
-            match norm_layer_enum {
-                LayerEnum::RMSNorm(rms_norm_layer) => {
-                    let rms_output = rms_norm_layer.forward(&layer_input);
-                    output_batch = rms_output.get_output_batch();
-                    //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
-                }
-                LayerEnum::Norm(norm_layer) => {
-                    let layer_output = norm_layer.forward(&layer_input);
-                    output_batch = layer_output.get_output_batch();
-
-                    //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
-                }
-                _ => {}
-            }
-        }
-
         let start = std::time::Instant::now();
 
         if self.is_complex {
@@ -132,9 +113,6 @@ impl LinearLayer {
         }
         // println!("Output batch size in linear layer after dwt inverse:  {} {} {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
 
-        if self.norm_layer.is_some() {
-            output_batch = add_matrix_3d(&output_batch, &input_batch);
-        }
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(output_batch);
@@ -212,27 +190,6 @@ impl LinearLayer {
         }
 
         gradient.set_gradient_input_batch(gradient_input_batch.clone());
-
-        //Apply RMSNorm backpropagation if it's present
-        if let Some(norm_layer) = &mut self.norm_layer {
-            match norm_layer {
-                LayerEnum::RMSNorm(rms_norm_layer) => {
-                    gradient = rms_norm_layer.backward(&gradient_input_batch);
-                    gradient_input_batch = gradient.get_gradient_input_batch();
-                    // println!("FFN, gradient from RMS Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
-                }
-                LayerEnum::Norm(norm_layer) => {
-                    gradient = norm_layer.backward(&gradient);
-                    gradient_input_batch = gradient.get_gradient_input_batch();
-                    //println!("FFN, gradient from Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
-                }
-                _ => {}
-            }
-        }
-
-        if self.norm_layer.is_some() {
-            gradient_input_batch = add_matrix_3d(&gradient_input_batch, &previous_gradient.get_gradient_input_batch());
-        }
 
         if self.gradient.is_some() {
             let previous_gradient = self.gradient.as_ref().expect("");
