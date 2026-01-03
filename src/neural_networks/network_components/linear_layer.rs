@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
-    network_components::{layer::LayerEnum, norm_layer::NormalNormLayer},
+    network_components::layer::LayerEnum,
     network_types::{transformer::transformer_updater::VERBOSE, wavelet_discrete_layer::DiscreteWaveletLayer},
     utils::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
@@ -50,7 +50,6 @@ impl LinearLayer {
     pub fn new(learning_rate: f64, rows: usize, cols: usize, is_complex: bool) -> Self {
         let mut weights: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
         let bias: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
-        let epsilon: f64 = 0.00000001;
 
         if is_complex {
             initialize_weights_complex(rows, cols, &mut weights);
@@ -112,7 +111,6 @@ impl LinearLayer {
             println!("Linear layer complex matmul time for batch size {}: {}", self.batch_size, start.elapsed().as_secs_f64());
         }
         // println!("Output batch size in linear layer after dwt inverse:  {} {} {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
-
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(output_batch);
@@ -234,11 +232,8 @@ impl LinearLayer {
 
                 for (row_idx, input_row) in input_sample.iter().enumerate() {
                     // Get target token id for this row if it exists
-                    let target_id = if batch_idx < target_batch.len() 
-                        && !target_batch[batch_idx].is_empty()
-                        && offset != usize::MAX
-                        && padding_mask_batch[batch_idx][row_idx] != 0 
-                        && row_idx >= offset {
+                    let target_id = if batch_idx < target_batch.len() && !target_batch[batch_idx].is_empty() && offset != usize::MAX && padding_mask_batch[batch_idx][row_idx] != 0 && row_idx >= offset
+                    {
                         let target_idx = row_idx - offset;
                         if target_idx < target_batch[batch_idx].len() {
                             Some(target_batch[batch_idx][target_idx] as usize)
