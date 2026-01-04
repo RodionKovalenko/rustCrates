@@ -57,7 +57,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
             let batch_ids: Vec<Vec<u32>> = concat_batches(&input_ids, &target_ids);
             // shift one position to the right in the array
-            let mut target_ids: Vec<Vec<u32>> = batch_ids
+            let mut target_ids: Vec<Vec<u32>> = target_ids
                 .iter()
                 .map(|seq| {
                     if seq.is_empty() {
@@ -65,7 +65,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                     }
 
                     let mut shifted = Vec::with_capacity(seq.len());
-                    shifted.extend_from_slice(&seq[1..seq.len()]);
+                    shifted.extend_from_slice(&seq[0..seq.len()]);
                     shifted
                 })
                 .collect();
