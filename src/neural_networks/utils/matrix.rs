@@ -487,6 +487,35 @@ pub fn multiply_complex_with_f64(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &V
     result_matrix
 }
 
+pub fn multiply_complex_with_f32(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<f32>>) -> Vec<Vec<Complex<f64>>> {
+    let num_rows = matrix_a.len();
+    let num_columns = matrix_b[0].len();
+
+    // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
+    if matrix_a[0].len() != matrix_b.len() {
+        panic!("Matrix A does not have the same number of columns as Matrix B rows.");
+    }
+
+    // Initialize result matrix with 0.0 values
+    let mut result_matrix: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
+
+    // println!("anzahl cput {}", num_cpus::get());
+
+    let pool = ThreadPoolBuilder::new().num_threads(num_cpus::get()).build().unwrap();
+
+    pool.install(|| {
+        result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
+            for j in 0..num_columns {
+                //row[j] = (0..matrix_b.len()).map(|k| matrix_a[i][k] * Complex::new(matrix_b[k][j], 0.0)).sum();
+                row[j] = (0..matrix_b.len()).map(|k| matrix_a[i][k] * Complex::new(matrix_b[k][j] as f64, 0.0)).sum();
+            }
+        });
+    });
+
+    result_matrix
+}
+
+
 pub fn multiply_f64_complex(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
     let num_rows = matrix_a.len();
     let num_columns = matrix_b[0].len();

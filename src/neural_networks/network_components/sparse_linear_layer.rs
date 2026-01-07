@@ -6,20 +6,22 @@ use serde::{Deserialize, Serialize};
 use crate::neural_networks::{
     network_components::layer::LayerEnum,
     network_types::{transformer::transformer_updater::VERBOSE, wavelet_discrete_layer::DiscreteWaveletLayer},
+    optimization::k_means_clustering::{kmeans, query_candidates},
     utils::{
-        adam_w::{calculate_adam_w, calculate_adam_w_bias},
-        matrix::{add_matrix_2d_c, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex},
-        weights_initializer::{initialize_weights_complex, initialize_weights_complex_only_real},
+        adam_w::{calculate_adam_w_bias_f32, calculate_adam_w_f32},
+        low_rank_approx::transpose,
+        matrix::{add_matrix_2d_c, add_matrix_3d, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, multiply_complex, multiply_complex_with_f32},
+        weights_initializer::initialize_weights_f32,
     },
 };
 
 use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LinearLayer {
-    pub weights: Vec<Vec<Complex<f64>>>,
+pub struct SparseLinearLayer {
+    pub weights: Vec<Vec<f32>>,
     pub learning_rate: f64,
-    pub bias: Vec<Complex<f64>>,
+    pub bias: Vec<f32>,
     pub smoothing: f64,
     pub ema: f64,
     pub discrete_wavelet_layer: Option<DiscreteWaveletLayer>,
@@ -28,7 +30,14 @@ pub struct LinearLayer {
     pub max_norm: f64,
     pub previous_gradient: Option<Gradient>,
 
-    pub is_complex: bool,
+    // K-means clustering components
+    // clusters of centroids; each centroid is a vector of f32 with embedding dimension size
+    pub centroids: Vec<Vec<f32>>,
+    // assignments of each token to a cluster; length = vocab size
+    pub assignments: Vec<usize>,
+    // mapping from cluster index to token IDs assigned to that cluste
+    pub cluster_to_tokens: Vec<Vec<usize>>,
+    pub n_clusters: usize,
 
     #[serde(skip)]
     pub gradients: Vec<Vec<Complex<f64>>>,
@@ -46,21 +55,28 @@ pub struct LinearLayer {
     pub output_indices: Option<Vec<Vec<Vec<usize>>>>,
 }
 
-impl LinearLayer {
-    pub fn new(learning_rate: f64, rows: usize, cols: usize, is_complex: bool) -> Self {
-        let mut weights: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
-        let bias: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
+impl SparseLinearLayer {
+    pub fn new(learning_rate: f64, embedding_d: usize, vocab_size: usize) -> Self {
+        // Weights are used not as weights matrix, but as embedding matrix N x D
+        // whre N is vocab size, D is embedding size
+        let mut weights: Vec<Vec<f32>> = vec![vec![0.0; embedding_d]; vocab_size];
+        let bias: Vec<f32> = vec![1.0; vocab_size];
 
-        if is_complex {
-            initialize_weights_complex(rows, cols, &mut weights);
-        } else {
-            initialize_weights_complex_only_real(rows, cols, &mut weights);
-        }
+        initialize_weights_f32(vocab_size, embedding_d, &mut weights);
+
+        let n_clusters: usize = 50280 / 16;
+        let threshold = 0.001;
+
+        let (centroids, assignments, cluster_to_tokens) = kmeans(&mut weights, n_clusters, 100, threshold);
 
         Self {
             weights,
             bias,
             learning_rate,
+            centroids: centroids,
+            assignments: assignments,
+            cluster_to_tokens: cluster_to_tokens,
+            n_clusters: n_clusters,
             gradients: vec![],
             discrete_wavelet_layer: None,
             norm_layer: None,
@@ -74,7 +90,6 @@ impl LinearLayer {
             ema: 0.0,
             global_norm: 0.0,
             max_norm: 0.0,
-            is_complex,
             output_indices: None,
         }
     }
@@ -84,30 +99,12 @@ impl LinearLayer {
         self.time_step = input.get_time_step();
         self.batch_size = input.get_batch_size();
         self.input_batch = Some(input_batch.clone());
-        let mut output_indices: Vec<Vec<Vec<usize>>> = vec![];
-
-        let mut output_batch: Vec<Vec<Vec<Complex<f64>>>> = input_batch.clone();
-        let mut layer_input = input.clone();
-        layer_input.set_input_batch(output_batch.clone());
 
         let start = std::time::Instant::now();
 
-        if self.is_complex {
-            output_batch = output_batch
-                .par_iter() // Use a parallel iterator to process inputs in parallel
-                .map(|input| {
-                    let mut output = multiply_complex(input, &self.weights);
+        let (output_batch, output_indices) = self.mutliply_hightest_k_per_row(&input_batch, &input);
 
-                    // Add the bias vector
-                    add_vector(&mut output, &self.bias);
-                    output
-                })
-                .collect();
-        } else {
-            (output_batch, output_indices) = self.mutliply_hightest_k_per_row(&input_batch, &layer_input);
-        }
-
-        if VERBOSE && !self.is_complex {
+        if VERBOSE {
             println!("Linear layer complex matmul time for batch size {}: {}", self.batch_size, start.elapsed().as_secs_f64());
         }
         // println!("Output batch size in linear layer after dwt inverse:  {} {} {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
@@ -133,58 +130,44 @@ impl LinearLayer {
         let mut bias_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.bias.len()]; input_batch.len()];
         let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
 
-        if self.is_complex {
-            for (batch_ind, (input_sample, previous_gradient)) in input_batch.iter().zip(previous_gradient_input_batch).enumerate() {
-                weight_gradients[batch_ind] = multiply_complex(&conjugate_transpose(&input_sample), &previous_gradient);
-                //Accumulate gradients for biases
-                for grad_row in previous_gradient.iter() {
-                    for (k, grad_val) in grad_row.iter().enumerate() {
-                        bias_gradients[batch_ind][k] += grad_val;
-                    }
-                }
+        // rows are sparse with only top k values
+        let output_indices_batch = self.output_indices.as_ref().expect("Output indices missing in linear layer backward pass");
 
-                gradient_input_batch[batch_ind] = multiply_complex(&previous_gradient, &conjugate_transpose(&self.weights));
-            }
-        } else {
-            // rows are sparse with only top k values
-            let output_indices_batch = self.output_indices.as_ref().expect("Output indices missing in linear layer backward pass");
+        for batch_idx in 0..input_batch.len() {
+            let input_sample = &input_batch[batch_idx];
+            let sparse_grad = &previous_gradient_input_batch[batch_idx];
+            let indices = &output_indices_batch[batch_idx];
 
-            for batch_idx in 0..input_batch.len() {
-                let input_sample = &input_batch[batch_idx];
-                let sparse_grad = &previous_gradient_input_batch[batch_idx];
-                let indices = &output_indices_batch[batch_idx];
+            // Reconstruct full gradient from sparse gradients using indices
+            let num_output_cols = self.weights[0].len();
+            let mut full_gradient: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_output_cols]; input_sample.len()];
 
-                // Reconstruct full gradient from sparse gradients using indices
-                let num_output_cols = self.weights[0].len();
-                let mut full_gradient: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_output_cols]; input_sample.len()];
+            for row_idx in 0..sparse_grad.len().min(indices.len()) {
+                let grad_row = &sparse_grad[row_idx];
+                let idx_row = &indices[row_idx];
 
-                for row_idx in 0..sparse_grad.len().min(indices.len()) {
-                    let grad_row = &sparse_grad[row_idx];
-                    let idx_row = &indices[row_idx];
-
-                    for (grad_idx, &grad_val) in grad_row.iter().enumerate() {
-                        if grad_idx < idx_row.len() {
-                            let col_idx = idx_row[grad_idx];
-                            if col_idx < num_output_cols {
-                                full_gradient[row_idx][col_idx] = grad_val;
-                            }
+                for (grad_idx, &grad_val) in grad_row.iter().enumerate() {
+                    if grad_idx < idx_row.len() {
+                        let col_idx = idx_row[grad_idx];
+                        if col_idx < num_output_cols {
+                            full_gradient[row_idx][col_idx] = grad_val;
                         }
                     }
                 }
-
-                // Compute weight gradients: input^H * gradient
-                weight_gradients[batch_idx] = multiply_complex(&conjugate_transpose(&input_sample), &full_gradient);
-
-                // Accumulate gradients for biases
-                for grad_row in full_gradient.iter() {
-                    for (k, grad_val) in grad_row.iter().enumerate() {
-                        bias_gradients[batch_idx][k] += grad_val;
-                    }
-                }
-
-                // Compute input gradients: gradient * weights^H
-                gradient_input_batch[batch_idx] = multiply_complex(&full_gradient, &conjugate_transpose(&self.weights));
             }
+
+            // Compute weight gradients: input^H * gradient
+            weight_gradients[batch_idx] = multiply_complex(&transpose(&input_sample), &full_gradient);
+
+            // Accumulate gradients for biases
+            for grad_row in full_gradient.iter() {
+                for (k, grad_val) in grad_row.iter().enumerate() {
+                    bias_gradients[batch_idx][k] += grad_val;
+                }
+            }
+
+            // Compute input gradients: gradient * weights^H
+            gradient_input_batch[batch_idx] = multiply_complex_with_f32(&full_gradient, &self.weights);
         }
 
         gradient.set_gradient_input_batch(gradient_input_batch.clone());
@@ -211,8 +194,6 @@ impl LinearLayer {
         let target_batch: &Vec<Vec<u32>> = &layer_input.get_target_batch_ids();
         let k: usize = layer_input.get_top_k_size();
         let padding_mask_batch: Vec<Vec<u32>> = layer_input.get_padding_mask_batch();
-
-        let num_output_cols = self.weights[0].len();
 
         // Parallelize batch processing
         let results: Vec<_> = input_batch
@@ -249,15 +230,39 @@ impl LinearLayer {
                     let mut min_value = f64::NEG_INFINITY;
                     let mut target_idx_in_topk: Option<usize> = None; // Track position of target in top_k
 
+                    let mut input_f32 = input_row.iter().map(|c| c.re as f32).collect::<Vec<f32>>();
+
+                    let mut selected_indices = query_candidates(
+                        &mut input_f32,
+                        &self.centroids,
+                        &self.cluster_to_tokens,
+                        4, // select top 4 clusters
+                    );
+
+                    // include target index if not already included
+                    if let Some(tid) = target_id {
+                        if !selected_indices.contains(&tid) {
+                            // Replace the last index with target id
+                            if selected_indices.len() < k {
+                                // If we have space, just add it
+                                selected_indices.push(tid);
+                            } else {
+                                let selected_indices_len: usize = selected_indices.len();
+                                // Replace the last one
+                                selected_indices[selected_indices_len - 1] = tid;
+                            }
+                        }
+                    }
+
                     // Compute each output element on the fly
-                    for col_idx in 0..num_output_cols {
+                    for &col_idx in selected_indices.iter() {
                         // Compute dot product: input_row · weights[:, col_idx]
                         let mut sum = Complex::new(0.0, 0.0);
                         for (i, &input_val) in input_row.iter().enumerate() {
-                            sum += input_val * self.weights[i][col_idx];
+                            sum += input_val.re * self.weights[col_idx][i] as f64;
                         }
                         // Add bias
-                        sum += self.bias[col_idx];
+                        sum += self.bias[col_idx] as f64;
 
                         let real_value = sum.re;
                         let is_target = target_id.map_or(false, |tid| col_idx == tid);
@@ -287,19 +292,21 @@ impl LinearLayer {
                             // Find the minimum element that is not the target
                             min_value = f64::INFINITY;
                             let mut min_pos_candidate = None;
-                            
+
                             for (pos, (v, _, _)) in top_k.iter().enumerate() {
                                 if Some(pos) != target_idx_in_topk && *v < min_value {
                                     min_value = *v;
                                     min_pos_candidate = Some(pos);
                                 }
                             }
-                            
+
                             if let Some(min_pos) = min_pos_candidate {
                                 if real_value > min_value {
                                     top_k[min_pos] = (real_value, sum, col_idx);
                                     // Update min_value excluding target position
-                                    min_value = top_k.iter().enumerate()
+                                    min_value = top_k
+                                        .iter()
+                                        .enumerate()
                                         .filter(|(pos, _)| Some(*pos) != target_idx_in_topk)
                                         .map(|(_, (v, _, _))| *v)
                                         .fold(f64::INFINITY, f64::min);
@@ -360,11 +367,7 @@ impl LinearLayer {
                 vec![Complex::new(0.0, 0.0); self.bias.len()],
             )
         };
-        // prev_m_bias = average_gradient_polar_1d(&previous_gradient.get_prev_m_bias(), batch_size);
-        // prev_v_bias = average_gradient_polar_1d(&previous_gradient.get_prev_v_bias(), batch_size);
-        // prev_m_weights = average_gradient_polar(&previous_gradient.get_prev_m_weights(), batch_size);
-        // prev_v_weights = average_gradient_polar(&previous_gradient.get_prev_v_weights(), batch_size);
-        calculate_adam_w_bias(
+        calculate_adam_w_bias_f32(
             &mut self.bias,
             &gradient.get_gradient_bias(),
             &mut prev_m_bias,
@@ -373,7 +376,7 @@ impl LinearLayer {
             learning_rate,
             time_step,
         );
-        calculate_adam_w(
+        calculate_adam_w_f32(
             &mut self.weights,
             &gradient.get_gradient_weights(),
             &mut prev_m_weights,
