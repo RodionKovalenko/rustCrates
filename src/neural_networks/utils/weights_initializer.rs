@@ -52,18 +52,29 @@ where
     weight_matrix.set_element(i, j, value);
 }
 
+pub fn initialize_weights_f32(rows: usize, cols: usize, weight_matrix: &mut Vec<Vec<f32>>) {
+    let mut rng = rand::rng(); // Use the thread-local RNG
+    let fan_in = rows as f64;
+    let fan_out = cols as f64;
+
+    for i in 0..rows {
+        for j in 0..cols {
+            let random_value: f32 = xavier_init_f32(fan_in, fan_out, &mut rng); // Use gen_range for sampling
+            set_weights(weight_matrix, i, j, random_value);
+        }
+    }
+}
+
 // Initialize weights for Vec<Vec<f64>>
 // Correcting the RNG method usage to rand::thread_rng
-pub fn initialize_weights(num_layer_inputs_dim2: usize, number_hidden_neurons: usize, weight_matrix: &mut Vec<Vec<f64>>) {
+pub fn initialize_weights(rows: usize, cols: usize, weight_matrix: &mut Vec<Vec<f64>>) {
     let mut rng = rand::rng(); // Use the thread-local RNG
+    let fan_in = rows as f64;
+    let fan_out = cols as f64;
 
-    for _i in 0..num_layer_inputs_dim2 {
-        weight_matrix.push(Vec::new());
-    }
-
-    for i in 0..num_layer_inputs_dim2 {
-        for j in 0..number_hidden_neurons {
-            let random_value = rng.random_range(-0.6..0.6); // Use gen_range for sampling
+    for i in 0..rows {
+        for j in 0..cols {
+            let random_value = xavier_init(fan_in, fan_out, &mut rng); // Use gen_range for sampling
             set_weights(weight_matrix, i, j, random_value);
         }
     }
@@ -82,8 +93,6 @@ pub fn initialize_weights_complex_only_real(rows: usize, cols: usize, weight_mat
         }
     }
 }
-
-
 
 // Initialize weights for Vec<Vec<Complex<f64>>>
 pub fn initialize_weights_complex(rows: usize, cols: usize, weight_matrix: &mut Vec<Vec<Complex<f64>>>) {
@@ -112,5 +121,10 @@ pub fn initialize_bias(rows: usize, weight_matrix: &mut Vec<Complex<f64>>) {
 
 fn xavier_init(fan_in: f64, fan_out: f64, rng: &mut ThreadRng) -> f64 {
     let limit = (6.0 / (fan_in + fan_out)).sqrt();
+    rng.random_range(-limit..limit)
+}
+
+fn xavier_init_f32(fan_in: f64, fan_out: f64, rng: &mut ThreadRng) -> f32 {
+    let limit: f32 = (6.0 / (fan_in + fan_out)).sqrt() as f32;
     rng.random_range(-limit..limit)
 }

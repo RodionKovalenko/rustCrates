@@ -4,20 +4,9 @@ use std::f64::consts::PI;
 use std::fmt::Debug;
 use std::ops::{Add, Div, Mul, Sub};
 
-pub fn exp_max_1d<T, V, G>(
-    data: &Vec<T>,
-    m: &Vec<V>,
-    s: &Vec<G>,
-    n_iter: &i32,
-) -> (Vec<f64>, Vec<f64>, Vec<f64>)
+pub fn exp_max_1d<T, V, G>(data: &Vec<T>, m: &Vec<V>, s: &Vec<G>, n_iter: &i32) -> (Vec<f64>, Vec<f64>, Vec<f64>)
 where
-    T: Debug
-        + Clone
-        + Into<f64>
-        + Mul<Output = T>
-        + Add<Output = T>
-        + Div<Output = T>
-        + Sub<Output = T>,
+    T: Debug + Clone + Into<f64> + Mul<Output = T> + Add<Output = T> + Div<Output = T> + Sub<Output = T>,
     V: Debug + Clone + Into<f64> + Mul<Output = V> + Add<Output = V> + Div<Output = V>,
     G: Debug + Clone + Into<f64> + Mul<Output = G> + Add<Output = G> + Div<Output = G>,
 {
@@ -132,20 +121,9 @@ pub fn check_ln_gauss(gauss_v_k: &Vec<Vec<f64>>, p: &Vec<f64>) -> f64 {
     sum
 }
 
-pub fn exp_max_2d<T, V, G>(
-    data: &Vec<Vec<T>>,
-    m: &Vec<Vec<V>>,
-    s: &Vec<Vec<Vec<G>>>,
-    n_iter: &i32,
-) -> (Vec<f64>, Vec<Vec<f64>>, Vec<Vec<Vec<f64>>>)
+pub fn exp_max_2d<T, V, G>(data: &Vec<Vec<T>>, m: &Vec<Vec<V>>, s: &Vec<Vec<Vec<G>>>, n_iter: &i32) -> (Vec<f64>, Vec<Vec<f64>>, Vec<Vec<Vec<f64>>>)
 where
-    T: Debug
-        + Clone
-        + Into<f64>
-        + Mul<Output = T>
-        + Add<Output = T>
-        + Div<Output = T>
-        + Sub<Output = T>,
+    T: Debug + Clone + Into<f64> + Mul<Output = T> + Add<Output = T> + Div<Output = T> + Sub<Output = T>,
     V: Debug + Clone + Into<f64> + Mul<Output = V> + Add<Output = V> + Div<Output = V>,
     G: Debug + Clone + Into<f64> + Mul<Output = G> + Add<Output = G> + Div<Output = G>,
 {
@@ -166,20 +144,10 @@ where
         })
         .collect();
 
-    let mut mu: Vec<Vec<f64>> = m
-        .iter()
-        .map(|mean| mean.iter().map(|x| Into::<f64>::into(x.clone())).collect())
-        .collect();
+    let mut mu: Vec<Vec<f64>> = m.iter().map(|mean| mean.iter().map(|x| Into::<f64>::into(x.clone())).collect()).collect();
 
     // Convert s (covariances) into Vec<Vec<Vec<f64>>>
-    let mut sigma: Vec<Vec<Vec<f64>>> = s
-        .iter()
-        .map(|cov| {
-            cov.iter()
-                .map(|x| x.iter().map(|y| Into::<f64>::into(y.clone())).collect())
-                .collect()
-        })
-        .collect();
+    let mut sigma: Vec<Vec<Vec<f64>>> = s.iter().map(|cov| cov.iter().map(|x| x.iter().map(|y| Into::<f64>::into(y.clone())).collect()).collect()).collect();
 
     let mut log_likelihoods = Vec::new();
 
@@ -193,7 +161,7 @@ where
             let sigma_i = &sigma[i]; // covariance for the i-th cluster
 
             for j in 0..n {
-                let likelihood = compute_likelihood(&data[j], mu_i, sigma_i); 
+                let likelihood = compute_likelihood(&data[j], mu_i, sigma_i);
                 resp[j][i] = pi[i] * likelihood;
             }
         }
@@ -230,11 +198,7 @@ where
                 let weight = resp[j][i];
 
                 // Compute (data[j] - mu[i])
-                let diff: Vec<f64> = data_f64[j]
-                    .iter()
-                    .zip(mu[i].iter())
-                    .map(|(x, m)| x - m)
-                    .collect();
+                let diff: Vec<f64> = data_f64[j].iter().zip(mu[i].iter()).map(|(x, m)| x - m).collect();
 
                 // Weighted outer product of (diff * diff^T)
                 for row in 0..d {
@@ -259,14 +223,7 @@ where
         }
 
         // Compute log-likelihood
-        let log_likelihood: f64 = (0..n)
-            .map(|i| {
-                (0..k)
-                    .map(|j| pi[j] * compute_likelihood(&data[i], &mu[j], &sigma[j]))
-                    .sum::<f64>()
-                    .ln()
-            })
-            .sum();
+        let log_likelihood: f64 = (0..n).map(|i| (0..k).map(|j| pi[j] * compute_likelihood(&data[i], &mu[j], &sigma[j])).sum::<f64>().ln()).sum();
 
         log_likelihoods.push(log_likelihood);
 
@@ -274,8 +231,7 @@ where
 
         // Check for convergence (could break here based on tolerance)
         if iteration > 0 {
-            let log_likeli_diff: f64 =
-                (log_likelihoods[iter_u] - log_likelihoods[iter_u - 1]).abs();
+            let log_likeli_diff: f64 = (log_likelihoods[iter_u] - log_likelihoods[iter_u - 1]).abs();
 
             println!("log_likelihoods diff: {}", &log_likeli_diff);
             if log_likeli_diff < 1e-6 {
@@ -302,17 +258,10 @@ where
     let mu_vec: Vec<f64> = mu.iter().map(|x| x.clone().into()).collect();
 
     // Convert covariance matrix elements to f64
-    let sigma_m: Vec<Vec<f64>> = sigma
-        .iter()
-        .map(|x| x.iter().map(|x| x.clone().into()).collect())
-        .collect();
+    let sigma_m: Vec<Vec<f64>> = sigma.iter().map(|x| x.iter().map(|x| x.clone().into()).collect()).collect();
 
     // Compute the difference vector (x - mu)
-    let diff: Vec<f64> = data_point
-        .iter()
-        .zip(mu_vec.iter())
-        .map(|(data_val, mu_val)| data_val - mu_val)
-        .collect();
+    let diff: Vec<f64> = data_point.iter().zip(mu_vec.iter()).map(|(data_val, mu_val)| data_val - mu_val).collect();
 
     // Calculate the covariance matrix inverse and determinantz
     let sigma_inv = pseudoinverse(&sigma_m).unwrap(); // Ensure robust error handling
@@ -329,11 +278,7 @@ where
         .collect();
 
     // Step 2: (x - mu)^T * result, this will be a scalar (dot product)
-    let quadratic_form = diff
-        .iter()
-        .zip(diff_times_sigma_inv.iter())
-        .map(|(diff_val, sigma_inv_val)| diff_val * sigma_inv_val)
-        .sum::<f64>();
+    let quadratic_form = diff.iter().zip(diff_times_sigma_inv.iter()).map(|(diff_val, sigma_inv_val)| diff_val * sigma_inv_val).sum::<f64>();
 
     // Compute the multivariate normal PDF (likelihood)
     let constant = 1.0 / ((2.0 * PI).powf(d as f64 / 2.0) * sigma_det.sqrt());

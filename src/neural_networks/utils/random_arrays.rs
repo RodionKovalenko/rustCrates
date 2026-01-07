@@ -55,6 +55,21 @@ pub fn generate_random_f64_2d(rows: usize, cols: usize) -> Vec<Vec<f64>> {
         .collect()
 }
 
+pub fn generate_random_f32_2d(rows: usize, cols: usize) -> Vec<Vec<f32>> {
+    let mut rng = rand::rng();
+
+    (0..rows)
+        .map(|_| {
+            (0..cols)
+                .map(|_| {
+                    let real = rng.random_range(-1.0..1.0); // Random f64 in range [-1.0, 1.0)
+                    real
+                })
+                .collect()
+        })
+        .collect()
+}
+
 pub fn generate_random_complex_2d(rows: usize, cols: usize) -> Vec<Vec<Complex<f64>>> {
     let mut rng = rand::rng();
 
