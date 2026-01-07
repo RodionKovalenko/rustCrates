@@ -7,7 +7,7 @@ mod test_sparse_linear_layer {
         },
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch},
         utils::{
-            derivative::{global_relative_error_2d_l2, numerical_gradient_bias_f32, numerical_gradient_weights_f32, test_gradient_error_1d, test_gradient_error_2d},
+            derivative::{global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_bias_f32, numerical_gradient_input_batch, numerical_gradient_weights_f32, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d},
             random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
         },
     };
@@ -27,9 +27,9 @@ mod test_sparse_linear_layer {
         // Create a simple LinearLayer with the given input and output dimensions
 
         let embedding_dim = 16;
-        let vocab_size = 32;
+        let vocab_size = 128;
         let mut complex_to_linear_layer: ComplexToLinearLayer = ComplexToLinearLayer::new(cols, embedding_dim, learning_rate);
-        let mut sparse_linear_layer: SparseLinearLayer = SparseLinearLayer::new(learning_rate, vocab_size, embedding_dim);
+        let mut sparse_linear_layer: SparseLinearLayer = SparseLinearLayer::new(learning_rate, embedding_dim, vocab_size);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, cols);
 
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, rows, cols);
@@ -54,6 +54,7 @@ mod test_sparse_linear_layer {
         let _gradient_complex_linear: Gradient = complex_to_linear_layer.backward(&gradient_sparse_linear);
 
         let (grouped_linear_gradient, analytical_gradient_bias) = (gradient_sparse_linear.get_gradient_weights(), gradient_sparse_linear.get_gradient_bias());
+        let gradient_input_batch = gradient_sparse_linear.get_gradient_input_batch();
 
         let linear_weights = sparse_linear_layer.weights.clone();
 
@@ -77,7 +78,7 @@ mod test_sparse_linear_layer {
             loss
         };
 
-        let epsilon: f32 = 1e-3;
+        let epsilon: f32 = 1e-4;
         let numerical_grad_linear: Vec<Vec<Complex<f64>>> = numerical_gradient_weights_f32(&mut loss_fn, input_batch.clone(), &linear_weights.clone(), epsilon);
 
         // Check if gradient batch dimensions match expected shapes
@@ -131,5 +132,59 @@ mod test_sparse_linear_layer {
         println!("\n numerical grad bias: {:?}", numerical_grad_linear_bias);
 
         test_gradient_error_1d(&analytical_gradient_bias, &numerical_grad_linear_bias, 1e-3);
+
+        // TEST GRADIENT OF THE INPUT BATCH
+        // Define the loss function
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
+            layer_input.set_input_batch(input.clone());
+
+            let linear_output = sparse_linear_layer.forward(&layer_input);
+            layer_input.set_input_batch(linear_output.get_output_batch());
+
+            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+
+            //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
+            let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
+            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
+
+            loss
+        };
+
+        let epsilon: f64 = 1e-6;
+        let num_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch(&mut loss_fn, complex_linear_output.get_output_batch().clone(), epsilon);
+
+        // Check if gradient batch dimensions match expected shapes
+        //println!("\n analytical gradient_weights_batch: {:?}", gradient_weights_batch);
+        println!("\n analytical gradient_input_batch: {:?}", gradient_input_batch);
+        println!(
+            "\n anlytical gradient_input_batch dim: {} {} {}",
+            gradient_input_batch.len(),
+            gradient_input_batch[0].len(),
+            gradient_input_batch[0][0].len()
+        );
+
+        //println!("\n numerical grad: {:?}", num_gradient_weight_batch);
+        println!("\n numerical num_gradient_input_batch: {:?}", &num_gradient_input_batch);
+        println!(
+            "\n numerical num_gradient_input_batch dim: {} {} {}",
+            num_gradient_input_batch.len(),
+            num_gradient_input_batch[0].len(),
+            num_gradient_input_batch[0][0].len()
+        );
+
+        for b in 0..num_gradient_input_batch.len() {
+            for s in 0..gradient_input_batch[b].len() {
+                let analytical_row_sum: Complex<f64> = gradient_input_batch[b][s].iter().sum();
+                let numerical_row_sum: Complex<f64> = num_gradient_input_batch[b][s].iter().sum();
+
+                println!("analytical row sum: {:?}", analytical_row_sum);
+                println!("numerical row sum: {:?}", numerical_row_sum);
+            }
+        }
+
+        let global_error = global_relative_error_l2(&num_gradient_input_batch, &gradient_input_batch);
+        println!("global relative gradient error gradient input batch: {:?}", &global_error);
+
+        test_gradient_batch_error(&num_gradient_input_batch, &gradient_input_batch, 1e-3);
     }
 }

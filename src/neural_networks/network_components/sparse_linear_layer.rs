@@ -149,15 +149,15 @@ impl SparseLinearLayer {
             let indices = &output_indices_batch[batch_idx]; // seq_len x k
 
             // For each position in sequence
-            for row_idx in 0..sparse_grad.len().min(indices.len()) {
-                let input_row = &input_sample[row_idx]; // embedding_d
-                let grad_row = &sparse_grad[row_idx]; // k gradients
-                let idx_row = &indices[row_idx]; // k indices
+            for seq_idx in 0..sparse_grad.len().min(indices.len()) {
+                let input_row = &input_sample[seq_idx]; // embedding_d
+                let grad_row = &sparse_grad[seq_idx]; // k gradients
+                let idx_row = &indices[seq_idx]; // k indices
 
                 // For each selected index in top-k
-                for (grad_idx, &grad_val) in grad_row.iter().enumerate() {
-                    if grad_idx < idx_row.len() {
-                        let vocab_idx = idx_row[grad_idx]; // which vocab token
+                for (k_idx, &grad_val) in grad_row.iter().enumerate() {
+                    if k_idx < idx_row.len() {
+                        let vocab_idx = idx_row[k_idx]; // which vocab token
                         
                         if vocab_idx < self.weights.len() {
                             // Weight gradient: grad_weight[vocab_idx] += input_row * grad_val
@@ -169,9 +169,10 @@ impl SparseLinearLayer {
                             // Bias gradient: grad_bias[vocab_idx] += grad_val
                             bias_gradients[batch_idx][vocab_idx] += grad_val;
 
-                            // Input gradient: grad_input += weights[vocab_idx] * grad_val
+                            // Input gradient: grad_input[seq_idx][emb_idx] += weights[vocab_idx][emb_idx] * grad_val
+                            // For each embedding dimension, accumulate gradients from all k selected vocab tokens
                             for (emb_idx, &weight_val) in self.weights[vocab_idx].iter().enumerate() {
-                                gradient_input_batch[batch_idx][row_idx][emb_idx] += Complex::new(weight_val as f64, 0.0) * grad_val;
+                                gradient_input_batch[batch_idx][seq_idx][emb_idx] += Complex::new(weight_val as f64, 0.0) * grad_val;
                             }
                         }
                     }
