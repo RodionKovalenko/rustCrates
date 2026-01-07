@@ -520,6 +520,34 @@ where
     grad_batch
 }
 
+pub fn numerical_gradient_weights_f32<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<f32>>, epsilon: f32) -> Vec<Vec<Complex<f64>>>
+where
+    F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>, &Vec<Vec<f32>>) -> Complex<f64>,
+{
+    let mut grad_batch = vec![vec![Complex::new(0.0, 0.0); weights[0].len()]; weights.len()];
+
+    for row in 0..weights.len() {
+        for col in 0..weights[row].len() {
+            // Perturb input by epsilon
+            let mut weights_plus_re = weights.clone();
+            weights_plus_re[row][col] += epsilon;
+
+            let mut weights_minus_re = weights.clone();
+            weights_minus_re[row][col] -= epsilon;
+
+            // Compute numerical gradient
+            let loss_plus_re = f(&input, &weights_plus_re);
+            let loss_minus_re = f(&input, &weights_minus_re);
+
+            let grad_re = (loss_plus_re - loss_minus_re).re / (2.0 * epsilon as f64); // again, just take the real part of the loss
+
+            grad_batch[row][col] += Complex::new(grad_re, 0.0);
+        }
+    }
+
+    grad_batch
+}
+
 pub fn numerical_gradient_weights_batch<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
 where
     F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>, &Vec<Vec<Complex<f64>>>) -> Complex<f64>,
@@ -599,6 +627,34 @@ where
 
     grad_batch
 }
+
+
+pub fn numerical_gradient_bias_f32<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<f32>, epsilon: f32) -> Vec<Complex<f64>>
+where
+    F: FnMut(&Vec<Vec<Vec<Complex<f64>>>>, &Vec<f32>) -> Complex<f64>,
+{
+    let mut grad_batch = vec![Complex::new(0.0, 0.0); bias.len()];
+
+    for row in 0..bias.len() {
+        // Perturb input by epsilon
+        let mut bias_plus = bias.clone();
+        bias_plus[row] += epsilon;
+
+        let mut bias_minus = bias.clone();
+        bias_minus[row] -= epsilon;
+
+        // Compute numerical gradient
+        let loss_plus_re = f(&input, &bias_plus);
+        let loss_minus_re = f(&input, &bias_minus);
+
+        let grad_re = (loss_plus_re - loss_minus_re).re / (2.0 * epsilon as f64); // again, just take the real part of the loss
+
+        grad_batch[row] = Complex::new(grad_re, 0.0);
+    }
+
+    grad_batch
+}
+
 
 pub fn numerical_gradient_input_batch<F>(f: &mut F, input: Vec<Vec<Vec<Complex<f64>>>>, epsilon: f64) -> Vec<Vec<Vec<Complex<f64>>>>
 where

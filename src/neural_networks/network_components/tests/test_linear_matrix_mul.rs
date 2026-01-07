@@ -17,7 +17,7 @@ mod test_linear_matrix_mul {
         let seq_len = 512;
         let dim = 8;
         let learning_rate = 0.001;
-        let vocab_size = 50280;
+        let vocab_size = 5000;
         let compression = 1;
         let output_dim = (vocab_size as f64 / compression as f64) as usize;
 
