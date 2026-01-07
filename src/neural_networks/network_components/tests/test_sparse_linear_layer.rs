@@ -7,7 +7,10 @@ mod test_sparse_linear_layer {
         },
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch},
         utils::{
-            derivative::{global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_bias_f32, numerical_gradient_input_batch, numerical_gradient_weights_f32, test_gradient_batch_error, test_gradient_error_1d, test_gradient_error_2d},
+            derivative::{
+                global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_bias_f32, numerical_gradient_input_batch, numerical_gradient_weights_f32, test_gradient_batch_error,
+                test_gradient_error_1d, test_gradient_error_2d,
+            },
             random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
         },
     };
