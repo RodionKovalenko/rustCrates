@@ -20,3 +20,4 @@ pub mod test_sparse_self_attention_layer;
 pub mod test_ffn_swiglu;
 pub mod test_sparse_self_attention_head;
 pub mod test_complex_to_linear_layer;
+pub mod test_sparse_linear_layer;
