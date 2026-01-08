@@ -97,7 +97,7 @@ impl SparseLinearLayer {
     }
 
     pub fn update_centroids(&mut self) {
-        if self.needs_cluster_update(&self.weights, &self.previous_weights, 0.01) {
+        if self.needs_cluster_update(&self.weights, &self.previous_weights, 0.05) {
             println!("Updating centroids in Sparse Linear Layer");
 
             let threshold = 0.001;
@@ -260,7 +260,7 @@ impl SparseLinearLayer {
     }
 
     // Helper: Ensure target is included in candidate indices
-    fn ensure_target_in_candidates(selected_indices: &mut Vec<usize>, target_id: Option<usize>, k: usize) {
+    pub fn ensure_target_in_candidates(selected_indices: &mut Vec<usize>, target_id: Option<usize>, k: usize) {
         if let Some(tid) = target_id {
             if !selected_indices.contains(&tid) {
                 if selected_indices.len() < k {
@@ -304,6 +304,7 @@ impl SparseLinearLayer {
         let target_batch = &layer_input.get_target_batch_ids();
         let k = layer_input.get_top_k_size();
         let padding_mask_batch = layer_input.get_padding_mask_batch();
+        let is_training = !target_batch.is_empty(); // Training mode if targets are provided
 
         let results: Vec<_> = input_batch
             .par_iter()
@@ -323,12 +324,14 @@ impl SparseLinearLayer {
                         &mut input_f32,
                         &self.centroids,
                         &self.cluster_to_tokens,
-                        4, // top 4 clusters
+                        16, // top 16 clusters (increased for longer sequence generation)
                     );
 
-                    // println!("Selected indices before ensuring target: {:?}", selected_indices);
-
-                    Self::ensure_target_in_candidates(&mut selected_indices, target_id, k);
+                    // During training, ensure target is in candidates for gradient computation
+                    // During inference, rely purely on k-means clustering (no target available)
+                    if is_training {
+                        Self::ensure_target_in_candidates(&mut selected_indices, target_id, k);
+                    }
 
                     // Compute outputs and maintain top-k
                     let mut top_k = Vec::with_capacity(k + 1);
@@ -356,8 +359,6 @@ impl SparseLinearLayer {
     }
 
     pub fn update_parameters(&mut self) {
-        self.update_centroids();
-
         let gradient: &mut Gradient = self.gradient.as_mut().expect("No Gradient found in linear layer");
         let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
         let total_valid_tokens = gradient.get_total_valid_tokens();
