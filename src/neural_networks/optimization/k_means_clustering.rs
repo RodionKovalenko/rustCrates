@@ -190,5 +190,9 @@ pub fn query_candidates<T: Float>(
         candidates.extend(&cluster_to_tokens[c]);
     }
 
+    // canonicalize
+    candidates.sort_unstable();
+    candidates.dedup();
+
     candidates
 }
