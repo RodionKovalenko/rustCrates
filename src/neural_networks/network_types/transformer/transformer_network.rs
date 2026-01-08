@@ -16,7 +16,7 @@ use crate::{
             neural_network_generic::{get_from_db, print_networt_structure, save_to_sled, NeuralNetwork, OperationMode},
             transformer::{
                 transformer_builder::{create_transformer, SPARSE_WINDOW_SIZE},
-                transformer_updater::{update_transformer, VERBOSE},
+                transformer_updater::{update_k_mean_clusters, update_transformer, VERBOSE},
             },
         },
         utils::{
@@ -30,7 +30,7 @@ use crate::{
 pub const MAX_CONTEXT_WINDOW_SIZE: usize = 50280;
 pub const CONTEXT_OVERLAPPING: usize = 16;
 pub const EMA_SCALER: f64 = 1.1;
-pub const TOP_K_SIZE: usize = 50;
+pub const TOP_K_SIZE: usize = 150;
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize, batch_size: usize) {
     let mut total_loss: Complex<f64>;
@@ -149,6 +149,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
         if epoch % 10 == 0 {
             save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
+            update_k_mean_clusters(transformer_network);
         }
 
         if total_loss_exp_ma == 0.0 && epoch == 0 {
