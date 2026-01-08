@@ -324,11 +324,13 @@ impl SparseLinearLayer {
                         &mut input_f32,
                         &self.centroids,
                         &self.cluster_to_tokens,
-                        16, // top 16 clusters (increased for longer sequence generation)
+                        128, // top 128 clusters - high coverage to naturally include targets
                     );
 
-                    // During training, ensure target is in candidates for gradient computation
-                    // During inference, rely purely on k-means clustering (no target available)
+                    // During TRAINING: Force target inclusion for gradient computation
+                    // During INFERENCE: No targets available, rely on clustering alone
+                    // With 32 clusters, target SHOULD be naturally included most of the time.
+                    // If model learns good embeddings, clustering will find the right tokens.
                     if is_training {
                         Self::ensure_target_in_candidates(&mut selected_indices, target_id, k);
                     }
