@@ -19,6 +19,7 @@ use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_out
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SparseLinearLayer {
     pub weights: Vec<Vec<f32>>,
+    pub previous_weights: Vec<Vec<f32>>,
     pub learning_rate: f64,
     pub bias: Vec<f32>,
     pub smoothing: f64,
@@ -67,9 +68,11 @@ impl SparseLinearLayer {
         let threshold = 0.001;
 
         let (centroids, assignments, cluster_to_tokens) = kmeans(&mut weights, n_clusters, 100, threshold);
+        let previous_weights: Vec<Vec<f32>> = weights.clone();
 
         Self {
             weights,
+            previous_weights,
             bias,
             learning_rate,
             centroids: centroids,
@@ -94,12 +97,39 @@ impl SparseLinearLayer {
     }
 
     pub fn update_centroids(&mut self) {
-        let threshold = 0.001;
-        let (centroids, assignments, cluster_to_tokens) = kmeans(&mut self.weights, self.n_clusters, 100, threshold);
+        if self.needs_cluster_update(&self.weights, &self.previous_weights, 0.01) {
+            println!("Updating centroids in Sparse Linear Layer");
 
-        self.centroids = centroids;
-        self.assignments = assignments;
-        self.cluster_to_tokens = cluster_to_tokens;
+            let threshold = 0.001;
+            let (centroids, assignments, cluster_to_tokens) = kmeans(&mut self.weights, self.n_clusters, 100, threshold);
+
+            self.centroids = centroids;
+            self.assignments = assignments;
+            self.cluster_to_tokens = cluster_to_tokens;
+            self.previous_weights = self.weights.clone();
+        }
+    }
+
+    pub fn needs_cluster_update(&self, w: &Vec<Vec<f32>>, w_prev: &Vec<Vec<f32>>, tau: f32) -> bool {
+        assert_eq!(w.len(), w_prev.len(), "Row count mismatch");
+
+        let mut num_sq: f32 = 0.0;
+        let mut denom_sq: f32 = 0.0;
+
+        for (row, row_prev) in w.iter().zip(w_prev.iter()) {
+            assert_eq!(row.len(), row_prev.len(), "Dim mismatch");
+
+            for (&x, &x_prev) in row.iter().zip(row_prev.iter()) {
+                let diff = x - x_prev;
+                num_sq += diff * diff;
+                denom_sq += x_prev * x_prev;
+            }
+        }
+
+        let eps = 1e-8;
+        let drift = (num_sq.sqrt()) / (denom_sq.sqrt() + eps);
+
+        drift > tau
     }
 
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
@@ -158,7 +188,7 @@ impl SparseLinearLayer {
                 for (k_idx, &grad_val) in grad_row.iter().enumerate() {
                     if k_idx < idx_row.len() {
                         let vocab_idx = idx_row[k_idx]; // which vocab token
-                        
+
                         if vocab_idx < self.weights.len() {
                             // Weight gradient: grad_weight[vocab_idx] += input_row * grad_val
                             // weights[vocab_idx] is embedding_d dimension
@@ -296,6 +326,8 @@ impl SparseLinearLayer {
                         4, // top 4 clusters
                     );
 
+                    // println!("Selected indices before ensuring target: {:?}", selected_indices);
+
                     Self::ensure_target_in_candidates(&mut selected_indices, target_id, k);
 
                     // Compute outputs and maintain top-k
@@ -324,6 +356,8 @@ impl SparseLinearLayer {
     }
 
     pub fn update_parameters(&mut self) {
+        self.update_centroids();
+
         let gradient: &mut Gradient = self.gradient.as_mut().expect("No Gradient found in linear layer");
         let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
         let total_valid_tokens = gradient.get_total_valid_tokens();
@@ -355,6 +389,7 @@ impl SparseLinearLayer {
                 vec![Complex::new(0.0, 0.0); self.bias.len()],
             )
         };
+
         calculate_adam_w_bias_f32(
             &mut self.bias,
             &gradient.get_gradient_bias(),

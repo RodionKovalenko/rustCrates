@@ -1,5 +1,5 @@
 use crate::neural_networks::{
-    network_components::{adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, complex_to_linear_layer::ComplexToLinearLayer, multi_linear_layer::MultiLinearLayer},
+    network_components::{adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, complex_to_linear_layer::ComplexToLinearLayer, multi_linear_layer::MultiLinearLayer, sparse_linear_layer::SparseLinearLayer},
     network_types::{
         feedforward_layer::FeedForwardLayer,
         transformer::{self_attention_layer::SelfAttentionLayer, self_attention_layer_approximation::SelfAttentionLayerApproximation, sparse_self_attention_layer::SparseSelfAttentionLayer},
@@ -95,6 +95,7 @@ pub enum LayerEnum {
     SparseSelfAttention(Box<SparseSelfAttentionLayer>),
     SelfAttentionApproximation(Box<SelfAttentionLayerApproximation>),
     Linear(Box<LinearLayer>),
+    SparseLinear(Box<SparseLinearLayer>),
     MultiLinear(Box<MultiLinearLayer>),
     DiscreteWavelet(Box<DiscreteWaveletLayer>),
     ComplexToLinear(Box<ComplexToLinearLayer>),

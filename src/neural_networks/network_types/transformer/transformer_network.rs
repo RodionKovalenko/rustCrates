@@ -583,6 +583,26 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     println!("No previous output for Dense layer");
                 }
             }
+            LayerEnum::SparseLinear(sparse_linear_layer) => {
+                if let Some(previous_output) = &output {
+                    if VERBOSE {
+                        println!("forward sparse linear start");
+                    }
+                    layer_input.set_input_batch(previous_output.clone());
+
+                    let start = Instant::now();
+                    let output_linear = sparse_linear_layer.forward(&layer_input);
+
+                    linear_output_indices = output_linear.get_output_indices();
+
+                    if VERBOSE {
+                        println!("time elapsed in seconds in linear layer: {:?}", start.elapsed().as_secs_f64());
+                    }
+                    output = Some(output_linear.get_output_batch());
+                } else {
+                    println!("No previous output for Dense layer");
+                }
+            }
             LayerEnum::MultiLinear(multi_linear_layer) => {
                 if let Some(previous_output) = &output {
                     if VERBOSE {
@@ -830,6 +850,19 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     gradient = Some(gradient_batch);
                     if VERBOSE {
                         println!("time elapsed in seconds in linear layer backward: {:?}", start.elapsed().as_secs_f64());
+                    }
+                } else {
+                    println!("No previous gradient in Linear Layer");
+                }
+            }
+            LayerEnum::SparseLinear(sparse_linear_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    let start = Instant::now();
+                    let gradient_batch: Gradient = sparse_linear_layer.backward(&previous_gradient);
+                    gradient = Some(gradient_batch);
+
+                    if VERBOSE {
+                        println!("time elapsed in seconds in sparse linear layer backward: {:?}", start.elapsed().as_secs_f64());
                     }
                 } else {
                     println!("No previous gradient in Linear Layer");

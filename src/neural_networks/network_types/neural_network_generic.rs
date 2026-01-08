@@ -227,6 +227,9 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
             LayerEnum::Linear(linear_layer) => {
                 linear_layer.learning_rate = learning_rate;
             }
+            LayerEnum::SparseLinear(sparse_linear_layer) => {
+                sparse_linear_layer.learning_rate = learning_rate;
+            }
             LayerEnum::MultiLinear(linear_layer) => {
                 linear_layer.learning_rate = learning_rate;
             }
@@ -372,6 +375,11 @@ pub fn reset_previous_gradient(transformer: &mut NeuralNetwork) {
                 linear_layer.gradient = None;
                 linear_layer.batch_size = 0;
             }
+            LayerEnum::SparseLinear(sparse_linear_layer) => {
+                // sparse_linear_layer.previous_gradient = None;
+                sparse_linear_layer.gradient = None;
+                sparse_linear_layer.batch_size = 0;
+            }
             LayerEnum::MultiLinear(_linear_layer) => {
                 // _linear_layer.previous_gradient = None;
                 _linear_layer.gradient = None;
@@ -489,6 +497,9 @@ pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
             }
             LayerEnum::Linear(linear_layer) => {
                 println!("linear layer weigths: {} {}", linear_layer.weights.len(), linear_layer.weights[0].len());
+            }
+            LayerEnum::SparseLinear(sparse_linear_layer) => {
+                println!("sparse linear layer weigths: {} {}", sparse_linear_layer.weights.len(), sparse_linear_layer.weights[0].len());
             }
             LayerEnum::MultiLinear(multilinear_layer) => {
                 println!("multilinear layers: {} ", multilinear_layer.layers.len());
