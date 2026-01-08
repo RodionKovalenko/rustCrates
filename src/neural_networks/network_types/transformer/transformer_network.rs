@@ -30,7 +30,7 @@ use crate::{
 pub const MAX_CONTEXT_WINDOW_SIZE: usize = 50280;
 pub const CONTEXT_OVERLAPPING: usize = 16;
 pub const EMA_SCALER: f64 = 1.1;
-pub const TOP_K_SIZE: usize = 150;
+pub const TOP_K_SIZE: usize = 300;
 
 pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize, batch_size: usize) {
     let mut total_loss: Complex<f64>;
@@ -210,6 +210,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
     layer_input.set_calculate_gradient(false);
     layer_input.set_forward_only(true);
     layer_input.set_calculate_k_v_cache(true);
+    layer_input.set_top_k_size(TOP_K_SIZE); // Set k for sparse linear layer
 
     print!("Antwort: ");
 

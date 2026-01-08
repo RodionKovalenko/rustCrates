@@ -1,7 +1,9 @@
 use std::fmt::Debug;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use num_traits::{Float, FromPrimitive};
 use rand::seq::IndexedRandom;
+use rayon::prelude::*;
 
 // ------------------------------------------------------------
 // L2 normalization helper
@@ -35,7 +37,7 @@ fn squared_l2_distance<T: Float>(a: &[T], b: &[T]) -> T {
 // ------------------------------------------------------------
 // k-means with L2 normalization and early stopping
 // ------------------------------------------------------------
-pub fn kmeans<T: Float + FromPrimitive + Debug>(
+pub fn kmeans<T: Float + FromPrimitive + Debug + Send + Sync>(
     data: &mut Vec<Vec<T>>, // N x D
     k: usize,
     n_iter: usize,
@@ -62,8 +64,7 @@ pub fn kmeans<T: Float + FromPrimitive + Debug>(
     let target_size = n / k;
 
     for iter in 0..n_iter {
-        let mut sums = vec![vec![T::zero(); d]; k];
-        let mut counts = vec![0usize; k];
+        let counts: Vec<AtomicUsize> = (0..k).map(|_| AtomicUsize::new(0)).collect();
 
         // annealed penalty strength
         let alpha = {
@@ -72,9 +73,10 @@ pub fn kmeans<T: Float + FromPrimitive + Debug>(
         };
 
         // ------------------------
-        // assignment step (with penalty)
+        // assignment step (with penalty) - PARALLELIZED
         // ------------------------
-        for (i, v) in data.iter().enumerate() {
+        let new_assignments: Vec<usize> = (0..n).into_par_iter().map(|i| {
+            let v = &data[i];
             let mut best_k = 0;
             let mut best_score = T::max_value();
 
@@ -82,7 +84,8 @@ pub fn kmeans<T: Float + FromPrimitive + Debug>(
                 let dist = squared_l2_distance(v, c);
 
                 // size penalty
-                let size_ratio = T::from(counts[c_idx]).unwrap() / T::from(target_size.max(1)).unwrap();
+                let count = counts[c_idx].load(Ordering::Relaxed);
+                let size_ratio = T::from(count).unwrap() / T::from(target_size.max(1)).unwrap();
 
                 let score = dist * (T::one() + alpha * size_ratio);
 
@@ -92,30 +95,46 @@ pub fn kmeans<T: Float + FromPrimitive + Debug>(
                 }
             }
 
-            // Assignment of token index i to cluster best_k
-            assignments[i] = best_k;
-            counts[best_k] += 1;
+            counts[best_k].fetch_add(1, Ordering::Relaxed);
+            best_k
+        }).collect();
+        
+        assignments = new_assignments;
 
-            for j in 0..d {
-                sums[best_k][j] = sums[best_k][j] + v[j];
+        // Convert atomic counts and compute sums in parallel
+        let counts: Vec<usize> = counts.iter().map(|c| c.load(Ordering::Relaxed)).collect();
+        
+        let sums: Vec<Vec<T>> = (0..k).into_par_iter().map(|c_idx| {
+            let mut sum = vec![T::zero(); d];
+            for i in 0..n {
+                if assignments[i] == c_idx {
+                    for j in 0..d {
+                        sum[j] = sum[j] + data[i][j];
+                    }
+                }
             }
-        }
+            sum
+        }).collect();
 
         // ------------------------
-        // update step
+        // update step - PARALLELIZED
         // ------------------------
-        for c_idx in 0..k {
+        let new_centroids: Vec<Vec<T>> = (0..k).into_par_iter().map(|c_idx| {
             if counts[c_idx] == 0 {
-                continue;
+                return centroids[c_idx].clone();
             }
 
             let inv = T::one() / T::from(counts[c_idx]).unwrap();
+            let mut centroid = vec![T::zero(); d];
             for j in 0..d {
-                centroids[c_idx][j] = sums[c_idx][j] * inv;
+                centroid[j] = sums[c_idx][j] * inv;
             }
 
-            l2_normalize(&mut centroids[c_idx]);
-        }
+            l2_normalize(&mut centroid);
+            centroid
+        }).collect();
+        
+        centroids = new_centroids;
 
         // ------------------------
         // check convergence
@@ -150,7 +169,7 @@ pub fn kmeans<T: Float + FromPrimitive + Debug>(
 // ------------------------------------------------------------
 // Query function: returns candidate token IDs
 // ------------------------------------------------------------
-pub fn query_candidates<T: Float>(
+pub fn query_candidates<T: Float + Send + Sync>(
     query: &mut [T],                  // query vector
     centroids: &[Vec<T>],             // cluster centroids
     cluster_to_tokens: &[Vec<usize>], // precomputed cluster → token IDs
@@ -170,15 +189,17 @@ pub fn query_candidates<T: Float>(
         *x = *x / norm;
     }
 
-    // score each centroid (using cosine similarity = dot product for L2-normalized vectors)
-    let mut centroid_scores: Vec<(usize, T)> = Vec::with_capacity(k);
-    for (c_idx, c) in centroids.iter().enumerate() {
-        let mut score = T::zero();
-        for j in 0..d {
-            score = score + query[j] * c[j];
-        }
-        centroid_scores.push((c_idx, score));
-    }
+    // score each centroid (using cosine similarity = dot product for L2-normalized vectors) - PARALLELIZED
+    let mut centroid_scores: Vec<(usize, T)> = (0..k)
+        .into_par_iter()
+        .map(|c_idx| {
+            let mut score = T::zero();
+            for j in 0..d {
+                score = score + query[j] * centroids[c_idx][j];
+            }
+            (c_idx, score)
+        })
+        .collect();
 
     // pick top_m_centroids
     centroid_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
