@@ -378,3 +378,110 @@ pub fn calculate_adam_w_f32(
         }
     }
 }
+
+// Sparse version of AdamW for f32 weights - only updates specified indices
+// This is much more efficient for sparse linear layers where only a subset of vocab tokens are used
+pub fn calculate_adam_w_f32_sparse(
+    weights: &mut Vec<Vec<f32>>,
+    weight_gradients: &Vec<Vec<Complex<f64>>>,
+    prev_m: &mut Vec<Vec<Complex<f64>>>,
+    prev_v: &mut Vec<Vec<Complex<f64>>>,
+    prev_v_hat: &mut Vec<Vec<Complex<f64>>>,
+    learning_rate: f64,
+    t: usize,
+    used_indices: &[usize], // Only update these row indices
+) {
+    let t = t.max(1) as i32;
+    let current_lr = get_current_learning_rate(learning_rate, t as usize);
+
+    for &i in used_indices {
+        if i >= weights.len() {
+            continue;
+        }
+
+        for j in 0..weights[i].len() {
+            let g = weight_gradients[i][j];
+
+            if is_nan_or_inf(&g) {
+                panic!("Gradient contains NaN or Inf in sparse adam w weights: {:?}", g);
+            }
+
+            // 1️⃣ First moment (complex)
+            prev_m[i][j] = prev_m[i][j] * B_1 + (1.0 - B_1) * g;
+
+            // 2️⃣ Second moment (REAL stored in Complex.re)
+            let g2 = g.norm_sqr();
+            prev_v[i][j] = Complex::new(prev_v[i][j].re * B_2 + (1.0 - B_2) * g2, 0.0);
+
+            // 3️⃣ AMSGrad
+            if prev_v_hat[i][j].re < prev_v[i][j].re {
+                prev_v_hat[i][j] = prev_v[i][j];
+            }
+
+            // 4️⃣ Bias correction
+            let m_hat = prev_m[i][j] / (1.0 - B_1.powi(t));
+            let v_hat_re = prev_v_hat[i][j].re / (1.0 - B_2.powi(t));
+
+            // 5️⃣ Adaptive step
+            let denom = v_hat_re.sqrt() + EPSILON;
+            let adaptive_step = (current_lr * m_hat) / denom;
+
+            // 6️⃣ AdamW update
+            let weight_complex = Complex::new(weights[i][j] as f64, 0.0);
+            let updated_weight = weight_complex - current_lr * WEIGHT_DECAY * weight_complex - adaptive_step;
+            weights[i][j] = updated_weight.re as f32;
+        }
+    }
+}
+
+// Sparse version of AdamW for f32 bias - only updates specified indices
+pub fn calculate_adam_w_bias_f32_sparse(
+    bias: &mut Vec<f32>,
+    gradient: &Vec<Complex<f64>>,
+    prev_m: &mut Vec<Complex<f64>>,
+    prev_v: &mut Vec<Complex<f64>>,
+    prev_v_hat: &mut Vec<Complex<f64>>,
+    learning_rate: f64,
+    time_step: usize,
+    used_indices: &[usize], // Only update these indices
+) {
+    let t = time_step.max(1) as i32;
+    let current_lr = get_current_learning_rate(learning_rate, t as usize);
+
+    for &i in used_indices {
+        if i >= bias.len() {
+            continue;
+        }
+
+        let g = gradient[i];
+
+        if is_nan_or_inf(&g) {
+            panic!("Gradient contains NaN or Inf in sparse adam w bias: {:?}", g);
+        }
+
+        // 1️⃣ First moment (complex)
+        prev_m[i] = prev_m[i] * B_1 + (1.0 - B_1) * g;
+
+        // 2️⃣ Second moment (REAL stored in Complex.re)
+        let g2 = g.norm_sqr();
+        prev_v[i] = Complex::new(prev_v[i].re * B_2 + (1.0 - B_2) * g2, 0.0);
+
+        // 3️⃣ AMSGrad
+        if prev_v_hat[i].re < prev_v[i].re {
+            prev_v_hat[i] = prev_v[i];
+        }
+
+        // 4️⃣ Bias correction
+        let m_hat = prev_m[i] / (1.0 - B_1.powi(t));
+        let v_hat_re = prev_v_hat[i].re / (1.0 - B_2.powi(t));
+
+        // 5️⃣ Adaptive step
+        let denom = v_hat_re.sqrt() + EPSILON;
+        let adaptive_step = (current_lr * m_hat) / denom;
+
+        // 6️⃣ AdamW update - convert to f32
+        let bias_complex = Complex::new(bias[i] as f64, 0.0);
+        let updated_bias = bias_complex - current_lr * WEIGHT_DECAY * bias_complex - adaptive_step;
+        bias[i] = updated_bias.re as f32;
+    }
+}

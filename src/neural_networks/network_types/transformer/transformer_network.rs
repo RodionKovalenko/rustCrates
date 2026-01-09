@@ -41,11 +41,11 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
     let alpha = 0.2;
     let mut layer_input = LayerInput::new_default();
     let mut epoch_processed = 0;
-    let mut timestep = 0;
+    let mut timestep = 1;
 
     'outer: for epoch in 0..num_epochs {
         total_loss = Complex::new(0.0, 0.0);
-        for (record_ind, batch_dataset) in dataset.split_into_batches(batch_size).iter().enumerate() {
+        for (batch_ind, batch_dataset) in dataset.split_into_batches(batch_size).iter().enumerate() {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
 
             let seconds_elapsed = now.elapsed();
@@ -97,20 +97,15 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             }
 
             layer_input.set_batch_ids(batch_ids.clone());
-            layer_input.set_time_step(timestep + 1);
+            layer_input.set_time_step(timestep);
             layer_input.set_batch_size(batch_size);
             layer_input.set_forward_only(false);
             layer_input.set_calculate_gradient(true);
             layer_input.set_target_batch_ids(target_ids.clone());
-            layer_input.set_record_index(record_ind);
             layer_input.set_top_k_size(TOP_K_SIZE);
 
             transformer_network.minibatch_size = batch_size;
-            transformer_network.time_step = timestep + 1;
-
-            if record_ind % batch_size == 0 {
-                timestep += 1;
-            }
+            transformer_network.time_step = timestep;
 
             let network_output = predict(transformer_network, &layer_input);
             let (_predicted_softmax_batch, _padding_mask_batch) = (network_output.get_output_batch_f64(), network_output.get_padding_mask_batch());
@@ -133,9 +128,12 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                 println!("time elapsed for forward pass in seconds: {:?}", seconds);
             }
 
-            backward(transformer_network, &target_ids, &layer_input, true);
+            backward(transformer_network, &target_ids, true);
 
-            if epoch > 0 && epoch % 10 == 0 && record_ind == 0 || VERBOSE {
+            // time step is incremented after each batch update
+            timestep += 1;
+
+            if epoch > 0 && epoch % 10 == 0 && batch_ind == 0 || VERBOSE {
                 let seconds_elapsed_end = now.elapsed();
                 let duration = seconds_elapsed_end - seconds_elapsed;
                 let seconds = duration.as_secs_f64();
@@ -716,14 +714,12 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
     layer_output
 }
 
-pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<Vec<u32>>, layer_input: &LayerInput, update_params: bool) -> Option<Gradient> {
+pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<Vec<u32>>, update_params: bool) -> Option<Gradient> {
     // Backward pass
 
     let mut gradient: Option<Gradient> = None;
     let batch_size = transformer_network.get_minibatch_size();
-    let record_ind = layer_input.get_record_index();
-    let batch_ids = layer_input.get_batch_ids();
-    let update_gradients: bool = (record_ind * batch_ids.len()) % batch_size == 0 && update_params;
+    let update_gradients: bool = update_params;
 
     let start_time = Instant::now();
 

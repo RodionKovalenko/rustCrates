@@ -8,7 +8,7 @@ use crate::neural_networks::{
     network_types::{transformer::transformer_updater::VERBOSE, wavelet_discrete_layer::DiscreteWaveletLayer},
     optimization::k_means_clustering::{kmeans, query_candidates},
     utils::{
-        adam_w::{calculate_adam_w_bias_f32, calculate_adam_w_f32},
+        adam_w::{calculate_adam_w_bias_f32_sparse, calculate_adam_w_f32_sparse},
         matrix::{add_matrix_2d_c, add_matrix_3d, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d},
         weights_initializer::initialize_weights_f32,
     },
@@ -165,7 +165,7 @@ impl SparseLinearLayer {
 
         drift > tau
     }
-    
+
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = input.get_input_batch();
 
@@ -395,6 +395,9 @@ impl SparseLinearLayer {
     }
 
     pub fn update_parameters(&mut self) {
+        // Collect all unique indices that were actually used during forward/backward pass
+        let used_indices = self.collect_used_indices();
+
         let gradient: &mut Gradient = self.gradient.as_mut().expect("No Gradient found in linear layer");
         let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
         let total_valid_tokens = gradient.get_total_valid_tokens();
@@ -427,7 +430,8 @@ impl SparseLinearLayer {
             )
         };
 
-        calculate_adam_w_bias_f32(
+        // Use sparse AdamW optimizers - only update indices that were actually used
+        calculate_adam_w_bias_f32_sparse(
             &mut self.bias,
             &gradient.get_gradient_bias(),
             &mut prev_m_bias,
@@ -435,8 +439,9 @@ impl SparseLinearLayer {
             &mut prev_v_bias_hat,
             learning_rate,
             time_step,
+            &used_indices,
         );
-        calculate_adam_w_f32(
+        calculate_adam_w_f32_sparse(
             &mut self.weights,
             &gradient.get_gradient_weights(),
             &mut prev_m_weights,
@@ -444,6 +449,7 @@ impl SparseLinearLayer {
             &mut prev_v_weights_hat,
             learning_rate,
             time_step,
+            &used_indices,
         );
 
         gradient.set_prev_m_bias(prev_m_bias);
@@ -471,5 +477,28 @@ impl SparseLinearLayer {
         }
 
         weight_gradients
+    }
+
+    /// Collect all unique vocab indices that were used during the forward pass
+    /// This is used for sparse AdamW updates - we only need to update these indices
+    fn collect_used_indices(&self) -> Vec<usize> {
+        let output_indices_batch = self.output_indices.as_ref().expect("Output indices missing");
+
+        let mut indices_set = std::collections::HashSet::new();
+
+        // Iterate through all batches, sequences, and k-selected indices
+        for batch_indices in output_indices_batch {
+            for seq_indices in batch_indices {
+                for &idx in seq_indices {
+                    indices_set.insert(idx);
+                }
+            }
+        }
+
+        // Convert to sorted vector for deterministic behavior
+        let mut indices: Vec<usize> = indices_set.into_iter().collect();
+        indices.sort_unstable();
+
+        indices
     }
 }
