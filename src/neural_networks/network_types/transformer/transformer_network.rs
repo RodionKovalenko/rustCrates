@@ -149,8 +149,9 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
         if epoch % 10 == 0 {
             save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
-            update_k_mean_clusters(transformer_network);
         }
+
+        update_k_mean_clusters(transformer_network, epoch);
 
         if total_loss_exp_ma == 0.0 && epoch == 0 {
             total_loss_exp_ma = total_loss.re;

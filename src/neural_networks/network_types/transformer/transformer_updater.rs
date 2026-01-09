@@ -633,11 +633,11 @@ pub fn update_transformer(transformer_network: &mut NeuralNetwork, target_batch_
     }
 }
 
-pub fn update_k_mean_clusters(transformer_network: &mut NeuralNetwork) {
+pub fn update_k_mean_clusters(transformer_network: &mut NeuralNetwork, epoch: usize) {
     for layer in transformer_network.layers.iter_mut() {
         match layer {
             LayerEnum::SparseLinear(sparse_linear_layer) => {
-                sparse_linear_layer.update_centroids();
+                sparse_linear_layer.update_centroids(epoch);
             }
             _ => {}
         }

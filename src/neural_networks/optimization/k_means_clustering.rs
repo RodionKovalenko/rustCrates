@@ -48,6 +48,7 @@ pub fn kmeans<T: Float + FromPrimitive + Debug + Send + Sync>(
 
     assert!(n >= k);
     println!("Running K-means with N={}, D={}, K={}", n, d, k);
+    let start_time = std::time::Instant::now();
 
     // normalize data ONCE
     for v in data.iter_mut() {
@@ -162,6 +163,7 @@ pub fn kmeans<T: Float + FromPrimitive + Debug + Send + Sync>(
     }
 
     println!("K-means completed.");
+    println!("K-means total time: {:?}", start_time.elapsed().as_secs_f32());
 
     (centroids, assignments, cluster_to_tokens)
 }
