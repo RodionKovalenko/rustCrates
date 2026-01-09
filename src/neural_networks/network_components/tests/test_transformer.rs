@@ -199,7 +199,7 @@ mod test_transformer {
 
         let output_batch: Vec<Vec<Vec<Complex<f64>>>> = convert_to_c_f64_3d::<Vec<Vec<Vec<f64>>>>(&output_batch);
         let (_tokens, target_ids) = tokenize_batch(&target_batch_str, true).unwrap();
-        backward(&mut transformer_network, &target_ids, &layer_input, false);
+        backward(&mut transformer_network, &target_ids, false);
 
         println!("\n\n output batch {:?}", &output_batch[0][0][0..100]);
         println!("\n output_batch dim {:?}, {}, {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
