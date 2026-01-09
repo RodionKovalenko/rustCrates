@@ -39,6 +39,8 @@ pub struct SparseLinearLayer {
     pub cluster_to_tokens: Vec<Vec<usize>>,
     pub n_clusters: usize,
 
+    pub last_cluster_update_step: usize,
+
     #[serde(skip)]
     pub gradients: Vec<Vec<Complex<f64>>>,
     #[serde(skip)]
@@ -92,13 +94,26 @@ impl SparseLinearLayer {
             ema: 0.0,
             global_norm: 0.0,
             max_norm: 0.0,
+            last_cluster_update_step: 0,
             output_indices: None,
         }
     }
 
-    pub fn update_centroids(&mut self) {
-        if self.needs_cluster_update(&self.weights, &self.previous_weights, 0.05) {
-            println!("Updating centroids in Sparse Linear Layer");
+    pub fn update_centroids(&mut self, epoch: usize) {
+        let tau = self.tau_schedule(epoch);
+        let max_gap = self.max_update_gap(epoch);
+
+        // Compute drift
+        let drifted = self.needs_cluster_update(&self.weights, &self.previous_weights, tau);
+
+        // Forced update only after first few epochs
+        let time_forced = epoch > 5 && epoch.saturating_sub(self.last_cluster_update_step) >= max_gap;
+
+        if drifted || time_forced {
+            println!(
+                "Updating centroids (epoch={}, drift={}, forced={}, last_update={})",
+                epoch, drifted, time_forced, self.last_cluster_update_step
+            );
 
             let threshold = 0.001;
             let (centroids, assignments, cluster_to_tokens) = kmeans(&mut self.weights, self.n_clusters, 100, threshold);
@@ -106,19 +121,38 @@ impl SparseLinearLayer {
             self.centroids = centroids;
             self.assignments = assignments;
             self.cluster_to_tokens = cluster_to_tokens;
+
             self.previous_weights = self.weights.clone();
+            self.last_cluster_update_step = epoch;
         }
     }
 
-    pub fn needs_cluster_update(&self, w: &Vec<Vec<f32>>, w_prev: &Vec<Vec<f32>>, tau: f32) -> bool {
-        assert_eq!(w.len(), w_prev.len(), "Row count mismatch");
+    // Drift threshold schedule: adaptive to training stage
+    fn tau_schedule(&self, epoch: usize) -> f32 {
+        match epoch {
+            0..=4 => 0.005,  // very sensitive early training
+            5..=19 => 0.01,  // normal early
+            20..=49 => 0.02, // mid training
+            _ => 0.05,       // late training, embeddings stabilize
+        }
+    }
 
-        let mut num_sq: f32 = 0.0;
-        let mut denom_sq: f32 = 0.0;
+    // Maximum gap between forced updates: adaptive to training stage
+    fn max_update_gap(&self, epoch: usize) -> usize {
+        match epoch {
+            0..=4 => 5,    // early: only drift-driven, no forced
+            5..=19 => 10,  // mid-early: occasionally force
+            20..=49 => 20, // mid-late: sparse forced updates
+            _ => 50,       // late: force rarely
+        }
+    }
+
+    // Compute drift as before
+    pub fn needs_cluster_update(&self, w: &Vec<Vec<f32>>, w_prev: &Vec<Vec<f32>>, tau: f32) -> bool {
+        let mut num_sq = 0.0;
+        let mut denom_sq = 0.0;
 
         for (row, row_prev) in w.iter().zip(w_prev.iter()) {
-            assert_eq!(row.len(), row_prev.len(), "Dim mismatch");
-
             for (&x, &x_prev) in row.iter().zip(row_prev.iter()) {
                 let diff = x - x_prev;
                 num_sq += diff * diff;
@@ -127,11 +161,11 @@ impl SparseLinearLayer {
         }
 
         let eps = 1e-8;
-        let drift = (num_sq.sqrt()) / (denom_sq.sqrt() + eps);
+        let drift = num_sq.sqrt() / (denom_sq.sqrt() + eps);
 
         drift > tau
     }
-
+    
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = input.get_input_batch();
 
@@ -324,7 +358,7 @@ impl SparseLinearLayer {
                         &mut input_f32,
                         &self.centroids,
                         &self.cluster_to_tokens,
-                        128, // top 128 clusters - high coverage to naturally include targets
+                        8, // top 8 clusters - high coverage to naturally include targets
                     );
 
                     // During TRAINING: Force target inclusion for gradient computation
