@@ -49,7 +49,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
     // Early stopping parameters
     let mut best_val_loss = f64::INFINITY;
     let mut best_epoch = 0;
-    let patience = 10; // Stop if no improvement for 10 epochs
+    let patience = 100; // Stop if no improvement for 100 epochs
     let mut epochs_without_improvement = 0;
 
     'outer: for epoch in 0..num_epochs {
@@ -1195,7 +1195,7 @@ fn evaluate_validation(transformer_network: &mut NeuralNetwork, dataset: &Datase
         // Forward pass only
         let network_output = predict(transformer_network, &layer_input);
         let loss: Complex<f64> = cross_entropy_sum_batch(&network_output.get_cross_entropy_loss_batch(), &target_ids);
-        
+
         total_val_loss += loss.re;
         num_batches += 1;
     }
