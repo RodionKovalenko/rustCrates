@@ -224,10 +224,10 @@ impl DiscreteWaveletLayer {
             grad_input_batch = add_matrix_3d(&grad_input_batch, &grad_input_batch);
         }
 
-        if self.gradient.is_some() {
-            let previous_gradient = self.gradient.as_ref().expect("");
-            grad_input_batch = add_matrix_3d(&grad_input_batch, &previous_gradient.get_gradient_input_batch());
-        }
+        // if self.gradient.is_some() {
+        //     let previous_gradient = self.gradient.as_ref().expect("");
+        //     grad_input_batch = add_matrix_3d(&grad_input_batch, &previous_gradient.get_gradient_input_batch());
+        // }
 
         let mut gradient = Gradient::new_default();
         gradient.set_time_step(self.time_step);

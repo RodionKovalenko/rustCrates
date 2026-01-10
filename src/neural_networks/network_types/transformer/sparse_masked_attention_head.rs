@@ -13,7 +13,7 @@ use crate::neural_networks::{
         activation::softmax_complex_padding_complex,
         adam_w::calculate_adam_w,
         low_rank_approx::transpose,
-        matrix::{add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex},
+        matrix::{add_matrix, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -134,6 +134,13 @@ impl SparseMaskedAttentionHead {
 
     fn set_layer_type(&mut self, layer_type: LayerType) {
         self.layer_type = layer_type;
+    }
+
+    pub fn clear_cache(&mut self) {
+        self.k_cache = None;
+        self.v_cache = None;
+        self.k_ctl = None;
+        self.q_ctl = None;
     }
 
     pub fn create_default_attention_layer(rows: usize, cols: usize, layer_type: LayerType, window_size: usize, learning_rate: f64) -> SparseMaskedAttentionHead {
@@ -762,12 +769,12 @@ impl SparseMaskedAttentionHead {
             gradient_input_batch[batch_ind] = add_matrix(&gradient_input_batch[batch_ind], &dl_dvx);
         }
 
-        if self.gradient.is_some() {
-            let previous_gradient = self.gradient.as_ref().expect("");
-            gradient_v_batch = add_matrix_3d(&gradient_v_batch, &previous_gradient.get_gradient_weights_v_batch());
-            gradient_q_batch = add_matrix_3d(&gradient_q_batch, &previous_gradient.get_gradient_weights_q_batch());
-            gradient_k_batch = add_matrix_3d(&gradient_k_batch, &previous_gradient.get_gradient_weights_k_batch());
-        }
+        // if self.gradient.is_some() {
+        //     let previous_gradient = self.gradient.as_ref().expect("");
+        //     gradient_v_batch = add_matrix_3d(&gradient_v_batch, &previous_gradient.get_gradient_weights_v_batch());
+        //     gradient_q_batch = add_matrix_3d(&gradient_q_batch, &previous_gradient.get_gradient_weights_q_batch());
+        //     gradient_k_batch = add_matrix_3d(&gradient_k_batch, &previous_gradient.get_gradient_weights_k_batch());
+        // }
 
         // Compute the gradients for the parameters and store them
         let mut gradient = Gradient::new_default();
@@ -812,13 +819,10 @@ impl SparseMaskedAttentionHead {
             (
                 previous_gradient.get_prev_m_weigths_q(),
                 previous_gradient.get_prev_v_weigths_q(),
-
                 previous_gradient.get_prev_m_weigths_k(),
                 previous_gradient.get_prev_v_weights_k(),
-
                 previous_gradient.get_prev_m_weigths_v(),
                 previous_gradient.get_prev_v_weights_v(),
-                
                 previous_gradient.get_prev_v_weights_q_hat(),
                 previous_gradient.get_prev_v_weights_k_hat(),
                 previous_gradient.get_prev_v_weights_v_hat(),

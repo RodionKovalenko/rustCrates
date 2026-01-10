@@ -28,6 +28,32 @@ impl<T: Debug + Clone, O: Debug + Clone> Dataset<T, O> {
         self.input.iter().zip(self.target.iter())
     }
 
+    // Setup train/validation/test split with validation set fixed at 10%
+    // test_ratio: Optional fraction for test set (e.g., 0.1 for 10%)
+    // If test_ratio is None: 90% train, 10% validation
+    // If test_ratio is Some(0.1): 80% train, 10% validation, 10% test
+    pub fn setup_splits(&mut self, test_ratio: Option<f64>) {
+        let total_size = self.input.len();
+        let val_ratio = 0.1; // Fixed 10% for validation
+        
+        if let Some(test_r) = test_ratio {
+            // Three-way split: train / val (10%) / test
+            let test_size = (total_size as f64 * test_r).round() as usize;
+            let val_size = (total_size as f64 * val_ratio).round() as usize;
+            let train_size = total_size.saturating_sub(val_size).saturating_sub(test_size);
+            
+            self.total_training_records_size = train_size;
+            self.total_validation_records_size = val_size;
+        } else {
+            // Two-way split: train / val (10%)
+            let val_size = (total_size as f64 * val_ratio).round() as usize;
+            let train_size = total_size.saturating_sub(val_size);
+            
+            self.total_training_records_size = train_size;
+            self.total_validation_records_size = val_size;
+        }
+    }
+
     // Fetch a specific batch (index is the batch number)
     pub fn get_batch(&self, batch_idx: usize, batch_size: usize) -> Option<(Vec<T>, Vec<O>)> {
         let start_idx = batch_idx * batch_size;
@@ -42,14 +68,21 @@ impl<T: Debug + Clone, O: Debug + Clone> Dataset<T, O> {
         }
     }
 
-    // Split the dataset into batches
+    // Split the TRAINING data into batches (shuffled)
+    // Only processes data up to total_training_records_size to preserve validation/test sets
     pub fn split_into_batches(&self, batch_size: usize) -> Vec<Dataset<T, O>> {
-        let mut indices: Vec<usize> = (0..self.input.len()).collect();
+        let train_size = if self.total_training_records_size > 0 {
+            self.total_training_records_size
+        } else {
+            self.input.len() // If not set, use all data
+        };
+
+        let mut indices: Vec<usize> = (0..train_size).collect();
         let mut rng = rng();
         indices.shuffle(&mut rng);
 
-        let mut shuffled_input: Vec<T> = Vec::with_capacity(self.input.len());
-        let mut shuffled_target: Vec<O> = Vec::with_capacity(self.target.len());
+        let mut shuffled_input: Vec<T> = Vec::with_capacity(train_size);
+        let mut shuffled_target: Vec<O> = Vec::with_capacity(train_size);
         for &i in &indices {
             shuffled_input.push(self.input[i].clone());
             shuffled_target.push(self.target[i].clone());
@@ -64,6 +97,61 @@ impl<T: Debug + Clone, O: Debug + Clone> Dataset<T, O> {
 
             let batch_input: Vec<T> = shuffled_input[start_idx..end_idx].to_vec();
             let batch_target: Vec<O> = shuffled_target[start_idx..end_idx].to_vec();
+
+            let batch = Dataset::new(batch_input, batch_target);
+            batches.push(batch);
+        }
+
+        batches
+    }
+
+    // Get validation batches (NOT shuffled) - preserves order for consistent evaluation
+    pub fn get_validation_batches(&self, batch_size: usize) -> Vec<Dataset<T, O>> {
+        let train_size = self.total_training_records_size;
+        let val_size = self.total_validation_records_size;
+        
+        if val_size == 0 || train_size >= self.input.len() {
+            return Vec::new();
+        }
+
+        let val_start = train_size;
+        let val_end = (train_size + val_size).min(self.input.len());
+
+        let mut batches = Vec::new();
+        let num_batches = (val_size + batch_size - 1) / batch_size;
+
+        for batch_idx in 0..num_batches {
+            let start_idx = val_start + batch_idx * batch_size;
+            let end_idx = (start_idx + batch_size).min(val_end);
+
+            let batch_input: Vec<T> = self.input[start_idx..end_idx].to_vec();
+            let batch_target: Vec<O> = self.target[start_idx..end_idx].to_vec();
+
+            let batch = Dataset::new(batch_input, batch_target);
+            batches.push(batch);
+        }
+
+        batches
+    }
+
+    // Get test batches (NOT shuffled) - preserves order, starts after train+val
+    pub fn get_test_batches(&self, batch_size: usize) -> Vec<Dataset<T, O>> {
+        let test_start = self.total_training_records_size + self.total_validation_records_size;
+        
+        if test_start >= self.input.len() {
+            return Vec::new();
+        }
+
+        let mut batches = Vec::new();
+        let test_size = self.input.len() - test_start;
+        let num_batches = (test_size + batch_size - 1) / batch_size;
+
+        for batch_idx in 0..num_batches {
+            let start_idx = test_start + batch_idx * batch_size;
+            let end_idx = (start_idx + batch_size).min(self.input.len());
+
+            let batch_input: Vec<T> = self.input[start_idx..end_idx].to_vec();
+            let batch_target: Vec<O> = self.target[start_idx..end_idx].to_vec();
 
             let batch = Dataset::new(batch_input, batch_target);
             batches.push(batch);
@@ -99,7 +187,10 @@ pub fn concat_batches(a: &Vec<Vec<u32>>, b: &Vec<Vec<u32>>) -> Vec<Vec<u32>> {
 impl<T: Debug + Clone, O: Debug + Clone> DataTrait<T, O> for Dataset<T, O> {
     // Create a new instance of Dataset
     fn new(input: Vec<T>, target: Vec<O>) -> Self {
-        Dataset { input, target, total_training_records_size: 0, total_validation_records_size: 0 }
+       let mut dataset =  Dataset { input, target, total_training_records_size: 0, total_validation_records_size: 0 };
+       dataset.setup_splits(Some(0.1));
+
+       dataset
     }
 
     // Get a reference to the input data

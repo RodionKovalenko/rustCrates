@@ -3,11 +3,7 @@ use num::Complex;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::utils::{
-    adam_w::calculate_adam_w,
-    matrix::{add_matrix_3d, average_matrix_by_scalar},
-    weights_initializer::initialize_weights_complex_only_real,
-};
+use crate::neural_networks::utils::{adam_w::calculate_adam_w, matrix::average_matrix_by_scalar, weights_initializer::initialize_weights_complex_only_real};
 
 use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
 
@@ -123,10 +119,10 @@ impl ComplexToLinearLayer {
         }
 
         // Combine with previous stored gradients if needed
-        if let Some(prev_grad) = &self.gradient {
-            grad_w1 = add_matrix_3d(&grad_w1, &prev_grad.get_gradient_weight_batch());
-            grad_w2 = add_matrix_3d(&grad_w2, &prev_grad.get_gradient_weight_2_batch());
-        }
+        // if let Some(prev_grad) = &self.gradient {
+        //     grad_w1 = add_matrix_3d(&grad_w1, &prev_grad.get_gradient_weight_batch());
+        //     grad_w2 = add_matrix_3d(&grad_w2, &prev_grad.get_gradient_weight_2_batch());
+        // }
 
         let mut gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(grad_input.clone());

@@ -1,5 +1,8 @@
 use crate::neural_networks::{
-    network_components::{adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, complex_to_linear_layer::ComplexToLinearLayer, multi_linear_layer::MultiLinearLayer, sparse_linear_layer::SparseLinearLayer},
+    network_components::{
+        adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, complex_to_linear_layer::ComplexToLinearLayer, multi_linear_layer::MultiLinearLayer,
+        sparse_linear_layer::SparseLinearLayer,
+    },
     network_types::{
         feedforward_layer::FeedForwardLayer,
         transformer::{self_attention_layer::SelfAttentionLayer, self_attention_layer_approximation::SelfAttentionLayerApproximation, sparse_self_attention_layer::SparseSelfAttentionLayer},
@@ -11,8 +14,8 @@ use crate::neural_networks::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         derivative::{get_gradient_complex, get_gradient_swish},
         matrix::{
-            add_matrix, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate, conjugate_transpose, hadamard_product_2d_c,
-            multiply_complex, split_data_by_columns,
+            add_matrix, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate, conjugate_transpose, hadamard_product_2d_c, multiply_complex,
+            split_data_by_columns,
         },
         weights_initializer::initialize_weights_complex,
     },
@@ -281,11 +284,11 @@ impl Layer {
             }
         }
 
-        if self.gradient.is_some() {
-            let previous_gradient = self.gradient.as_ref().expect("");
-            weight_gradients = add_matrix_3d(&weight_gradients, &previous_gradient.get_gradient_weight_batch());
-            bias_gradients = add_matrix(&bias_gradients, &previous_gradient.get_gradient_bias_batch());
-        }
+        // if self.gradient.is_some() {
+        //     let previous_gradient = self.gradient.as_ref().expect("");
+        //     weight_gradients = add_matrix_3d(&weight_gradients, &previous_gradient.get_gradient_weight_batch());
+        //     bias_gradients = add_matrix(&bias_gradients, &previous_gradient.get_gradient_bias_batch());
+        // }
 
         gradient.set_gradient_input_batch(input_gradient_batch);
         gradient.set_gradient_weight_batch(weight_gradients);
