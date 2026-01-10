@@ -8,10 +8,7 @@ use crate::neural_networks::{
         activation::softmax_complex_padding_real,
         adam_w::calculate_adam_w,
         derivative::{backpropagate_softmax_masked_real, softmax_derivative_complex_jacobian},
-        matrix::{
-            add_matrix, add_matrix_3d, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, multiply_complex_with_f64, multiply_f64_complex,
-            transpose,
-        },
+        matrix::{add_matrix, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, multiply_complex_with_f64, multiply_f64_complex, transpose},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -120,6 +117,11 @@ impl MaskedAttentionHead {
 
     fn set_layer_type(&mut self, layer_type: LayerType) {
         self.layer_type = layer_type;
+    }
+
+    pub fn clear_cache(&mut self) {
+        self.k_cache = None;
+        self.v_cache = None;
     }
 
     pub fn create_default_attention_layer(rows: usize, cols: usize, layer_type: LayerType, learning_rate: f64) -> MaskedAttentionHead {
@@ -342,12 +344,12 @@ impl MaskedAttentionHead {
             gradient_input_batch[batch_ind] = add_matrix(&gradient_input_batch[batch_ind], &dl_dvx);
         }
 
-        if self.gradient.is_some() {
-            let previous_gradient = self.gradient.as_ref().expect("");
-            gradient_v_batch = add_matrix_3d(&gradient_v_batch, &previous_gradient.get_gradient_weights_v_batch());
-            gradient_q_batch = add_matrix_3d(&gradient_q_batch, &previous_gradient.get_gradient_weights_q_batch());
-            gradient_k_batch = add_matrix_3d(&gradient_k_batch, &previous_gradient.get_gradient_weights_k_batch());
-        }
+        // if self.gradient.is_some() {
+        //     let previous_gradient = self.gradient.as_ref().expect("");
+        //     gradient_v_batch = add_matrix_3d(&gradient_v_batch, &previous_gradient.get_gradient_weights_v_batch());
+        //     gradient_q_batch = add_matrix_3d(&gradient_q_batch, &previous_gradient.get_gradient_weights_q_batch());
+        //     gradient_k_batch = add_matrix_3d(&gradient_k_batch, &previous_gradient.get_gradient_weights_k_batch());
+        // }
 
         // Compute the gradients for the parameters and store them
         let mut gradient = Gradient::new_default();

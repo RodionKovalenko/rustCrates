@@ -32,7 +32,10 @@ pub const CONTEXT_OVERLAPPING: usize = 16;
 pub const EMA_SCALER: f64 = 1.1;
 pub const TOP_K_SIZE: usize = 300;
 
-pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, String>, num_epochs: usize, batch_size: usize) {
+pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<String, String>, num_epochs: usize, batch_size: usize) {
+    // Setup data splits: 90% train, 10% validation (test set remains separate)
+    dataset.setup_splits(None);
+
     let mut total_loss: Complex<f64>;
     let loss_threshold: f64 = 0.01;
     let now = Instant::now();
@@ -42,6 +45,12 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
     let mut layer_input = LayerInput::new_default();
     let mut epoch_processed = 0;
     let mut timestep = 1;
+
+    // Early stopping parameters
+    let mut best_val_loss = f64::INFINITY;
+    let mut best_epoch = 0;
+    let patience = 10; // Stop if no improvement for 10 epochs
+    let mut epochs_without_improvement = 0;
 
     'outer: for epoch in 0..num_epochs {
         total_loss = Complex::new(0.0, 0.0);
@@ -56,7 +65,9 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             let (_tokens, target_ids) = tokenize_batch(&target_batch_extended, false).unwrap();
 
             let batch_ids: Vec<Vec<u32>> = concat_batches(&input_ids, &target_ids);
-            // shift one position to the right in the array
+
+            //NOTE: no-op for now.
+            // Kept intentionally for future changes to target shifting logic
             let mut target_ids: Vec<Vec<u32>> = target_ids
                 .iter()
                 .map(|seq| {
@@ -89,6 +100,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
             }
 
             let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap();
+            let actual_batch_size = batch_ids.len();
 
             if max_seq_len > MAX_CONTEXT_WINDOW_SIZE {
                 let (input_batch_ids, target_batch_ids) = sliding_window_chunks_matrix(&batch_ids, MAX_CONTEXT_WINDOW_SIZE, CONTEXT_OVERLAPPING);
@@ -98,13 +110,13 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
             layer_input.set_batch_ids(batch_ids.clone());
             layer_input.set_time_step(timestep);
-            layer_input.set_batch_size(batch_size);
+            layer_input.set_batch_size(actual_batch_size);
             layer_input.set_forward_only(false);
             layer_input.set_calculate_gradient(true);
             layer_input.set_target_batch_ids(target_ids.clone());
             layer_input.set_top_k_size(TOP_K_SIZE);
 
-            transformer_network.minibatch_size = batch_size;
+            transformer_network.minibatch_size = actual_batch_size;
             transformer_network.time_step = timestep;
 
             let network_output = predict(transformer_network, &layer_input);
@@ -115,13 +127,6 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
 
             if epoch > 0 && epoch == (num_epochs - 1) || loss.norm() <= loss_threshold || epoch % 50 == 0 {
                 println!("Epoch: {:?}, Loss: {:?}", epoch, loss);
-                // let predicted_softmax_targets: Vec<Vec<Vec<f64>>> = get_target_predictions(&predicted_softmax_batch, &target_ids, &padding_mask_batch);
-                // let sampled_tokens = greedy_decoding(&predicted_softmax_targets);
-
-                // let predicted_token_batch: Vec<String> = sampled_tokens.par_iter().map(|token_indices| detokenize(token_indices, false).unwrap()).collect();
-                // println!("Top-p tokens dim: {:?}", sampled_tokens[0].len() * sampled_tokens.len());
-                // println!("predicted tokens: {:?}", predicted_token_batch);
-
                 let seconds_elapsed_end = now.elapsed();
                 let duration = seconds_elapsed_end - seconds_elapsed;
                 let seconds = duration.as_secs_f64();
@@ -158,9 +163,47 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
         total_loss_exp_ma = alpha * total_loss.re + (1.0 - alpha) * total_loss_exp_ma;
 
         if epoch % 5 == 0 || total_loss.norm() <= loss_threshold {
-            println!("Epoch: {}, TOTAL LOSS: {}", epoch.to_string().blue().bold(), total_loss.re.to_string().red().bold());
-            // println!("Epoch: {:?}, EXPONENTIAL MOVING AVARAGE LOSS: {:?}", epoch, total_loss_exp_ma);
+            println!("Epoch: {}, TRAINING LOSS: {}", epoch.to_string().blue().bold(), total_loss.re.to_string().red().bold());
         }
+
+        // ========== VALIDATION PHASE (NO GRADIENT UPDATES) ==========
+        let val_loss = evaluate_validation(transformer_network, &dataset, batch_size, &mut layer_input);
+
+        if epoch % 5 == 0 {
+            println!("Epoch: {}, VALIDATION LOSS: {}", epoch.to_string().blue().bold(), val_loss.to_string().yellow().bold());
+        }
+
+        // Early stopping check with improvement threshold
+        let improvement_threshold = 1e-4; // Consider it an improvement if loss decreases by at least this amount
+
+        if val_loss < best_val_loss - improvement_threshold {
+            let improvement = best_val_loss - val_loss;
+            best_val_loss = val_loss;
+            best_epoch = epoch;
+            epochs_without_improvement = 0; // Reset patience counter
+                                            // Save best model
+            println!(
+                "✨ New best validation loss: {} at epoch {} (improved by {})",
+                best_val_loss.to_string().green().bold(),
+                epoch,
+                improvement.to_string().green()
+            );
+            save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
+        } else {
+            epochs_without_improvement += 1;
+
+            if epoch % 5 == 0 || epochs_without_improvement >= patience - 2 {
+                println!("No improvement for {} epochs (best: {} at epoch {})", epochs_without_improvement, best_val_loss, best_epoch);
+            }
+
+            if epochs_without_improvement >= patience {
+                println!("⛔ Early stopping triggered! No improvement for {} epochs.", patience);
+                println!("Best validation loss: {} at epoch {}", best_val_loss, best_epoch);
+                save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
+                break 'outer;
+            }
+        }
+        // ============================================================
 
         if previous_last_losses.len() <= 4 {
             previous_last_losses.push(total_loss.re);
@@ -182,7 +225,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, dataset: Dataset<String, S
                     }
                 }
 
-                if loss_increasing_count > 5 && epoch_processed != epoch {
+                if loss_increasing_count > 3 && epoch_processed != epoch {
                     println!("loss is increasing too much, reducing learning rate");
                     transformer_network.decay_learning_rate(0.5); // e.g., reduce LR by half
                                                                   // reset_previous_gradient(transformer_network);
@@ -1053,3 +1096,213 @@ pub fn cross_entropy_sum_batch(cross_entropy_loss_batch: &Vec<Vec<Vec<Complex<f6
 
 //     loss / count
 // }
+
+/// Clear all caches in attention layers (needed when changing batch size)
+fn clear_network_caches(transformer_network: &mut NeuralNetwork) {
+    for layer in transformer_network.layers.iter_mut() {
+        match layer {
+            LayerEnum::SparseSelfAttention(attention_layer) => {
+                for head in attention_layer.attention_heads.iter_mut() {
+                    head.clear_cache();
+                }
+            }
+            LayerEnum::SelfAttention(attention_layer) => {
+                for head in attention_layer.attention_heads.iter_mut() {
+                    head.clear_cache();
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Evaluate model on validation set (NO gradient updates, NO shuffling)
+fn evaluate_validation(transformer_network: &mut NeuralNetwork, dataset: &Dataset<String, String>, batch_size: usize, layer_input: &mut LayerInput) -> f64 {
+    // Clear all caches before validation (important for correct batch size handling)
+    clear_network_caches(transformer_network);
+
+    let mut total_val_loss = 0.0;
+    let mut num_batches = 0;
+
+    // Get validation batches (NOT shuffled)
+    let val_batches = dataset.get_validation_batches(batch_size);
+
+    if val_batches.is_empty() {
+        println!("⚠️  Warning: No validation data available! Validation loss will be unreliable.");
+        println!(
+            "   Total dataset size: {}, Training size: {}, Validation size: {}",
+            dataset.input.len(),
+            dataset.total_training_records_size,
+            dataset.total_validation_records_size
+        );
+        return f64::INFINITY;
+    }
+
+    for batch_dataset in val_batches.iter() {
+        let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
+
+        let input_batch_extended = extend_input_with_bos(input_batch);
+        let target_batch_extended = batch_dataset.extend_target(target_batch);
+
+        let (_tokens, input_ids) = tokenize_batch(&input_batch_extended, false).unwrap();
+        let (_tokens, target_ids) = tokenize_batch(&target_batch_extended, false).unwrap();
+
+        let batch_ids: Vec<Vec<u32>> = concat_batches(&input_ids, &target_ids);
+
+        let mut target_ids: Vec<Vec<u32>> = target_ids
+            .iter()
+            .map(|seq| {
+                if seq.is_empty() {
+                    return vec![];
+                }
+                let mut shifted = Vec::with_capacity(seq.len());
+                shifted.extend_from_slice(&seq[0..seq.len()]);
+                shifted
+            })
+            .collect();
+
+        let mut batch_ids: Vec<Vec<u32>> = batch_ids
+            .iter()
+            .map(|seq| {
+                if seq.is_empty() {
+                    return vec![];
+                }
+                let mut shifted = Vec::with_capacity(seq.len());
+                shifted.extend_from_slice(&seq[..seq.len() - 1]);
+                shifted
+            })
+            .collect();
+
+        let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap_or(0);
+
+        if max_seq_len > MAX_CONTEXT_WINDOW_SIZE {
+            let (input_batch_ids, target_batch_ids) = sliding_window_chunks_matrix(&batch_ids, MAX_CONTEXT_WINDOW_SIZE, CONTEXT_OVERLAPPING);
+            batch_ids = input_batch_ids;
+            target_ids = target_batch_ids;
+        }
+
+        let actual_batch_size = batch_ids.len();
+
+        layer_input.set_batch_ids(batch_ids.clone());
+        layer_input.set_batch_size(actual_batch_size);
+        layer_input.set_forward_only(false); // MUST be false to compute loss!
+        layer_input.set_calculate_gradient(false); // NO GRADIENT COMPUTATION
+        layer_input.set_target_batch_ids(target_ids.clone());
+        layer_input.set_top_k_size(TOP_K_SIZE);
+
+        transformer_network.minibatch_size = actual_batch_size; // Update network's batch size too
+
+        // Forward pass only
+        let network_output = predict(transformer_network, &layer_input);
+        let loss: Complex<f64> = cross_entropy_sum_batch(&network_output.get_cross_entropy_loss_batch(), &target_ids);
+        
+        total_val_loss += loss.re;
+        num_batches += 1;
+    }
+
+    if num_batches == 0 {
+        println!("⚠️  Warning: No validation batches processed!");
+        return f64::INFINITY;
+    }
+
+    let avg_val_loss = total_val_loss / num_batches as f64;
+
+    // Debug: print validation statistics on first epoch
+    if transformer_network.time_step < 100 {
+        println!("📊 Validation: {} batches, total loss: {:.4}, avg loss: {:.4}", num_batches, total_val_loss, avg_val_loss);
+    }
+
+    avg_val_loss
+}
+
+/// Evaluate model on TEST set - call this ONLY ONCE after training is complete
+pub fn evaluate_test(transformer_network: &mut NeuralNetwork, dataset: &Dataset<String, String>, batch_size: usize) -> f64 {
+    // Clear all caches before test evaluation (important for correct batch size handling)
+    clear_network_caches(transformer_network);
+
+    let mut total_test_loss = 0.0;
+    let mut num_batches = 0;
+    let mut layer_input = LayerInput::new_default();
+
+    // Get test batches (NOT shuffled)
+    let test_batches = dataset.get_test_batches(batch_size);
+
+    if test_batches.is_empty() {
+        println!("Warning: No test data available");
+        return f64::INFINITY;
+    }
+
+    println!("\n{}", "=".repeat(60).bright_cyan());
+    println!("{}", "FINAL TEST SET EVALUATION".bright_cyan().bold());
+    println!("{}", "=".repeat(60).bright_cyan());
+
+    for batch_dataset in test_batches.iter() {
+        let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
+
+        let input_batch_extended = extend_input_with_bos(input_batch);
+        let target_batch_extended = batch_dataset.extend_target(target_batch);
+
+        let (_tokens, input_ids) = tokenize_batch(&input_batch_extended, false).unwrap();
+        let (_tokens, target_ids) = tokenize_batch(&target_batch_extended, false).unwrap();
+
+        let batch_ids: Vec<Vec<u32>> = concat_batches(&input_ids, &target_ids);
+
+        let mut target_ids: Vec<Vec<u32>> = target_ids
+            .iter()
+            .map(|seq| {
+                if seq.is_empty() {
+                    return vec![];
+                }
+                let mut shifted = Vec::with_capacity(seq.len());
+                shifted.extend_from_slice(&seq[0..seq.len()]);
+                shifted
+            })
+            .collect();
+
+        let mut batch_ids: Vec<Vec<u32>> = batch_ids
+            .iter()
+            .map(|seq| {
+                if seq.is_empty() {
+                    return vec![];
+                }
+                let mut shifted = Vec::with_capacity(seq.len());
+                shifted.extend_from_slice(&seq[..seq.len() - 1]);
+                shifted
+            })
+            .collect();
+
+        let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap_or(0);
+
+        if max_seq_len > MAX_CONTEXT_WINDOW_SIZE {
+            let (input_batch_ids, target_batch_ids) = sliding_window_chunks_matrix(&batch_ids, MAX_CONTEXT_WINDOW_SIZE, CONTEXT_OVERLAPPING);
+            batch_ids = input_batch_ids;
+            target_ids = target_batch_ids;
+        }
+
+        let actual_batch_size = batch_ids.len();
+
+        layer_input.set_batch_ids(batch_ids.clone());
+        layer_input.set_batch_size(actual_batch_size);
+        layer_input.set_forward_only(false); // MUST be false to compute loss!
+        layer_input.set_calculate_gradient(false); // NO GRADIENT COMPUTATION
+        layer_input.set_target_batch_ids(target_ids.clone());
+        layer_input.set_top_k_size(TOP_K_SIZE);
+
+        transformer_network.minibatch_size = actual_batch_size; // Update network's batch size too
+
+        // Forward pass only
+        let network_output = predict(transformer_network, &layer_input);
+        let loss: Complex<f64> = cross_entropy_sum_batch(&network_output.get_cross_entropy_loss_batch(), &target_ids);
+
+        total_test_loss += loss.re;
+        num_batches += 1;
+    }
+
+    let avg_test_loss = total_test_loss / num_batches as f64;
+
+    println!("\n{}", "FINAL TEST LOSS:".bright_cyan().bold());
+    println!("{}", avg_test_loss.to_string().bright_green().bold());
+    println!("{}\n", "=".repeat(60).bright_cyan());
+
+    avg_test_loss
+}

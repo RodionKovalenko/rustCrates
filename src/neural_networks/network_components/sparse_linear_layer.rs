@@ -9,7 +9,7 @@ use crate::neural_networks::{
     optimization::k_means_clustering::{kmeans, query_candidates},
     utils::{
         adam_w::{calculate_adam_w_bias_f32_sparse, calculate_adam_w_f32_sparse},
-        matrix::{add_matrix_2d_c, add_matrix_3d, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d},
+        matrix::{average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d},
         weights_initializer::initialize_weights_f32,
     },
 };
@@ -246,11 +246,11 @@ impl SparseLinearLayer {
 
         gradient.set_gradient_input_batch(gradient_input_batch.clone());
 
-        if self.gradient.is_some() {
-            let previous_gradient = self.gradient.as_ref().expect("");
-            weight_gradients = add_matrix_3d(&weight_gradients, &previous_gradient.get_gradient_weight_batch());
-            bias_gradients = add_matrix_2d_c(&bias_gradients, &previous_gradient.get_gradient_bias_batch());
-        }
+        // if self.gradient.is_some() {
+        //     let previous_gradient = self.gradient.as_ref().expect("");
+        //     weight_gradients = add_matrix_3d(&weight_gradients, &previous_gradient.get_gradient_weight_batch());
+        //     bias_gradients = add_matrix_2d_c(&bias_gradients, &previous_gradient.get_gradient_bias_batch());
+        // }
 
         gradient.set_gradient_input_batch(gradient_input_batch.clone());
         gradient.set_gradient_weight_batch(weight_gradients);

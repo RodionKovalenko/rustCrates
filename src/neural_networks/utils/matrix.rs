@@ -780,7 +780,13 @@ pub fn add_matrix_3d<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<Vec<Vec<
 
     assert!(
         matrix_a.len() == matrix_b.len() && matrix_a[0].len() == matrix_b[0].len() && matrix_a[0][0].len() == matrix_b[0][0].len(),
-        "Input matrices must not be empty"
+        "Input matrices must not be empty, a: {} x {} x {} and b: {} x {} x {} must have the same dimensions",
+        matrix_a.len(),
+        matrix_a[0].len(),
+        matrix_a[0][0].len(),
+        matrix_b.len(),
+        matrix_b[0].len(),
+        matrix_b[0][0].len(),
     );
     for i in 0..matrix_a.len() {
         for j in 0..matrix_a[i].len() {

@@ -8,7 +8,7 @@ use crate::neural_networks::{
     network_types::{transformer::transformer_updater::VERBOSE, wavelet_discrete_layer::DiscreteWaveletLayer},
     utils::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
-        matrix::{add_matrix_2d_c, add_matrix_3d, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex},
+        matrix::{add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex},
         weights_initializer::{initialize_weights_complex, initialize_weights_complex_only_real},
     },
 };
@@ -189,11 +189,11 @@ impl LinearLayer {
 
         gradient.set_gradient_input_batch(gradient_input_batch.clone());
 
-        if self.gradient.is_some() {
-            let previous_gradient = self.gradient.as_ref().expect("");
-            weight_gradients = add_matrix_3d(&weight_gradients, &previous_gradient.get_gradient_weight_batch());
-            bias_gradients = add_matrix_2d_c(&bias_gradients, &previous_gradient.get_gradient_bias_batch());
-        }
+        // if self.gradient.is_some() {
+        //     let previous_gradient = self.gradient.as_ref().expect("");
+        //     weight_gradients = add_matrix_3d(&weight_gradients, &previous_gradient.get_gradient_weight_batch());
+        //     bias_gradients = add_matrix_2d_c(&bias_gradients, &previous_gradient.get_gradient_bias_batch());
+        // }
         //  println!("batch size in linear layer: {}", self.batch_size);
 
         gradient.set_gradient_input_batch(gradient_input_batch.clone());
@@ -287,19 +287,21 @@ impl LinearLayer {
                             // Find the minimum element that is not the target
                             min_value = f64::INFINITY;
                             let mut min_pos_candidate = None;
-                            
+
                             for (pos, (v, _, _)) in top_k.iter().enumerate() {
                                 if Some(pos) != target_idx_in_topk && *v < min_value {
                                     min_value = *v;
                                     min_pos_candidate = Some(pos);
                                 }
                             }
-                            
+
                             if let Some(min_pos) = min_pos_candidate {
                                 if real_value > min_value {
                                     top_k[min_pos] = (real_value, sum, col_idx);
                                     // Update min_value excluding target position
-                                    min_value = top_k.iter().enumerate()
+                                    min_value = top_k
+                                        .iter()
+                                        .enumerate()
                                         .filter(|(pos, _)| Some(*pos) != target_idx_in_topk)
                                         .map(|(_, (v, _, _))| *v)
                                         .fold(f64::INFINITY, f64::min);
