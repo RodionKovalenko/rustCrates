@@ -11,7 +11,7 @@ use crate::neural_networks::{
         transformer::{sparse_masked_attention_head::SparseMaskedAttentionHead, transformer_updater::calculate_alpha},
         wavelet_discrete_layer::DiscreteWaveletLayer,
     },
-    utils::matrix::{add_matrix_3d, scale_matrix_3d_by_scalar},
+    utils::matrix::{add_matrix_3d, scale_matrix_3d_by_scalar, RowMajorMatrix},
 };
 use num::Complex;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
@@ -30,11 +30,17 @@ pub struct SparseSelfAttentionLayer {
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
+    pub input_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+    #[serde(skip)]
     pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
+    pub output_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
     #[serde(skip)]
     pub gradient: Option<Gradient>,
     #[serde(skip)]
     pub time_step: usize,
+    #[serde(skip)]
+    pub last_rm_strict: bool,
 }
 
 impl SparseSelfAttentionLayer {
@@ -63,18 +69,105 @@ impl SparseSelfAttentionLayer {
             norm_layer: _norm_layer,
             discrete_wavelet_layer: None,
             input_batch: None,
+            input_batch_rm: None,
             output_batch: None,
+            output_batch_rm: None,
             gradient: None,
             time_step: 0,
+            last_rm_strict: false,
             alpha,
             beta,
         }
     }
 }
-
-// Implement BaseLayer for SelfAttentionLayer
 impl SparseSelfAttentionLayer {
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        self.last_rm_strict = layer_input.get_rm_strict();
+        let input_batch_rm_ref = layer_input.get_input_batch_rm_ref();
+        let input_batch_ref = layer_input.get_input_batch_ref();
+        let use_rm = input_batch_ref.is_none() && input_batch_rm_ref.is_some();
+
+        if use_rm {
+            let input_batch_rm = input_batch_rm_ref.unwrap();
+            let mut batch_output_rm: Vec<RowMajorMatrix<Complex<f64>>> = input_batch_rm.to_vec();
+            let input_batch_rm_original = input_batch_rm.to_vec();
+            let padding_mask_batch = layer_input.get_padding_mask_batch();
+
+            if self.discrete_wavelet_layer.is_some() {
+                panic!("DiscreteWaveletLayer is not supported for RM SparseSelfAttentionLayer yet");
+            }
+
+            let mut local_input = layer_input.clone();
+            local_input.clear_input_batch();
+            local_input.set_input_batch_rm(batch_output_rm.clone());
+            local_input.set_padding_mask_batch(padding_mask_batch.clone());
+
+            if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
+                match norm_layer_enum {
+                    LayerEnum::RMSNorm(_rms_norm_layer) => {
+                        panic!("RMSNorm is not supported for RM SparseSelfAttentionLayer yet");
+                    }
+                    LayerEnum::Norm(norm_layer) => {
+                        let output = norm_layer.forward(&local_input);
+                        if let Some(out_rm) = output.get_output_batch_rm_ref() {
+                            batch_output_rm = out_rm.to_vec();
+                            local_input.set_input_batch_rm(batch_output_rm.clone());
+                        } else {
+                            panic!("NormalNormLayer did not return RM output");
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            let attention_head_outputs_rm: Vec<Vec<RowMajorMatrix<Complex<f64>>>> = self
+                .attention_heads
+                .par_iter_mut()
+                .map(|attention_head| {
+                    let attention_output = attention_head.forward(&local_input);
+                    attention_output.get_output_batch_rm_ref().expect("SparseMaskedAttentionHead did not return RM output").to_vec()
+                })
+                .collect();
+
+            let out = concat_heads_rm(&attention_head_outputs_rm);
+
+            // Residual connection: beta * out + input
+            let mut out_scaled = out.clone();
+            for b in 0..out_scaled.len() {
+                assert_eq!(out_scaled[b].cols, input_batch_rm_original[b].cols);
+                if layer_input.get_forward_only() {
+                    // Align input to the last seq_len rows if output is trimmed.
+                    let seq_len_aligned = out_scaled[b].rows;
+                    let in_aligned = if input_batch_rm_original[b].rows > seq_len_aligned {
+                        let start = (input_batch_rm_original[b].rows - seq_len_aligned) * input_batch_rm_original[b].cols;
+                        RowMajorMatrix::from_data(seq_len_aligned, input_batch_rm_original[b].cols, input_batch_rm_original[b].data[start..].to_vec())
+                    } else {
+                        input_batch_rm_original[b].clone()
+                    };
+
+                    for i in 0..out_scaled[b].data.len() {
+                        out_scaled[b].data[i] = out_scaled[b].data[i] * self.beta + in_aligned.data[i];
+                    }
+                } else {
+                    assert_eq!(out_scaled[b].rows, input_batch_rm_original[b].rows);
+                    for i in 0..out_scaled[b].data.len() {
+                        out_scaled[b].data[i] = out_scaled[b].data[i] * self.beta + input_batch_rm_original[b].data[i];
+                    }
+                }
+            }
+
+            self.input_batch = None;
+            self.output_batch = None;
+            self.input_batch_rm = Some(input_batch_rm_original);
+            self.output_batch_rm = Some(out_scaled.clone());
+            self.time_step = layer_input.get_time_step();
+
+            let mut layer_output = LayerOutput::new_default();
+            layer_output.set_output_batch_rm(out_scaled);
+            layer_output.set_padding_mask_batch(padding_mask_batch);
+            return layer_output;
+        }
+
         let mut batch_output = layer_input.get_input_batch();
         let input_batch = layer_input.get_input_batch();
         let mut padding_mask_batch = layer_input.get_padding_mask_batch();
@@ -184,6 +277,85 @@ impl SparseSelfAttentionLayer {
         self.output_batch = Some(batch_output.clone());
 
         layer_output
+    }
+
+    pub fn backward_rm(&mut self, previous_gradient_batch_rm: &[RowMajorMatrix<Complex<f64>>]) -> Gradient {
+        let mut scaled_upstream: Vec<RowMajorMatrix<Complex<f64>>> = previous_gradient_batch_rm.to_vec();
+        for m in scaled_upstream.iter_mut() {
+            for v in m.data.iter_mut() {
+                *v *= self.beta;
+            }
+        }
+
+        let mut gradient = Gradient::new_default();
+        gradient.set_gradient_input_batch_rm(previous_gradient_batch_rm.to_vec());
+
+        if self.discrete_wavelet_layer.is_some() {
+            panic!("DiscreteWaveletLayer is not supported for RM SparseSelfAttentionLayer backward yet");
+        }
+
+        let num_heads = self.attention_heads.len();
+        assert!(num_heads > 0, "No attention heads found in sparse self-attention layer!");
+        let previous_gradient_head_splitted = split_gradient_into_heads_rm(&scaled_upstream, num_heads);
+
+        let gradient_input_batches_rm: Vec<Vec<RowMajorMatrix<Complex<f64>>>> = self
+            .attention_heads
+            .par_iter_mut()
+            .enumerate()
+            .map(|(head_ind, attention_head)| {
+                let previous_head_gradient_batch = &previous_gradient_head_splitted[head_ind];
+                let g = attention_head.backward_rm(previous_head_gradient_batch);
+                g.get_gradient_input_batch_rm()
+            })
+            .collect();
+
+        let mut combined: Vec<RowMajorMatrix<Complex<f64>>> = gradient_input_batches_rm[0].clone();
+        for h in 1..gradient_input_batches_rm.len() {
+            for b in 0..combined.len() {
+                assert_eq!(combined[b].rows, gradient_input_batches_rm[h][b].rows);
+                assert_eq!(combined[b].cols, gradient_input_batches_rm[h][b].cols);
+                for i in 0..combined[b].data.len() {
+                    combined[b].data[i] += gradient_input_batches_rm[h][b].data[i];
+                }
+            }
+        }
+
+        gradient.set_gradient_input_batch_rm(combined.clone());
+
+        // Norm backward
+        if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
+            match norm_layer_enum {
+                LayerEnum::RMSNorm(_rms_norm_layer) => {
+                    panic!("RMSNorm is not supported for RM SparseSelfAttentionLayer backward yet");
+                }
+                LayerEnum::Norm(norm_layer) => {
+                    let norm_gradient = norm_layer.backward(&gradient);
+                    if let Some(g_rm) = norm_gradient.get_gradient_input_batch_rm_ref() {
+                        combined = g_rm.to_vec();
+                    } else {
+                        if self.last_rm_strict {
+                            panic!("RM strict mode violation: SparseSelfAttentionLayer backward_rm would convert Vec gradients from Norm into RM");
+                        }
+                        combined = norm_gradient.get_gradient_input_batch().iter().map(|m| RowMajorMatrix::from_rows(m)).collect();
+                    }
+                    gradient.set_gradient_input_batch_rm(combined.clone());
+                }
+                _ => {}
+            }
+        }
+
+        // Residual: add unscaled upstream
+        let mut combined_with_residual = combined.clone();
+        for b in 0..combined_with_residual.len() {
+            assert_eq!(combined_with_residual[b].rows, previous_gradient_batch_rm[b].rows);
+            assert_eq!(combined_with_residual[b].cols, previous_gradient_batch_rm[b].cols);
+            for i in 0..combined_with_residual[b].data.len() {
+                combined_with_residual[b].data[i] += previous_gradient_batch_rm[b].data[i];
+            }
+        }
+
+        gradient.set_gradient_input_batch_rm(combined_with_residual);
+        gradient
     }
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
@@ -318,4 +490,71 @@ impl SparseSelfAttentionLayer {
 
         self.attention_heads.par_iter_mut().for_each(|attention_head| attention_head.update_parameters());
     }
+}
+
+fn concat_heads_rm(attention_head_outputs: &[Vec<RowMajorMatrix<Complex<f64>>>]) -> Vec<RowMajorMatrix<Complex<f64>>> {
+    assert!(!attention_head_outputs.is_empty());
+    let num_heads = attention_head_outputs.len();
+    let batch_size = attention_head_outputs[0].len();
+    assert!(batch_size > 0);
+
+    let seq_len = attention_head_outputs[0][0].rows;
+    let head_dim = attention_head_outputs[0][0].cols;
+    for h in 0..num_heads {
+        assert_eq!(attention_head_outputs[h].len(), batch_size);
+        for b in 0..batch_size {
+            assert_eq!(attention_head_outputs[h][b].rows, seq_len);
+            assert_eq!(attention_head_outputs[h][b].cols, head_dim);
+        }
+    }
+
+    let total_dim = head_dim * num_heads;
+    let mut out: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(batch_size);
+    for b in 0..batch_size {
+        let mut data = vec![Complex::new(0.0, 0.0); seq_len * total_dim];
+        for i in 0..seq_len {
+            for h in 0..num_heads {
+                let src = &attention_head_outputs[h][b];
+                let src_row = src.row_range(i);
+                let dst_offset = i * total_dim + h * head_dim;
+                data[dst_offset..dst_offset + head_dim].copy_from_slice(&src.data[src_row]);
+            }
+        }
+        out.push(RowMajorMatrix::from_data(seq_len, total_dim, data));
+    }
+    out
+}
+
+fn split_gradient_into_heads_rm(previous_gradient_batch: &[RowMajorMatrix<Complex<f64>>], num_heads: usize) -> Vec<Vec<RowMajorMatrix<Complex<f64>>>> {
+    assert!(num_heads > 0);
+    let batch_size = previous_gradient_batch.len();
+    assert!(batch_size > 0);
+
+    let seq_len = previous_gradient_batch[0].rows;
+    let dim = previous_gradient_batch[0].cols;
+    assert!(dim % num_heads == 0, "dim={} must be divisible by num_heads={}", dim, num_heads);
+    let head_dim = dim / num_heads;
+
+    let mut out: Vec<Vec<RowMajorMatrix<Complex<f64>>>> = Vec::with_capacity(num_heads);
+    for _ in 0..num_heads {
+        out.push(Vec::with_capacity(batch_size));
+    }
+
+    for b in 0..batch_size {
+        let g = &previous_gradient_batch[b];
+        assert_eq!(g.rows, seq_len);
+        assert_eq!(g.cols, dim);
+
+        for h in 0..num_heads {
+            let mut data = vec![Complex::new(0.0, 0.0); seq_len * head_dim];
+            for i in 0..seq_len {
+                let src_offset = i * dim + h * head_dim;
+                let dst_offset = i * head_dim;
+                data[dst_offset..dst_offset + head_dim].copy_from_slice(&g.data[src_offset..src_offset + head_dim]);
+            }
+            out[h].push(RowMajorMatrix::from_data(seq_len, head_dim, data));
+        }
+    }
+
+    out
 }

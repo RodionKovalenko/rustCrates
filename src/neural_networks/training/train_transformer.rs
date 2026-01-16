@@ -44,7 +44,11 @@ pub fn train_transformer_from_dataset(num_epochs: usize, num_records: usize, bat
     let mut input_batch: Vec<String> = Vec::new();
     let mut target_batch: Vec<String> = Vec::new();
 
-    for i in 0..(num_records / batch_size) {
+    // select only num_records from data_batches
+    for i in 0..num_records {
+        if i >= data_batches.len() {
+            break;
+        }
         let dataset_batch = data_batches[i].get_batch(0, batch_size).unwrap();
         let (inputs, targets) = (dataset_batch.0, dataset_batch.1);
 

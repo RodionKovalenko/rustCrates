@@ -271,3 +271,37 @@ Efficiency for linear projection layer with softmax:
 1. Short term: Implement quantization (f16) - easiest, immediate 2-3x speedup
 2. Medium term: Sampled softmax for training - major speedup with minimal accuracy loss
 3. Long term: Adaptive softmax - best for production inference
+
+
+
+Encoder Layer
+Normalization Layer
+Positional Encoding Layer
+
+Self-Attention Layer 
+Add and Norm Layer
+FeedForward Layer
+Add and Norm Layer
+
+Linear Projection Layer
+SoftmaxLayer
+
+
+Embedding Layer
+PositionalEncodingLayer
+SparseLinearLayer
+LinearLayer
+Layer
+Feedforward (L)
+NormLayer
+RmsNormLayer
+SelfAttentionLayer
+SparseSelfAttentionLayer
+SelfAttentionApproximationLayer
+
+MaskedAttentionHead
+SparseMaskedAttentionHead
+
+WaveletComplexLayer
+WaveletDiscreteLayer
+SoftmaxLayer

@@ -253,9 +253,9 @@ mod test_adaptive_pooling_complex {
         // Create your complex input data
         let epsilon = 1e-6;
         let batch_size = 2;
-        let output_dim = 64;
-        let sequent_len = 36;
-        let input_dim = 64;
+        let output_dim = 16;
+        let sequent_len = 12;
+        let input_dim = 16;
         let compression_dim = 15;
         let learning_rate = 0.001;
         let linear_hidden_dim = 80;

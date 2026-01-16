@@ -13,7 +13,10 @@ use crate::neural_networks::{
         activation::softmax_complex_padding_complex,
         adam_w::calculate_adam_w,
         low_rank_approx::transpose,
-        matrix::{add_matrix, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex},
+        matrix::{
+            add_matrix, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, conjugate_transpose_rm, multiply_complex, multiply_complex_rm,
+            RowMajorMatrix,
+        },
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -54,11 +57,17 @@ pub struct SparseMaskedAttentionHead {
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
+    pub input_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+    #[serde(skip)]
     pub attention_weights_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
+    pub attention_weights_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
     #[serde(skip)]
     pub attention_weights_batch_raw: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
+    pub output_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
     #[serde(skip)]
     pub padding_mask_batch: Option<Vec<Vec<u32>>>,
     #[serde(skip)]
@@ -66,9 +75,21 @@ pub struct SparseMaskedAttentionHead {
     #[serde(skip)]
     pub v_cache: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
+    pub k_cache_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+    #[serde(skip)]
+    pub v_cache_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+    #[serde(skip)]
     pub k_ctl: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     pub q_ctl: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
+    pub k_ctl_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+    #[serde(skip)]
+    pub q_ctl_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+
+    pub weights_q_rm: Option<RowMajorMatrix<Complex<f64>>>,
+    pub weights_k_rm: Option<RowMajorMatrix<Complex<f64>>>,
+    pub weights_v_rm: Option<RowMajorMatrix<Complex<f64>>>,
     #[serde(skip)]
     pub batch_size: usize,
     #[serde(skip)]
@@ -116,14 +137,24 @@ impl SparseMaskedAttentionHead {
             gradient: None,
             previous_gradient: None,
             input_batch: None,
+            input_batch_rm: None,
             output_batch: None,
+            output_batch_rm: None,
             padding_mask_batch: None,
             attention_weights_batch: None,
+            attention_weights_batch_rm: None,
             attention_weights_batch_raw: None,
             k_cache: None,
             v_cache: None,
+            k_cache_rm: None,
+            v_cache_rm: None,
             k_ctl: None,
             q_ctl: None,
+            k_ctl_rm: None,
+            q_ctl_rm: None,
+            weights_q_rm: None,
+            weights_k_rm: None,
+            weights_v_rm: None,
             m1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
             v1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
             time_step: 0,
@@ -141,6 +172,13 @@ impl SparseMaskedAttentionHead {
         self.v_cache = None;
         self.k_ctl = None;
         self.q_ctl = None;
+
+        self.k_cache_rm = None;
+        self.v_cache_rm = None;
+        self.k_ctl_rm = None;
+        self.q_ctl_rm = None;
+
+        self.attention_weights_batch_rm = None;
     }
 
     pub fn create_default_attention_layer(rows: usize, cols: usize, layer_type: LayerType, window_size: usize, learning_rate: f64) -> SparseMaskedAttentionHead {
@@ -157,7 +195,210 @@ impl Scalar for Complex<f64> {}
 
 // Implement BaseLayer for Layer struct
 impl SparseMaskedAttentionHead {
+    fn ensure_weights_cache_rm(&mut self) {
+        let rebuild_q = self.weights_q_rm.is_none()
+            || self
+                .weights_q_rm
+                .as_ref()
+                .is_some_and(|w| w.rows != self.weights_q.len() || w.cols != self.weights_q[0].len());
+        if rebuild_q {
+            self.weights_q_rm = Some(RowMajorMatrix::from_rows(&self.weights_q));
+        }
+        let rebuild_k = self.weights_k_rm.is_none()
+            || self
+                .weights_k_rm
+                .as_ref()
+                .is_some_and(|w| w.rows != self.weights_k.len() || w.cols != self.weights_k[0].len());
+        if rebuild_k {
+            self.weights_k_rm = Some(RowMajorMatrix::from_rows(&self.weights_k));
+        }
+        let rebuild_v = self.weights_v_rm.is_none()
+            || self
+                .weights_v_rm
+                .as_ref()
+                .is_some_and(|w| w.rows != self.weights_v.len() || w.cols != self.weights_v[0].len());
+        if rebuild_v {
+            self.weights_v_rm = Some(RowMajorMatrix::from_rows(&self.weights_v));
+        }
+    }
+
+    pub fn prepare_for_save(&mut self) {
+        self.ensure_weights_cache_rm();
+    }
+
+    fn tail_rows_rm(matrix: &RowMajorMatrix<Complex<f64>>, max_rows: usize) -> RowMajorMatrix<Complex<f64>> {
+        if matrix.rows <= max_rows {
+            return matrix.clone();
+        }
+
+        let start_row = matrix.rows - max_rows;
+        let start = start_row * matrix.cols;
+        let data = matrix.data[start..].to_vec();
+        RowMajorMatrix::from_data(max_rows, matrix.cols, data)
+    }
+
+    fn last_row_rm(matrix: &RowMajorMatrix<Complex<f64>>) -> RowMajorMatrix<Complex<f64>> {
+        assert!(matrix.rows > 0);
+        let start = (matrix.rows - 1) * matrix.cols;
+        let data = matrix.data[start..start + matrix.cols].to_vec();
+        RowMajorMatrix::from_data(1, matrix.cols, data)
+    }
+
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        let input_batch_rm_ref = layer_input.get_input_batch_rm_ref();
+        let input_batch_ref = layer_input.get_input_batch_ref();
+        let use_rm = input_batch_ref.is_none() && input_batch_rm_ref.is_some();
+
+        if use_rm {
+            let input_batch_rm = input_batch_rm_ref.unwrap();
+            self.ensure_weights_cache_rm();
+            let weights_q_rm = self.weights_q_rm.as_ref().unwrap();
+            let weights_k_rm = self.weights_k_rm.as_ref().unwrap();
+            let weights_v_rm = self.weights_v_rm.as_ref().unwrap();
+
+            let padding_mask_batch: Vec<Vec<u32>> = layer_input.get_padding_mask_batch();
+            // Keep the original mask around; softmax uses row-index masking.
+            self.padding_mask_batch = Some(padding_mask_batch.clone());
+            self.time_step = layer_input.get_time_step();
+            self.batch_size = layer_input.get_batch_size();
+            self.total_valid_tokens = layer_input.get_total_valid_tokens();
+
+            self.input_batch = None;
+            self.output_batch = None;
+            self.k_cache = None;
+            self.v_cache = None;
+            self.k_ctl = None;
+            self.q_ctl = None;
+
+            self.attention_weights_batch = None;
+            self.attention_weights_batch_rm = None;
+
+            self.input_batch_rm = Some(input_batch_rm.to_vec());
+
+            let cache_limit = 2 * self.window_size;
+
+            // Step 1: Compute Q for the entire sequence
+            let q_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = input_batch_rm.par_iter().map(|input| multiply_complex_rm(input, weights_q_rm)).collect();
+
+            // Step 1b: Trim Q batch for KV-cache inference
+            let mut q_batch_trimmed_rm: Vec<RowMajorMatrix<Complex<f64>>> = if layer_input.get_calculate_k_v_cache() {
+                q_batch_rm.iter().map(|q| Self::tail_rows_rm(q, cache_limit)).collect()
+            } else {
+                q_batch_rm.clone()
+            };
+
+            // Cache pre-CTL Q (will be overwritten if CTL is enabled)
+            self.q_ctl_rm = Some(q_batch_trimmed_rm.clone());
+
+            // Trim padding mask to match trimmed Q tokens
+            let padding_mask_batch_trimmed: Vec<Vec<u32>> = if layer_input.get_calculate_k_v_cache() {
+                padding_mask_batch
+                    .iter()
+                    .map(|mask_seq| {
+                        let seq_len = mask_seq.len();
+                        if seq_len > cache_limit {
+                            mask_seq[seq_len - cache_limit..].to_vec()
+                        } else {
+                            mask_seq.clone()
+                        }
+                    })
+                    .collect()
+            } else {
+                padding_mask_batch.clone()
+            };
+
+            // Steps 2 & 3: Compute/update K/V cache
+            let (k_new_batch_rm, v_new_batch_rm): (Vec<RowMajorMatrix<Complex<f64>>>, Vec<RowMajorMatrix<Complex<f64>>>) =
+                if self.k_cache_rm.is_none() || !layer_input.get_calculate_k_v_cache() {
+                    let k_new: Vec<_> = input_batch_rm.par_iter().map(|input| multiply_complex_rm(input, weights_k_rm)).collect();
+                    let v_new: Vec<_> = input_batch_rm.par_iter().map(|input| multiply_complex_rm(input, weights_v_rm)).collect();
+                    (k_new, v_new)
+                } else {
+                    // In KV-cache inference mode, only compute projections for the newest token.
+                    let k_new: Vec<_> = input_batch_rm
+                        .par_iter()
+                        .map(|input| {
+                            let last = Self::last_row_rm(input);
+                            multiply_complex_rm(&last, weights_k_rm)
+                        })
+                        .collect();
+                    let v_new: Vec<_> = input_batch_rm
+                        .par_iter()
+                        .map(|input| {
+                            let last = Self::last_row_rm(input);
+                            multiply_complex_rm(&last, weights_v_rm)
+                        })
+                        .collect();
+                    (k_new, v_new)
+                };
+
+            let (k_cache_rm, v_cache_rm): (Vec<RowMajorMatrix<Complex<f64>>>, Vec<RowMajorMatrix<Complex<f64>>>) = if layer_input.get_calculate_k_v_cache() {
+                if self.k_cache_rm.is_none() {
+                    self.k_cache_rm = Some(k_new_batch_rm.iter().map(|k| Self::tail_rows_rm(k, cache_limit)).collect());
+                    self.v_cache_rm = Some(v_new_batch_rm.iter().map(|v| Self::tail_rows_rm(v, cache_limit)).collect());
+                } else {
+                    let k_cache = self.k_cache_rm.as_mut().unwrap();
+                    let v_cache = self.v_cache_rm.as_mut().unwrap();
+
+                    for b in 0..k_cache.len() {
+                        let mut new_k = k_cache[b].data.clone();
+                        new_k.extend_from_slice(&k_new_batch_rm[b].data);
+                        let mut new_v = v_cache[b].data.clone();
+                        new_v.extend_from_slice(&v_new_batch_rm[b].data);
+
+                        let total_rows = new_k.len() / k_cache[b].cols;
+                        let keep_rows = total_rows.min(cache_limit);
+                        let start_row = total_rows - keep_rows;
+
+                        k_cache[b] = RowMajorMatrix::from_data(keep_rows, k_cache[b].cols, new_k[start_row * k_cache[b].cols..].to_vec());
+                        v_cache[b] = RowMajorMatrix::from_data(keep_rows, v_cache[b].cols, new_v[start_row * v_cache[b].cols..].to_vec());
+                    }
+                }
+
+                (self.k_cache_rm.as_ref().unwrap().clone(), self.v_cache_rm.as_ref().unwrap().clone())
+            } else {
+                (k_new_batch_rm, v_new_batch_rm)
+            };
+
+            // CTL Q/K (RM)
+            if let Some(ctl_q) = &mut self.ctl_q {
+                let mut local_in = layer_input.clone();
+                local_in.clear_input_batch();
+                local_in.set_input_batch_rm(q_batch_trimmed_rm.clone());
+                let ctl_q_output = ctl_q.forward(&local_in);
+                if let Some(out_rm) = ctl_q_output.get_output_batch_rm_ref() {
+                    q_batch_trimmed_rm = out_rm.to_vec();
+                    self.q_ctl_rm = Some(q_batch_trimmed_rm.clone());
+                } else {
+                    panic!("ComplexToLinearLayer did not return RM output");
+                }
+            }
+
+            let mut k_cache_ctl_rm = k_cache_rm.clone();
+
+            // Cache pre-CTL K (will be overwritten if CTL is enabled)
+            self.k_ctl_rm = Some(k_cache_ctl_rm.clone());
+            if let Some(ctl_k) = &mut self.ctl_k {
+                let mut local_in = layer_input.clone();
+                local_in.clear_input_batch();
+                local_in.set_input_batch_rm(k_cache_ctl_rm.clone());
+                let ctl_k_output = ctl_k.forward(&local_in);
+                if let Some(out_rm) = ctl_k_output.get_output_batch_rm_ref() {
+                    k_cache_ctl_rm = out_rm.to_vec();
+                    self.k_ctl_rm = Some(k_cache_ctl_rm.clone());
+                } else {
+                    panic!("ComplexToLinearLayer did not return RM output");
+                }
+            }
+
+            let batch_output_rm = self.calculated_sparse_masked_attention_rm(&q_batch_trimmed_rm, &k_cache_ctl_rm, &v_cache_rm, &padding_mask_batch_trimmed);
+            self.output_batch_rm = Some(batch_output_rm.clone());
+
+            let mut layer_output = LayerOutput::new_default();
+            layer_output.set_output_batch_rm(batch_output_rm);
+            return layer_output;
+        }
+
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = layer_input.get_input_batch();
         let padding_mask_batch: Vec<Vec<u32>> = layer_input.get_padding_mask_batch();
 
@@ -287,6 +528,231 @@ impl SparseMaskedAttentionHead {
         layer_output
     }
 
+    pub fn backward_rm(&mut self, previous_gradient_batch_rm: &[RowMajorMatrix<Complex<f64>>]) -> Gradient {
+        self.ensure_weights_cache_rm();
+        let weights_q_rm = self.weights_q_rm.as_ref().unwrap();
+        let weights_k_rm = self.weights_k_rm.as_ref().unwrap();
+        let weights_v_rm = self.weights_v_rm.as_ref().unwrap();
+
+        let input_batch_rm = self
+            .input_batch_rm
+            .as_ref()
+            .expect("Input batch RM is missing in sparse attention head");
+        let padding_mask_batch = self
+            .padding_mask_batch
+            .as_ref()
+            .expect("Padding mask batch is missing in sparse attention head");
+        let attention_weights_batch_rm = self
+            .attention_weights_batch_rm
+            .as_ref()
+            .expect("Attention weights RM batch is missing in sparse attention head");
+
+        let batch_size = previous_gradient_batch_rm.len();
+        assert_eq!(input_batch_rm.len(), batch_size);
+        assert_eq!(attention_weights_batch_rm.len(), batch_size);
+        assert_eq!(padding_mask_batch.len(), batch_size);
+
+        let mut gradient_input_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(batch_size);
+        let mut gradient_q_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_q[0].len()]; self.weights_q.len()]; batch_size];
+        let mut gradient_k_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_k[0].len()]; self.weights_k.len()]; batch_size];
+        let mut gradient_v_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_v[0].len()]; self.weights_v.len()]; batch_size];
+
+        let q_ctl_rm = self
+            .q_ctl_rm
+            .as_ref()
+            .expect("Q CTL RM is missing in sparse attention head");
+        let k_ctl_rm = self
+            .k_ctl_rm
+            .as_ref()
+            .expect("K CTL RM is missing in sparse attention head");
+
+        let mut dl_dq_ctl_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(batch_size);
+        let mut dl_dk_ctl_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(batch_size);
+        let mut dl_dv_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(batch_size);
+
+        for b in 0..batch_size {
+            let prev_grad_rm = &previous_gradient_batch_rm[b];
+            let seq_len = prev_grad_rm.rows;
+            let embed_dim = prev_grad_rm.cols;
+
+            let attn_probs_rm = &attention_weights_batch_rm[b];
+            assert_eq!(attn_probs_rm.rows, seq_len);
+
+            let window_width = attn_probs_rm.cols;
+
+            // V used in forward. Prefer cache if present.
+            let v_used_rm: RowMajorMatrix<Complex<f64>> = if let Some(v_cache) = self.v_cache_rm.as_ref() {
+                v_cache[b].clone()
+            } else {
+                multiply_complex_rm(&input_batch_rm[b], weights_v_rm)
+            };
+            assert_eq!(v_used_rm.rows, seq_len);
+            assert_eq!(v_used_rm.cols, embed_dim);
+
+            // dV and dA (sparse, stored as fixed-width RM: seq_len x window_width)
+            let mut dl_dv = RowMajorMatrix::from_data(seq_len, embed_dim, vec![Complex::zero(); seq_len * embed_dim]);
+            let mut dl_da = RowMajorMatrix::from_data(seq_len, window_width, vec![Complex::zero(); seq_len * window_width]);
+
+            for i in 0..seq_len {
+                if padding_mask_batch[b][i] == 0 {
+                    continue;
+                }
+                let (start_ind, end_ind) = calculate_start_end_indices(i, self.window_size, seq_len);
+                let len = end_ind - start_ind;
+                let len = len.min(window_width);
+
+                let do_row = prev_grad_rm.row_range(i);
+
+                for local_pos in 0..len {
+                    let j = start_ind + local_pos;
+                    let w = attn_probs_rm.data[attn_probs_rm.idx(i, local_pos)].re;
+
+                    // dV[j] += w * dO[i]
+                    let dv_row = dl_dv.row_range(j);
+                    for f in 0..embed_dim {
+                        dl_dv.data[dv_row.start + f].re += w * prev_grad_rm.data[do_row.start + f].re;
+                    }
+
+                    // dA[i, local_pos] = dO[i] · V[j]
+                    let v_row = v_used_rm.row_range(j);
+                    let mut dot = 0.0;
+                    for f in 0..embed_dim {
+                        dot += prev_grad_rm.data[do_row.start + f].re * v_used_rm.data[v_row.start + f].re;
+                    }
+                    let a_i = dl_da.idx(i, local_pos);
+                    dl_da.data[a_i] = Complex::new(dot, 0.0);
+                }
+            }
+
+            // Softmax backward: dZ = A * (dA - <A,dA>)
+            let mut dl_dz = RowMajorMatrix::from_data(seq_len, window_width, vec![Complex::zero(); seq_len * window_width]);
+            for i in 0..seq_len {
+                if padding_mask_batch[b][i] == 0 {
+                    continue;
+                }
+                let (start_ind, end_ind) = calculate_start_end_indices(i, self.window_size, seq_len);
+                let len = (end_ind - start_ind).min(window_width);
+
+                let mut dot = 0.0;
+                for local_pos in 0..len {
+                    let a = attn_probs_rm.data[attn_probs_rm.idx(i, local_pos)].re;
+                    let u = dl_da.data[dl_da.idx(i, local_pos)].re;
+                    dot += a * u;
+                }
+
+                for local_pos in 0..len {
+                    let a = attn_probs_rm.data[attn_probs_rm.idx(i, local_pos)].re;
+                    let u = dl_da.data[dl_da.idx(i, local_pos)].re;
+                    let dz_i = i * window_width + local_pos;
+                    dl_dz.data[dz_i] = Complex::new(a * (u - dot), 0.0);
+                }
+            }
+
+            // dQ_ctl and dK_ctl from sparse scores: scores = (Q · K^T) / sqrt(dk)
+            let d_k = k_ctl_rm[b].cols as f64;
+            let scale = 1.0 / (d_k.sqrt() + 1e-12);
+            let mut dl_dq_ctl = RowMajorMatrix::from_data(seq_len, q_ctl_rm[b].cols, vec![Complex::zero(); seq_len * q_ctl_rm[b].cols]);
+            let mut dl_dk_ctl = RowMajorMatrix::from_data(seq_len, k_ctl_rm[b].cols, vec![Complex::zero(); seq_len * k_ctl_rm[b].cols]);
+
+            for i in 0..seq_len {
+                if padding_mask_batch[b][i] == 0 {
+                    continue;
+                }
+                let (start_ind, end_ind) = calculate_start_end_indices(i, self.window_size, seq_len);
+                let len = (end_ind - start_ind).min(window_width);
+
+                let q_row = q_ctl_rm[b].row_range(i);
+
+                for local_pos in 0..len {
+                    let j = start_ind + local_pos;
+                    let dz = dl_dz.data[dl_dz.idx(i, local_pos)];
+                    let k_row = k_ctl_rm[b].row_range(j);
+
+                    // dQ[i] += dz * K[j] * scale
+                    let dq_row = dl_dq_ctl.row_range(i);
+                    for f in 0..q_ctl_rm[b].cols {
+                        dl_dq_ctl.data[dq_row.start + f] += dz * (k_ctl_rm[b].data[k_row.start + f] * scale);
+                    }
+
+                    // dK[j] += dz * Q[i] * scale
+                    let dk_row = dl_dk_ctl.row_range(j);
+                    for f in 0..k_ctl_rm[b].cols {
+                        dl_dk_ctl.data[dk_row.start + f] += dz * (q_ctl_rm[b].data[q_row.start + f] * scale);
+                    }
+                }
+            }
+
+            // dWv = X^H * dV
+            let x_h = conjugate_transpose_rm(&input_batch_rm[b]);
+            let d_wv_rm = multiply_complex_rm(&x_h, &dl_dv);
+            gradient_v_batch[b] = d_wv_rm.to_rows();
+
+            dl_dq_ctl_batch_rm.push(dl_dq_ctl);
+            dl_dk_ctl_batch_rm.push(dl_dk_ctl);
+            dl_dv_batch_rm.push(dl_dv);
+
+            let _ = embed_dim;
+        }
+
+        // Backprop through CTL layers (RM)
+        let mut dl_dq_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = dl_dq_ctl_batch_rm.clone();
+        if self.ctl_q.is_some() {
+            let mut g = Gradient::new_default();
+            g.set_gradient_input_batch_rm(dl_dq_ctl_batch_rm);
+            let ctl_q = self.ctl_q.as_mut().expect("CTL Q is missing");
+            let ctl_q_gradient = ctl_q.backward(&g);
+            dl_dq_batch_rm = ctl_q_gradient.get_gradient_input_batch_rm();
+        }
+
+        let mut dl_dk_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = dl_dk_ctl_batch_rm.clone();
+        if self.ctl_k.is_some() {
+            let mut g = Gradient::new_default();
+            g.set_gradient_input_batch_rm(dl_dk_ctl_batch_rm);
+            let ctl_k = self.ctl_k.as_mut().expect("CTL K is missing");
+            let ctl_k_gradient = ctl_k.backward(&g);
+            dl_dk_batch_rm = ctl_k_gradient.get_gradient_input_batch_rm();
+        }
+
+        // Parameter grads and input grads
+        for b in 0..batch_size {
+            let dl_dq = &dl_dq_batch_rm[b];
+            let dl_dk = &dl_dk_batch_rm[b];
+
+            let x_h = conjugate_transpose_rm(&input_batch_rm[b]);
+
+            let d_wq_rm = multiply_complex_rm(&x_h, dl_dq);
+            gradient_q_batch[b] = d_wq_rm.to_rows();
+
+            let d_wk_rm = multiply_complex_rm(&x_h, dl_dk);
+            gradient_k_batch[b] = d_wk_rm.to_rows();
+
+            let wq_h = conjugate_transpose_rm(weights_q_rm);
+            let wk_h = conjugate_transpose_rm(weights_k_rm);
+            let wv_h = conjugate_transpose_rm(weights_v_rm);
+
+            let dl_dqx = multiply_complex_rm(dl_dq, &wq_h);
+            let dl_dkx = multiply_complex_rm(dl_dk, &wk_h);
+
+            let dl_dvx = multiply_complex_rm(&dl_dv_batch_rm[b], &wv_h);
+
+            let mut grad_in = dl_dqx;
+            for i in 0..grad_in.data.len() {
+                grad_in.data[i] += dl_dkx.data[i];
+                grad_in.data[i] += dl_dvx.data[i];
+            }
+            gradient_input_batch_rm.push(grad_in);
+        }
+
+        let mut gradient = Gradient::new_default();
+        gradient.set_gradient_weights_v_batch(gradient_v_batch);
+        gradient.set_gradient_weights_q_batch(gradient_q_batch);
+        gradient.set_gradient_weights_k_batch(gradient_k_batch);
+        gradient.set_gradient_input_batch_rm(gradient_input_batch_rm);
+
+        self.gradient = Some(gradient.clone());
+        gradient
+    }
+
     pub fn calculated_sparse_masked_attention(
         &mut self,
         q_batch: Vec<Vec<Vec<Complex<f64>>>>,
@@ -327,6 +793,160 @@ impl SparseMaskedAttentionHead {
         self.output_batch = Some(batch_output_compr.clone());
 
         batch_output_compr
+    }
+
+    fn calculated_sparse_masked_attention_rm(
+        &mut self,
+        q_batch: &[RowMajorMatrix<Complex<f64>>],
+        k_batch: &[RowMajorMatrix<Complex<f64>>],
+        v_batch: &[RowMajorMatrix<Complex<f64>>],
+        padding_mask_batch: &[Vec<u32>],
+    ) -> Vec<RowMajorMatrix<Complex<f64>>> {
+        assert_eq!(q_batch.len(), k_batch.len());
+        assert_eq!(q_batch.len(), v_batch.len());
+        assert_eq!(q_batch.len(), padding_mask_batch.len());
+
+        let window_width = 2 * self.window_size + 1;
+
+        let attn_probs_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = q_batch
+            .par_iter()
+            .enumerate()
+            .map(|(batch_ind, q_rm)| {
+                let logits = self.calculate_local_attention_logits_rm_fixed_window(q_rm, &k_batch[batch_ind], window_width, true);
+                self.softmax_fixed_window_rm(&logits, &padding_mask_batch[batch_ind])
+            })
+            .collect();
+
+        let batch_output_rm: Vec<RowMajorMatrix<Complex<f64>>> = attn_probs_batch_rm
+            .iter()
+            .enumerate()
+            .map(|(batch_ind, probs)| self.multiply_sparse_fixed_window_rm(probs, &v_batch[batch_ind]))
+            .collect();
+
+        self.attention_weights_batch_rm = Some(attn_probs_batch_rm);
+        self.output_batch_rm = Some(batch_output_rm.clone());
+
+        batch_output_rm
+    }
+
+    fn calculate_local_attention_logits_rm_fixed_window(
+        &self,
+        q: &RowMajorMatrix<Complex<f64>>,
+        k: &RowMajorMatrix<Complex<f64>>,
+        window_width: usize,
+        scale_by_dk: bool,
+    ) -> RowMajorMatrix<Complex<f64>> {
+        assert_eq!(q.cols, k.cols);
+        assert_eq!(q.rows, k.rows);
+
+        let seq_len = q.rows;
+        let d_k_sqrt: f64 = (q.cols as f64).sqrt() + 1e-12;
+        let inv_scale = if scale_by_dk { 1.0 / d_k_sqrt } else { 1.0 };
+
+        let neg_inf = Complex::new(f64::NEG_INFINITY, f64::NEG_INFINITY);
+        let mut logits = RowMajorMatrix::from_data(seq_len, window_width, vec![neg_inf; seq_len * window_width]);
+
+        for i in 0..seq_len {
+            let (start_ind, end_ind) = calculate_start_end_indices(i, self.window_size, seq_len);
+            let len = (end_ind - start_ind).min(window_width);
+
+            let q_row = q.row_range(i);
+            for local_pos in 0..len {
+                let j = start_ind + local_pos;
+                if j > i {
+                    // causal mask
+                    continue;
+                }
+                let k_row = k.row_range(j);
+                let mut sum = Complex::zero();
+                for f in 0..q.cols {
+                    sum += q.data[q_row.start + f] * k.data[k_row.start + f];
+                }
+                sum *= inv_scale;
+                let logits_i = i * window_width + local_pos;
+                logits.data[logits_i] = sum;
+            }
+        }
+
+        logits
+    }
+
+    fn softmax_fixed_window_rm(&self, logits: &RowMajorMatrix<Complex<f64>>, padding_mask: &Vec<u32>) -> RowMajorMatrix<Complex<f64>> {
+        assert_eq!(logits.rows, padding_mask.len());
+        let seq_len = logits.rows;
+        let window_width = logits.cols;
+
+        let mut out = RowMajorMatrix::from_data(seq_len, window_width, vec![Complex::zero(); seq_len * window_width]);
+
+        for i in 0..seq_len {
+            if padding_mask[i] == 0 {
+                continue;
+            }
+
+            let row = logits.row_range(i);
+            let mut max_re = f64::NEG_INFINITY;
+            for local_pos in 0..window_width {
+                let v = logits.data[row.start + local_pos].re;
+                if v.is_finite() {
+                    max_re = max_re.max(v);
+                }
+            }
+
+            if !max_re.is_finite() {
+                // All masked: keep zeros
+                continue;
+            }
+
+            let mut sum = 0.0;
+            for local_pos in 0..window_width {
+                let v = logits.data[row.start + local_pos].re;
+                if v.is_finite() {
+                    sum += (v - max_re).exp();
+                }
+            }
+
+            if sum <= 0.0 {
+                continue;
+            }
+
+            for local_pos in 0..window_width {
+                let v = logits.data[row.start + local_pos].re;
+                if v.is_finite() {
+                    let p = (v - max_re).exp() / sum;
+                    let out_i = i * window_width + local_pos;
+                    out.data[out_i] = Complex::new(p, 0.0);
+                }
+            }
+        }
+
+        out
+    }
+
+    fn multiply_sparse_fixed_window_rm(&self, attention_probs: &RowMajorMatrix<Complex<f64>>, v: &RowMajorMatrix<Complex<f64>>) -> RowMajorMatrix<Complex<f64>> {
+        let seq_len = attention_probs.rows;
+        let window_width = attention_probs.cols;
+        let embedding_dim = v.cols;
+        assert_eq!(v.rows, seq_len);
+
+        let mut out = RowMajorMatrix::from_data(seq_len, embedding_dim, vec![Complex::zero(); seq_len * embedding_dim]);
+
+        for i in 0..seq_len {
+            let (start_ind, end_ind) = calculate_start_end_indices(i, self.window_size, seq_len);
+            let len = (end_ind - start_ind).min(window_width);
+
+            for k_col in 0..embedding_dim {
+                let mut acc = 0.0;
+                for local_pos in 0..len {
+                    let j = start_ind + local_pos;
+                    let w = attention_probs.data[attention_probs.idx(i, local_pos)].re;
+                    acc += w * v.data[v.idx(j, k_col)].re;
+                }
+                let out_i = i * embedding_dim + k_col;
+                out.data[out_i] = Complex::new(acc, 0.0);
+            }
+        }
+
+        out
     }
 
     pub fn multiply_sparse(&self, attention_sparse_weights: &Vec<Vec<Complex<f64>>>, v: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
@@ -677,6 +1297,26 @@ impl SparseMaskedAttentionHead {
     }
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
+        if self.input_batch.is_none() {
+            if self.input_batch_rm.is_some() {
+                let previous_gradient_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = previous_gradient_batch
+                    .iter()
+                    .map(|rows| RowMajorMatrix::from_rows(rows))
+                    .collect();
+
+                let mut gradient = self.backward_rm(&previous_gradient_batch_rm);
+                let legacy_gx: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_input_batch_rm().iter().map(|m| m.to_rows()).collect();
+                gradient.set_gradient_input_batch(legacy_gx);
+                return gradient;
+            }
+
+            let mut gradient = Gradient::new_default();
+            gradient.set_gradient_input_batch(vec![]);
+            gradient.set_gradient_input_batch_rm(vec![]);
+            self.gradient = Some(gradient.clone());
+            return gradient;
+        }
+
         // Input shape e.g. [2][5] and out shape of weights [5][4] => we get final output [2][4]
         let output_batch = self.output_batch.as_ref().expect("Output batch is missing in attention head layer");
         let input_batch = self.input_batch.as_ref().expect("Input batch is missing in lattention head inear layer");
@@ -882,6 +1522,11 @@ impl SparseMaskedAttentionHead {
         gradient.set_prev_v_weights_v_hat(prev_v_weights_v_hat);
 
         self.previous_gradient = Some(gradient.clone());
+
+        // weights changed; invalidate RM caches
+        self.weights_q_rm = None;
+        self.weights_k_rm = None;
+        self.weights_v_rm = None;
 
         self.gradient = None;
     }

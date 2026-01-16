@@ -1,4 +1,5 @@
 use crate::neural_networks::utils::matrix::transpose;
+use crate::neural_networks::utils::matrix::{transpose_rm, RowMajorMatrix};
 use crate::utils::array_complex::{convolve_complex, get_coef_complex, integrate_complex, linspace_complex};
 use crate::utils::convolution_modes::ConvolutionMode;
 use crate::utils::data_converter::{convert_to_c_f64_1d, convert_to_c_f64_2d, convert_to_c_f64_3d, convert_to_c_f64_4d, convert_to_c_f64_5d};
@@ -11,6 +12,136 @@ use core::fmt::Debug;
 use num_complex::Complex;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+
+pub fn get_wavelet_complex_slice(data: &[Complex<f64>], wavefun_result: &[Vec<Complex<f64>>], scale: &f64) -> Vec<Complex<f64>> {
+    let data_vec: Vec<Complex<f64>> = data.to_vec();
+    let integral_scaled = integrate_complex(&wavefun_result[0], &wavefun_result[1], scale);
+    let convolved = convolve_complex(&data_vec, &integral_scaled, &ConvolutionMode::FULL);
+    let coef = get_coef_complex(&convolved, scale);
+
+    let index = (coef.len() - data_vec.len()) as f64 / 2.0;
+    let limit_down = index.floor() as usize;
+    let limit_up = index.ceil() as usize;
+    coef[limit_down..(coef.len() - limit_up)].to_vec()
+}
+
+pub fn get_wavelet_derivative_slice(
+    data: &[Complex<f64>],
+    wavefun_result: &[Vec<Complex<f64>>],
+    scale: &f64,
+    grad_output: &[Complex<f64>],
+) -> Vec<Complex<f64>> {
+    let data_vec: Vec<Complex<f64>> = data.to_vec();
+    let grad_vec: Vec<Complex<f64>> = grad_output.to_vec();
+
+    let integral_scaled = integrate_complex(&wavefun_result[0], &wavefun_result[1], scale);
+    let convolved = convolve_complex(&data_vec, &integral_scaled, &ConvolutionMode::FULL);
+    let coef = get_coef_complex(&convolved, scale);
+
+    let index = (coef.len() - data_vec.len()) as f64 / 2.0;
+    let limit_down = index.floor() as usize;
+
+    let mut full_grad = vec![Complex::new(0.0, 0.0); coef.len()];
+    full_grad.splice(limit_down..(limit_down + grad_vec.len()), grad_vec);
+
+    let scaled_sqrt = scale.sqrt();
+    let mut grad_convolved = vec![Complex::new(0.0, 0.0); convolved.len()];
+    for i in 0..full_grad.len() {
+        if i < grad_convolved.len() - 1 {
+            grad_convolved[i] += full_grad[i] * scaled_sqrt;
+            grad_convolved[i + 1] -= full_grad[i] * scaled_sqrt;
+        }
+    }
+
+    convolve_complex(&grad_convolved, &integral_scaled, &ConvolutionMode::VALID)
+}
+
+pub fn cwt_2d_rm(data: &RowMajorMatrix<Complex<f64>>, wavelet: &CWTComplex) -> (Vec<RowMajorMatrix<Complex<f64>>>, Vec<f64>) {
+    let scales = &wavelet.scales;
+    let sampling_period = &wavelet.sampling_period;
+
+    let wavefun_result: Vec<Vec<Complex<f64>>> = wavefun_complex(&10, wavelet);
+    let freqencies: Vec<f64> = scale_to_frequency_complex(scales, &wavefun_result, sampling_period);
+
+    let mut wavelets: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(scales.len());
+
+    for s in 0..scales.len() {
+        let mut out = RowMajorMatrix::from_data(data.rows, data.cols, vec![Complex::new(0.0, 0.0); data.rows * data.cols]);
+        for r in 0..data.rows {
+            let row = data.row_range(r);
+            let coef = get_wavelet_complex_slice(&data.data[row.clone()], &wavefun_result, &scales[s]);
+            assert_eq!(coef.len(), data.cols, "CWT output length mismatch");
+            out.data[row].copy_from_slice(&coef);
+        }
+        wavelets.push(out);
+    }
+
+    (wavelets, freqencies)
+}
+
+pub fn cwt_2d_full_rm(data: &RowMajorMatrix<Complex<f64>>, wavelet: &CWTComplex) -> (Vec<RowMajorMatrix<Complex<f64>>>, Vec<f64>) {
+    let scales = &wavelet.scales;
+    let sampling_period = &wavelet.sampling_period;
+
+    let wavefun_result: Vec<Vec<Complex<f64>>> = wavefun_complex(&10, wavelet);
+    let freqencies: Vec<f64> = scale_to_frequency_complex(scales, &wavefun_result, sampling_period);
+
+    let mut wavelets: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(scales.len());
+
+    for s in 0..scales.len() {
+        // Row-wise CWT
+        let mut intermediate = RowMajorMatrix::from_data(data.rows, data.cols, vec![Complex::new(0.0, 0.0); data.rows * data.cols]);
+        for r in 0..data.rows {
+            let row = data.row_range(r);
+            let coef = get_wavelet_complex_slice(&data.data[row.clone()], &wavefun_result, &scales[s]);
+            intermediate.data[row].copy_from_slice(&coef);
+        }
+
+        // Column-wise CWT
+        let intermediate_t = transpose_rm(&intermediate);
+        let mut result_t = RowMajorMatrix::from_data(intermediate_t.rows, intermediate_t.cols, vec![Complex::new(0.0, 0.0); intermediate_t.rows * intermediate_t.cols]);
+        for r in 0..intermediate_t.rows {
+            let row = intermediate_t.row_range(r);
+            let coef = get_wavelet_complex_slice(&intermediate_t.data[row.clone()], &wavefun_result, &scales[s]);
+            result_t.data[row].copy_from_slice(&coef);
+        }
+
+        wavelets.push(transpose_rm(&result_t));
+    }
+
+    (wavelets, freqencies)
+}
+
+pub fn get_wavelet_derivative_full_rm(
+    input: &RowMajorMatrix<Complex<f64>>,
+    wavefun_result: &[Vec<Complex<f64>>],
+    scale: &f64,
+    grad_output: &RowMajorMatrix<Complex<f64>>,
+) -> RowMajorMatrix<Complex<f64>> {
+    assert_eq!((input.rows, input.cols), (grad_output.rows, grad_output.cols));
+
+    // Backprop through column-wise CWT
+    let grad_output_t = transpose_rm(grad_output);
+    let input_t = transpose_rm(input);
+
+    let mut grad_intermediate_t = RowMajorMatrix::from_data(input_t.rows, input_t.cols, vec![Complex::new(0.0, 0.0); input_t.rows * input_t.cols]);
+    for r in 0..input_t.rows {
+        let row = input_t.row_range(r);
+        let g = get_wavelet_derivative_slice(&input_t.data[row.clone()], wavefun_result, scale, &grad_output_t.data[row.clone()]);
+        grad_intermediate_t.data[row].copy_from_slice(&g);
+    }
+
+    // Backprop through row-wise CWT
+    let grad_intermediate = transpose_rm(&grad_intermediate_t);
+    let mut grad_rows = RowMajorMatrix::from_data(input.rows, input.cols, vec![Complex::new(0.0, 0.0); input.rows * input.cols]);
+    for r in 0..input.rows {
+        let row = input.row_range(r);
+        let g = get_wavelet_derivative_slice(&input.data[row.clone()], wavefun_result, scale, &grad_intermediate.data[row.clone()]);
+        grad_rows.data[row].copy_from_slice(&g);
+    }
+
+    grad_rows
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CWTComplex {

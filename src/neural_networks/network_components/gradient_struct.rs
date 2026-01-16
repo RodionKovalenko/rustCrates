@@ -3,6 +3,7 @@ use num::Complex;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::network_components::adaptive_pooling::adaptive_avg_pool1d_layer::CompressionMetadata;
+use crate::neural_networks::utils::matrix::RowMajorMatrix;
 
 #[derive(Debug, Clone)]
 pub enum GradientBatch {
@@ -15,6 +16,8 @@ pub struct Gradient {
     gradient_weights_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     gradient_weights_2_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     gradient_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
+    gradient_input_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
     gradient_input_batch_softmax: Option<Vec<Vec<Vec<f64>>>>,
     gradient_bias_batch: Option<Vec<Vec<Complex<f64>>>>,
     gradient_gamma_batch: Option<Vec<Vec<Complex<f64>>>>,
@@ -102,6 +105,7 @@ impl Gradient {
             gradient_weights_batch: None,
             gradient_weights_2_batch: None,
             gradient_input_batch: None,
+            gradient_input_batch_rm: None,
             gradient_input_batch_softmax: None,
             gradient_bias_batch: None,
             gradient_gamma_batch: None,
@@ -175,6 +179,10 @@ impl Gradient {
     }
     pub fn set_gradient_input_batch(&mut self, gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>>) {
         self.gradient_input_batch = Some(gradient_input_batch);
+    }
+
+    pub fn set_gradient_input_batch_rm(&mut self, gradient_input_batch_rm: Vec<RowMajorMatrix<Complex<f64>>>) {
+        self.gradient_input_batch_rm = Some(gradient_input_batch_rm);
     }
     pub fn set_gradient_input_batch_softmax(&mut self, gradient_input_batch: Vec<Vec<Vec<f64>>>) {
         self.gradient_input_batch_softmax = Some(gradient_input_batch);
@@ -381,7 +389,47 @@ impl Gradient {
     }
 
     pub fn get_gradient_input_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
-        self.gradient_input_batch.clone().unwrap_or_else(|| vec![])
+        if let Some(gradient_input_batch) = &self.gradient_input_batch {
+            return gradient_input_batch.clone();
+        }
+
+        if let Some(gradient_input_batch_rm) = &self.gradient_input_batch_rm {
+            return gradient_input_batch_rm.iter().map(|m| m.to_rows()).collect();
+        }
+
+        vec![]
+    }
+
+    pub fn get_gradient_input_batch_rm(&self) -> Vec<RowMajorMatrix<Complex<f64>>> {
+        if let Some(gradient_input_batch_rm) = &self.gradient_input_batch_rm {
+            return gradient_input_batch_rm.clone();
+        }
+
+        if let Some(gradient_input_batch) = &self.gradient_input_batch {
+            if gradient_input_batch.is_empty() {
+                return vec![];
+            }
+
+            let mut out = Vec::with_capacity(gradient_input_batch.len());
+            for m in gradient_input_batch {
+                match RowMajorMatrix::try_from_rows(m) {
+                    Some(rm) => out.push(rm),
+                    None => return vec![],
+                }
+            }
+
+            return out;
+        }
+
+        vec![]
+    }
+
+    pub fn get_gradient_input_batch_rm_ref(&self) -> Option<&[RowMajorMatrix<Complex<f64>>]> {
+        self.gradient_input_batch_rm.as_deref()
+    }
+
+    pub fn get_gradient_input_batch_ref(&self) -> Option<&[Vec<Vec<Complex<f64>>>]> {
+        self.gradient_input_batch.as_deref()
     }
     pub fn get_gradient_input_batch_softmax(&self) -> Vec<Vec<Vec<f64>>> {
         self.gradient_input_batch_softmax.clone().unwrap_or_else(|| vec![])
@@ -644,6 +692,10 @@ impl Gradient {
     }
 
     pub fn group_gradient_batch(&self, weight_gradients_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Complex<f64>>> {
+        if weight_gradients_batch.is_empty() || weight_gradients_batch[0].is_empty() || weight_gradients_batch[0][0].is_empty() {
+            return vec![];
+        }
+
         let mut weight_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); weight_gradients_batch[0][0].len()]; weight_gradients_batch[0].len()];
 
         for weight_gradient_batch in weight_gradients_batch {
@@ -660,6 +712,10 @@ impl Gradient {
         weight_gradients
     }
     pub fn group_gradient_batch_f64(&self, weight_gradients_batch: &Vec<Vec<Vec<f64>>>) -> Vec<Vec<f64>> {
+        if weight_gradients_batch.is_empty() || weight_gradients_batch[0].is_empty() || weight_gradients_batch[0][0].is_empty() {
+            return vec![];
+        }
+
         let mut weight_gradients: Vec<Vec<f64>> = vec![vec![0.0; weight_gradients_batch[0][0].len()]; weight_gradients_batch[0].len()];
 
         for weight_gradient_batch in weight_gradients_batch {
@@ -673,6 +729,10 @@ impl Gradient {
         weight_gradients
     }
     pub fn group_gradient_batch_bias(&self, bias_gradient_batch: &Vec<Vec<Complex<f64>>>) -> Vec<Complex<f64>> {
+        if bias_gradient_batch.is_empty() || bias_gradient_batch[0].is_empty() {
+            return vec![];
+        }
+
         let mut bias_gradients: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); bias_gradient_batch[0].len()];
 
         for bias_gradient_batch in bias_gradient_batch {

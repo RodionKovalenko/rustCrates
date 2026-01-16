@@ -1,4 +1,5 @@
 use crate::neural_networks::network_components::layer_input_struct::LayerInput;
+use crate::neural_networks::utils::matrix::RowMajorMatrix;
 
 use super::gradient_struct::Gradient;
 use num::Complex;
@@ -20,6 +21,12 @@ pub struct PositionalEncodingLayer {
     pub gradient: Option<Gradient>,
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+
+    #[serde(skip)]
+    pub input_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+
+    #[serde(skip)]
+    pub last_forward_was_rm: bool,
 }
 
 impl PositionalEncodingLayer {
@@ -29,15 +36,78 @@ impl PositionalEncodingLayer {
             base: INITIAL_BASE,
             gradient: None,
             input_batch: None,
+            input_batch_rm: None,
+            last_forward_was_rm: false,
         }
+    }
+
+    pub fn forward_rm(&mut self, layer_input: &LayerInput) -> Vec<RowMajorMatrix<Complex<f64>>> {
+        let input_batch_rm = layer_input
+            .get_input_batch_rm_ref()
+            .expect("PositionalEncodingLayer::forward_rm: input_batch_rm missing");
+
+        let _scaling_factor = SCALING_FAKTOR;
+        let _forward_only = layer_input.get_forward_only();
+
+        if layer_input.get_calculate_gradient() {
+            self.input_batch_rm = Some(input_batch_rm.to_vec());
+        } else {
+            self.input_batch_rm = None;
+        }
+        self.input_batch = None;
+        self.last_forward_was_rm = true;
+
+        input_batch_rm
+            .par_iter()
+            .map(|m| {
+                assert_eq!(m.cols, self.embedding_dim, "All token embeddings must match the specified dimension.");
+                assert_eq!(self.embedding_dim % 2, 0, "Embedding dimension must be even for RoPE.");
+
+                let mut out = RowMajorMatrix::from_data(m.rows, m.cols, vec![Complex::new(0.0, 0.0); m.rows * m.cols]);
+
+                for position in 0..m.rows {
+                    let mut time_step = position;
+                    if _forward_only && layer_input.get_time_step() > 0 {
+                        time_step = layer_input.get_time_step();
+                    }
+
+                    let row = m.row_range(position);
+                    let out_row = out.row_range(position);
+                    let half_dim = self.embedding_dim / 2;
+
+                    for i in 0..half_dim {
+                        let even_idx = 2 * i;
+                        let odd_idx = even_idx + 1;
+
+                        let mut theta = time_step as f64 / ((self.base * _scaling_factor).powf(2.0 * i as f64 / self.embedding_dim as f64));
+                        theta = theta.clamp(-1.0, 1.0);
+                        let (sin_theta, cos_theta) = theta.sin_cos();
+
+                        let even = m.data[row.start + even_idx];
+                        let odd = m.data[row.start + odd_idx];
+
+                        out.data[out_row.start + even_idx] = Complex::new(even.re * cos_theta - odd.re * sin_theta, even.im * cos_theta - odd.im * sin_theta);
+                        out.data[out_row.start + odd_idx] = Complex::new(even.re * sin_theta + odd.re * cos_theta, even.im * sin_theta + odd.im * cos_theta);
+                    }
+                }
+
+                out
+            })
+            .collect()
     }
 
     /// Apply positional encoding to a batch of embeddings
     pub fn forward(&mut self, layer_input: &LayerInput) -> Vec<Vec<Vec<Complex<f64>>>> {
-        let input_batch = layer_input.get_input_batch();
+        let input_batch = layer_input.get_input_batch_ref().expect("PositionalEncodingLayer: input batch missing");
         let _scaling_factor = SCALING_FAKTOR;
         let _forward_only = layer_input.get_forward_only();
-        self.input_batch = Some(input_batch.clone());
+        if layer_input.get_calculate_gradient() {
+            self.input_batch = Some(input_batch.to_vec());
+        } else {
+            self.input_batch = None;
+        }
+        self.input_batch_rm = None;
+        self.last_forward_was_rm = false;
 
         input_batch
             .par_iter() // Parallel iterator for efficiency
@@ -99,7 +169,69 @@ impl PositionalEncodingLayer {
             .collect() // Collect results into a single Vec
     }
 
+    pub fn backward_rm(&mut self, previous_gradient_batch_rm: &[RowMajorMatrix<Complex<f64>>]) -> Gradient {
+        let mut gradient = Gradient::new_default();
+
+        assert_eq!(self.embedding_dim % 2, 0, "Embedding dimension must be even for RoPE.");
+        let half_dim = self.embedding_dim / 2;
+
+        let input_gradient_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = previous_gradient_batch_rm
+            .iter()
+            .map(|g| {
+                assert_eq!(g.cols, self.embedding_dim);
+                let mut out = RowMajorMatrix::from_data(g.rows, g.cols, vec![Complex::new(0.0, 0.0); g.rows * g.cols]);
+
+                for position in 0..g.rows {
+                    let row = g.row_range(position);
+                    let out_row = out.row_range(position);
+
+                    for i in 0..half_dim {
+                        let even_idx = 2 * i;
+                        let odd_idx = even_idx + 1;
+
+                        let mut theta = position as f64 / ((self.base * SCALING_FAKTOR).powf(2.0 * i as f64 / self.embedding_dim as f64));
+                        theta = theta.clamp(-1.0, 1.0);
+                        let (sin_theta, cos_theta) = theta.sin_cos();
+
+                        let grad_even = g.data[row.start + even_idx];
+                        let grad_odd = g.data[row.start + odd_idx];
+
+                        out.data[out_row.start + even_idx] = Complex::new(grad_even.re * cos_theta + grad_odd.re * sin_theta, grad_even.im * cos_theta + grad_odd.im * sin_theta);
+                        out.data[out_row.start + odd_idx] = Complex::new(-grad_even.re * sin_theta + grad_odd.re * cos_theta, -grad_even.im * sin_theta + grad_odd.im * cos_theta);
+                    }
+                }
+
+                out
+            })
+            .collect();
+
+        gradient.set_gradient_input_batch_rm(input_gradient_batch_rm);
+        self.gradient = Some(gradient.clone());
+        gradient
+    }
+
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
+        // If the forward pass used RM-only inputs, run RM backward by converting the incoming Vec gradient.
+        if self.input_batch.is_none() {
+            if self.input_batch_rm.is_some() {
+                let previous_gradient_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = previous_gradient_batch
+                    .iter()
+                    .map(|rows| RowMajorMatrix::from_rows(rows))
+                    .collect();
+
+                let mut gradient = self.backward_rm(&previous_gradient_batch_rm);
+                let legacy_gx: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_input_batch_rm().iter().map(|m| m.to_rows()).collect();
+                gradient.set_gradient_input_batch(legacy_gx);
+                return gradient;
+            }
+
+            let mut gradient = Gradient::new_default();
+            gradient.set_gradient_input_batch(vec![]);
+            gradient.set_gradient_input_batch_rm(vec![]);
+            self.gradient = Some(gradient.clone());
+            return gradient;
+        }
+
         let mut gradient = Gradient::new_default();
         let input_batch = self.input_batch.as_ref().expect("Input batch is missing in positional encoding layer");
 

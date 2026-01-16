@@ -12,6 +12,7 @@ mod test_wavelet_discrete_layer {
     };
 
     use num::Complex;
+    use crate::neural_networks::utils::matrix::RowMajorMatrix;
 
     #[test]
     fn test_wavelet_discrete_compression() {
@@ -517,5 +518,55 @@ mod test_wavelet_discrete_layer {
             assert_eq!(target_s[i_t], input[i]);
             i_t += 1;
         }
+    }
+
+    #[test]
+    fn test_wavelet_discrete_rm_forward_backward_smoke() {
+        let mut wavelet_layer: DiscreteWaveletLayer = DiscreteWaveletLayer::new();
+
+        // 1 batch, 4 rows, 4 cols
+        let input_rm = vec![RowMajorMatrix::from_data(
+            4,
+            4,
+            vec![
+                Complex::new(0.1, 0.0),
+                Complex::new(0.2, 0.0),
+                Complex::new(0.3, 0.0),
+                Complex::new(0.4, 0.0),
+                Complex::new(0.5, 0.0),
+                Complex::new(0.6, 0.0),
+                Complex::new(0.7, 0.0),
+                Complex::new(0.8, 0.0),
+                Complex::new(0.9, 0.0),
+                Complex::new(1.0, 0.0),
+                Complex::new(1.1, 0.0),
+                Complex::new(1.2, 0.0),
+                Complex::new(1.3, 0.0),
+                Complex::new(1.4, 0.0),
+                Complex::new(1.5, 0.0),
+                Complex::new(1.6, 0.0),
+            ],
+        )];
+
+        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; 4]];
+
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_padding_mask_batch(padding_mask_batch);
+        layer_input.set_forward_only(false);
+        layer_input.set_input_batch_rm(input_rm);
+
+        let out = wavelet_layer.forward(&layer_input);
+        assert!(out.get_output_batch_rm_ref().is_some(), "Expected RM output from discrete wavelet forward");
+
+        let out_rm = out.get_output_batch_rm();
+        let prev_grad_rm: Vec<RowMajorMatrix<Complex<f64>>> = out_rm
+            .iter()
+            .map(|m| RowMajorMatrix::from_data(m.rows, m.cols, vec![Complex::new(1.0, 0.0); m.rows * m.cols]))
+            .collect();
+
+        let mut prev_gradient = Gradient::new_default();
+        prev_gradient.set_gradient_input_batch_rm(prev_grad_rm);
+        let g = wavelet_layer.backward(&prev_gradient);
+        assert!(g.get_gradient_input_batch_rm_ref().is_some(), "Expected RM gradient from discrete wavelet backward");
     }
 }

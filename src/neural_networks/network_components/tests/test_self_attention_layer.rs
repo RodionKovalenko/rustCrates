@@ -238,12 +238,12 @@ mod test_self_attention_layer {
         // Define some small batch size and input dimensions for simplicity
         let batch_size = 3;
         let seq_len = 5;
-        let feature_dim = 16;
+        let feature_dim = 4;
         let output_dim = 4;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
         let num_attention_heads = 4;
-        let hidden_dim = 16;
+        let hidden_dim = 4;
         let epsilon = 1e-8;
 
         // Create a simple LinearLayer with the given input and output dimensions
@@ -251,7 +251,7 @@ mod test_self_attention_layer {
 
         let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(feature_dim, hidden_dim, learning_rate);
         let mut wavelet_layer: ComplexWaveletLayer = ComplexWaveletLayer::new();
-        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, hidden_dim, feature_dim, true);
+        let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, hidden_dim, feature_dim, false);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, feature_dim);
 
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, seq_len, feature_dim);

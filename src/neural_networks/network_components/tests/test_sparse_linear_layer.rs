@@ -30,7 +30,7 @@ mod test_sparse_linear_layer {
         // Create a simple LinearLayer with the given input and output dimensions
 
         let embedding_dim = 16;
-        let vocab_size = 128;
+        let vocab_size = 32;
         let mut complex_to_linear_layer: ComplexToLinearLayer = ComplexToLinearLayer::new(cols, embedding_dim, learning_rate);
         let mut sparse_linear_layer: SparseLinearLayer = SparseLinearLayer::new(learning_rate, embedding_dim, vocab_size);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, cols);
@@ -42,6 +42,12 @@ mod test_sparse_linear_layer {
         //let target_token_id_batch = vec![vec![0]];
 
         let mut layer_input = LayerInput::new_default();
+        // Provide the metadata that SparseLinear + Softmax need for correct sparse CE behavior.
+        // Without output indices, softmax backward can't map targets to sparse logits.
+        layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+        layer_input.set_target_batch_ids(target_token_id_batch.clone());
+        // Avoid non-differentiability from top-k selection during finite-difference checks.
+        layer_input.set_top_k_size(vocab_size);
         layer_input.set_input_batch(input_batch.clone());
 
         let complex_linear_output = complex_to_linear_layer.forward(&layer_input);
@@ -49,6 +55,7 @@ mod test_sparse_linear_layer {
 
         let linear_output = sparse_linear_layer.forward(&layer_input);
         layer_input.set_input_batch(linear_output.get_output_batch());
+        layer_input.set_output_indices(linear_output.get_output_indices());
 
         softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
@@ -71,6 +78,7 @@ mod test_sparse_linear_layer {
 
             let linear_output = sparse_linear_layer.forward(&layer_input);
             layer_input.set_input_batch(linear_output.get_output_batch());
+            layer_input.set_output_indices(linear_output.get_output_indices());
 
             softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
@@ -118,6 +126,7 @@ mod test_sparse_linear_layer {
 
             let linear_output = sparse_linear_layer.forward(&layer_input);
             layer_input.set_input_batch(linear_output.get_output_batch());
+            layer_input.set_output_indices(linear_output.get_output_indices());
 
             softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
@@ -143,6 +152,7 @@ mod test_sparse_linear_layer {
 
             let linear_output = sparse_linear_layer.forward(&layer_input);
             layer_input.set_input_batch(linear_output.get_output_batch());
+            layer_input.set_output_indices(linear_output.get_output_indices());
 
             softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 

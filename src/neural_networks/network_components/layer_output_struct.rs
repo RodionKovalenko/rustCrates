@@ -3,10 +3,13 @@ use num::Complex;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::network_components::adaptive_pooling::adaptive_avg_pool1d_layer::CompressionMetadata;
+use crate::neural_networks::utils::matrix::RowMajorMatrix;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LayerOutput {
     output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
+    output_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
     output_batch_f64: Option<Vec<Vec<Vec<f64>>>>,
     output_record: Option<Vec<Vec<Complex<f64>>>>,
     l2_regularization: Option<Vec<Vec<Complex<f64>>>>,
@@ -21,6 +24,7 @@ impl LayerOutput {
     pub fn new_default() -> Self {
         LayerOutput {
             output_batch: None,
+            output_batch_rm: None,
             output_batch_f64: None,
             output_record: None,
             l2_regularization: None,
@@ -34,6 +38,10 @@ impl LayerOutput {
 
     pub fn set_output_batch(&mut self, output_batch: Vec<Vec<Vec<Complex<f64>>>>) {
         self.output_batch = Some(output_batch);
+    }
+
+    pub fn set_output_batch_rm(&mut self, output_batch_rm: Vec<RowMajorMatrix<Complex<f64>>>) {
+        self.output_batch_rm = Some(output_batch_rm);
     }
     pub fn set_output_batch_f64(&mut self, output_batch: Vec<Vec<Vec<f64>>>) {
         self.output_batch_f64 = Some(output_batch);
@@ -63,7 +71,51 @@ impl LayerOutput {
     }
 
     pub fn get_output_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
-        self.output_batch.clone().unwrap_or_else(|| vec![])
+        if let Some(output_batch) = &self.output_batch {
+            return output_batch.clone();
+        }
+
+        if let Some(output_batch_rm) = &self.output_batch_rm {
+            return output_batch_rm.iter().map(|m| m.to_rows()).collect();
+        }
+
+        vec![]
+    }
+
+    pub fn take_output_batch(&mut self) -> Option<Vec<Vec<Vec<Complex<f64>>>>> {
+        self.output_batch.take()
+    }
+
+    pub fn get_output_batch_rm(&self) -> Vec<RowMajorMatrix<Complex<f64>>> {
+        if let Some(output_batch_rm) = &self.output_batch_rm {
+            return output_batch_rm.clone();
+        }
+
+        if let Some(output_batch) = &self.output_batch {
+            if output_batch.is_empty() {
+                return vec![];
+            }
+
+            let mut out = Vec::with_capacity(output_batch.len());
+            for m in output_batch {
+                match RowMajorMatrix::try_from_rows(m) {
+                    Some(rm) => out.push(rm),
+                    None => return vec![],
+                }
+            }
+
+            return out;
+        }
+
+        vec![]
+    }
+
+    pub fn take_output_batch_rm(&mut self) -> Option<Vec<RowMajorMatrix<Complex<f64>>>> {
+        self.output_batch_rm.take()
+    }
+
+    pub fn get_output_batch_rm_ref(&self) -> Option<&[RowMajorMatrix<Complex<f64>>]> {
+        self.output_batch_rm.as_deref()
     }
     pub fn get_output_batch_f64(&self) -> Vec<Vec<Vec<f64>>> {
         self.output_batch_f64.clone().unwrap_or_else(|| vec![])
@@ -80,6 +132,10 @@ impl LayerOutput {
     pub fn get_padding_mask_batch(&self) -> Vec<Vec<u32>> {
         self.padding_mask_batch.clone().unwrap_or_else(|| vec![])
     }
+
+    pub fn take_padding_mask_batch(&mut self) -> Option<Vec<Vec<u32>>> {
+        self.padding_mask_batch.take()
+    }
     pub fn set_pooling_metadata(&mut self, pooling_metadata: CompressionMetadata) {
         self.pooling_metadata = Some(pooling_metadata);
     }
@@ -88,5 +144,9 @@ impl LayerOutput {
     }
     pub fn get_cross_entropy_loss_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
         self.cross_entropy_loss_batch.clone().unwrap_or_else(|| vec![])
+    }
+
+    pub fn take_cross_entropy_loss_batch(&mut self) -> Option<Vec<Vec<Vec<Complex<f64>>>>> {
+        self.cross_entropy_loss_batch.take()
     }
 }

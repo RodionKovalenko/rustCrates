@@ -35,20 +35,20 @@ impl<T: Debug + Clone, O: Debug + Clone> Dataset<T, O> {
     pub fn setup_splits(&mut self, test_ratio: Option<f64>) {
         let total_size = self.input.len();
         let val_ratio = 0.1; // Fixed 10% for validation
-        
+
         if let Some(test_r) = test_ratio {
             // Three-way split: train / val (10%) / test
             let test_size = (total_size as f64 * test_r).round() as usize;
             let val_size = (total_size as f64 * val_ratio).round() as usize;
             let train_size = total_size.saturating_sub(val_size).saturating_sub(test_size);
-            
+
             self.total_training_records_size = train_size;
             self.total_validation_records_size = val_size;
         } else {
             // Two-way split: train / val (10%)
             let val_size = (total_size as f64 * val_ratio).round() as usize;
             let train_size = total_size.saturating_sub(val_size);
-            
+
             self.total_training_records_size = train_size;
             self.total_validation_records_size = val_size;
         }
@@ -109,7 +109,7 @@ impl<T: Debug + Clone, O: Debug + Clone> Dataset<T, O> {
     pub fn get_validation_batches(&self, batch_size: usize) -> Vec<Dataset<T, O>> {
         let train_size = self.total_training_records_size;
         let val_size = self.total_validation_records_size;
-        
+
         if val_size == 0 || train_size >= self.input.len() {
             return Vec::new();
         }
@@ -137,7 +137,7 @@ impl<T: Debug + Clone, O: Debug + Clone> Dataset<T, O> {
     // Get test batches (NOT shuffled) - preserves order, starts after train+val
     pub fn get_test_batches(&self, batch_size: usize) -> Vec<Dataset<T, O>> {
         let test_start = self.total_training_records_size + self.total_validation_records_size;
-        
+
         if test_start >= self.input.len() {
             return Vec::new();
         }
@@ -160,7 +160,12 @@ impl<T: Debug + Clone, O: Debug + Clone> Dataset<T, O> {
         batches
     }
     pub fn extend_input_with_target(&self, input_batch: &Vec<String>, target_batch: &Vec<String>) -> Vec<String> {
-        input_batch.clone().iter().zip(target_batch.iter()).map(|(input, target)| format!("<bos> {} <sep> {} <eos>", input, target)).collect()
+        input_batch
+            .clone()
+            .iter()
+            .zip(target_batch.iter())
+            .map(|(input, target)| format!("<bos> {} <sep> {} <eos>", input, target))
+            .collect()
     }
 
     pub fn extend_target(&self, target_batch: &Vec<String>) -> Vec<String> {
@@ -187,10 +192,19 @@ pub fn concat_batches(a: &Vec<Vec<u32>>, b: &Vec<Vec<u32>>) -> Vec<Vec<u32>> {
 impl<T: Debug + Clone, O: Debug + Clone> DataTrait<T, O> for Dataset<T, O> {
     // Create a new instance of Dataset
     fn new(input: Vec<T>, target: Vec<O>) -> Self {
-       let mut dataset =  Dataset { input, target, total_training_records_size: 0, total_validation_records_size: 0 };
-       dataset.setup_splits(Some(0.1));
+        let mut dataset = Dataset {
+            input,
+            target,
+            total_training_records_size: 0,
+            total_validation_records_size: 0,
+        };
 
-       dataset
+        // Automatically setup splits if dataset is large enough
+        if dataset.input.len() > 100 {
+            dataset.setup_splits(Some(0.1));
+        }
+
+        dataset
     }
 
     // Get a reference to the input data

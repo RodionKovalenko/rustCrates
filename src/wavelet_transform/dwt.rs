@@ -1,9 +1,95 @@
 use crate::wavelet_transform::dwt_type_resolver::{get_high_pass_filter, get_inverse_high_pass_filter, get_inverse_low_pass_filter, get_low_pass_filter};
 use crate::wavelet_transform::dwt_types::DiscreteWaveletType;
 use crate::wavelet_transform::modes::WaveletMode;
+use crate::neural_networks::utils::matrix::RowMajorMatrix;
 use num_traits::Num;
 use std::fmt::Debug;
 use std::ops::{Add, Mul, Neg, Sub};
+
+pub fn dwt_2d_partial_rm<T>(data: &RowMajorMatrix<T>, dw_type: &DiscreteWaveletType, mode: &WaveletMode) -> RowMajorMatrix<T>
+where
+    T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
+{
+    let mut rows_out: Vec<Vec<T>> = Vec::with_capacity(data.rows);
+    for r in 0..data.rows {
+        let row = data.row_range(r);
+        rows_out.push(dwt_1d(&data.data[row], dw_type, mode));
+    }
+
+    let cols = rows_out.get(0).map(|v| v.len()).unwrap_or(0);
+    debug_assert!(rows_out.iter().all(|v| v.len() == cols), "dwt_2d_partial_rm: inconsistent output row lengths");
+
+    let mut out = Vec::with_capacity(data.rows * cols);
+    for r in 0..rows_out.len() {
+        out.extend_from_slice(&rows_out[r]);
+    }
+
+    RowMajorMatrix::from_data(data.rows, cols, out)
+}
+
+pub fn get_ll_hh_rm<T>(data: &RowMajorMatrix<T>) -> (RowMajorMatrix<T>, RowMajorMatrix<T>)
+where
+    T: Num + Clone + Debug + Copy,
+{
+    let half_col_ind = data.cols >> 1;
+    let ll_cols = half_col_ind;
+    let hh_cols = data.cols - half_col_ind;
+
+    let mut ll = RowMajorMatrix::from_data(data.rows, ll_cols, vec![T::zero(); data.rows * ll_cols]);
+    let mut hh = RowMajorMatrix::from_data(data.rows, hh_cols, vec![T::zero(); data.rows * hh_cols]);
+
+    for r in 0..data.rows {
+        let row = data.row_range(r);
+        let src = &data.data[row];
+
+        let ll_row = ll.row_range(r);
+        ll.data[ll_row.clone()].copy_from_slice(&src[0..half_col_ind]);
+
+        let hh_row = hh.row_range(r);
+        hh.data[hh_row.clone()].copy_from_slice(&src[half_col_ind..]);
+    }
+
+    (ll, hh)
+}
+
+pub fn grad_dwt_2d_partial_rm<T>(grad_output: &RowMajorMatrix<T>, dw_type: &DiscreteWaveletType, mode: &WaveletMode) -> RowMajorMatrix<T>
+where
+    T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
+{
+    let mut rows_out: Vec<Vec<T>> = Vec::with_capacity(grad_output.rows);
+    for r in 0..grad_output.rows {
+        let row = grad_output.row_range(r);
+        rows_out.push(grad_dwt_1d_trend(&grad_output.data[row].to_vec(), dw_type, mode));
+    }
+
+    let cols = rows_out.get(0).map(|v| v.len()).unwrap_or(0);
+    debug_assert!(rows_out.iter().all(|v| v.len() == cols), "grad_dwt_2d_partial_rm: inconsistent output row lengths");
+
+    let mut out = Vec::with_capacity(grad_output.rows * cols);
+    for r in 0..rows_out.len() {
+        out.extend_from_slice(&rows_out[r]);
+    }
+
+    RowMajorMatrix::from_data(grad_output.rows, cols, out)
+}
+
+pub fn inverse_dwt_2d_partial_rm<T>(data: &RowMajorMatrix<T>, dw_type: &DiscreteWaveletType, mode: &WaveletMode, level: u32) -> RowMajorMatrix<T>
+where
+    T: Num + Clone + Debug + Copy + Neg<Output = T> + Sub<Output = T> + Add<Output = T> + Mul<f64, Output = T>,
+{
+    let mut rows_out: Vec<Vec<T>> = Vec::with_capacity(data.rows);
+    for r in 0..data.rows {
+        let row = data.row_range(r);
+        rows_out.push(inverse_dwt_1d(&data.data[row], dw_type, mode, level));
+    }
+
+    let cols = rows_out.get(0).map(|v| v.len()).unwrap_or(0);
+    let mut out = Vec::with_capacity(data.rows * cols);
+    for r in 0..rows_out.len() {
+        out.extend_from_slice(&rows_out[r]);
+    }
+    RowMajorMatrix::from_data(data.rows, cols, out)
+}
 
 pub fn dwt_2d_partial<T>(data: &Vec<Vec<T>>, dw_type: &DiscreteWaveletType, mode: &WaveletMode) -> Vec<Vec<T>>
 where

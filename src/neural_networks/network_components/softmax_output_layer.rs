@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 use crate::neural_networks::{
     network_components::{complex_to_linear_layer::ComplexToLinearLayer, layer_input_struct::LayerInput},
     network_types::neural_network_generic::OperationMode,
-    utils::activation::{softmax_backward_real_with_gradient, softmax_last_row},
+    utils::{
+        activation::{softmax_backward_real_with_gradient, softmax_backward_real_with_gradient_rm, softmax_last_row},
+        matrix::RowMajorMatrix,
+    },
 };
 
 use super::gradient_struct::Gradient;
@@ -50,7 +53,30 @@ impl SoftmaxLayer {
         }
     }
     pub fn forward(&mut self, layer_input: &LayerInput, padding_mask_option: Option<Vec<Vec<u32>>>, target_token_ids: Option<Vec<Vec<u32>>>) -> Vec<Vec<Vec<f64>>> {
+        self.time_step = layer_input.get_time_step();
+        self.batch_size = layer_input.get_batch_size();
+
+        match layer_input.input_representation() {
+            crate::neural_networks::network_components::layer_input_struct::InputRepresentation::RowMajor => {
+                return self.forward_rm(layer_input, padding_mask_option, target_token_ids);
+            }
+            crate::neural_networks::network_components::layer_input_struct::InputRepresentation::Empty => {
+                self.padding_mask_batch = Some(vec![]);
+                self.softmax_output_batch = Some(vec![]);
+                self.cross_entropy_loss_batch = Some(vec![]);
+                self.input_batch = Some(vec![]);
+
+                let mut gradient = Gradient::new_default();
+                gradient.set_gradient_input_batch(vec![]);
+                gradient.set_total_valid_tokens(0);
+                self.gradient = Some(gradient);
+                return vec![];
+            }
+            crate::neural_networks::network_components::layer_input_struct::InputRepresentation::Vec => {}
+        }
+
         let input_batch = layer_input.get_input_batch();
+
         let batch_size = input_batch.len();
         let seq_len = input_batch[0].len();
 
@@ -65,6 +91,8 @@ impl SoftmaxLayer {
 
         let output_indices_batch = layer_input.get_output_indices();
 
+        let mut total_valid_tokens: usize = 0;
+
         let (layer_output_batch, losses, mut input_gradient_batch) = match self.operation_mode {
             OperationMode::PRODUCTION => {
                 let output: Vec<Vec<Vec<f64>>> = input_batch
@@ -76,7 +104,7 @@ impl SoftmaxLayer {
             }
             OperationMode::TRAINING => {
                 // Compute total valid tokens across entire batch for proper normalization
-                let total_valid_tokens: usize = padding_mask_batch
+                total_valid_tokens = padding_mask_batch
                     .iter()
                     .zip(target_token_batch_ids.iter())
                     .map(|(mask, targets)| {
@@ -100,13 +128,15 @@ impl SoftmaxLayer {
                 let output_gradients = (0..batch_size)
                     .into_par_iter()
                     .map(|batch_ind| {
-                        let output_indices = if !output_indices_batch.is_empty() {
-                            &output_indices_batch[batch_ind]
-                        } else {
-                            &vec![]
-                        };
+                        let output_indices = if !output_indices_batch.is_empty() { &output_indices_batch[batch_ind] } else { &vec![] };
 
-                        let outputs = softmax_backward_real_with_gradient(&input_batch_linear[batch_ind], &target_token_batch_ids[batch_ind], &padding_mask_batch[batch_ind], total_valid_tokens, &output_indices);
+                        let outputs = softmax_backward_real_with_gradient(
+                            &input_batch_linear[batch_ind],
+                            &target_token_batch_ids[batch_ind],
+                            &padding_mask_batch[batch_ind],
+                            total_valid_tokens,
+                            &output_indices,
+                        );
                         outputs
                     })
                     .unzip();
@@ -118,6 +148,7 @@ impl SoftmaxLayer {
         if let Some(complex_to_linear_layer) = &mut self.complex_to_linear_layer {
             let mut complex_to_linear_gradient = Gradient::new_default();
             complex_to_linear_gradient.set_gradient_input_batch(input_gradient_batch);
+            complex_to_linear_gradient.set_total_valid_tokens(total_valid_tokens);
 
             complex_to_linear_gradient = complex_to_linear_layer.backward(&complex_to_linear_gradient);
             input_gradient_batch = complex_to_linear_gradient.get_gradient_input_batch()
@@ -130,6 +161,111 @@ impl SoftmaxLayer {
 
         let mut gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(input_gradient_batch);
+        gradient.set_total_valid_tokens(total_valid_tokens);
+        self.gradient = Some(gradient);
+
+        layer_output_batch
+    }
+
+    pub fn forward_rm(&mut self, layer_input: &LayerInput, padding_mask_option: Option<Vec<Vec<u32>>>, target_token_ids: Option<Vec<Vec<u32>>>) -> Vec<Vec<Vec<f64>>> {
+        self.time_step = layer_input.get_time_step();
+        self.batch_size = layer_input.get_batch_size();
+
+        let input_batch_rm_ref = layer_input.get_input_batch_rm_ref().expect("Softmax forward_rm requires input_batch_rm");
+        if input_batch_rm_ref.is_empty() {
+            self.padding_mask_batch = Some(vec![]);
+            self.softmax_output_batch = Some(vec![]);
+            self.cross_entropy_loss_batch = Some(vec![]);
+            self.input_batch = None;
+
+            let mut gradient = Gradient::new_default();
+            gradient.set_gradient_input_batch_rm(vec![]);
+            gradient.set_total_valid_tokens(0);
+            self.gradient = Some(gradient);
+
+            return vec![];
+        }
+
+        let batch_size = input_batch_rm_ref.len();
+        let seq_len = input_batch_rm_ref[0].rows;
+
+        let padding_mask_batch = padding_mask_option.unwrap_or_else(|| vec![vec![1; seq_len]; batch_size]);
+        let target_token_batch_ids = target_token_ids.unwrap_or(Vec::new());
+
+        // Optional Complex->Linear projection in RM.
+        let input_batch_linear_rm: Vec<RowMajorMatrix<Complex<f64>>> = if let Some(complex_to_linear_layer) = &mut self.complex_to_linear_layer {
+            let mut li = layer_input.clone();
+            li.clear_input_batch();
+            li.set_input_batch_rm(input_batch_rm_ref.to_vec());
+            complex_to_linear_layer.forward(&li).get_output_batch_rm()
+        } else {
+            input_batch_rm_ref.to_vec()
+        };
+
+        let output_indices_batch = layer_input.get_output_indices();
+
+        let mut total_valid_tokens: usize = 0;
+
+        let (layer_output_batch, losses, mut input_gradient_batch_rm): (Vec<Vec<Vec<f64>>>, Vec<Vec<Vec<Complex<f64>>>>, Vec<RowMajorMatrix<Complex<f64>>>) = match self.operation_mode {
+            OperationMode::PRODUCTION => {
+                // Keep behavior consistent with Vec path (softmax only last row). We return an empty batch here
+                // because transformer inference path already bypasses this function.
+                (Vec::new(), Vec::new(), Vec::new())
+            }
+            OperationMode::TRAINING => {
+                total_valid_tokens = padding_mask_batch
+                    .iter()
+                    .zip(target_token_batch_ids.iter())
+                    .map(|(mask, targets)| {
+                        let target_len = targets.len();
+                        let valid_seq_len = mask.iter().filter(|&&m| m != 0).count();
+                        let offset = valid_seq_len.saturating_sub(target_len);
+
+                        targets.iter().enumerate().filter(|(i, &target_id)| target_id != 1 && mask[offset + i] != 0).count()
+                    })
+                    .sum();
+
+                let per_batch: Vec<(Vec<Vec<Complex<f64>>>, RowMajorMatrix<Complex<f64>>)> = (0..batch_size)
+                    .into_par_iter()
+                    .map(|batch_ind| {
+                        let output_indices = if !output_indices_batch.is_empty() { &output_indices_batch[batch_ind] } else { &vec![] };
+
+                        softmax_backward_real_with_gradient_rm(
+                            &input_batch_linear_rm[batch_ind],
+                            &target_token_batch_ids[batch_ind],
+                            &padding_mask_batch[batch_ind],
+                            total_valid_tokens,
+                            output_indices,
+                        )
+                    })
+                    .collect();
+
+                let mut losses_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::with_capacity(batch_size);
+                let mut grads_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(batch_size);
+                for (l, g) in per_batch {
+                    losses_batch.push(l);
+                    grads_batch_rm.push(g);
+                }
+                (Vec::new(), losses_batch, grads_batch_rm)
+            }
+        };
+
+        if let Some(complex_to_linear_layer) = &mut self.complex_to_linear_layer {
+            let mut complex_to_linear_gradient = Gradient::new_default();
+            complex_to_linear_gradient.set_gradient_input_batch_rm(input_gradient_batch_rm);
+            complex_to_linear_gradient.set_total_valid_tokens(total_valid_tokens);
+            complex_to_linear_gradient = complex_to_linear_layer.backward(&complex_to_linear_gradient);
+            input_gradient_batch_rm = complex_to_linear_gradient.get_gradient_input_batch_rm();
+        }
+
+        self.padding_mask_batch = Some(padding_mask_batch);
+        self.softmax_output_batch = Some(layer_output_batch.clone());
+        self.cross_entropy_loss_batch = Some(losses);
+        self.input_batch = None;
+
+        let mut gradient = Gradient::new_default();
+        gradient.set_gradient_input_batch_rm(input_gradient_batch_rm);
+        gradient.set_total_valid_tokens(total_valid_tokens);
         self.gradient = Some(gradient);
 
         layer_output_batch
