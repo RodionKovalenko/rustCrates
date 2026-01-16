@@ -79,6 +79,63 @@ impl NeuralNetwork {
         update_learning_rate(self, self.learning_rate);
         println!("Manual decay applied. New LR: {:?}", self.learning_rate);
     }
+
+    pub fn prepare_for_save(&mut self) {
+        for layer in self.layers.iter_mut() {
+            prepare_layer_for_save(layer);
+        }
+    }
+}
+
+fn prepare_layer_for_save(layer: &mut LayerEnum) {
+    match layer {
+        LayerEnum::Dense(dense_layer) => dense_layer.prepare_for_save(),
+        LayerEnum::Linear(linear_layer) => linear_layer.prepare_for_save(),
+        LayerEnum::MultiLinear(multi_linear_layer) => {
+            for linear_layer in multi_linear_layer.layers.iter_mut() {
+                linear_layer.prepare_for_save();
+            }
+        }
+        LayerEnum::SelfAttention(self_attention_layer) => {
+            for attention_head in self_attention_layer.attention_heads.iter_mut() {
+                attention_head.prepare_for_save();
+            }
+            if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
+                prepare_layer_for_save(norm_layer);
+            }
+        }
+        LayerEnum::SparseSelfAttention(self_attention_layer) => {
+            for attention_head in self_attention_layer.attention_heads.iter_mut() {
+                attention_head.prepare_for_save();
+            }
+            if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
+                prepare_layer_for_save(norm_layer);
+            }
+        }
+        LayerEnum::SelfAttentionApproximation(self_attention_layer) => {
+            if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
+                prepare_layer_for_save(norm_layer);
+            }
+        }
+        LayerEnum::FeedForward(ffn_layer) => {
+            for sub_layer in ffn_layer.layers.iter_mut() {
+                prepare_layer_for_save(sub_layer);
+            }
+            if let Some(norm_layer) = ffn_layer.norm_layer.as_mut() {
+                prepare_layer_for_save(norm_layer);
+            }
+        }
+        LayerEnum::AdaptiveAvgPool1d(_)
+        | LayerEnum::Embedding(_)
+        | LayerEnum::PositionalEncoding(_)
+        | LayerEnum::RMSNorm(_)
+        | LayerEnum::Norm(_)
+        | LayerEnum::SparseLinear(_)
+        | LayerEnum::DiscreteWavelet(_)
+        | LayerEnum::ComplexToLinear(_)
+        | LayerEnum::Wavelet(_)
+        | LayerEnum::Softmax(_) => {}
+    }
 }
 
 pub fn create(number_inputs: usize, number_outputs: usize, number_of_hidden_layers: usize, number_of_hidden_neurons: usize, minibatch_size: usize, learning_rate: f64) -> NeuralNetwork {
@@ -101,7 +158,9 @@ pub fn create(number_inputs: usize, number_outputs: usize, number_of_hidden_laye
 }
 
 pub fn save_to_sled(filename: &str, neural_network: &NeuralNetwork) {
-    let serialized_embedding = bincode::serialize(&neural_network).expect("Failed to serialize transformer model");
+    let mut model_to_save = neural_network.clone();
+    model_to_save.prepare_for_save();
+    let serialized_embedding = bincode::serialize(&model_to_save).expect("Failed to serialize transformer model");
     let filepath_buf: std::path::PathBuf = get_storage_path_transformer_db(filename);
     let filepath: &str = filepath_buf.to_str().unwrap();
 

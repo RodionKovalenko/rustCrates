@@ -14,6 +14,7 @@ mod test_sparse_self_attention_layer {
         },
         utils::{
             derivative::{global_relative_error_2d_l2, numerical_gradient_input_batch, numerical_gradient_weights, test_gradient_error_2d},
+            matrix::RowMajorMatrix,
             matrix::scale_matrix_3d_by_scalar,
             random_arrays::{generate_random_complex_3d, generate_u32_batch_from_indices},
         },
@@ -371,5 +372,41 @@ mod test_sparse_self_attention_layer {
 
         let scaled_batch = scale_matrix_3d_by_scalar(&input_batch, scalar_a);
         println!("input batch: {:?}", scaled_batch);
+    }
+
+    #[test]
+    fn test_sparse_self_attention_layer_rm_forward_backward_smoke() {
+        let batch_size = 2;
+        let seq_len = 16;
+        let feature_dim = 16;
+        let learning_rate = 0.01;
+        let num_attention_heads = 4;
+        let partition_shift = 2;
+
+        let mut attention_layer: SparseSelfAttentionLayer = SparseSelfAttentionLayer::new(num_attention_heads, feature_dim, feature_dim, partition_shift, learning_rate);
+
+        let input_batch_vec: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, seq_len, feature_dim);
+        let input_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = input_batch_vec.iter().map(|m| RowMajorMatrix::from_rows(m)).collect();
+        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; seq_len]; batch_size];
+
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_input_batch_rm(input_batch_rm);
+        layer_input.set_padding_mask_batch(padding_mask_batch);
+
+        let out = attention_layer.forward(&layer_input);
+        let out_rm = out.get_output_batch_rm();
+        assert_eq!(out_rm.len(), batch_size);
+        assert_eq!(out_rm[0].rows, seq_len);
+        assert_eq!(out_rm[0].cols, feature_dim);
+
+        let grad_out_rm: Vec<RowMajorMatrix<Complex<f64>>> = (0..batch_size)
+            .map(|_| RowMajorMatrix::from_data(seq_len, feature_dim, vec![Complex::new(1.0, 0.0); seq_len * feature_dim]))
+            .collect();
+
+        let grad = attention_layer.backward_rm(&grad_out_rm);
+        let grad_in_rm = grad.get_gradient_input_batch_rm();
+        assert_eq!(grad_in_rm.len(), batch_size);
+        assert_eq!(grad_in_rm[0].rows, seq_len);
+        assert_eq!(grad_in_rm[0].cols, feature_dim);
     }
 }

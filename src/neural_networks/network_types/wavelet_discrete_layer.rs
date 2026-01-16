@@ -5,10 +5,12 @@ use serde::{Deserialize, Serialize};
 use crate::{
     neural_networks::{
         network_components::{gradient_struct::Gradient, layer::LayerEnum, layer_input_struct::LayerInput, layer_output_struct::LayerOutput, norm_layer::NormalNormLayer},
-        utils::matrix::{add_matrix_2d_c, add_matrix_3d, transpose},
+        utils::matrix::{add_matrix_2d_c, add_matrix_3d, transpose, transpose_rm, RowMajorMatrix},
     },
     wavelet_transform::{
-        dwt::{dwt_1d, dwt_2d_partial, get_ll_hh, get_ll_hh_1d, grad_dwt_2d_partial, inverse_dwt_2d_partial}, dwt_types::DiscreteWaveletType, modes::WaveletMode
+        dwt::{dwt_1d, dwt_2d_partial, dwt_2d_partial_rm, get_ll_hh, get_ll_hh_1d, get_ll_hh_rm, grad_dwt_2d_partial, inverse_dwt_2d_partial, inverse_dwt_2d_partial_rm},
+        dwt_types::DiscreteWaveletType,
+        modes::WaveletMode,
     },
 };
 
@@ -26,9 +28,13 @@ pub struct DiscreteWaveletLayer {
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
+    pub input_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+    #[serde(skip)]
     pub compression_levels_used: usize,
     #[serde(skip)]
     pub input_only_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
+    pub input_only_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
     #[serde(skip)]
     pub previous_gradient_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
@@ -38,11 +44,17 @@ pub struct DiscreteWaveletLayer {
     #[serde(skip)]
     pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
+    pub output_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+    #[serde(skip)]
     pub trend_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    #[serde(skip)]
+    pub trend_input_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
     #[serde(skip)]
     pub trend_batch_coefficients: Option<Vec<Vec<Vec<Vec<Complex<f64>>>>>>,
     #[serde(skip)]
     pub details_batch_coefficients: Option<Vec<Vec<Vec<Vec<Complex<f64>>>>>>,
+    #[serde(skip)]
+    pub details_batch_coefficients_rm: Option<Vec<Vec<RowMajorMatrix<Complex<f64>>>>>,
     #[serde(skip)]
     pub trend_batch_result: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
@@ -57,6 +69,10 @@ pub struct DiscreteWaveletLayer {
     pub target_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
     pub target_batch_ids: Option<Vec<Vec<u32>>>,
+
+    // When true, any RM<->Vec fallback conversion in backward is treated as a bug and must panic.
+    #[serde(skip)]
+    pub last_rm_strict: bool,
 }
 
 impl DiscreteWaveletLayer {
@@ -65,11 +81,15 @@ impl DiscreteWaveletLayer {
 
         Self {
             input_batch: None,
+            input_batch_rm: None,
             trend_input_batch: None,
+            trend_input_batch_rm: None,
             input_only_batch: None,
+            input_only_batch_rm: None,
             previous_gradient_input_batch: None,
             gradient: None,
             output_batch: None,
+            output_batch_rm: None,
             time_step: 0,
             wavelet: DiscreteWaveletType::DB4,
             wavelet_size: 16,
@@ -83,16 +103,31 @@ impl DiscreteWaveletLayer {
             details_batch_result: None,
             trend_batch_coefficients: None,
             details_batch_coefficients: None,
+            details_batch_coefficients_rm: None,
             compression_dims: None,
             compressed_padding_mask_b: None,
             padding_mask_batch: None,
             target_batch: None,
             target_batch_ids: None,
             norm_layer: None,
+
+            last_rm_strict: false,
         }
     }
 
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        self.last_rm_strict = layer_input.get_rm_strict();
+        let input_batch_rm_ref = layer_input.get_input_batch_rm_ref();
+        let input_batch_ref = layer_input.get_input_batch_ref();
+        let use_rm = input_batch_ref.is_none() && input_batch_rm_ref.is_some();
+
+        if use_rm {
+            let input_batch_rm = input_batch_rm_ref.unwrap();
+            if !input_batch_rm.is_empty() {
+                return self.forward_rm(layer_input);
+            }
+        }
+
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = layer_input.get_input_batch();
         let target_batch_ids: Vec<Vec<u32>> = layer_input.get_target_batch_ids();
         let forward_only = layer_input.get_forward_only();
@@ -165,6 +200,91 @@ impl DiscreteWaveletLayer {
 
         layer_output
     }
+
+    pub fn forward_rm(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        let input_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = layer_input
+            .get_input_batch_rm_ref()
+            .expect("DiscreteWaveletLayer::forward_rm expects RM input")
+            .to_vec();
+
+        let target_batch_ids: Vec<Vec<u32>> = layer_input.get_target_batch_ids();
+        let forward_only = layer_input.get_forward_only();
+        let mut padding_mask_batch: Vec<Vec<u32>> = layer_input.get_padding_mask_batch();
+        let time_step = layer_input.get_time_step();
+
+        if padding_mask_batch.is_empty() || padding_mask_batch[0].is_empty() {
+            padding_mask_batch = vec![vec![1; input_batch_rm[0].rows]; input_batch_rm.len()];
+        }
+
+        let mut trend_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = Vec::new();
+        let mut details_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = Vec::new();
+        let mut compression_dims: Vec<Vec<usize>> = Vec::new();
+        let mut comp_pad_mask_b: Vec<Vec<u32>> = Vec::new();
+        let mut details_coeffs_batch: Vec<Vec<RowMajorMatrix<Complex<f64>>>> = Vec::new();
+
+        if !forward_only || (forward_only && time_step == 0) {
+            for (batch_ind, input_rm) in input_batch_rm.iter().enumerate() {
+                let (new_trend, new_details, compression_dim, detail_coeffs_levels) = self.compress_partial_rm(input_rm);
+                trend_batch_rm.push(new_trend);
+                details_batch_rm.push(new_details);
+                compression_dims.push(compression_dim);
+                comp_pad_mask_b.push(self.compress_padding_mask(&padding_mask_batch[batch_ind]));
+
+                details_coeffs_batch.push(detail_coeffs_levels);
+            }
+        }
+
+        // Apply optional norm in RM
+        let mut trend_batch_rm_normed = trend_batch_rm.clone();
+        if self.norm_layer.is_some() {
+            let mut li_norm = layer_input.clone();
+            li_norm.clear_input_batch();
+            li_norm.set_input_batch_rm(trend_batch_rm.clone());
+            li_norm.set_input_batch_before_rm(trend_batch_rm.clone());
+            li_norm.set_padding_mask_batch(comp_pad_mask_b.clone());
+
+            if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
+                match norm_layer_enum {
+                    LayerEnum::RMSNorm(rms_norm_layer) => {
+                        let out = rms_norm_layer.forward(&li_norm);
+                        trend_batch_rm_normed = out.get_output_batch_rm();
+                    }
+                    LayerEnum::Norm(norm_layer) => {
+                        let mut out = norm_layer.forward(&li_norm);
+                        trend_batch_rm_normed = out.take_output_batch_rm().unwrap_or_else(|| vec![]);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        self.input_batch = None;
+        self.input_only_batch = None;
+        self.trend_input_batch = None;
+        self.output_batch = None;
+
+        self.input_batch_rm = Some(input_batch_rm.clone());
+        self.input_only_batch_rm = Some(input_batch_rm.clone());
+        self.trend_input_batch_rm = Some(trend_batch_rm_normed.clone());
+        self.details_batch_result = None;
+        self.details_batch_coefficients_rm = Some(details_coeffs_batch);
+        self.time_step = layer_input.get_time_step();
+        self.output_batch_rm = Some(trend_batch_rm_normed.clone());
+        self.target_batch_ids = Some(target_batch_ids);
+        self.padding_mask_batch = Some(padding_mask_batch.clone());
+        self.compressed_padding_mask_b = Some(comp_pad_mask_b.clone());
+        self.compression_dims = Some(compression_dims);
+
+        let mut layer_output = LayerOutput::new_default();
+        layer_output.set_output_batch_rm(trend_batch_rm_normed.clone());
+        layer_output.set_padding_mask_batch(padding_mask_batch.clone());
+
+        if trend_batch_rm_normed[0].rows != padding_mask_batch[0].len() {
+            layer_output.set_padding_mask_batch(comp_pad_mask_b.clone());
+        }
+
+        layer_output
+    }
     pub fn forward_inverse(&mut self, layer_input: &LayerInput) -> LayerOutput {
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = layer_input.get_input_batch();
         let mut decompressed_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::with_capacity(input_batch.len());
@@ -183,6 +303,46 @@ impl DiscreteWaveletLayer {
         layer_output
     }
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        if let Some(prev_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
+            if !prev_rm.is_empty() {
+                // Only valid to run RM backward if RM cache exists (forward_rm ran).
+                if self.input_batch_rm.is_some() {
+                    return self.backward_rm(previous_gradient);
+                }
+
+                // Mixed mode: Vec forward but caller provided RM gradients.
+                if self.last_rm_strict {
+                    panic!(
+                        "RM strict mode violation: DiscreteWaveletLayer backward would convert RM gradients to Vec (forward was Vec)"
+                    );
+                }
+
+                let prev_vec: Vec<Vec<Vec<Complex<f64>>>> = prev_rm.iter().map(|m| m.to_rows()).collect();
+                let mut prev_legacy = Gradient::new_default();
+                prev_legacy.set_time_step(previous_gradient.get_time_step());
+                prev_legacy.set_gradient_input_batch(prev_vec);
+                return self.backward(&prev_legacy);
+            }
+        }
+
+        // Mixed mode: RM forward but caller provided Vec gradients.
+        if self.input_batch_rm.is_some() && !previous_gradient.get_gradient_input_batch().is_empty() {
+            if self.last_rm_strict {
+                panic!(
+                    "RM strict mode violation: DiscreteWaveletLayer backward would convert Vec gradients to RM (forward was RM)"
+                );
+            }
+            let prev_rm: Vec<RowMajorMatrix<Complex<f64>>> = previous_gradient
+                .get_gradient_input_batch()
+                .iter()
+                .map(|m| RowMajorMatrix::from_rows(m))
+                .collect();
+            let mut g = Gradient::new_default();
+            g.set_time_step(previous_gradient.get_time_step());
+            g.set_gradient_input_batch_rm(prev_rm);
+            return self.backward_rm(&g);
+        }
+
         let input_batch = self.input_batch.as_ref().expect("Input batch not found");
         let mut grad_output_batch = previous_gradient.get_gradient_input_batch();
         let compression_dims = self.compression_dims.as_ref().expect("no compression dwt found").clone();
@@ -237,6 +397,144 @@ impl DiscreteWaveletLayer {
         self.gradient = Some(gradient.clone());
 
         gradient
+    }
+
+    pub fn backward_rm(&mut self, previous_gradient: &Gradient) -> Gradient {
+        let input_batch_rm = self
+            .input_batch_rm
+            .as_ref()
+            .expect("DiscreteWaveletLayer::backward_rm expects RM cache from forward_rm")
+            .to_vec();
+
+        let mut grad_output_batch_rm = previous_gradient
+            .get_gradient_input_batch_rm_ref()
+            .expect("DiscreteWaveletLayer::backward_rm expects RM gradient")
+            .to_vec();
+        let compression_dims = self.compression_dims.as_ref().expect("no compression dwt found").clone();
+
+        assert_eq!(input_batch_rm.len(), grad_output_batch_rm.len(), "Input and gradient batch size mismatch");
+
+        // Apply norm backward if present
+        let mut gradient = Gradient::new_default();
+        gradient.set_gradient_input_batch_rm(grad_output_batch_rm.clone());
+
+        if let Some(norm_layer) = &mut self.norm_layer {
+            match norm_layer {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    let norm_gradient = rms_norm_layer.backward_rm(&grad_output_batch_rm);
+                    grad_output_batch_rm = norm_gradient.get_gradient_input_batch_rm();
+                    gradient.set_gradient_input_batch_rm(grad_output_batch_rm.clone());
+                }
+                LayerEnum::Norm(norm_layer) => {
+                    let mut g = Gradient::new_default();
+                    g.set_gradient_input_batch_rm(grad_output_batch_rm);
+                    let norm_gradient = norm_layer.backward(&g);
+                    grad_output_batch_rm = norm_gradient.get_gradient_input_batch_rm();
+                    gradient.set_gradient_input_batch_rm(grad_output_batch_rm.clone());
+                }
+                _ => {}
+            }
+        }
+
+        let mut grad_input_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(grad_output_batch_rm.len());
+        for (batch_ind, grad_output_rm) in grad_output_batch_rm.iter().enumerate() {
+            let compression_dim = &compression_dims[batch_ind];
+            let gradient_decompr = self.decompress_partial_gradient_rm(grad_output_rm, compression_dim, batch_ind);
+            grad_input_batch_rm.push(gradient_decompr);
+        }
+
+        let mut out = Gradient::new_default();
+        out.set_time_step(self.time_step);
+        out.set_gradient_input_batch_rm(grad_input_batch_rm.clone());
+
+        self.gradient = Some(out.clone());
+        out
+    }
+
+    fn compress_partial_rm(
+        &mut self,
+        input_rm: &RowMajorMatrix<Complex<f64>>,
+    ) -> (
+        RowMajorMatrix<Complex<f64>>,
+        RowMajorMatrix<Complex<f64>>,
+        Vec<usize>,
+        Vec<RowMajorMatrix<Complex<f64>>>,
+    ) {
+        let mut wav_out = input_rm.clone();
+        let mut details_last = RowMajorMatrix::from_data(0, 0, vec![]);
+        let mut compression_dims: Vec<usize> = Vec::new();
+        let mut detail_coefficients_levels: Vec<RowMajorMatrix<Complex<f64>>> = Vec::new();
+
+        for level in 0..self.compression_levels {
+            let wav_t = transpose_rm(&wav_out); // dim x seq
+            let dwt_partial = dwt_2d_partial_rm(&wav_t, &self.wavelet, &self.wavelet_mode);
+            let (ll, hh) = get_ll_hh_rm(&dwt_partial);
+
+            let trend = transpose_rm(&ll); // seq/2 x dim
+            let details = transpose_rm(&hh);
+
+            let mut next = trend.clone();
+            if self.add_details {
+                assert_eq!((trend.rows, trend.cols), (details.rows, details.cols));
+                for i in 0..next.data.len() {
+                    next.data[i] += details.data[i];
+                }
+            }
+
+            wav_out = next;
+            details_last = details.clone();
+            detail_coefficients_levels.push(details);
+            compression_dims.push(wav_out.rows);
+
+            self.compression_levels_used = level + 1;
+            if wav_out.rows <= 24 {
+                break;
+            }
+        }
+
+        (wav_out, details_last, compression_dims, detail_coefficients_levels)
+    }
+
+    fn decompress_partial_gradient_rm(
+        &mut self,
+        grad_output_rm: &RowMajorMatrix<Complex<f64>>,
+        compression_dim: &Vec<usize>,
+        batch_ind: usize,
+    ) -> RowMajorMatrix<Complex<f64>> {
+        let input_batch_rm = self.input_batch_rm.as_ref().expect("Input batch RM not found");
+        let original_seq_len = input_batch_rm[batch_ind].rows;
+
+        let mut grad_transp = transpose_rm(grad_output_rm); // dim x trend_len
+
+        for _ in (0..compression_dim.len()).rev() {
+            let ll_len = grad_transp.cols;
+            let mut combined = RowMajorMatrix::from_data(grad_transp.rows, ll_len * 2, vec![Complex::new(0.0, 0.0); grad_transp.rows * ll_len * 2]);
+
+            for r in 0..grad_transp.rows {
+                let row_ll = grad_transp.row_range(r);
+                let dst = combined.row_range(r);
+
+                // LL
+                combined.data[dst.start..dst.start + ll_len].copy_from_slice(&grad_transp.data[row_ll.clone()]);
+
+                // HH
+                if self.add_details {
+                    combined.data[dst.start + ll_len..dst.start + 2 * ll_len].copy_from_slice(&grad_transp.data[row_ll]);
+                }
+            }
+
+            grad_transp = inverse_dwt_2d_partial_rm(&combined, &self.wavelet, &self.wavelet_mode, 0);
+        }
+
+        let mut grad = transpose_rm(&grad_transp); // seq_len x dim
+
+        if grad.rows > original_seq_len {
+            let mut truncated = RowMajorMatrix::from_data(original_seq_len, grad.cols, vec![Complex::new(0.0, 0.0); original_seq_len * grad.cols]);
+            truncated.data.copy_from_slice(&grad.data[0..original_seq_len * grad.cols]);
+            grad = truncated;
+        }
+
+        grad
     }
     pub fn backward_inverse(&mut self, prev_gradient: &Gradient) -> Gradient {
         let gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = prev_gradient.get_gradient_input_batch();

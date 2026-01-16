@@ -20,6 +20,7 @@ mod test_wavelet_layer {
     };
 
     use num::Complex;
+    use crate::neural_networks::utils::matrix::RowMajorMatrix;
 
     #[test]
     fn test_wavelet_layer_backward() {
@@ -275,5 +276,41 @@ mod test_wavelet_layer {
         println!("\n\n global relative error input gradient: {:?}", &global_error);
 
         test_gradient_batch_error(&numerical_grad_batch, &analytical_gradient_batch, epsilon_test);
+    }
+
+    #[test]
+    fn test_wavelet_layer_rm_forward_backward_smoke() {
+        let mut wavelet_layer: ComplexWaveletLayer = ComplexWaveletLayer::new();
+
+        // 1 batch, 2 rows, 3 cols
+        let input_rm = vec![RowMajorMatrix::from_data(
+            2,
+            3,
+            vec![
+                Complex::new(0.1, 0.2),
+                Complex::new(-0.3, 0.0),
+                Complex::new(0.05, -0.1),
+                Complex::new(0.2, 0.0),
+                Complex::new(0.0, 0.1),
+                Complex::new(-0.4, 0.0),
+            ],
+        )];
+
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_input_batch_rm(input_rm);
+
+        let wavelet_output = wavelet_layer.forward(&layer_input);
+        assert!(wavelet_output.get_output_batch_rm_ref().is_some(), "Expected RM output from wavelet forward");
+
+        let out_rm = wavelet_output.get_output_batch_rm();
+        let prev_grad_rm: Vec<RowMajorMatrix<Complex<f64>>> = out_rm
+            .iter()
+            .map(|m| RowMajorMatrix::from_data(m.rows, m.cols, vec![Complex::new(1.0, 0.0); m.rows * m.cols]))
+            .collect();
+
+        let mut prev_gradient = Gradient::new_default();
+        prev_gradient.set_gradient_input_batch_rm(prev_grad_rm);
+        let g = wavelet_layer.backward(&prev_gradient);
+        assert!(g.get_gradient_input_batch_rm_ref().is_some(), "Expected RM gradient from wavelet backward");
     }
 }

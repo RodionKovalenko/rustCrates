@@ -4,6 +4,7 @@ use num::Complex;
 use num_traits::NumCast;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
+use serde::{Deserialize, Serialize};
 // use std::ffi::c_void;
 use std::ffi::c_char;
 use std::fmt::Debug;
@@ -17,6 +18,8 @@ use crate::neural_networks::utils::adam_w::MAX_NORM;
 
 #[cfg(feature = "cuda")]
 use super::gpu_matmul::GpuMatmul;
+
+#[cfg(feature = "cuda")]
 use once_cell::sync::Lazy;
 
 #[cfg(feature = "cuda")]
@@ -47,6 +50,296 @@ extern "C" {
         c: *mut Complex<f64>,
         ldc: *const i64,
     );
+}
+
+/// Contiguous row-major matrix storage.
+///
+/// This is the layout expected by the GPU path (`GpuMatmul`) and can also be used
+/// efficiently with BLAS by using a transpose/operand-swap trick.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RowMajorMatrix<T> {
+    pub rows: usize,
+    pub cols: usize,
+    pub data: Vec<T>,
+}
+
+impl<T> RowMajorMatrix<T> {
+    pub fn from_data(rows: usize, cols: usize, data: Vec<T>) -> Self {
+        assert_eq!(data.len(), rows * cols, "data length must be rows*cols");
+        Self { rows, cols, data }
+    }
+
+    #[inline]
+    pub fn idx(&self, row: usize, col: usize) -> usize {
+        row * self.cols + col
+    }
+}
+
+impl<T: Copy> RowMajorMatrix<T> {
+    pub fn from_rows(rows: &[Vec<T>]) -> Self {
+        let m = rows.len();
+        assert!(m > 0, "matrix must not be empty");
+        let n = rows[0].len();
+        assert!(n > 0, "matrix must not be empty");
+        for r in rows {
+            assert_eq!(r.len(), n, "all rows must have the same length");
+        }
+
+        let data: Vec<T> = rows.iter().flat_map(|r| r.iter().copied()).collect();
+        Self { rows: m, cols: n, data }
+    }
+
+    /// Builds a matrix from row vectors, returning `None` when the input is empty or ragged.
+    ///
+    /// This is useful for code paths where inputs may be variable-length (e.g. top-k / sparse
+    /// representations) and we want to keep the Vec-based representation without panicking.
+    pub fn try_from_rows(rows: &[Vec<T>]) -> Option<Self> {
+        let m = rows.len();
+        if m == 0 {
+            return None;
+        }
+
+        let n = rows[0].len();
+        if n == 0 {
+            return None;
+        }
+
+        if rows.iter().any(|r| r.len() != n) {
+            return None;
+        }
+
+        let data: Vec<T> = rows.iter().flat_map(|r| r.iter().copied()).collect();
+        Some(Self { rows: m, cols: n, data })
+    }
+
+    pub fn to_rows(&self) -> Vec<Vec<T>> {
+        let mut out = Vec::with_capacity(self.rows);
+        for i in 0..self.rows {
+            out.push(self.data[i * self.cols..(i + 1) * self.cols].to_vec());
+        }
+        out
+    }
+}
+
+impl<T> RowMajorMatrix<T> {
+    #[inline]
+    pub fn row_range(&self, row: usize) -> std::ops::Range<usize> {
+        let start = row * self.cols;
+        start..start + self.cols
+    }
+}
+
+pub fn add_vector_rm(matrix: &mut RowMajorMatrix<Complex<f64>>, bias: &[Complex<f64>]) {
+    assert_eq!(matrix.cols, bias.len(), "bias length must match matrix cols");
+    for r in 0..matrix.rows {
+        let row = matrix.row_range(r);
+        for c in 0..matrix.cols {
+            matrix.data[row.start + c] += bias[c];
+        }
+    }
+}
+
+pub fn conjugate_transpose_rm(matrix: &RowMajorMatrix<Complex<f64>>) -> RowMajorMatrix<Complex<f64>> {
+    let rows = matrix.rows;
+    let cols = matrix.cols;
+
+    // Output is (cols x rows)
+    let mut data = vec![Complex::new(0.0, 0.0); rows * cols];
+    for r in 0..rows {
+        for c in 0..cols {
+            data[c * rows + r] = matrix.data[matrix.idx(r, c)].conj();
+        }
+    }
+
+    RowMajorMatrix::from_data(cols, rows, data)
+}
+
+pub fn transpose_rm(matrix: &RowMajorMatrix<Complex<f64>>) -> RowMajorMatrix<Complex<f64>> {
+    let rows = matrix.rows;
+    let cols = matrix.cols;
+
+    let mut data = vec![Complex::new(0.0, 0.0); rows * cols];
+    for r in 0..rows {
+        for c in 0..cols {
+            data[c * rows + r] = matrix.data[matrix.idx(r, c)];
+        }
+    }
+
+    RowMajorMatrix::from_data(cols, rows, data)
+}
+
+pub fn transpose_rm_f64(matrix: &RowMajorMatrix<f64>) -> RowMajorMatrix<f64> {
+    let rows = matrix.rows;
+    let cols = matrix.cols;
+
+    let mut data = vec![0.0; rows * cols];
+    for r in 0..rows {
+        for c in 0..cols {
+            data[c * rows + r] = matrix.data[r * cols + c];
+        }
+    }
+
+    RowMajorMatrix::from_data(cols, rows, data)
+}
+
+pub fn append_rows_rm<T: Copy>(dst: &mut RowMajorMatrix<T>, src: &RowMajorMatrix<T>) {
+    assert_eq!(dst.cols, src.cols, "column count mismatch");
+    dst.data.extend_from_slice(&src.data);
+    dst.rows += src.rows;
+}
+
+pub fn multiply_f64_complex_rm(a: &RowMajorMatrix<f64>, b: &RowMajorMatrix<Complex<f64>>) -> RowMajorMatrix<Complex<f64>> {
+    assert_eq!(a.cols, b.rows, "A's columns must match B's rows");
+    let m = a.rows;
+    let k = a.cols;
+    let n = b.cols;
+    let mut c = vec![Complex::new(0.0, 0.0); m * n];
+    for i in 0..m {
+        for kk in 0..k {
+            let a_ik = a.data[i * k + kk];
+            if a_ik == 0.0 {
+                continue;
+            }
+            let b_row = kk * n;
+            let c_row = i * n;
+            for j in 0..n {
+                c[c_row + j] += b.data[b_row + j] * Complex::new(a_ik, 0.0);
+            }
+        }
+    }
+    RowMajorMatrix::from_data(m, n, c)
+}
+
+pub fn multiply_complex_with_f64_rm(a: &RowMajorMatrix<Complex<f64>>, b: &RowMajorMatrix<f64>) -> RowMajorMatrix<Complex<f64>> {
+    assert_eq!(a.cols, b.rows, "A's columns must match B's rows");
+    let m = a.rows;
+    let k = a.cols;
+    let n = b.cols;
+    let mut c = vec![Complex::new(0.0, 0.0); m * n];
+    for i in 0..m {
+        for kk in 0..k {
+            let a_ik = a.data[i * k + kk];
+            if a_ik == Complex::new(0.0, 0.0) {
+                continue;
+            }
+            let b_row = kk * n;
+            let c_row = i * n;
+            for j in 0..n {
+                c[c_row + j] += a_ik * b.data[b_row + j];
+            }
+        }
+    }
+    RowMajorMatrix::from_data(m, n, c)
+}
+
+pub fn conjugate_transpose_to_rm(matrix: &[Vec<Complex<f64>>]) -> RowMajorMatrix<Complex<f64>> {
+    let rows = matrix.len();
+    assert!(rows > 0, "matrix must not be empty");
+    let cols = matrix[0].len();
+    assert!(cols > 0, "matrix must not be empty");
+    for r in matrix {
+        assert_eq!(r.len(), cols, "all rows must have the same length");
+    }
+
+    // Output is (cols x rows)
+    let mut data = vec![Complex::new(0.0, 0.0); rows * cols];
+    for r in 0..rows {
+        for c in 0..cols {
+            data[c * rows + r] = matrix[r][c].conj();
+        }
+    }
+
+    RowMajorMatrix::from_data(cols, rows, data)
+}
+
+pub fn multiply_complex_rm(a: &RowMajorMatrix<Complex<f64>>, b: &RowMajorMatrix<Complex<f64>>) -> RowMajorMatrix<Complex<f64>> {
+    assert!(a.rows > 0 && a.cols > 0 && b.rows > 0 && b.cols > 0, "Matrices must not be empty");
+    assert_eq!(a.cols, b.rows, "A's columns must match B's rows");
+
+    let m = a.rows;
+    let k = a.cols;
+    let n = b.cols;
+
+    // Try GPU path first (if cuda feature enabled)
+    #[cfg(feature = "cuda")]
+    {
+        // Keep your existing heuristic gate for now
+        if n >= 50280 {
+            if let Ok(c) = multiply_complex_gpu_rm(&a.data, &b.data, m, k, n) {
+                return RowMajorMatrix::from_data(m, n, c);
+            }
+        }
+    }
+
+    let c = multiply_complex_cpu_rm(&a.data, &b.data, m, k, n);
+    RowMajorMatrix::from_data(m, n, c)
+}
+
+#[cfg(feature = "cuda")]
+fn multiply_complex_gpu_rm(a: &[Complex<f64>], b: &[Complex<f64>], m: usize, k: usize, n: usize) -> Result<Vec<Complex<f64>>, Box<dyn std::error::Error>> {
+    // Handle poisoned mutex gracefully
+    let mut gpu_guard = match GPU_MATMUL.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            eprintln!("GPU mutex was poisoned, attempting recovery...");
+            poisoned.into_inner()
+        }
+    };
+
+    let gpu = match gpu_guard.as_mut() {
+        Some(g) => g,
+        None => return Err("GPU not available".into()),
+    };
+
+    let c = gpu.multiply_complex(a, b, m, k, n)?;
+    Ok(c)
+}
+
+fn multiply_complex_cpu_rm(a: &[Complex<f64>], b: &[Complex<f64>], m: usize, k: usize, n: usize) -> Vec<Complex<f64>> {
+    assert_eq!(a.len(), m * k);
+    assert_eq!(b.len(), k * n);
+
+    // Row-major BLAS trick (matches the GPU trick):
+    // C(m×n) row-major  ==  (Cᵀ)(n×m) column-major.
+    // Compute Cᵀ = Bᵀ * Aᵀ in column-major by swapping operands.
+    let m_i64 = m as i64;
+    let k_i64 = k as i64;
+    let n_i64 = n as i64;
+
+    let mut c = vec![Complex::<f64>::new(0.0, 0.0); m * n];
+
+    let transa = b'N';
+    let transb = b'N';
+    let alpha = Complex::<f64>::new(1.0, 0.0);
+    let beta = Complex::<f64>::new(0.0, 0.0);
+
+    // zgemm dims for Cᵀ (n×m) = Bᵀ (n×k) * Aᵀ (k×m)
+    let gemm_m = n_i64;
+    let gemm_n = m_i64;
+    let gemm_k = k_i64;
+    let lda = n_i64;
+    let ldb = k_i64;
+    let ldc = n_i64;
+
+    unsafe {
+        zgemm_(
+            &transa as *const u8 as *const c_char,
+            &transb as *const u8 as *const c_char,
+            &gemm_m,
+            &gemm_n,
+            &gemm_k,
+            &alpha,
+            b.as_ptr(),
+            &lda,
+            a.as_ptr(),
+            &ldb,
+            &beta,
+            c.as_mut_ptr(),
+            &ldc,
+        );
+    }
+
+    c
 }
 
 pub fn multiply_complex(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<f64>>]) -> Vec<Vec<Complex<f64>>> {
@@ -104,66 +397,28 @@ fn multiply_complex_gpu(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<
 }
 
 fn multiply_complex_cpu(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<f64>>]) -> Vec<Vec<Complex<f64>>> {
-    let m = matrix_a.len() as i64;
-    let k = matrix_a[0].len() as i64;
-    let n = matrix_b[0].len() as i64;
+    let m = matrix_a.len();
+    let k = matrix_a[0].len();
+    let n = matrix_b[0].len();
 
     assert!(m > 0 && n > 0 && k > 0, "Matrices must not be empty");
-    assert!(matrix_b.len() as i64 == k, "A's columns must match B's rows");
+    assert!(matrix_b.len() == k, "A's columns must match B's rows");
     for row in matrix_a {
-        assert_eq!(row.len(), k as usize, "All rows of A must have the same length");
+        assert_eq!(row.len(), k, "All rows of A must have the same length");
     }
     for row in matrix_b {
-        assert_eq!(row.len(), n as usize, "All rows of B must have the same length");
+        assert_eq!(row.len(), n, "All rows of B must have the same length");
     }
 
-    fn flatten_col_major(mat: &[Vec<Complex<f64>>], rows: i64, cols: i64) -> Vec<Complex<f64>> {
-        let mut v = Vec::with_capacity((rows * cols) as usize);
-        for col in 0..cols {
-            for row in 0..rows {
-                v.push(mat[row as usize][col as usize]);
-            }
-        }
-        v
-    }
+    // Build contiguous row-major buffers (cheaper than a column-major re-pack)
+    let a_rm: Vec<Complex<f64>> = matrix_a.iter().flat_map(|r| r.iter().copied()).collect();
+    let b_rm: Vec<Complex<f64>> = matrix_b.iter().flat_map(|r| r.iter().copied()).collect();
 
-    let a = flatten_col_major(matrix_a, m, k);
-    let b = flatten_col_major(matrix_b, k, n);
-    let mut c = vec![Complex::<f64>::new(0.0, 0.0); (m * n) as usize];
+    let c_rm = multiply_complex_cpu_rm(&a_rm, &b_rm, m, k, n);
 
-    let transa = b'N';
-    let transb = b'N';
-    let lda = m;
-    let ldb = k;
-    let ldc = m;
-    let alpha = Complex::<f64>::new(1.0, 0.0);
-    let beta = Complex::<f64>::new(0.0, 0.0);
-
-    //println!("Calling zgemm_ with m={}, n={}, k={}, lda={}, ldb={}, ldc={}", m, n, k, lda, ldb, ldc);
-
-    unsafe {
-        zgemm_(
-            &transa as *const u8 as *const c_char,
-            &transb as *const u8 as *const c_char,
-            &m,
-            &n,
-            &k,
-            &alpha,
-            a.as_ptr(),
-            &lda,
-            b.as_ptr(),
-            &ldb,
-            &beta,
-            c.as_mut_ptr(),
-            &ldc,
-        );
-    }
-
-    let mut result = vec![vec![Complex::<f64>::new(0.0, 0.0); n as usize]; m as usize];
-    for col in 0..n as usize {
-        for row in 0..m as usize {
-            result[row][col] = c[col * m as usize + row];
-        }
+    let mut result = Vec::with_capacity(m);
+    for i in 0..m {
+        result.push(c_rm[i * n..(i + 1) * n].to_vec());
     }
     result
 }

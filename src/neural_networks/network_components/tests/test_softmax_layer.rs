@@ -17,6 +17,7 @@ mod test_softmax_layer {
                     numerical_gradient_input, numerical_gradient_input_batch, sigmoid_derivative_complex, softmax_derivative_complex_jacobian, softsign_derivative_complex, test_gradient_batch_error,
                     test_gradient_error_1d, test_gradient_error_2d,
                 },
+                matrix::RowMajorMatrix,
                 random_arrays::{generate_random_complex_2d, generate_random_complex_3d, generate_random_u32_batch},
             },
         },
@@ -24,6 +25,39 @@ mod test_softmax_layer {
     };
 
     use num::Complex;
+
+    #[test]
+    fn test_softmax_layer_forward_rm_smoke() {
+        let learning_rate = 0.01;
+        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING, 0);
+
+        let batch_size = 1;
+        let seq_len = 4;
+        let vocab_dim = 8;
+
+        let logits_2d: Vec<Vec<Complex<f64>>> = generate_random_complex_2d(seq_len, vocab_dim);
+        let logits_flat: Vec<Complex<f64>> = logits_2d.into_iter().flatten().collect();
+        let logits_rm = RowMajorMatrix::from_data(seq_len, vocab_dim, logits_flat);
+
+        let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; seq_len]; batch_size];
+        let target_token_id_batch: Vec<Vec<u32>> = vec![vec![2, 3, 4, 5]];
+
+        let mut layer_input = LayerInput::new_default();
+        layer_input.clear_input_batch();
+        layer_input.set_input_batch_rm(vec![logits_rm]);
+
+        let _ = softmax_layer.forward_rm(&layer_input, Some(padding_mask_batch), Some(target_token_id_batch));
+
+        let grad = softmax_layer.gradient.as_ref().expect("Softmax gradient missing");
+        let gr_rm = grad.get_gradient_input_batch_rm();
+        assert_eq!(gr_rm.len(), 1);
+        assert_eq!(gr_rm[0].rows, seq_len);
+        assert_eq!(gr_rm[0].cols, vocab_dim);
+        assert!(
+            grad.get_gradient_input_batch_ref().is_none(),
+            "RM forward should not populate Vec gradient storage in this smoke test"
+        );
+    }
 
     #[test]
     fn test_softmax_layer_backward() {

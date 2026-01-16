@@ -7,6 +7,8 @@ use crate::neural_networks::utils::{
     matrix::{add_matrix, add_matrix_2d_c, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d},
 };
 
+use crate::neural_networks::utils::matrix::RowMajorMatrix;
+
 use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
 
 pub const EPSILON: f64 = 0.0000000000000000000000001;
@@ -26,6 +28,8 @@ pub struct RMSNormLayer {
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
+    pub input_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+    #[serde(skip)]
     pub gradient: Option<Gradient>,
     #[serde(skip)]
     pub time_step: usize,
@@ -43,6 +47,7 @@ impl RMSNormLayer {
             ema: 0.0,
             learning_rate,
             input_batch: None,
+            input_batch_rm: None,
             gradient: None,
             previous_gradient: None,
             time_step: 0,
@@ -78,6 +83,15 @@ impl RMSNormLayer {
 
     // Forward pass for a batch of token embeddings (2D input)
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        let input_batch_rm_ref = layer_input.get_input_batch_rm_ref();
+        let input_batch_ref = layer_input.get_input_batch_ref();
+
+        let use_rm = input_batch_rm_ref.is_some() && input_batch_ref.map_or(true, |v| v.is_empty());
+
+        if use_rm {
+            return self.forward_rm(layer_input);
+        }
+
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = layer_input.get_input_batch();
         let input_before_transform_batch: Vec<Vec<Vec<Complex<f64>>>> = layer_input.get_input_batch_before();
 
@@ -99,12 +113,65 @@ impl RMSNormLayer {
         }
 
         self.input_batch = Some(input_batch_added.clone());
+        self.input_batch_rm = None;
         self.time_step = layer_input.get_time_step();
         self.batch_size = layer_input.get_batch_size();
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(output_batch);
 
+        layer_output
+    }
+
+    pub fn forward_rm(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        let input_batch_rm = layer_input
+            .get_input_batch_rm_ref()
+            .expect("RMSNormLayer::forward_rm expects RM input")
+            .to_vec();
+        let input_before_transform_batch_rm = layer_input
+            .get_input_batch_before_rm_ref()
+            .expect("RMSNormLayer::forward_rm expects RM residual input (input_batch_before_rm)")
+            .to_vec();
+
+        assert_eq!(input_batch_rm.len(), input_before_transform_batch_rm.len(), "RMSNormLayer::forward_rm batch size mismatch");
+        let mut output_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(input_batch_rm.len());
+        let mut input_batch_added_rm: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(input_batch_rm.len());
+
+        for (x, r) in input_batch_rm.iter().zip(input_before_transform_batch_rm.iter()) {
+            assert_eq!((x.rows, x.cols), (r.rows, r.cols), "RMSNormLayer::forward_rm shape mismatch");
+            let mut added = RowMajorMatrix::from_data(x.rows, x.cols, vec![Complex::new(0.0, 0.0); x.rows * x.cols]);
+            for i in 0..added.data.len() {
+                added.data[i] = x.data[i] + r.data[i];
+            }
+
+            let mut out = RowMajorMatrix::from_data(added.rows, added.cols, vec![Complex::new(0.0, 0.0); added.rows * added.cols]);
+            for row in 0..added.rows {
+                let rr = added.row_range(row);
+                let row_slice = &added.data[rr.clone()];
+
+                if row_slice.is_empty() {
+                    continue;
+                }
+
+                let mean_square = row_slice.iter().map(|x| x * x).sum::<Complex<f64>>() / (added.cols as f64);
+                let rms = (mean_square + self.epsilon).sqrt();
+
+                for c in 0..added.cols {
+                    out.data[rr.start + c] = (row_slice[c] / rms) * self.gamma[c];
+                }
+            }
+
+            input_batch_added_rm.push(added);
+            output_batch_rm.push(out);
+        }
+
+        self.input_batch = None;
+        self.input_batch_rm = Some(input_batch_added_rm);
+        self.time_step = layer_input.get_time_step();
+        self.batch_size = layer_input.get_batch_size();
+
+        let mut layer_output = LayerOutput::new_default();
+        layer_output.set_output_batch_rm(output_batch_rm);
         layer_output
     }
 
@@ -149,6 +216,81 @@ impl RMSNormLayer {
         gradient.set_gradient_gamma_batch(gradient_gamma_batch);
         self.gradient = Some(gradient.clone());
 
+        gradient
+    }
+
+    pub fn backward_rm(&mut self, previous_gradient_batch_rm: &[RowMajorMatrix<Complex<f64>>]) -> Gradient {
+        let input_batch_rm = self
+            .input_batch_rm
+            .as_ref()
+            .expect("Input batch RM not found in RMSNorm layer (did you call forward_rm?)");
+
+        let batch_size = input_batch_rm.len();
+        if batch_size == 0 {
+            let mut gradient = Gradient::new_default();
+            gradient.set_gradient_input_batch_rm(vec![]);
+            gradient.set_gradient_gamma_batch(vec![]);
+            self.gradient = Some(gradient.clone());
+            return gradient;
+        }
+
+        let seq_len = input_batch_rm[0].rows;
+        let dim_len = input_batch_rm[0].cols;
+
+        // Pad/truncate gradients to match batch size.
+        let mut prev_grads: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(batch_size);
+        for b in 0..batch_size {
+            if let Some(g) = previous_gradient_batch_rm.get(b) {
+                prev_grads.push(g.clone());
+            } else {
+                prev_grads.push(RowMajorMatrix::from_data(seq_len, dim_len, vec![Complex::new(0.0, 0.0); seq_len * dim_len]));
+            }
+        }
+
+        let mut input_batch_gradients_rm: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(batch_size);
+        let mut gradient_gamma_batch = vec![vec![Complex::new(0.0, 0.0); dim_len]; batch_size];
+
+        for b in 0..batch_size {
+            assert_eq!((input_batch_rm[b].rows, input_batch_rm[b].cols), (seq_len, dim_len));
+            assert_eq!((prev_grads[b].rows, prev_grads[b].cols), (seq_len, dim_len));
+
+            let mut grad_m = RowMajorMatrix::from_data(seq_len, dim_len, vec![Complex::new(0.0, 0.0); seq_len * dim_len]);
+
+            for s in 0..seq_len {
+                let row = input_batch_rm[b].row_range(s);
+                let x = &input_batch_rm[b].data[row.clone()];
+                let g = &prev_grads[b].data[row.clone()];
+
+                let mean_square = x.iter().map(|v| v * v).sum::<Complex<f64>>() / (dim_len as f64);
+                let rms = (mean_square + self.epsilon).sqrt();
+                let rms_cubed = rms.powf(3.0);
+                let dim_f64 = dim_len as f64;
+
+                for d_i in 0..dim_len {
+                    for d_j in 0..dim_len {
+                        let grad = if d_i == d_j {
+                            Complex::new(1.0, 0.0) / rms - (x[d_i] * x[d_j]) / (dim_f64 * rms_cubed)
+                        } else {
+                            -(x[d_i] * x[d_j]) / (dim_f64 * rms_cubed)
+                        };
+                        grad_m.data[row.start + d_j] += grad.conj() * g[d_i];
+                    }
+                    gradient_gamma_batch[b][d_i] += x[d_i] / rms;
+                }
+            }
+
+            input_batch_gradients_rm.push(grad_m);
+        }
+
+        if self.gradient.is_some() {
+            let previous_gradient = self.gradient.as_ref().expect("");
+            gradient_gamma_batch = add_matrix_2d_c(&gradient_gamma_batch, &previous_gradient.get_gradient_gamma_batch());
+        }
+
+        let mut gradient = Gradient::new_default();
+        gradient.set_gradient_input_batch_rm(input_batch_gradients_rm);
+        gradient.set_gradient_gamma_batch(gradient_gamma_batch);
+        self.gradient = Some(gradient.clone());
         gradient
     }
 

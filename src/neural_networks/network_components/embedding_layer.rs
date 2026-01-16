@@ -14,6 +14,7 @@ use std::sync::Arc;
 use crate::database::sled_db::{get_db_embedding, get_storage_path_embedding_db};
 use crate::neural_networks::network_types::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
 use crate::neural_networks::utils::matrix::{clip_all_gradients_by_global_norm_3d, is_nan_or_inf};
+use crate::neural_networks::utils::matrix::RowMajorMatrix;
 
 use super::gradient_struct::Gradient;
 use super::layer_input_struct::LayerInput;
@@ -226,6 +227,65 @@ impl EmbeddingLayer {
 
         (token_ids_output, _padding_mask)
     }
+
+    /// Row-major version of `forward` that avoids nested Vec allocations.
+    pub fn forward_rm(&mut self, layer_input: &LayerInput) -> (Vec<RowMajorMatrix<Complex<f64>>>, Vec<Vec<u32>>) {
+        let token_input_ids: Vec<Vec<u32>> = layer_input.get_batch_ids();
+        let target_batch_ids = layer_input.get_target_batch_ids();
+        let db: &Db = get_db_embedding();
+        self.time_step = layer_input.get_time_step();
+        self.batch_size = token_input_ids.len();
+
+        let (token_input_batch_padded, padding_mask) = EmbeddingLayer::apply_padding_to_batch(&token_input_ids, &target_batch_ids);
+        let embedding_dim = self.embedding_dim;
+
+        let cache_ref = &self.cache;
+
+        let batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = token_input_batch_padded
+            .par_iter()
+            .map(|token_ids| {
+                let seq_len = token_ids.len();
+                let mut data: Vec<Complex<f64>> = Vec::with_capacity(seq_len * embedding_dim);
+
+                for &id in token_ids {
+                    if let Ok(cache) = cache_ref.read() {
+                        if let Some(embedding) = cache.get(&id) {
+                            data.extend_from_slice(embedding);
+                            continue;
+                        }
+                    }
+
+                    let token_embedding = if id == 1 {
+                        vec![Complex::new(0.0, 0.0); embedding_dim]
+                    } else {
+                        let mut token_embedding = Self::get_embedding(&db, id).unwrap_or_else(|err| {
+                            panic!("Error retrieving embedding for token {}: {}", id, err);
+                        });
+
+                        if token_embedding.len() != self.embedding_dim {
+                            let mut rng = rand::rngs::ThreadRng::default();
+                            let base_2: i32 = 2;
+                            token_embedding = Self::create_embedding(&db, embedding_dim * base_2.pow(DECOMPOSITION_LEVELS) as usize, &mut rng, id);
+                        }
+
+                        assert_eq!(token_embedding.len(), self.embedding_dim);
+
+                        if let Ok(mut cache) = cache_ref.write() {
+                            cache.insert(id, token_embedding.clone());
+                        }
+
+                        token_embedding
+                    };
+
+                    data.extend_from_slice(&token_embedding);
+                }
+
+                RowMajorMatrix::from_data(seq_len, embedding_dim, data)
+            })
+            .collect();
+
+        (batch_rm, padding_mask)
+    }
     // Update embeddings using gradients
     pub fn backward(&mut self, previous_gradients: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
         let mut gradient = Gradient::new_default();
@@ -236,18 +296,47 @@ impl EmbeddingLayer {
         gradient
     }
 
+    pub fn backward_rm(&mut self, previous_gradients_rm: &[RowMajorMatrix<Complex<f64>>]) -> Gradient {
+        let mut gradient = Gradient::new_default();
+        gradient.set_gradient_input_batch_rm(previous_gradients_rm.to_vec());
+
+        self.gradient = Some(gradient.clone());
+
+        gradient
+    }
+
     pub fn update_parameters(&mut self, token_id_batches: &[Vec<u32>], learning_rate: f64) {
         let db: &Db = get_db_embedding();
         let gradient: &Gradient = self.gradient.as_ref().expect("Output batch is missing in dense layer");
-        let mut previous_gradients: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_input_batch();
 
-        let mut batch_size = previous_gradients.len() as f64;
+        // Prefer RM gradients when present to avoid conversions.
+        let previous_gradients_rm_ref = gradient.get_gradient_input_batch_rm_ref();
+        let has_rm = previous_gradients_rm_ref.is_some_and(|g| !g.is_empty());
 
-        if self.batch_size > 0 {
-            batch_size = self.batch_size as f64;
+        let mut batch_size = if self.batch_size > 0 {
+            self.batch_size as f64
+        } else if has_rm {
+            previous_gradients_rm_ref.unwrap().len() as f64
+        } else {
+            gradient.get_gradient_input_batch().len() as f64
+        };
+
+        if batch_size <= 0.0 {
+            batch_size = 1.0;
         }
 
-        clip_all_gradients_by_global_norm_3d(&mut previous_gradients, &mut vec![], self.global_norm, self.max_norm);
+        let mut previous_gradients: Vec<Vec<Vec<Complex<f64>>>> = Vec::new();
+        if !has_rm {
+            previous_gradients = gradient.get_gradient_input_batch();
+            clip_all_gradients_by_global_norm_3d(&mut previous_gradients, &mut vec![], self.global_norm, self.max_norm);
+        }
+
+        // Mirror clip_all_gradients_by_global_norm_3d behavior for RM gradients (scale by 1/total_norm).
+        let clip_scale_rm: f64 = if has_rm && self.global_norm > self.max_norm {
+            1.0 / self.global_norm
+        } else {
+            1.0
+        };
 
         // let max = previous_gradients.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
         // println!("max in backward embedding layer gradient batch: {:?}", max);
@@ -259,15 +348,21 @@ impl EmbeddingLayer {
             for (i, &token_id) in token_ids.iter().enumerate() {
                 let mut token_embedding: Vec<Complex<f64>> = Self::get_embedding(&db, token_id).unwrap();
 
-                let gradient = &previous_gradients[batch_idx][i];
-
                 // SGD update
                 for j in 0..self.embedding_dim {
-                    if is_nan_or_inf(&gradient[j]) {
-                        panic!("gradient in embedding is invalid, contains NaN or infinity values: {:?}", &gradient[j]);
+                    let grad_val: Complex<f64> = if has_rm {
+                        let gr_rm = previous_gradients_rm_ref.unwrap();
+                        let row = gr_rm[batch_idx].row_range(i);
+                        gr_rm[batch_idx].data[row.start + j] * clip_scale_rm
+                    } else {
+                        previous_gradients[batch_idx][i][j]
+                    };
+
+                    if is_nan_or_inf(&grad_val) {
+                        panic!("gradient in embedding is invalid, contains NaN or infinity values: {:?}", &grad_val);
                     }
 
-                    token_embedding[j] -= learning_rate * (gradient[j] / batch_size);
+                    token_embedding[j] -= learning_rate * (grad_val / batch_size);
 
                     if is_nan_or_inf(&token_embedding[j]) {
                         panic!("embedding is invalid, contains NaN or infinity values: {:?}", &token_embedding[j]);

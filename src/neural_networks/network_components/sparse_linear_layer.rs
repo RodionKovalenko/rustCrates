@@ -9,12 +9,16 @@ use crate::neural_networks::{
     optimization::k_means_clustering::{kmeans, query_candidates},
     utils::{
         adam_w::{calculate_adam_w_bias_f32_sparse, calculate_adam_w_f32_sparse},
-        matrix::{average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d},
+        matrix::{average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, RowMajorMatrix},
         weights_initializer::initialize_weights_f32,
     },
 };
 
-use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
+use super::{
+    gradient_struct::Gradient,
+    layer_input_struct::{InputRepresentation, LayerInput},
+    layer_output_struct::LayerOutput,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SparseLinearLayer {
@@ -48,6 +52,8 @@ pub struct SparseLinearLayer {
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
     #[serde(skip)]
+    pub input_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+    #[serde(skip)]
     pub gradient: Option<Gradient>,
     #[serde(skip)]
     pub time_step: usize,
@@ -56,6 +62,9 @@ pub struct SparseLinearLayer {
     #[serde(skip)]
     pub output_indices: Option<Vec<Vec<Vec<usize>>>>,
 }
+
+
+pub const TOP_K_SELECTION: usize = 300;
 
 impl SparseLinearLayer {
     pub fn new(learning_rate: f64, embedding_d: usize, vocab_size: usize) -> Self {
@@ -86,6 +95,7 @@ impl SparseLinearLayer {
             norm_layer: None,
             gradients_bias: vec![],
             input_batch: None,
+            input_batch_rm: None,
             gradient: None,
             previous_gradient: None,
             time_step: 0,
@@ -167,98 +177,223 @@ impl SparseLinearLayer {
     }
 
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = input.get_input_batch();
-
         self.time_step = input.get_time_step();
         self.batch_size = input.get_batch_size();
-        self.input_batch = Some(input_batch.clone());
+
+        let input_batch_rm_ref = input.get_input_batch_rm_ref();
+        let use_rm = input_batch_rm_ref.is_some_and(|rm| !rm.is_empty());
+        // In rm_strict mode, never call get_input_batch() if RM activations exist.
+        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = if use_rm { vec![] } else { input.get_input_batch() };
+
+        // Store whichever representation was provided so backward can avoid reshaping.
+        if !input_batch.is_empty() {
+            self.input_batch = Some(input_batch.clone());
+        } else {
+            self.input_batch = None;
+        }
+        if let Some(rm) = input_batch_rm_ref {
+            if !rm.is_empty() {
+                self.input_batch_rm = Some(rm.to_vec());
+            } else {
+                self.input_batch_rm = None;
+            }
+        } else {
+            self.input_batch_rm = None;
+        }
 
         let start = std::time::Instant::now();
 
-        let (output_batch, output_indices) = self.mutliply_hightest_k_per_row(&input_batch, &input);
-
-        if VERBOSE {
-            println!("Linear layer complex matmul time for batch size {}: {}", self.batch_size, start.elapsed().as_secs_f64());
-        }
-        // println!("Output batch size in linear layer after dwt inverse:  {} {} {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
-
         let mut layer_output = LayerOutput::new_default();
-        layer_output.set_output_batch(output_batch);
-        layer_output.set_output_indices(output_indices);
+
+        match input.input_representation() {
+            InputRepresentation::RowMajor => {
+                let input_batch_rm = input_batch_rm_ref.expect("rm");
+                let (output_batch_rm, output_indices) = self.mutliply_hightest_k_per_row_rm(input_batch_rm, input);
+                if VERBOSE {
+                    println!("SparseLinear RM matmul time for batch size {}: {}", self.batch_size, start.elapsed().as_secs_f64());
+                }
+
+                // Preserve legacy output only when legacy input is used.
+                let need_legacy_output = !input_batch.is_empty();
+                if need_legacy_output {
+                    let output_batch: Vec<Vec<Vec<Complex<f64>>>> = output_batch_rm.iter().map(|m| m.to_rows()).collect();
+                    layer_output.set_output_batch(output_batch);
+                }
+
+                layer_output.set_output_batch_rm(output_batch_rm);
+                layer_output.set_output_indices(output_indices);
+            }
+            InputRepresentation::Vec => {
+                let (output_batch, output_indices) = self.mutliply_hightest_k_per_row(&input_batch, input);
+                if VERBOSE {
+                    println!("SparseLinear matmul time for batch size {}: {}", self.batch_size, start.elapsed().as_secs_f64());
+                }
+
+                // This output is rectangular (seq_len x k), so provide RM output too.
+                let output_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = output_batch.iter().map(|rows| RowMajorMatrix::from_rows(rows)).collect();
+
+                layer_output.set_output_batch(output_batch);
+                layer_output.set_output_batch_rm(output_batch_rm);
+                layer_output.set_output_indices(output_indices);
+            }
+            InputRepresentation::Empty => {
+                layer_output.set_output_batch(vec![]);
+                layer_output.set_output_batch_rm(vec![]);
+                layer_output.set_output_indices(vec![]);
+            }
+        }
 
         self.output_indices = Some(layer_output.get_output_indices());
-
         layer_output
     }
 
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
-        let input_batch = self.input_batch.as_ref().expect("Input batch is missing in linear layer");
-        let mut gradient = Gradient::new_default();
+        let input_batch_vec = self.input_batch.as_ref();
+        let input_batch_rm = self.input_batch_rm.as_ref();
+        if input_batch_vec.is_none() && input_batch_rm.is_none() {
+            let total_valid_tokens = previous_gradient.get_total_valid_tokens();
+            let mut gradient = Gradient::new_default();
+            gradient.set_gradient_input_batch_rm(vec![]);
+            gradient.set_gradient_weight_batch(vec![]);
+            gradient.set_gradient_bias_batch(vec![]);
+            gradient.set_total_valid_tokens(total_valid_tokens);
+            self.gradient = Some(gradient.clone());
+            return gradient;
+        }
 
-        let previous_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
         let total_valid_tokens = previous_gradient.get_total_valid_tokens();
+        let previous_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
+        let previous_gradient_rm_ref = previous_gradient.get_gradient_input_batch_rm_ref();
 
-        // Initialize gradients for weights and biases
-        // weight_gradients: batch x vocab_size x embedding_d
-        let mut weight_gradients: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()]; input_batch.len()];
-        let mut bias_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.bias.len()]; input_batch.len()];
-        let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
+        let batch_len = if let Some(b) = input_batch_vec {
+            b.len()
+        } else {
+            input_batch_rm.expect("rm batch").len()
+        };
 
-        // output_indices_batch: batch x seq_len x k (which vocab indices were selected)
-        let output_indices_batch: &Vec<Vec<Vec<usize>>> = self.output_indices.as_ref().expect("Output indices missing in linear layer backward pass");
+        if batch_len == 0 {
+            let mut gradient = Gradient::new_default();
+            gradient.set_gradient_input_batch_rm(vec![]);
+            gradient.set_gradient_weight_batch(vec![]);
+            gradient.set_gradient_bias_batch(vec![]);
+            gradient.set_total_valid_tokens(total_valid_tokens);
+            self.gradient = Some(gradient.clone());
+            return gradient;
+        }
 
-        for batch_idx in 0..input_batch.len() {
-            let input_sample = &input_batch[batch_idx]; // seq_len x embedding_d
-            let sparse_grad = &previous_gradient_input_batch[batch_idx]; // seq_len x k
-            let indices = &output_indices_batch[batch_idx]; // seq_len x k
+        let output_indices_batch: &Vec<Vec<Vec<usize>>> = self
+            .output_indices
+            .as_ref()
+            .expect("Output indices missing in sparse linear layer backward pass");
 
-            // For each position in sequence
-            for seq_idx in 0..sparse_grad.len().min(indices.len()) {
-                let input_row = &input_sample[seq_idx]; // embedding_d
-                let grad_row = &sparse_grad[seq_idx]; // k gradients
-                let idx_row = &indices[seq_idx]; // k indices
+        // Determine (seq_len, embedding_d) from the first available non-empty input.
+        let first_input_rm: Option<RowMajorMatrix<Complex<f64>>> = if let Some(rm_batch) = input_batch_rm {
+            rm_batch.get(0).cloned()
+        } else {
+            input_batch_vec
+                .and_then(|b| b.get(0))
+                .map(|rows| RowMajorMatrix::from_rows(rows))
+        };
 
-                // For each selected index in top-k
-                for (k_idx, &grad_val) in grad_row.iter().enumerate() {
-                    if k_idx < idx_row.len() {
-                        let vocab_idx = idx_row[k_idx]; // which vocab token
+        let (seq_len, embedding_d) = if let Some(rm) = &first_input_rm {
+            (rm.rows, rm.cols)
+        } else {
+            let mut gradient = Gradient::new_default();
+            gradient.set_gradient_input_batch_rm(vec![]);
+            gradient.set_gradient_weight_batch(vec![]);
+            gradient.set_gradient_bias_batch(vec![]);
+            gradient.set_total_valid_tokens(total_valid_tokens);
+            self.gradient = Some(gradient.clone());
+            return gradient;
+        };
 
-                        if vocab_idx < self.weights.len() {
-                            // Weight gradient: grad_weight[vocab_idx] += input_row * grad_val
-                            // weights[vocab_idx] is embedding_d dimension
-                            for (emb_idx, &input_val) in input_row.iter().enumerate() {
-                                weight_gradients[batch_idx][vocab_idx][emb_idx] += input_val * grad_val;
-                            }
+        let k = if let Some(grm) = previous_gradient_rm_ref {
+            grm.get(0).map(|m| m.cols).unwrap_or(0)
+        } else {
+            previous_gradient_input_batch
+                .get(0)
+                .map(|rows| RowMajorMatrix::from_rows(rows).cols)
+                .unwrap_or(0)
+        };
 
-                            // Bias gradient: grad_bias[vocab_idx] += grad_val
-                            bias_gradients[batch_idx][vocab_idx] += grad_val;
+        if k == 0 {
+            let mut gradient = Gradient::new_default();
+            gradient.set_gradient_input_batch_rm(vec![]);
+            gradient.set_gradient_weight_batch(vec![]);
+            gradient.set_gradient_bias_batch(vec![]);
+            gradient.set_total_valid_tokens(total_valid_tokens);
+            self.gradient = Some(gradient.clone());
+            return gradient;
+        }
 
-                            // Input gradient: grad_input[seq_idx][emb_idx] += weights[vocab_idx][emb_idx] * grad_val
-                            // For each embedding dimension, accumulate gradients from all k selected vocab tokens
-                            for (emb_idx, &weight_val) in self.weights[vocab_idx].iter().enumerate() {
-                                gradient_input_batch[batch_idx][seq_idx][emb_idx] += Complex::new(weight_val as f64, 0.0) * grad_val;
-                            }
-                        }
+        let mut weight_gradients: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()]; batch_len];
+        let mut bias_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.bias.len()]; batch_len];
+        let mut gradient_input_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = vec![
+            RowMajorMatrix::from_data(seq_len, embedding_d, vec![Complex::new(0.0, 0.0); seq_len * embedding_d]);
+            batch_len
+        ];
+
+        for batch_idx in 0..batch_len {
+            let input_rm: RowMajorMatrix<Complex<f64>> = if let Some(rm_batch) = input_batch_rm {
+                rm_batch[batch_idx].clone()
+            } else {
+                let input_sample = &input_batch_vec.expect("vec batch")[batch_idx];
+                RowMajorMatrix::from_rows(input_sample)
+            };
+
+            let grad_rm: RowMajorMatrix<Complex<f64>> = if let Some(grads_rm) = previous_gradient_rm_ref {
+                grads_rm[batch_idx].clone()
+            } else {
+                RowMajorMatrix::from_rows(&previous_gradient_input_batch[batch_idx])
+            };
+
+            assert_eq!(input_rm.rows, seq_len);
+            assert_eq!(input_rm.cols, embedding_d);
+            assert_eq!(grad_rm.rows, seq_len);
+            assert_eq!(grad_rm.cols, k);
+            assert_eq!(output_indices_batch[batch_idx].len(), seq_len);
+
+            for seq_idx in 0..seq_len {
+                let in_row = input_rm.row_range(seq_idx);
+                let input_row = &input_rm.data[in_row.start..in_row.start + embedding_d];
+
+                let g_row = grad_rm.row_range(seq_idx);
+                let grad_row = &grad_rm.data[g_row.start..g_row.start + k];
+                let idx_row = &output_indices_batch[batch_idx][seq_idx];
+
+                for k_idx in 0..grad_row.len().min(idx_row.len()).min(k) {
+                    let grad_val = grad_row[k_idx];
+                    let vocab_idx = idx_row[k_idx];
+                    if vocab_idx >= self.weights.len() {
+                        continue;
+                    }
+
+                    for (emb_idx, &input_val) in input_row.iter().enumerate() {
+                        weight_gradients[batch_idx][vocab_idx][emb_idx] += input_val * grad_val;
+                    }
+                    bias_gradients[batch_idx][vocab_idx] += grad_val;
+
+                    // Input gradient accumulation
+                    let out_in_row = gradient_input_batch_rm[batch_idx].row_range(seq_idx);
+                    for (emb_idx, &w) in self.weights[vocab_idx].iter().enumerate() {
+                        gradient_input_batch_rm[batch_idx].data[out_in_row.start + emb_idx] += Complex::new(w as f64, 0.0) * grad_val;
                     }
                 }
             }
         }
 
-        gradient.set_gradient_input_batch(gradient_input_batch.clone());
-
-        // if self.gradient.is_some() {
-        //     let previous_gradient = self.gradient.as_ref().expect("");
-        //     weight_gradients = add_matrix_3d(&weight_gradients, &previous_gradient.get_gradient_weight_batch());
-        //     bias_gradients = add_matrix_2d_c(&bias_gradients, &previous_gradient.get_gradient_bias_batch());
-        // }
-
-        gradient.set_gradient_input_batch(gradient_input_batch.clone());
+        let mut gradient = Gradient::new_default();
+        let legacy_mode = self.input_batch.is_some();
+        if legacy_mode {
+            let gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient_input_batch_rm.iter().map(|m| m.to_rows()).collect();
+            gradient.set_gradient_input_batch(gradient_input_batch);
+        }
+        gradient.set_gradient_input_batch_rm(gradient_input_batch_rm);
         gradient.set_gradient_weight_batch(weight_gradients);
         gradient.set_gradient_bias_batch(bias_gradients);
         gradient.set_total_valid_tokens(total_valid_tokens);
 
         self.gradient = Some(gradient.clone());
-
         gradient
     }
 
@@ -348,17 +483,22 @@ impl SparseLinearLayer {
                 let mut sample_values = Vec::with_capacity(input_sample.len());
                 let mut sample_indices = Vec::with_capacity(input_sample.len());
 
+                let embedding_d = input_sample.first().map(|r| r.len()).unwrap_or(0);
+                let mut input_re_buf: Vec<f32> = vec![0.0; embedding_d];
+
                 for (row_idx, input_row) in input_sample.iter().enumerate() {
                     let target_id = Self::get_target_id(row_idx, batch_idx, offset, target_batch, &padding_mask_batch);
 
                     // Get candidate indices using k-means clustering
-                    let mut input_f32: Vec<f32> = input_row.iter().map(|c| c.re as f32).collect();
+                    for (dst, src) in input_re_buf.iter_mut().zip(input_row.iter()) {
+                        *dst = src.re as f32;
+                    }
 
                     let mut selected_indices = query_candidates(
-                        &mut input_f32,
+                        &mut input_re_buf,
                         &self.centroids,
                         &self.cluster_to_tokens,
-                        8, // top 8 clusters - high coverage to naturally include targets
+                        TOP_K_SELECTION, // top 8 clusters - high coverage to naturally include targets
                     );
 
                     // During TRAINING: Force target inclusion for gradient computation
@@ -388,6 +528,76 @@ impl SparseLinearLayer {
                 }
 
                 (sample_values, sample_indices)
+            })
+            .collect();
+
+        results.into_iter().unzip()
+    }
+
+    // RM variant: returns a dense (seq_len x k) row-major matrix per batch.
+    pub fn mutliply_hightest_k_per_row_rm(&mut self, input_batch_rm: &[RowMajorMatrix<Complex<f64>>], layer_input: &LayerInput) -> (Vec<RowMajorMatrix<Complex<f64>>>, Vec<Vec<Vec<usize>>>) {
+        let target_batch = &layer_input.get_target_batch_ids();
+        let k = layer_input.get_top_k_size();
+        let padding_mask_batch = layer_input.get_padding_mask_batch();
+        let is_training = !target_batch.is_empty();
+
+        let results: Vec<_> = input_batch_rm
+            .par_iter()
+            .enumerate()
+            .map(|(batch_idx, input_sample)| {
+                let offset = Self::calculate_target_offset(batch_idx, target_batch, &padding_mask_batch);
+                let seq_len = input_sample.rows;
+                let embedding_d = input_sample.cols;
+
+                let mut data: Vec<Complex<f64>> = Vec::with_capacity(seq_len * k);
+                let mut sample_indices: Vec<Vec<usize>> = Vec::with_capacity(seq_len);
+
+                let mut input_re_buf: Vec<f32> = vec![0.0; embedding_d];
+
+                for row_idx in 0..seq_len {
+                    let row = input_sample.row_range(row_idx);
+                    let input_row = &input_sample.data[row.start..row.start + embedding_d];
+                    let target_id = Self::get_target_id(row_idx, batch_idx, offset, target_batch, &padding_mask_batch);
+
+                    for (dst, src) in input_re_buf.iter_mut().zip(input_row.iter()) {
+                        *dst = src.re as f32;
+                    }
+
+                    let mut selected_indices = query_candidates(
+                        &mut input_re_buf,
+                        &self.centroids,
+                        &self.cluster_to_tokens,
+                        TOP_K_SELECTION,
+                    );
+
+                    if is_training {
+                        Self::ensure_target_in_candidates(&mut selected_indices, target_id, k);
+                    }
+
+                    let mut top_k = Vec::with_capacity(k + 1);
+                    let mut target_pos = None;
+                    for &col_idx in &selected_indices {
+                        let sum = Self::compute_output(input_row, &self.weights[col_idx], self.bias[col_idx]);
+                        let is_target = target_id == Some(col_idx);
+                        Self::update_topk(&mut top_k, sum.re, sum, col_idx, is_target, &mut target_pos, k);
+                    }
+
+                    // Pad/truncate to exactly k
+                    top_k.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+                    if top_k.len() > k {
+                        top_k.truncate(k);
+                    }
+                    while top_k.len() < k {
+                        top_k.push((f64::NEG_INFINITY, Complex::new(0.0, 0.0), 0));
+                    }
+
+                    for p in 0..k {
+                        data.push(top_k[p].1);
+                    }
+                    sample_indices.push(top_k.iter().map(|(_, _, idx)| *idx).collect());
+                }
+
+                (RowMajorMatrix::from_data(seq_len, k, data), sample_indices)
             })
             .collect();
 

@@ -23,11 +23,22 @@ pub fn calculate_adam_w(
     learning_rate: f64,
     t: usize,
 ) {
+    if weight_gradients.is_empty() || weight_gradients[0].is_empty() {
+        return;
+    }
+
     let t = t.max(1) as i32;
     let current_lr = get_current_learning_rate(learning_rate, t as usize);
 
     for i in 0..weights.len() {
         for j in 0..weights[i].len() {
+            if i >= weight_gradients.len() || j >= weight_gradients[i].len() {
+                continue;
+            }
+            if i >= prev_m.len() || j >= prev_m[i].len() || i >= prev_v.len() || j >= prev_v[i].len() || i >= prev_v_hat.len() || j >= prev_v_hat[i].len() {
+                continue;
+            }
+
             let g = weight_gradients[i][j];
 
             if is_nan_or_inf(&g) {
@@ -69,10 +80,16 @@ pub fn calculate_adam_w_bias(
     learning_rate: f64,
     time_step: usize,
 ) {
+    if gradient.is_empty() {
+        return;
+    }
+
     let t = time_step.max(1) as i32;
     let current_lr = get_current_learning_rate(learning_rate, t as usize);
 
-    for i in 0..bias.len() {
+    let n = bias.len().min(gradient.len()).min(prev_m.len()).min(prev_v.len()).min(prev_v_hat.len());
+
+    for i in 0..n {
         let g = gradient[i];
 
         if is_nan_or_inf(&g) {

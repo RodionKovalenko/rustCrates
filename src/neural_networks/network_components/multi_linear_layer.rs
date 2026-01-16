@@ -8,7 +8,7 @@ use crate::neural_networks::{
     utils::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         array_splitting::split_sizes,
-        matrix::{average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, normalize_bias, normalize_gradients},
+        matrix::{average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, normalize_bias, normalize_gradients, RowMajorMatrix},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -28,6 +28,8 @@ pub struct MultiLinearLayer {
 
     #[serde(skip)]
     pub input_batch: Option<Arc<Vec<Vec<Vec<Complex<f64>>>>>>,
+    #[serde(skip)]
+    pub input_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
     #[serde(skip)]
     pub gradient: Option<Gradient>,
     #[serde(skip)]
@@ -70,6 +72,7 @@ impl MultiLinearLayer {
             learning_rate,
             col_ranges,
             input_batch: None,
+            input_batch_rm: None,
             gradient: None,
             previous_gradient: None,
             smoothing: 0.99,
@@ -138,81 +141,172 @@ impl MultiLinearLayer {
     }
 
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
-        let input_batch = Arc::new(input.get_input_batch());
-        self.input_batch = Some(input_batch.clone());
+        let input_batch_rm_ref = input.get_input_batch_rm_ref();
+
         self.time_step = input.get_time_step();
         self.batch_size = input.get_batch_size();
 
-        let batch_size = input_batch.len();
-        let seq_len = input_batch[0].len();
+        // Prefer RM-only input to avoid any Vec<Vec<...>> materialization.
+        let (batch_size, seq_len, input_batch_rm, legacy_mode): (usize, usize, Vec<RowMajorMatrix<Complex<f64>>>, bool) =
+            if let Some(rm) = input_batch_rm_ref {
+                let batch_size = rm.len();
+                let seq_len = rm.first().map(|m| m.rows).unwrap_or(0);
+                (batch_size, seq_len, rm.to_vec(), false)
+            } else {
+                let input_batch_vec = input.get_input_batch();
+                let input_batch = Arc::new(input_batch_vec);
+                self.input_batch = Some(input_batch.clone());
 
-        // Forward pass through each sublayer
-        let lin_layer_output_chunks: Vec<_> = self.layers.iter_mut().map(|lin_layer| lin_layer.forward(input).get_output_batch()).collect();
+                let batch_size = input_batch.len();
+                let seq_len = input_batch[0].len();
+                let input_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = input_batch.iter().map(|sample| RowMajorMatrix::from_rows(sample)).collect();
+                (batch_size, seq_len, input_batch_rm, true)
+            };
 
-        let output_feature_size: usize = lin_layer_output_chunks.iter().map(|chunk| chunk[0][0].len()).sum();
+        self.input_batch_rm = Some(input_batch_rm.clone());
 
-        // Efficient output allocation
-        let mut output_batch: Vec<Vec<Vec<Complex<f64>>>> = (0..batch_size).map(|_| vec![vec![Complex::new(0.0, 0.0); output_feature_size]; seq_len]).collect();
+        // Forward pass through each sublayer in RM-only mode.
+        let mut sub_input = input.clone();
+        sub_input.set_input_batch(vec![]);
+        sub_input.set_input_batch_rm(input_batch_rm);
 
-        // Concatenate outputs from sublayers
+        let output_chunks_rm: Vec<Vec<RowMajorMatrix<Complex<f64>>>> = self
+            .layers
+            .iter_mut()
+            .map(|lin_layer| {
+                let out = lin_layer.forward(&sub_input);
+                out.get_output_batch_rm()
+            })
+            .collect();
+
+        let output_feature_size: usize = output_chunks_rm.iter().map(|chunk| chunk[0].cols).sum();
+
+        let mut output_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(batch_size);
         for b in 0..batch_size {
-            for i in 0..seq_len {
+            let mut data = vec![Complex::new(0.0, 0.0); seq_len * output_feature_size];
+            for r in 0..seq_len {
                 let mut offset = 0;
-                for lin_layer_output_chunk in &lin_layer_output_chunks {
-                    let chunk_size = lin_layer_output_chunk[b][i].len();
-                    output_batch[b][i][offset..offset + chunk_size].copy_from_slice(&lin_layer_output_chunk[b][i]);
-                    offset += chunk_size;
+                for chunk in &output_chunks_rm {
+                    let m = &chunk[b];
+                    let chunk_cols = m.cols;
+                    let src = &m.data[r * chunk_cols..(r + 1) * chunk_cols];
+                    let dst = &mut data[r * output_feature_size + offset..r * output_feature_size + offset + chunk_cols];
+                    dst.copy_from_slice(src);
+                    offset += chunk_cols;
                 }
             }
+            output_batch_rm.push(RowMajorMatrix::from_data(seq_len, output_feature_size, data));
         }
 
         let mut layer_output = LayerOutput::new_default();
-        layer_output.set_output_batch(output_batch);
+        layer_output.set_output_batch_rm(output_batch_rm.clone());
+
+        // Only materialize legacy nested output in legacy mode.
+        if legacy_mode {
+            let output_batch: Vec<Vec<Vec<Complex<f64>>>> = output_batch_rm.iter().map(|m| m.to_rows()).collect();
+            layer_output.set_output_batch(output_batch);
+        }
+
         layer_output
     }
 
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
-        let input_batch = self.input_batch.as_ref().expect("Input batch is missing in linear layer");
-        let batch_size = input_batch.len();
-        let seq_len = input_batch[0].len();
-        let previous_input_gradient = previous_gradient.get_gradient_input_batch();
+        let total_valid_tokens = previous_gradient.get_total_valid_tokens();
+        let input_batch_rm = match self.input_batch_rm.as_ref() {
+            Some(b) if !b.is_empty() => b,
+            _ => {
+                let mut gradient = Gradient::new_default();
+                gradient.set_gradient_input_batch(vec![]);
+                gradient.set_gradient_input_batch_rm(vec![]);
+                gradient.set_gradient_weight_batch(vec![]);
+                gradient.set_gradient_weight_2_batch(vec![]);
+                gradient.set_total_valid_tokens(total_valid_tokens);
+                self.gradient = Some(gradient.clone());
+                return gradient;
+            }
+        };
 
-        // Compute gradient chunks for each sublayer by slicing previous gradient input batch columns
-        let gradient_input_batch_chunks: Vec<_> = self
-            .layers
-            .iter_mut()
-            .enumerate()
-            .map(|(layer_ind, lin_layer)| {
+        let batch_size = input_batch_rm.len();
+        let seq_len = input_batch_rm.first().map(|m| m.rows).unwrap_or(0);
+        let feature_dim = input_batch_rm.first().map(|m| m.cols).unwrap_or(0);
+
+        let prev_grad_rm_ref = previous_gradient.get_gradient_input_batch_rm_ref();
+
+        // RM-only backward path: slice column ranges without Vec<Vec<..>> conversions.
+        if let Some(prev_grad_rm) = prev_grad_rm_ref {
+            let mut summed_dx: Vec<RowMajorMatrix<Complex<f64>>> = (0..batch_size)
+                .map(|_| RowMajorMatrix::from_data(seq_len, feature_dim, vec![Complex::new(0.0, 0.0); seq_len * feature_dim]))
+                .collect();
+
+            for (layer_ind, lin_layer) in self.layers.iter_mut().enumerate() {
                 let (start_col, end_col) = self.col_ranges[layer_ind];
-                let prev_chunk: Vec<Vec<Vec<Complex<f64>>>> = previous_input_gradient.iter().map(|batch_row| batch_row.iter().map(|row| row[start_col..end_col].to_vec()).collect()).collect();
+                let chunk_cols = end_col - start_col;
 
-                // Create a sliced Gradient with only needed input batch slice
+                let sliced_prev: Vec<RowMajorMatrix<Complex<f64>>> = prev_grad_rm
+                    .iter()
+                    .map(|m| {
+                        let mut data = vec![Complex::new(0.0, 0.0); seq_len * chunk_cols];
+                        for r in 0..seq_len {
+                            let src_row = &m.data[r * m.cols + start_col..r * m.cols + end_col];
+                            let dst_row = &mut data[r * chunk_cols..(r + 1) * chunk_cols];
+                            dst_row.copy_from_slice(src_row);
+                        }
+                        RowMajorMatrix::from_data(seq_len, chunk_cols, data)
+                    })
+                    .collect();
+
                 let mut grad_sliced = Gradient::new_default();
-                grad_sliced.set_gradient_input_batch(prev_chunk);
+                grad_sliced.set_gradient_input_batch(vec![]);
+                grad_sliced.set_gradient_input_batch_rm(sliced_prev);
 
-                lin_layer.backward(&grad_sliced).get_gradient_input_batch()
-            })
-            .collect();
+                let dx_chunk = lin_layer.backward(&grad_sliced).get_gradient_input_batch_rm();
 
-        // Infer feature dimension from input
-        let feature_dim = input_batch[0][0].len();
-
-        // Initialize gradient input batch
-        let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); feature_dim]; seq_len]; batch_size];
-
-        // Accumulate gradient chunks into final input gradient batch
-        for b in 0..batch_size {
-            for i in 0..seq_len {
-                for chunk in &gradient_input_batch_chunks {
-                    for (dst, src) in gradient_input_batch[b][i].iter_mut().zip(&chunk[b][i]) {
+                for (dst_m, src_m) in summed_dx.iter_mut().zip(dx_chunk.iter()) {
+                    for (dst, src) in dst_m.data.iter_mut().zip(src_m.data.iter()) {
                         *dst += *src;
                     }
+                }
+            }
+
+            let mut gradient = Gradient::new_default();
+            gradient.set_gradient_input_batch_rm(summed_dx.clone());
+            self.gradient = Some(gradient.clone());
+            return gradient;
+        }
+
+        // Legacy fallback: keep existing nested-Vec behavior.
+        let previous_input_gradient = previous_gradient.get_gradient_input_batch();
+
+        // Accumulate dx in RM form so we can support RM-only sublayers.
+        let mut summed_dx: Vec<RowMajorMatrix<Complex<f64>>> = (0..batch_size)
+            .map(|_| RowMajorMatrix::from_data(seq_len, feature_dim, vec![Complex::new(0.0, 0.0); seq_len * feature_dim]))
+            .collect();
+
+        for (layer_ind, lin_layer) in self.layers.iter_mut().enumerate() {
+            let (start_col, end_col) = self.col_ranges[layer_ind];
+            let prev_chunk: Vec<Vec<Vec<Complex<f64>>>> = previous_input_gradient
+                .iter()
+                .map(|batch_row| batch_row.iter().map(|row| row[start_col..end_col].to_vec()).collect())
+                .collect();
+
+            let mut grad_sliced = Gradient::new_default();
+            grad_sliced.set_gradient_input_batch(prev_chunk);
+
+            let dx_chunk_rm = lin_layer.backward(&grad_sliced).get_gradient_input_batch_rm();
+            for (dst_m, src_m) in summed_dx.iter_mut().zip(dx_chunk_rm.iter()) {
+                for (dst, src) in dst_m.data.iter_mut().zip(src_m.data.iter()) {
+                    *dst += *src;
                 }
             }
         }
 
         let mut gradient = Gradient::new_default();
+        gradient.set_gradient_input_batch_rm(summed_dx.clone());
+
+        // Emit legacy nested gradients for legacy callers.
+        let gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = summed_dx.iter().map(|m| m.to_rows()).collect();
         gradient.set_gradient_input_batch(gradient_input_batch);
+
         self.gradient = Some(gradient.clone());
         gradient
     }
