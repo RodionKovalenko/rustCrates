@@ -28,6 +28,8 @@ pub mod test_ffn_layer {
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(input_dim, output_dim, learning_rate);
+        // This test focuses on FFN gradients; normalization has its own dedicated tests.
+        ffn_layer.norm_layer = None;
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim, true);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, output_dim);
 
@@ -138,7 +140,7 @@ pub mod test_ffn_layer {
 
         // Define a small input batch, [2][3][4]
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, _seq_len, input_dim);
-        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, _seq_len - 1, _seq_len as u32);
+        let target_token_id_batch: Vec<Vec<u32>> = generate_random_u32_batch(batch_size, _seq_len - 1, (_seq_len - 1) as u32);
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; input_batch[0].len()]; input_batch.len()];
 
         println!("input batch dim: {}, {}, {}", input_batch.len(), input_batch[0].len(), input_batch[0][0].len());
@@ -153,7 +155,7 @@ pub mod test_ffn_layer {
         let linear_output: LayerOutput = linear_layer.forward(&layer_input);
 
         layer_input.set_input_batch(linear_output.get_output_batch());
-        let _softmax_batch_output = softmax_layer.forward(&layer_input, None, Some(target_token_id_batch.clone()));
+        let _softmax_batch_output = softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);

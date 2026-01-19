@@ -669,7 +669,7 @@ fn activate_output_complex_rm(mut data: RowMajorMatrix<Complex<f64>>, activation
         }
         ActivationType::RELU => {
             for v in data.data.iter_mut() {
-                *v = Complex::new(v.re.max(0.0), v.im);
+                *v = if v.re > 0.0 { *v } else { Complex::new(0.0, 0.0) };
             }
             data
         }
