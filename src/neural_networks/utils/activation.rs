@@ -164,7 +164,14 @@ pub fn tanh_complex(z: Complex<f64>) -> Complex<f64> {
 }
 
 fn relu_complex(z: Complex<f64>) -> Complex<f64> {
-    Complex::new(z.re.max(0.0), z.im) // Keep the imaginary part unchanged
+    // Gate the full complex value based on the real part.
+    // This keeps the forward definition consistent with our backward pass,
+    // which uses a single complex multiplier as the activation derivative.
+    if z.re > 0.0 {
+        z
+    } else {
+        Complex::new(0.0, 0.0)
+    }
 }
 
 fn leaky_relu_complex(z: Complex<f64>, slope: f64) -> Complex<f64> {
