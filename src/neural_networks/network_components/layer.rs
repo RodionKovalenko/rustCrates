@@ -14,8 +14,8 @@ use crate::neural_networks::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         derivative::{get_gradient_complex, get_gradient_swish},
         matrix::{
-            add_matrix, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate, conjugate_transpose, hadamard_product_2d_c, multiply_complex,
-            split_data_by_columns, RowMajorMatrix, add_vector_rm, multiply_complex_rm, conjugate_transpose_rm,
+            add_matrix, add_vector, add_vector_rm, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate, conjugate_transpose, conjugate_transpose_rm,
+            hadamard_product_2d_c, multiply_complex, multiply_complex_rm, split_data_by_columns, RowMajorMatrix,
         },
         weights_initializer::initialize_weights_complex,
     },
@@ -167,11 +167,7 @@ impl Layer {
     }
 
     pub fn prepare_for_save(&mut self) {
-        let needs_rebuild = self.weights_rm.is_none()
-            || self
-                .weights_rm
-                .as_ref()
-                .is_some_and(|w| w.rows != self.weights.len() || w.cols != self.weights[0].len());
+        let needs_rebuild = self.weights_rm.is_none() || self.weights_rm.as_ref().is_some_and(|w| w.rows != self.weights.len() || w.cols != self.weights[0].len());
 
         if needs_rebuild {
             self.weights_rm = Some(RowMajorMatrix::from_rows(&self.weights));
@@ -184,22 +180,13 @@ impl Layer {
         let rm_available = input_batch_rm_ref.is_some() && input_batch_ref.map_or(true, |v| v.is_empty());
         let activation_supported_rm = matches!(
             self.activation_type,
-            ActivationType::LINEAR
-                | ActivationType::TANH
-                | ActivationType::RELU
-                | ActivationType::SIGMOID
-                | ActivationType::GELU
-                | ActivationType::SWiGLU
+            ActivationType::LINEAR | ActivationType::TANH | ActivationType::RELU |  ActivationType::LEAKYRELU | ActivationType::SIGMOID | ActivationType::GELU | ActivationType::SWiGLU
         );
         let use_rm = rm_available && activation_supported_rm;
 
         if use_rm {
             let input_rm = input_batch_rm_ref.unwrap();
-            let needs_rebuild = self.weights_rm.is_none()
-                || self
-                    .weights_rm
-                    .as_ref()
-                    .is_some_and(|w| w.rows != self.weights.len() || w.cols != self.weights[0].len());
+            let needs_rebuild = self.weights_rm.is_none() || self.weights_rm.as_ref().is_some_and(|w| w.rows != self.weights.len() || w.cols != self.weights[0].len());
             if needs_rebuild {
                 self.weights_rm = Some(RowMajorMatrix::from_rows(&self.weights));
             }
@@ -233,11 +220,7 @@ impl Layer {
             self.output_batch = None;
 
             self.input_batch_rm = if calculate_gradient { Some(input_rm.to_vec()) } else { None };
-            self.inactivated_input_batch_rm = if calculate_gradient && needs_raw_pre_activation_rm {
-                Some(raw_output_batch_rm)
-            } else {
-                None
-            };
+            self.inactivated_input_batch_rm = if calculate_gradient && needs_raw_pre_activation_rm { Some(raw_output_batch_rm) } else { None };
             self.output_batch_rm = if calculate_gradient { Some(output_batch_rm.clone()) } else { None };
             self.padding_mask_batch = Some(input.get_padding_mask_batch());
 
@@ -331,11 +314,7 @@ impl Layer {
             }
         }
 
-        let needs_rebuild = self.weights_rm.is_none()
-            || self
-                .weights_rm
-                .as_ref()
-                .is_some_and(|w| w.rows != self.weights.len() || w.cols != self.weights[0].len());
+        let needs_rebuild = self.weights_rm.is_none() || self.weights_rm.as_ref().is_some_and(|w| w.rows != self.weights.len() || w.cols != self.weights[0].len());
         if needs_rebuild {
             self.weights_rm = Some(RowMajorMatrix::from_rows(&self.weights));
         }
@@ -352,10 +331,7 @@ impl Layer {
 
         match &self.activation_type {
             ActivationType::SWiGLU => {
-                let raw_output_batch_rm = self
-                    .inactivated_input_batch_rm
-                    .as_ref()
-                    .expect("Raw output RM batch is missing in dense SWiGLU layer");
+                let raw_output_batch_rm = self.inactivated_input_batch_rm.as_ref().expect("Raw output RM batch is missing in dense SWiGLU layer");
 
                 let cols = weights_rm.cols;
                 assert!(cols % 2 == 0, "SWiGLU expects even column count");
@@ -412,11 +388,7 @@ impl Layer {
                 let output_batch_rm = self.output_batch_rm.as_ref().expect("Output RM batch is missing in dense layer");
 
                 let raw_output_batch_rm = if self.activation_type == ActivationType::GELU {
-                    Some(
-                        self.inactivated_input_batch_rm
-                            .as_ref()
-                            .expect("Raw output RM batch is missing in dense GELU layer"),
-                    )
+                    Some(self.inactivated_input_batch_rm.as_ref().expect("Raw output RM batch is missing in dense GELU layer"))
                 } else {
                     None
                 };
@@ -459,10 +431,7 @@ impl Layer {
         if self.input_batch.is_none() {
             if let Some(_input_batch_rm) = self.input_batch_rm.as_ref() {
                 // RM forward was used; fall back to RM backward by converting the incoming Vec gradient.
-                let previous_gradient_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = previous_gradient_batch
-                    .iter()
-                    .map(|rows| RowMajorMatrix::from_rows(rows))
-                    .collect();
+                let previous_gradient_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = previous_gradient_batch.iter().map(|rows| RowMajorMatrix::from_rows(rows)).collect();
 
                 let mut gradient = self.backward_rm(&previous_gradient_batch_rm);
 
@@ -673,6 +642,12 @@ fn activate_output_complex_rm(mut data: RowMajorMatrix<Complex<f64>>, activation
             }
             data
         }
+        ActivationType::LEAKYRELU => {
+            for v in data.data.iter_mut() {
+                *v = if v.re > 0.0 { *v } else { 0.01  * *v };
+            }
+            data
+        }
         ActivationType::SIGMOID => {
             for v in data.data.iter_mut() {
                 *v = sigmoid_complex(v);
@@ -730,6 +705,11 @@ fn activation_derivative_rm(activated: &RowMajorMatrix<Complex<f64>>, activation
         ActivationType::RELU => {
             for (dst, &z) in out.data.iter_mut().zip(activated.data.iter()) {
                 *dst = if z.re > 0.0 { Complex::new(1.0, 0.0) } else { Complex::new(0.0, 0.0) };
+            }
+        }
+        ActivationType::LEAKYRELU => {
+            for (dst, &z) in out.data.iter_mut().zip(activated.data.iter()) {
+                *dst = if z.re > 0.0 { Complex::new(1.0, 0.0) } else { Complex::new(0.01, 0.0) };
             }
         }
         _ => {

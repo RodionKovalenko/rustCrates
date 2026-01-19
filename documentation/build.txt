@@ -20,3 +20,5 @@ run binary directly
 run specific test under release version: 
 cargo test --release test_train_transformer -- --nocapture --ignored
 
+cargo test --no-default-features 
+
