@@ -54,33 +54,22 @@ pub fn gelu_derivative_complex(inactivated_input: Complex<f64>) -> Complex<f64> 
     let x3 = inactivated_input.powi(3);
     let f_x = sqrt_2_over_pi * (inactivated_input + Complex::new(0.044715, 0.0) * x3);
 
-    // Numerically stable tanh approximation
-    let tanh_f_x = if f_x.norm() > 20.0 {
-        Complex::new(1.0, 0.0) // tanh saturates for large values
-    } else {
-        f_x.tanh()
-    };
-
-    // Compute sech^2(f_x) safely: sech^2(x) = 4 / (exp(2x) + 2 + exp(-2x))
-    let sech_f_x_squared = if f_x.norm() > 20.0 {
-        Complex::new(0.0, 0.0) // sech^2(x) approaches 0 for large x
-    } else {
-        Complex::new(1.0, 0.0) - tanh_f_x.powi(2)
-    };
+    // Match activation.rs GELU implementation: clamp f(x) before tanh.
+    // Important: the clamp makes the forward non-smooth; when clamped, treat f(x) as constant
+    // (i.e. zero out the tanh chain term) to match numerical gradients.
+    let is_clamped = f_x.re < -30.0 || f_x.re > 30.0 || f_x.im < -30.0 || f_x.im > 30.0;
+    let clamped_f_x = Complex::new(f_x.re.max(-30.0).min(30.0), f_x.im.max(-30.0).min(30.0));
+    let tanh_f_x = clamped_f_x.tanh();
+    let sech_f_x_squared = Complex::new(1.0, 0.0) - tanh_f_x.powi(2);
 
     // f'(x) = sqrt(2 / pi) * (1 + 0.134145 * x^2)
     let f_prime_x = sqrt_2_over_pi * (Complex::new(1.0, 0.0) + Complex::new(0.134145, 0.0) * inactivated_input.powi(2));
 
     // GELU'(x) = 0.5 * (1 + tanh(f(x))) + 0.5 * x * sech^2(f(x)) * f'(x)
-    let gelu_derivative = Complex::new(0.5, 0.0) * (Complex::new(1.0, 0.0) + tanh_f_x) + Complex::new(0.5, 0.0) * inactivated_input * sech_f_x_squared * f_prime_x;
-
-    // Smoothly clamp extreme values instead of hard zeroing
-    if gelu_derivative.norm() > 1e6 {
-        return gelu_derivative / gelu_derivative.norm() * Complex::new(1e6, 0.0);
-    }
-    if gelu_derivative.norm() < 1e-12 {
-        return Complex::new(1e-12, 0.0);
-    }
+    // If f(x) was clamped, d/dx tanh(clamp(f(x))) is treated as 0.
+    let f_prime_eff = if is_clamped { Complex::new(0.0, 0.0) } else { f_prime_x };
+    let gelu_derivative =
+        Complex::new(0.5, 0.0) * (Complex::new(1.0, 0.0) + tanh_f_x) + Complex::new(0.5, 0.0) * inactivated_input * sech_f_x_squared * f_prime_eff;
 
     gelu_derivative
 }
