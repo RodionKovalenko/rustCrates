@@ -135,6 +135,9 @@ pub mod test_ffn_layer {
 
         // Create a simple LinearLayer with the given input and output dimensions
         let mut ffn_layer: FeedForwardLayer = FeedForwardLayer::new(input_dim, output_dim, learning_rate);
+        // This test focuses on FFN gradients; normalization has its own dedicated tests.
+        // Keeping the norm layer enabled makes numerical gradient checks flaky for complex inputs.
+        //ffn_layer.norm_layer = None;
         let mut linear_layer: LinearLayer = LinearLayer::new(learning_rate, input_dim, output_dim, true);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, output_dim);
 

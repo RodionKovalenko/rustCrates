@@ -178,7 +178,10 @@ fn leaky_relu_complex(z: Complex<f64>, slope: f64) -> Complex<f64> {
     if z.re > 0.0 {
         z
     } else {
-        Complex::new(slope * z.re, z.im)
+        // Scale the full complex value for the negative branch.
+        // This matches our backward pass, which uses a single complex multiplier
+        // (Complex{slope, 0.0}) as the derivative.
+        Complex::new(slope, 0.0) * z
     }
 }
 
