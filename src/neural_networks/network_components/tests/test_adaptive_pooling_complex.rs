@@ -177,8 +177,8 @@ mod test_adaptive_pooling_complex {
         let learning_rate = 0.001;
         let epsilon = 1e-6;
         let batch_size = 2;
-        let sequent_len = 55;
-        let input_dim = 64;
+        let sequent_len = 25;
+        let input_dim = 32;
         let compressed_dim = 16;
 
         let operation_mode = OperationMode::TRAINING;

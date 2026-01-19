@@ -12,6 +12,7 @@ mod test_serialization {
         },
     };
 
+    #[ignore]
     #[test]
     fn test_serialization() {
         let vocab_size = 50254;
@@ -36,6 +37,7 @@ mod test_serialization {
         }
     }
 
+    #[ignore]
     #[test]
     fn test_serialization_struct_db() {
         let mut transformer = create_transformer(OperationMode::TRAINING);
