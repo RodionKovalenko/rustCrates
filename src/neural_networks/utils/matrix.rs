@@ -1,6 +1,7 @@
 use faer::Mat;
 // use ndarray::Array2;
 use num::Complex;
+use num_traits::Float;
 use num_traits::NumCast;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
@@ -15,6 +16,7 @@ use std::sync::{Arc, Mutex};
 use crate::neural_networks::network_types::transformer::transformer_updater::VERBOSE;
 use crate::neural_networks::utils::adam_w::MAX_ELEMENT;
 use crate::neural_networks::utils::adam_w::MAX_NORM;
+use crate::neural_networks::utils::dtype::{r, C, Real, ZERO};
 
 #[cfg(feature = "cuda")]
 use super::gpu_matmul::GpuMatmul;
@@ -34,6 +36,7 @@ static GPU_MATMUL: Lazy<Mutex<Option<GpuMatmul>>> = Lazy::new(|| {
     }
 });
 
+#[cfg(feature = "dtype-f64")]
 extern "C" {
     fn zgemm_(
         transa: *const c_char,
@@ -48,6 +51,25 @@ extern "C" {
         ldb: *const i64,
         beta: *const Complex<f64>,
         c: *mut Complex<f64>,
+        ldc: *const i64,
+    );
+}
+
+#[cfg(not(feature = "dtype-f64"))]
+extern "C" {
+    fn cgemm_(
+        transa: *const c_char,
+        transb: *const c_char,
+        m: *const i64,
+        n: *const i64,
+        k: *const i64,
+        alpha: *const Complex<f32>,
+        a: *const Complex<f32>,
+        lda: *const i64,
+        b: *const Complex<f32>,
+        ldb: *const i64,
+        beta: *const Complex<f32>,
+        c: *mut Complex<f32>,
         ldc: *const i64,
     );
 }
@@ -129,7 +151,7 @@ impl<T> RowMajorMatrix<T> {
     }
 }
 
-pub fn add_vector_rm(matrix: &mut RowMajorMatrix<Complex<f64>>, bias: &[Complex<f64>]) {
+pub fn add_vector_rm(matrix: &mut RowMajorMatrix<Complex<Real>>, bias: &[Complex<Real>]) {
     assert_eq!(matrix.cols, bias.len(), "bias length must match matrix cols");
     for r in 0..matrix.rows {
         let row = matrix.row_range(r);
@@ -139,12 +161,12 @@ pub fn add_vector_rm(matrix: &mut RowMajorMatrix<Complex<f64>>, bias: &[Complex<
     }
 }
 
-pub fn conjugate_transpose_rm(matrix: &RowMajorMatrix<Complex<f64>>) -> RowMajorMatrix<Complex<f64>> {
+pub fn conjugate_transpose_rm(matrix: &RowMajorMatrix<Complex<Real>>) -> RowMajorMatrix<Complex<Real>> {
     let rows = matrix.rows;
     let cols = matrix.cols;
 
     // Output is (cols x rows)
-    let mut data = vec![Complex::new(0.0, 0.0); rows * cols];
+    let mut data = vec![Complex::new(ZERO, ZERO); rows * cols];
     for r in 0..rows {
         for c in 0..cols {
             data[c * rows + r] = matrix.data[matrix.idx(r, c)].conj();
@@ -154,11 +176,11 @@ pub fn conjugate_transpose_rm(matrix: &RowMajorMatrix<Complex<f64>>) -> RowMajor
     RowMajorMatrix::from_data(cols, rows, data)
 }
 
-pub fn transpose_rm(matrix: &RowMajorMatrix<Complex<f64>>) -> RowMajorMatrix<Complex<f64>> {
+pub fn transpose_rm<T: Copy + Default>(matrix: &RowMajorMatrix<T>) -> RowMajorMatrix<T> {
     let rows = matrix.rows;
     let cols = matrix.cols;
 
-    let mut data = vec![Complex::new(0.0, 0.0); rows * cols];
+    let mut data = vec![T::default(); rows * cols];
     for r in 0..rows {
         for c in 0..cols {
             data[c * rows + r] = matrix.data[matrix.idx(r, c)];
@@ -168,11 +190,11 @@ pub fn transpose_rm(matrix: &RowMajorMatrix<Complex<f64>>) -> RowMajorMatrix<Com
     RowMajorMatrix::from_data(cols, rows, data)
 }
 
-pub fn transpose_rm_f64(matrix: &RowMajorMatrix<f64>) -> RowMajorMatrix<f64> {
+pub fn transpose_rm_f64(matrix: &RowMajorMatrix<Real>) -> RowMajorMatrix<Real> {
     let rows = matrix.rows;
     let cols = matrix.cols;
 
-    let mut data = vec![0.0; rows * cols];
+    let mut data = vec![ZERO; rows * cols];
     for r in 0..rows {
         for c in 0..cols {
             data[c * rows + r] = matrix.data[r * cols + c];
@@ -188,38 +210,38 @@ pub fn append_rows_rm<T: Copy>(dst: &mut RowMajorMatrix<T>, src: &RowMajorMatrix
     dst.rows += src.rows;
 }
 
-pub fn multiply_f64_complex_rm(a: &RowMajorMatrix<f64>, b: &RowMajorMatrix<Complex<f64>>) -> RowMajorMatrix<Complex<f64>> {
+pub fn multiply_f64_complex_rm(a: &RowMajorMatrix<Real>, b: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
     assert_eq!(a.cols, b.rows, "A's columns must match B's rows");
     let m = a.rows;
     let k = a.cols;
     let n = b.cols;
-    let mut c = vec![Complex::new(0.0, 0.0); m * n];
+    let mut c = vec![C::new(ZERO, ZERO); m * n];
     for i in 0..m {
         for kk in 0..k {
             let a_ik = a.data[i * k + kk];
-            if a_ik == 0.0 {
+            if a_ik == ZERO {
                 continue;
             }
             let b_row = kk * n;
             let c_row = i * n;
             for j in 0..n {
-                c[c_row + j] += b.data[b_row + j] * Complex::new(a_ik, 0.0);
+                c[c_row + j] += b.data[b_row + j] * C::new(a_ik, ZERO);
             }
         }
     }
     RowMajorMatrix::from_data(m, n, c)
 }
 
-pub fn multiply_complex_with_f64_rm(a: &RowMajorMatrix<Complex<f64>>, b: &RowMajorMatrix<f64>) -> RowMajorMatrix<Complex<f64>> {
+pub fn multiply_complex_with_f64_rm(a: &RowMajorMatrix<C>, b: &RowMajorMatrix<Real>) -> RowMajorMatrix<C> {
     assert_eq!(a.cols, b.rows, "A's columns must match B's rows");
     let m = a.rows;
     let k = a.cols;
     let n = b.cols;
-    let mut c = vec![Complex::new(0.0, 0.0); m * n];
+    let mut c = vec![C::new(ZERO, ZERO); m * n];
     for i in 0..m {
         for kk in 0..k {
             let a_ik = a.data[i * k + kk];
-            if a_ik == Complex::new(0.0, 0.0) {
+            if a_ik == C::new(ZERO, ZERO) {
                 continue;
             }
             let b_row = kk * n;
@@ -232,7 +254,7 @@ pub fn multiply_complex_with_f64_rm(a: &RowMajorMatrix<Complex<f64>>, b: &RowMaj
     RowMajorMatrix::from_data(m, n, c)
 }
 
-pub fn conjugate_transpose_to_rm(matrix: &[Vec<Complex<f64>>]) -> RowMajorMatrix<Complex<f64>> {
+pub fn conjugate_transpose_to_rm(matrix: &[Vec<C>]) -> RowMajorMatrix<C> {
     let rows = matrix.len();
     assert!(rows > 0, "matrix must not be empty");
     let cols = matrix[0].len();
@@ -242,7 +264,7 @@ pub fn conjugate_transpose_to_rm(matrix: &[Vec<Complex<f64>>]) -> RowMajorMatrix
     }
 
     // Output is (cols x rows)
-    let mut data = vec![Complex::new(0.0, 0.0); rows * cols];
+    let mut data = vec![C::new(ZERO, ZERO); rows * cols];
     for r in 0..rows {
         for c in 0..cols {
             data[c * rows + r] = matrix[r][c].conj();
@@ -252,7 +274,7 @@ pub fn conjugate_transpose_to_rm(matrix: &[Vec<Complex<f64>>]) -> RowMajorMatrix
     RowMajorMatrix::from_data(cols, rows, data)
 }
 
-pub fn multiply_complex_rm(a: &RowMajorMatrix<Complex<f64>>, b: &RowMajorMatrix<Complex<f64>>) -> RowMajorMatrix<Complex<f64>> {
+pub fn multiply_complex_rm(a: &RowMajorMatrix<C>, b: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
     assert!(a.rows > 0 && a.cols > 0 && b.rows > 0 && b.cols > 0, "Matrices must not be empty");
     assert_eq!(a.cols, b.rows, "A's columns must match B's rows");
 
@@ -275,8 +297,8 @@ pub fn multiply_complex_rm(a: &RowMajorMatrix<Complex<f64>>, b: &RowMajorMatrix<
     RowMajorMatrix::from_data(m, n, c)
 }
 
-#[cfg(feature = "cuda")]
-fn multiply_complex_gpu_rm(a: &[Complex<f64>], b: &[Complex<f64>], m: usize, k: usize, n: usize) -> Result<Vec<Complex<f64>>, Box<dyn std::error::Error>> {
+#[cfg(all(feature = "cuda", feature = "dtype-f64"))]
+fn multiply_complex_gpu_rm(a: &[C], b: &[C], m: usize, k: usize, n: usize) -> Result<Vec<C>, Box<dyn std::error::Error>> {
     // Handle poisoned mutex gracefully
     let mut gpu_guard = match GPU_MATMUL.lock() {
         Ok(guard) => guard,
@@ -295,7 +317,12 @@ fn multiply_complex_gpu_rm(a: &[Complex<f64>], b: &[Complex<f64>], m: usize, k: 
     Ok(c)
 }
 
-fn multiply_complex_cpu_rm(a: &[Complex<f64>], b: &[Complex<f64>], m: usize, k: usize, n: usize) -> Vec<Complex<f64>> {
+#[cfg(all(feature = "cuda", not(feature = "dtype-f64")))]
+fn multiply_complex_gpu_rm(_a: &[C], _b: &[C], _m: usize, _k: usize, _n: usize) -> Result<Vec<C>, Box<dyn std::error::Error>> {
+    Err("GPU matmul currently only enabled for dtype-f64".into())
+}
+
+fn multiply_complex_cpu_rm(a: &[C], b: &[C], m: usize, k: usize, n: usize) -> Vec<C> {
     assert_eq!(a.len(), m * k);
     assert_eq!(b.len(), k * n);
 
@@ -306,12 +333,12 @@ fn multiply_complex_cpu_rm(a: &[Complex<f64>], b: &[Complex<f64>], m: usize, k: 
     let k_i64 = k as i64;
     let n_i64 = n as i64;
 
-    let mut c = vec![Complex::<f64>::new(0.0, 0.0); m * n];
+    let mut c = vec![C::new(ZERO, ZERO); m * n];
 
     let transa = b'N';
     let transb = b'N';
-    let alpha = Complex::<f64>::new(1.0, 0.0);
-    let beta = Complex::<f64>::new(0.0, 0.0);
+    let alpha = C::new(r(1.0), ZERO);
+    let beta = C::new(ZERO, ZERO);
 
     // zgemm dims for Cᵀ (n×m) = Bᵀ (n×k) * Aᵀ (k×m)
     let gemm_m = n_i64;
@@ -321,6 +348,7 @@ fn multiply_complex_cpu_rm(a: &[Complex<f64>], b: &[Complex<f64>], m: usize, k: 
     let ldb = k_i64;
     let ldc = n_i64;
 
+    #[cfg(feature = "dtype-f64")]
     unsafe {
         zgemm_(
             &transa as *const u8 as *const c_char,
@@ -328,13 +356,32 @@ fn multiply_complex_cpu_rm(a: &[Complex<f64>], b: &[Complex<f64>], m: usize, k: 
             &gemm_m,
             &gemm_n,
             &gemm_k,
-            &alpha,
-            b.as_ptr(),
+            (&alpha as *const Complex<Real>).cast(),
+            b.as_ptr().cast(),
             &lda,
-            a.as_ptr(),
+            a.as_ptr().cast(),
             &ldb,
-            &beta,
-            c.as_mut_ptr(),
+            (&beta as *const Complex<Real>).cast(),
+            c.as_mut_ptr().cast(),
+            &ldc,
+        );
+    }
+
+    #[cfg(not(feature = "dtype-f64"))]
+    unsafe {
+        cgemm_(
+            &transa as *const u8 as *const c_char,
+            &transb as *const u8 as *const c_char,
+            &gemm_m,
+            &gemm_n,
+            &gemm_k,
+            (&alpha as *const Complex<Real>).cast(),
+            b.as_ptr().cast(),
+            &lda,
+            a.as_ptr().cast(),
+            &ldb,
+            (&beta as *const Complex<Real>).cast(),
+            c.as_mut_ptr().cast(),
             &ldc,
         );
     }
@@ -342,9 +389,9 @@ fn multiply_complex_cpu_rm(a: &[Complex<f64>], b: &[Complex<f64>], m: usize, k: 
     c
 }
 
-pub fn multiply_complex(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<f64>>]) -> Vec<Vec<Complex<f64>>> {
+pub fn multiply_complex(matrix_a: &[Vec<Complex<Real>>], matrix_b: &[Vec<Complex<Real>>]) -> Vec<Vec<Complex<Real>>> {
     // Try GPU path first (if cuda feature enabled)
-    #[cfg(feature = "cuda")]
+    #[cfg(all(feature = "cuda", feature = "dtype-f64"))]
     {
         let m = matrix_a.len();
         let k = matrix_a[0].len();
@@ -363,8 +410,8 @@ pub fn multiply_complex(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<
     multiply_complex_cpu(matrix_a, matrix_b)
 }
 
-#[cfg(feature = "cuda")]
-fn multiply_complex_gpu(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<f64>>], m: usize, k: usize, n: usize) -> Result<Vec<Vec<Complex<f64>>>, Box<dyn std::error::Error>> {
+#[cfg(all(feature = "cuda", feature = "dtype-f64"))]
+fn multiply_complex_gpu(matrix_a: &[Vec<Complex<Real>>], matrix_b: &[Vec<Complex<Real>>], m: usize, k: usize, n: usize) -> Result<Vec<Vec<Complex<Real>>>, Box<dyn std::error::Error>> {
     // Handle poisoned mutex gracefully
     let mut gpu_guard = match GPU_MATMUL.lock() {
         Ok(guard) => guard,
@@ -381,8 +428,8 @@ fn multiply_complex_gpu(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<
     };
 
     // Flatten 2D -> 1D (row-major)
-    let a_flat: Vec<Complex<f64>> = matrix_a.iter().flatten().copied().collect();
-    let b_flat: Vec<Complex<f64>> = matrix_b.iter().flatten().copied().collect();
+    let a_flat: Vec<Complex<Real>> = matrix_a.iter().flatten().copied().collect();
+    let b_flat: Vec<Complex<Real>> = matrix_b.iter().flatten().copied().collect();
 
     // GPU multiply
     let c_flat = gpu.multiply_complex(&a_flat, &b_flat, m, k, n)?;
@@ -396,7 +443,7 @@ fn multiply_complex_gpu(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<
     Ok(result)
 }
 
-fn multiply_complex_cpu(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<f64>>]) -> Vec<Vec<Complex<f64>>> {
+fn multiply_complex_cpu(matrix_a: &[Vec<Complex<Real>>], matrix_b: &[Vec<Complex<Real>>]) -> Vec<Vec<Complex<Real>>> {
     let m = matrix_a.len();
     let k = matrix_a[0].len();
     let n = matrix_b[0].len();
@@ -411,8 +458,8 @@ fn multiply_complex_cpu(matrix_a: &[Vec<Complex<f64>>], matrix_b: &[Vec<Complex<
     }
 
     // Build contiguous row-major buffers (cheaper than a column-major re-pack)
-    let a_rm: Vec<Complex<f64>> = matrix_a.iter().flat_map(|r| r.iter().copied()).collect();
-    let b_rm: Vec<Complex<f64>> = matrix_b.iter().flat_map(|r| r.iter().copied()).collect();
+    let a_rm: Vec<Complex<Real>> = matrix_a.iter().flat_map(|r| r.iter().copied()).collect();
+    let b_rm: Vec<Complex<Real>> = matrix_b.iter().flat_map(|r| r.iter().copied()).collect();
 
     let c_rm = multiply_complex_cpu_rm(&a_rm, &b_rm, m, k, n);
 
@@ -714,7 +761,7 @@ pub fn multiply_complex_fear(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<V
 //     result_matrix
 // }
 
-pub fn multiply_complex_with_f64(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<f64>>) -> Vec<Vec<Complex<f64>>> {
+pub fn multiply_complex_with_f64(matrix_a: &[Vec<C>], matrix_b: &[Vec<Real>]) -> Vec<Vec<C>> {
     let num_rows = matrix_a.len();
     let num_columns = matrix_b[0].len();
 
@@ -724,7 +771,7 @@ pub fn multiply_complex_with_f64(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &V
     }
 
     // Initialize result matrix with 0.0 values
-    let mut result_matrix: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
+    let mut result_matrix: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); num_columns]; num_rows];
 
     // println!("anzahl cput {}", num_cpus::get());
 
@@ -733,7 +780,6 @@ pub fn multiply_complex_with_f64(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &V
     pool.install(|| {
         result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
             for j in 0..num_columns {
-                //row[j] = (0..matrix_b.len()).map(|k| matrix_a[i][k] * Complex::new(matrix_b[k][j], 0.0)).sum();
                 row[j] = (0..matrix_b.len()).map(|k| matrix_a[i][k] * matrix_b[k][j]).sum();
             }
         });
@@ -742,36 +788,12 @@ pub fn multiply_complex_with_f64(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &V
     result_matrix
 }
 
-pub fn multiply_complex_with_f32(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<f32>>) -> Vec<Vec<Complex<f64>>> {
-    let num_rows = matrix_a.len();
-    let num_columns = matrix_b[0].len();
-
-    // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
-    if matrix_a[0].len() != matrix_b.len() {
-        panic!("Matrix A does not have the same number of columns as Matrix B rows.");
-    }
-
-    // Initialize result matrix with 0.0 values
-    let mut result_matrix: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
-
-    // println!("anzahl cput {}", num_cpus::get());
-
-    let pool = ThreadPoolBuilder::new().num_threads(num_cpus::get()).build().unwrap();
-
-    pool.install(|| {
-        result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
-            for j in 0..num_columns {
-                //row[j] = (0..matrix_b.len()).map(|k| matrix_a[i][k] * Complex::new(matrix_b[k][j], 0.0)).sum();
-                row[j] = (0..matrix_b.len()).map(|k| matrix_a[i][k] * Complex::new(matrix_b[k][j] as f64, 0.0)).sum();
-            }
-        });
-    });
-
-    result_matrix
+pub fn multiply_complex_with_f32(matrix_a: &[Vec<C>], matrix_b: &[Vec<Real>]) -> Vec<Vec<C>> {
+    multiply_complex_with_f64(matrix_a, matrix_b)
 }
 
 
-pub fn multiply_f64_complex(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+pub fn multiply_f64_complex(matrix_a: &[Vec<Real>], matrix_b: &[Vec<C>]) -> Vec<Vec<C>> {
     let num_rows = matrix_a.len();
     let num_columns = matrix_b[0].len();
 
@@ -783,14 +805,13 @@ pub fn multiply_f64_complex(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<Complex
     }
 
     // Initialize result matrix with 0.0 values
-    let mut result_matrix: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_columns]; num_rows];
+    let mut result_matrix: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); num_columns]; num_rows];
 
     let pool = ThreadPoolBuilder::new().num_threads(num_cpus::get()).build().unwrap();
 
     pool.install(|| {
         result_matrix.par_iter_mut().enumerate().for_each(|(i, row)| {
             for j in 0..num_columns {
-                //row[j] = (0..matrix_b.len()).map(|k| Complex::new(matrix_a[i][k], 0.0) * matrix_b[k][j]).sum();
                 row[j] = (0..matrix_b.len()).map(|k| matrix_a[i][k] * matrix_b[k][j]).sum();
             }
         });
@@ -799,10 +820,10 @@ pub fn multiply_f64_complex(matrix_a: &Vec<Vec<f64>>, matrix_b: &Vec<Vec<Complex
     result_matrix
 }
 
-pub fn conjugate_transpose(matrix: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+pub fn conjugate_transpose<T: Float>(matrix: &Vec<Vec<Complex<T>>>) -> Vec<Vec<Complex<T>>> {
     let rows = matrix.len();
     let cols = matrix[0].len();
-    let mut result = vec![vec![Complex::new(0.0, 0.0); rows]; cols];
+    let mut result = vec![vec![Complex::new(T::zero(), T::zero()); rows]; cols];
 
     for i in 0..rows {
         for j in 0..cols {
@@ -812,10 +833,10 @@ pub fn conjugate_transpose(matrix: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f
     result
 }
 
-pub fn conjugate(matrix: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+pub fn conjugate<T: Float>(matrix: &Vec<Vec<Complex<T>>>) -> Vec<Vec<Complex<T>>> {
     let rows = matrix.len();
     let cols = matrix[0].len();
-    let mut result = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
+    let mut result = vec![vec![Complex::new(T::zero(), T::zero()); cols]; rows];
 
     for i in 0..rows {
         for j in 0..cols {
@@ -825,8 +846,8 @@ pub fn conjugate(matrix: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
     result
 }
 
-pub fn conjugate_1d(matrix: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
-    let mut result = vec![Complex::new(0.0, 0.0); matrix.len()];
+pub fn conjugate_1d<T: Float>(matrix: &Vec<Complex<T>>) -> Vec<Complex<T>> {
+    let mut result = vec![Complex::new(T::zero(), T::zero()); matrix.len()];
 
     for i in 0..matrix.len() {
         result[i] = matrix[i].conj();
@@ -834,10 +855,10 @@ pub fn conjugate_1d(matrix: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
     result
 }
 
-pub fn conjugate_2d(matrix: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+pub fn conjugate_2d<T: Float>(matrix: &Vec<Vec<Complex<T>>>) -> Vec<Vec<Complex<T>>> {
     let rows = matrix.len();
     let cols = matrix[0].len();
-    let mut result = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
+    let mut result = vec![vec![Complex::new(T::zero(), T::zero()); cols]; rows];
 
     for i in 0..rows {
         for j in 0..cols {
@@ -876,14 +897,14 @@ pub fn transpose<T: Debug + Clone + Sync + Send>(matrix_a: &Vec<Vec<T>>) -> Vec<
     (*result_lock).clone()
 }
 
-pub fn hadamard_product_2d_c(input_1: &Vec<Vec<Complex<f64>>>, input_2: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+pub fn hadamard_product_2d_c(input_1: &Vec<Vec<C>>, input_2: &Vec<Vec<C>>) -> Vec<Vec<C>> {
     let rows = input_1.len();
     let cols = input_1[0].len();
 
     assert!(rows == input_2.len() && cols == input_2[0].len(), "Input matrices must have the same dimensions");
 
     // Initialize result matrix with zeros
-    let mut result = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
+    let mut result = vec![vec![C::new(ZERO, ZERO); cols]; rows];
 
     // println!("input 1 dim: {} x {}", input_1.len(), input_1[0].len());
     // println!("input 2 dim: {} x {}", input_2.len(), input_2[0].len());
@@ -1065,8 +1086,8 @@ pub fn add_matrix_1d_c(matrix_a: &Vec<Complex<f64>>, matrix_b: &Vec<Complex<f64>
     matrix_result
 }
 
-pub fn add_matrix_2d_c(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
-    let mut matrix_result: Vec<Vec<Complex<f64>>> = matrix_a.clone();
+pub fn add_matrix_2d_c(matrix_a: &Vec<Vec<C>>, matrix_b: &Vec<Vec<C>>) -> Vec<Vec<C>> {
+    let mut matrix_result: Vec<Vec<C>> = matrix_a.clone();
 
     for i in 0..matrix_a.len() {
         for j in 0..matrix_a[i].len() {
@@ -1078,14 +1099,14 @@ pub fn add_matrix_2d_c(matrix_a: &Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Vec<Com
     matrix_result
 }
 
-pub fn add_matrix_3d_c(matrix_a: &Vec<Vec<Vec<Complex<f64>>>>, matrix_b: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
-    let mut matrix_result: Vec<Vec<Vec<Complex<f64>>>> = matrix_a.clone();
+pub fn add_matrix_3d_c(matrix_a: &Vec<Vec<Vec<C>>>, matrix_b: &Vec<Vec<Vec<C>>>) -> Vec<Vec<Vec<C>>> {
+    let mut matrix_result: Vec<Vec<Vec<C>>> = matrix_a.clone();
 
     for i in 0..matrix_a.len() {
         for j in 0..matrix_a[i].len() {
             for k in 0..matrix_a[i][j].len() {
                 let val = matrix_result[i][j][k].clone() + matrix_b[i % matrix_b.len()][j % matrix_b[0].len()][k % matrix_b[0][0].len()].clone();
-                matrix_result[i][j][k] = Complex::new(val.re, 0.0);
+                matrix_result[i][j][k] = Complex::new(val.re, ZERO);
             }
         }
     }
@@ -1093,7 +1114,7 @@ pub fn add_matrix_3d_c(matrix_a: &Vec<Vec<Vec<Complex<f64>>>>, matrix_b: &Vec<Ve
     matrix_result
 }
 
-pub fn add_vector(matrix_a: &mut Vec<Vec<Complex<f64>>>, matrix_b: &Vec<Complex<f64>>) {
+pub fn add_vector(matrix_a: &mut Vec<Vec<C>>, matrix_b: &Vec<C>) {
     for i in 0..matrix_a.len() {
         for j in 0..matrix_a[i].len() {
             matrix_a[i][j] = matrix_a[i][j].clone() + matrix_b[j].clone();
@@ -1111,46 +1132,46 @@ pub fn add_vectors<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<T>, matrix
     matrix_result
 }
 
-pub fn average_vector_by_scalar<T>(matrix_a: &Vec<T>, scalar: f64) -> Vec<T>
+pub fn average_vector_by_scalar<T>(matrix_a: &Vec<T>, scalar: Real) -> Vec<T>
 where
-    T: PolarConvertible + Debug + Clone + Div<f64, Output = T>,
+    T: PolarConvertible + Debug + Clone + Div<Real, Output = T>,
 {
     matrix_a.iter().map(|val| val.clone() / scalar).collect()
     //average_gradient_polar_1d_generic(matrix_a, scalar)
 }
 
-pub fn average_matrix_by_scalar<T>(matrix_a: &Vec<Vec<T>>, scalar: f64) -> Vec<Vec<T>>
+pub fn average_matrix_by_scalar<T>(matrix_a: &Vec<Vec<T>>, scalar: Real) -> Vec<Vec<T>>
 where
-    T: PolarConvertible + Debug + Clone + Div<f64, Output = T>,
+    T: PolarConvertible + Debug + Clone + Div<Real, Output = T>,
 {
     matrix_a.iter().map(|val| average_vector_by_scalar(val, scalar)).collect()
     //average_gradient_polar_generic(matrix_a, scalar)
 }
 
-pub fn average_matrix_3d_by_scalar<T>(matrix_a: &Vec<Vec<Vec<T>>>, scalar: f64) -> Vec<Vec<Vec<T>>>
+pub fn average_matrix_3d_by_scalar<T>(matrix_a: &Vec<Vec<Vec<T>>>, scalar: Real) -> Vec<Vec<Vec<T>>>
 where
-    T: PolarConvertible + Debug + Clone + Div<f64, Output = T>,
+    T: PolarConvertible + Debug + Clone + Div<Real, Output = T>,
 {
     matrix_a.iter().map(|val| average_matrix_by_scalar(val, scalar)).collect()
 }
 
-pub fn scale_matrix_3d_by_scalar<T>(matrix_a: &Vec<Vec<Vec<T>>>, scalar: f64) -> Vec<Vec<Vec<T>>>
+pub fn scale_matrix_3d_by_scalar<T>(matrix_a: &Vec<Vec<Vec<T>>>, scalar: Real) -> Vec<Vec<Vec<T>>>
 where
-    T: PolarConvertible + Debug + Clone + Mul<f64, Output = T>,
+    T: PolarConvertible + Debug + Clone + Mul<Real, Output = T>,
 {
     matrix_a.iter().map(|val| scale_matrix_by_scalar(val, scalar)).collect()
 }
 
-pub fn scale_matrix_by_scalar<T>(matrix_a: &Vec<Vec<T>>, scalar: f64) -> Vec<Vec<T>>
+pub fn scale_matrix_by_scalar<T>(matrix_a: &Vec<Vec<T>>, scalar: Real) -> Vec<Vec<T>>
 where
-    T: PolarConvertible + Debug + Clone + Mul<f64, Output = T>,
+    T: PolarConvertible + Debug + Clone + Mul<Real, Output = T>,
 {
     matrix_a.iter().map(|val| scale_vector_by_scalar(val, scalar)).collect()
 }
 
-pub fn scale_vector_by_scalar<T>(matrix_a: &Vec<T>, scalar: f64) -> Vec<T>
+pub fn scale_vector_by_scalar<T>(matrix_a: &Vec<T>, scalar: Real) -> Vec<T>
 where
-    T: PolarConvertible + Debug + Clone + Mul<f64, Output = T>,
+    T: PolarConvertible + Debug + Clone + Mul<Real, Output = T>,
 {
     matrix_a.iter().map(|val| val.clone() * scalar).collect()
     //average_gradient_polar_1d_generic(matrix_a, scalar)
@@ -1176,6 +1197,20 @@ impl PolarConvertible for Complex<f64> {
     }
 }
 
+impl PolarConvertible for Complex<f32> {
+    fn re(&self) -> f64 {
+        self.re as f64
+    }
+
+    fn im(&self) -> f64 {
+        self.im as f64
+    }
+
+    fn from_polar(magnitude: f64, angle: f64) -> Self {
+        Complex::from_polar(magnitude as f32, angle as f32)
+    }
+}
+
 impl PolarConvertible for f64 {
     fn re(&self) -> f64 {
         *self
@@ -1187,6 +1222,20 @@ impl PolarConvertible for f64 {
 
     fn from_polar(magnitude: f64, angle: f64) -> Self {
         Complex::from_polar(magnitude, angle).re
+    }
+}
+
+impl PolarConvertible for f32 {
+    fn re(&self) -> f64 {
+        *self as f64
+    }
+
+    fn im(&self) -> f64 {
+        0.0
+    }
+
+    fn from_polar(magnitude: f64, angle: f64) -> Self {
+        Complex::from_polar(magnitude as f32, angle as f32).re
     }
 }
 
@@ -1334,9 +1383,14 @@ pub fn compute_global_norm(grads: &Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<Vec<C
     total_norm.sqrt()
 }
 
-pub fn clip_all_gradients_by_global_norm_3d(grads: &mut Vec<Vec<Vec<Complex<f64>>>>, bias: &mut Vec<Complex<f64>>, total_norm: f64, max_norm: f64) {
+pub fn clip_all_gradients_by_global_norm_3d(
+    grads: &mut Vec<Vec<Vec<Complex<Real>>>>,
+    bias: &mut Vec<Complex<Real>>,
+    total_norm: f64,
+    max_norm: f64,
+) {
     if total_norm > max_norm {
-        let scale = 1.0 / total_norm;
+        let scale = r(1.0 / total_norm);
         for g in grads {
             for row in g.iter_mut() {
                 for val in row.iter_mut() {
@@ -1349,9 +1403,14 @@ pub fn clip_all_gradients_by_global_norm_3d(grads: &mut Vec<Vec<Vec<Complex<f64>
     }
 }
 
-pub fn clip_all_gradients_by_global_norm_2d(grads: &mut Vec<Vec<Complex<f64>>>, bias: &mut Vec<Complex<f64>>, total_norm: f64, _max_norm: f64) {
+pub fn clip_all_gradients_by_global_norm_2d(
+    grads: &mut Vec<Vec<Complex<Real>>>,
+    bias: &mut Vec<Complex<Real>>,
+    total_norm: f64,
+    _max_norm: f64,
+) {
     if total_norm > MAX_NORM {
-        let scale = 1.0 / total_norm;
+        let scale = r(1.0 / total_norm);
         for row in grads.iter_mut() {
             for val in row.iter_mut() {
                 *val *= scale;
@@ -1362,23 +1421,28 @@ pub fn clip_all_gradients_by_global_norm_2d(grads: &mut Vec<Vec<Complex<f64>>>, 
     }
 }
 
-pub fn normalize_gradients(gradients: &mut Vec<Vec<Complex<f64>>>) {
+pub fn normalize_gradients(gradients: &mut Vec<Vec<Complex<Real>>>) {
     // Step 1: elementwise clamp
     for row in gradients.iter_mut() {
         for val in row.iter_mut() {
-            let norm = val.norm();
+            let norm = val.norm() as f64;
             if norm > MAX_ELEMENT && norm > 0.0 {
-                *val *= MAX_ELEMENT / norm;
+                *val *= r(MAX_ELEMENT / norm);
             }
         }
     }
 
     // Step 2: compute global L2 norm
-    let global_norm: f64 = gradients.iter().flat_map(|row| row.iter()).map(|g| g.norm_sqr()).sum::<f64>().sqrt();
+    let global_norm: f64 = gradients
+        .iter()
+        .flat_map(|row| row.iter())
+        .map(|g| g.norm_sqr() as f64)
+        .sum::<f64>()
+        .sqrt();
 
     // Step 3: scale proportionally if global norm exceeds MAX_NORM
     if global_norm > MAX_NORM && global_norm > 0.0 {
-        let scale = MAX_NORM / global_norm;
+        let scale = r(MAX_NORM / global_norm);
         for row in gradients.iter_mut() {
             for val in row.iter_mut() {
                 *val *= scale;
@@ -1387,38 +1451,38 @@ pub fn normalize_gradients(gradients: &mut Vec<Vec<Complex<f64>>>) {
     }
 }
 
-pub fn normalize_bias(bias: &mut Vec<Complex<f64>>) {
+pub fn normalize_bias(bias: &mut Vec<Complex<Real>>) {
     // Step 1: elementwise clamp
     for val in bias.iter_mut() {
-        let norm = val.norm();
+        let norm = val.norm() as f64;
         if norm > MAX_ELEMENT && norm > 0.0 {
-            *val *= MAX_ELEMENT / norm;
+            *val *= r(MAX_ELEMENT / norm);
         }
     }
 
     // Step 2: compute global L2 norm
-    let global_norm: f64 = bias.iter().map(|g| g.norm_sqr()).sum::<f64>().sqrt();
+    let global_norm: f64 = bias.iter().map(|g| g.norm_sqr() as f64).sum::<f64>().sqrt();
 
     // Step 3: scale proportionally
     if global_norm > MAX_NORM && global_norm > 0.0 {
-        let scale = MAX_NORM / global_norm;
+        let scale = r(MAX_NORM / global_norm);
         for val in bias.iter_mut() {
             *val *= scale;
         }
     }
 }
 
-pub fn normalize_gradients_batch(gradients_batch: &mut Vec<Vec<Vec<Complex<f64>>>>) {
+pub fn normalize_gradients_batch(gradients_batch: &mut Vec<Vec<Vec<Complex<Real>>>>) {
     for gradients in gradients_batch.iter_mut() {
         normalize_gradients(gradients);
     }
 }
 
-pub fn is_nan_or_inf(z: &Complex<f64>) -> bool {
+pub fn is_nan_or_inf<T: Float>(z: &Complex<T>) -> bool {
     z.re.is_nan() || z.re.is_infinite() || z.im.is_nan() || z.im.is_infinite()
 }
 
-pub fn contains_nan_or_inf(matrix: &mut Vec<Vec<Complex<f64>>>) -> bool {
+pub fn contains_nan_or_inf<T: Float>(matrix: &mut Vec<Vec<Complex<T>>>) -> bool {
     let mut found = false;
 
     for row in matrix.iter_mut() {
@@ -1432,7 +1496,7 @@ pub fn contains_nan_or_inf(matrix: &mut Vec<Vec<Complex<f64>>>) -> bool {
     found
 }
 
-pub fn check_nan_or_inf_3d(matrix_batch: &mut Vec<Vec<Vec<Complex<f64>>>>, message: &str) {
+pub fn check_nan_or_inf_3d<T: Float>(matrix_batch: &mut Vec<Vec<Vec<Complex<T>>>>, message: &str) {
     for matrix in matrix_batch.iter_mut() {
         if contains_nan_or_inf(matrix) {
             panic!("{:?}: The value is Not Valid", message);
@@ -1440,7 +1504,7 @@ pub fn check_nan_or_inf_3d(matrix_batch: &mut Vec<Vec<Vec<Complex<f64>>>>, messa
     }
 }
 
-pub fn check_nan_or_inf(matrix: &mut Vec<Vec<Complex<f64>>>, message: &str) -> bool {
+pub fn check_nan_or_inf<T: Float>(matrix: &mut Vec<Vec<Complex<T>>>, message: &str) -> bool {
     if contains_nan_or_inf(matrix) {
         panic!("{:?}: The value is Not Valid", message);
     } else {
@@ -1448,8 +1512,8 @@ pub fn check_nan_or_inf(matrix: &mut Vec<Vec<Complex<f64>>>, message: &str) -> b
     }
 }
 
-pub fn split_data_by_columns(data: &Vec<Vec<Complex<f64>>>) -> (Vec<Vec<Complex<f64>>>, Vec<Vec<Complex<f64>>>) {
-    let (left, right): (Vec<Vec<Complex<f64>>>, Vec<Vec<Complex<f64>>>) = data
+pub fn split_data_by_columns(data: &Vec<Vec<C>>) -> (Vec<Vec<C>>, Vec<Vec<C>>) {
+    let (left, right): (Vec<Vec<C>>, Vec<Vec<C>>) = data
         .iter()
         .map(|row| {
             let column_splt = row.len() / 2;

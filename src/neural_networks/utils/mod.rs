@@ -1,4 +1,5 @@
 pub mod weights_initializer;
+pub mod dtype;
 pub mod matrix;
 pub mod activation;
 pub mod derivative;

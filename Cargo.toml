@@ -75,6 +75,9 @@ cpu = []
 cuda = ["cust", "cudarc", "cudarc/cuda-12090", "cudarc/cublas"]
 cublas = []
 
+# Numeric precision (default is f32). Enable `dtype-f64` to build/run the whole crate in f64.
+dtype-f64 = []
+
 [profile.release]
 opt-level = 3     # Optimize for size "z", for speeed 3
 lto = true        # Enable Link Time Optimization

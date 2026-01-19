@@ -1,4 +1,4 @@
-use num::Complex;
+use crate::neural_networks::utils::dtype::C;
 
 use crate::neural_networks::network_components::{
     adaptive_pooling::adaptive_avg_pool1d_layer::{AdaptiveAvgPool1dLayer, CompressionMetadata, CompressionType},
@@ -22,15 +22,15 @@ impl DynamicSequenceCompressorLayer {
         }
     }
 
-    pub fn forward(&mut self, input: &Vec<Vec<Vec<Complex<f64>>>>) -> LayerOutput {
+    pub fn forward(&mut self, input: &Vec<Vec<Vec<C>>>) -> LayerOutput {
         self.compress(input)
     }
 
-    pub fn decompress(&self, compressed: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn decompress(&self, compressed: &Vec<Vec<Vec<C>>>) -> Vec<Vec<Vec<C>>> {
         self.pool_layer.decompress(compressed)
     }
 
-    pub fn compress(&mut self, input: &Vec<Vec<Vec<Complex<f64>>>>) -> LayerOutput {
+    pub fn compress(&mut self, input: &Vec<Vec<Vec<C>>>) -> LayerOutput {
         let metadata = CompressionMetadata {
             original_length: 0,
             compressed_length: 0,

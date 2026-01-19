@@ -3,6 +3,8 @@ use rand::rngs::ThreadRng;
 use rand::Rng;
 use std::fmt::Debug;
 
+use crate::neural_networks::utils::dtype::{r, C};
+
 // Define a trait for matrix access (both for Vec<Vec<T>> and arrays [[T; M]; N])
 pub trait MatrixAccess<T> {
     fn get_element(&self, i: usize, j: usize) -> Option<&T>;
@@ -81,40 +83,40 @@ pub fn initialize_weights(rows: usize, cols: usize, weight_matrix: &mut Vec<Vec<
 }
 
 // Initialize weights for Vec<Vec<Complex<f64>>>
-pub fn initialize_weights_complex_only_real(rows: usize, cols: usize, weight_matrix: &mut Vec<Vec<Complex<f64>>>) {
+pub fn initialize_weights_complex_only_real(rows: usize, cols: usize, weight_matrix: &mut Vec<Vec<C>>) {
     let fan_in = rows as f64;
     let fan_out = cols as f64;
     let mut rng = rand::rng(); // Use the thread-local RNG
 
     for i in 0..rows {
         for j in 0..cols {
-            let random_value = Complex::new(xavier_init(fan_in, fan_out, &mut rng), 0.0);
+            let random_value = Complex::new(r(xavier_init(fan_in, fan_out, &mut rng)), r(0.0));
             set_weights(weight_matrix, i, j, random_value);
         }
     }
 }
 
 // Initialize weights for Vec<Vec<Complex<f64>>>
-pub fn initialize_weights_complex(rows: usize, cols: usize, weight_matrix: &mut Vec<Vec<Complex<f64>>>) {
+pub fn initialize_weights_complex(rows: usize, cols: usize, weight_matrix: &mut Vec<Vec<C>>) {
     let fan_in = rows as f64;
     let fan_out = cols as f64;
     let mut rng = rand::rng(); // Use the thread-local RNG
 
     for i in 0..rows {
         for j in 0..cols {
-            let random_value = Complex::new(xavier_init(fan_in, fan_out, &mut rng), xavier_init(fan_in, fan_out, &mut rng));
+            let random_value = Complex::new(r(xavier_init(fan_in, fan_out, &mut rng)), r(xavier_init(fan_in, fan_out, &mut rng)));
             set_weights(weight_matrix, i, j, random_value);
         }
     }
 }
 
 // Initialize weights for Vec<Vec<Complex<f64>>>
-pub fn initialize_bias(rows: usize, weight_matrix: &mut Vec<Complex<f64>>) {
+pub fn initialize_bias(rows: usize, weight_matrix: &mut Vec<C>) {
     let fan_in = rows as f64;
     let mut rng = rand::rng();
 
     for i in 0..rows {
-        let random_value = Complex::new(xavier_init(fan_in, fan_in, &mut rng), xavier_init(fan_in, fan_in, &mut rng));
+        let random_value = Complex::new(r(xavier_init(fan_in, fan_in, &mut rng)), r(xavier_init(fan_in, fan_in, &mut rng)));
         weight_matrix[i] = random_value;
     }
 }

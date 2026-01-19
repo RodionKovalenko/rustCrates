@@ -13,28 +13,29 @@ use crate::neural_networks::{
     },
     utils::matrix::{add_matrix_3d, scale_matrix_3d_by_scalar, RowMajorMatrix},
 };
-use num::Complex;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
+
+use crate::neural_networks::utils::dtype::{r, C, Real, ZERO};
 
 // Layer struct
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SparseSelfAttentionLayer {
     pub attention_heads: Vec<SparseMaskedAttentionHead>,
-    pub activated_output: Vec<Vec<Complex<f64>>>,
+    pub activated_output: Vec<Vec<C>>,
     pub norm_layer: Option<LayerEnum>,
     pub discrete_wavelet_layer: Option<DiscreteWaveletLayer>,
-    pub alpha: f64,
-    pub beta: f64,
+    pub alpha: Real,
+    pub beta: Real,
 
     #[serde(skip)]
-    pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub input_batch: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
-    pub input_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+    pub input_batch_rm: Option<Vec<RowMajorMatrix<C>>>,
     #[serde(skip)]
-    pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub output_batch: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
-    pub output_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+    pub output_batch_rm: Option<Vec<RowMajorMatrix<C>>>,
     #[serde(skip)]
     pub gradient: Option<Gradient>,
     #[serde(skip)]
@@ -61,7 +62,7 @@ impl SparseSelfAttentionLayer {
         let _dwt_layer = Some(DiscreteWaveletLayer::new());
 
         let alpha = calculate_alpha();
-        let beta = 1.0 / alpha;
+        let beta = r(1.0) / alpha;
 
         Self {
             attention_heads,
@@ -89,7 +90,7 @@ impl SparseSelfAttentionLayer {
 
         if use_rm {
             let input_batch_rm = input_batch_rm_ref.unwrap();
-            let mut batch_output_rm: Vec<RowMajorMatrix<Complex<f64>>> = input_batch_rm.to_vec();
+            let mut batch_output_rm: Vec<RowMajorMatrix<C>> = input_batch_rm.to_vec();
             let input_batch_rm_original = input_batch_rm.to_vec();
             let padding_mask_batch = layer_input.get_padding_mask_batch();
 
@@ -120,7 +121,7 @@ impl SparseSelfAttentionLayer {
                 }
             }
 
-            let attention_head_outputs_rm: Vec<Vec<RowMajorMatrix<Complex<f64>>>> = self
+            let attention_head_outputs_rm: Vec<Vec<RowMajorMatrix<C>>> = self
                 .attention_heads
                 .par_iter_mut()
                 .map(|attention_head| {
@@ -217,13 +218,13 @@ impl SparseSelfAttentionLayer {
         // println!("attention head outputs: {:?}", &attention_head_outputs);
 
         let seq_len_aligned = attention_head_outputs[0][0].len();
-        let mut batch_output: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![]; seq_len_aligned]; batch_size];
+        let mut batch_output: Vec<Vec<Vec<C>>> = vec![vec![vec![]; seq_len_aligned]; batch_size];
 
         // [head][batch][sequence][dim]
         // Combine the outputs of the attention heads (e.g., concatenating horizontally)
         for b in 0..batch_size {
             for i in 0..seq_len_aligned {
-                let mut combined_output: Vec<Complex<f64>> = Vec::new();
+                let mut combined_output: Vec<C> = Vec::new();
                 for head_output in &attention_head_outputs {
                     combined_output.extend_from_slice(&head_output[b][i]);
                 }
@@ -279,8 +280,8 @@ impl SparseSelfAttentionLayer {
         layer_output
     }
 
-    pub fn backward_rm(&mut self, previous_gradient_batch_rm: &[RowMajorMatrix<Complex<f64>>]) -> Gradient {
-        let mut scaled_upstream: Vec<RowMajorMatrix<Complex<f64>>> = previous_gradient_batch_rm.to_vec();
+    pub fn backward_rm(&mut self, previous_gradient_batch_rm: &[RowMajorMatrix<C>]) -> Gradient {
+        let mut scaled_upstream: Vec<RowMajorMatrix<C>> = previous_gradient_batch_rm.to_vec();
         for m in scaled_upstream.iter_mut() {
             for v in m.data.iter_mut() {
                 *v *= self.beta;
@@ -298,7 +299,7 @@ impl SparseSelfAttentionLayer {
         assert!(num_heads > 0, "No attention heads found in sparse self-attention layer!");
         let previous_gradient_head_splitted = split_gradient_into_heads_rm(&scaled_upstream, num_heads);
 
-        let gradient_input_batches_rm: Vec<Vec<RowMajorMatrix<Complex<f64>>>> = self
+        let gradient_input_batches_rm: Vec<Vec<RowMajorMatrix<C>>> = self
             .attention_heads
             .par_iter_mut()
             .enumerate()
@@ -309,7 +310,7 @@ impl SparseSelfAttentionLayer {
             })
             .collect();
 
-        let mut combined: Vec<RowMajorMatrix<Complex<f64>>> = gradient_input_batches_rm[0].clone();
+        let mut combined: Vec<RowMajorMatrix<C>> = gradient_input_batches_rm[0].clone();
         for h in 1..gradient_input_batches_rm.len() {
             for b in 0..combined.len() {
                 assert_eq!(combined[b].rows, gradient_input_batches_rm[h][b].rows);
@@ -358,8 +359,8 @@ impl SparseSelfAttentionLayer {
         gradient
     }
 
-    pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
-        let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient_batch.clone();
+    pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<C>>>) -> Gradient {
+        let mut gradient_input_batch: Vec<Vec<Vec<C>>> = previous_gradient_batch.clone();
         gradient_input_batch = scale_matrix_3d_by_scalar(&gradient_input_batch, self.beta);
 
         let mut gradient: Gradient = Gradient::new_default();
@@ -379,7 +380,7 @@ impl SparseSelfAttentionLayer {
 
         let previous_gradient_head_splitted = self.split_gradient_into_heads(&gradient_input_batch);
 
-        let gradient_input_batches: Vec<Vec<Vec<Vec<Complex<f64>>>>> = self
+        let gradient_input_batches: Vec<Vec<Vec<Vec<C>>>> = self
             .attention_heads
             .par_iter_mut()
             .enumerate()
@@ -391,8 +392,13 @@ impl SparseSelfAttentionLayer {
             })
             .collect();
 
-        let mut combined_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> =
-            vec![vec![vec![Complex::new(0.0, 0.0); gradient_input_batches[0][0][0].len()]; gradient_input_batches[0][0].len()]; gradient_input_batches[0].len()];
+        let mut combined_gradient_input_batch: Vec<Vec<Vec<C>>> = vec![
+            vec![
+                vec![C::new(ZERO, ZERO); gradient_input_batches[0][0][0].len()];
+                gradient_input_batches[0][0].len()
+            ];
+            gradient_input_batches[0].len()
+        ];
 
         for h in 0..gradient_input_batches.len() {
             for b in 0..gradient_input_batches[h].len() {
@@ -447,7 +453,7 @@ impl SparseSelfAttentionLayer {
         gradient
     }
 
-    pub fn split_gradient_into_heads(&self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Vec<Complex<f64>>>>> {
+    pub fn split_gradient_into_heads(&self, previous_gradient_batch: &Vec<Vec<Vec<C>>>) -> Vec<Vec<Vec<Vec<C>>>> {
         let batch_size = previous_gradient_batch.len();
         let seq_len = previous_gradient_batch[0].len();
         let dim = previous_gradient_batch[0][0].len();
@@ -457,7 +463,7 @@ impl SparseSelfAttentionLayer {
         assert!(dim % num_heads == 0, "dim={} must be divisible by num_heads={}", dim, num_heads);
 
         // Initialize a vector to store gradients for each attention head
-        let mut grad_heads = vec![vec![vec![vec![Complex::new(0.0, 0.0); head_dim]; seq_len]; batch_size]; num_heads];
+        let mut grad_heads = vec![vec![vec![vec![C::new(ZERO, ZERO); head_dim]; seq_len]; batch_size]; num_heads];
 
         for batch_ind in 0..batch_size {
             for seq_in in 0..seq_len {
@@ -492,7 +498,7 @@ impl SparseSelfAttentionLayer {
     }
 }
 
-fn concat_heads_rm(attention_head_outputs: &[Vec<RowMajorMatrix<Complex<f64>>>]) -> Vec<RowMajorMatrix<Complex<f64>>> {
+fn concat_heads_rm(attention_head_outputs: &[Vec<RowMajorMatrix<C>>]) -> Vec<RowMajorMatrix<C>> {
     assert!(!attention_head_outputs.is_empty());
     let num_heads = attention_head_outputs.len();
     let batch_size = attention_head_outputs[0].len();
@@ -509,9 +515,9 @@ fn concat_heads_rm(attention_head_outputs: &[Vec<RowMajorMatrix<Complex<f64>>>])
     }
 
     let total_dim = head_dim * num_heads;
-    let mut out: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(batch_size);
+    let mut out: Vec<RowMajorMatrix<C>> = Vec::with_capacity(batch_size);
     for b in 0..batch_size {
-        let mut data = vec![Complex::new(0.0, 0.0); seq_len * total_dim];
+        let mut data = vec![C::new(ZERO, ZERO); seq_len * total_dim];
         for i in 0..seq_len {
             for h in 0..num_heads {
                 let src = &attention_head_outputs[h][b];
@@ -525,7 +531,7 @@ fn concat_heads_rm(attention_head_outputs: &[Vec<RowMajorMatrix<Complex<f64>>>])
     out
 }
 
-fn split_gradient_into_heads_rm(previous_gradient_batch: &[RowMajorMatrix<Complex<f64>>], num_heads: usize) -> Vec<Vec<RowMajorMatrix<Complex<f64>>>> {
+fn split_gradient_into_heads_rm(previous_gradient_batch: &[RowMajorMatrix<C>], num_heads: usize) -> Vec<Vec<RowMajorMatrix<C>>> {
     assert!(num_heads > 0);
     let batch_size = previous_gradient_batch.len();
     assert!(batch_size > 0);
@@ -535,7 +541,7 @@ fn split_gradient_into_heads_rm(previous_gradient_batch: &[RowMajorMatrix<Comple
     assert!(dim % num_heads == 0, "dim={} must be divisible by num_heads={}", dim, num_heads);
     let head_dim = dim / num_heads;
 
-    let mut out: Vec<Vec<RowMajorMatrix<Complex<f64>>>> = Vec::with_capacity(num_heads);
+    let mut out: Vec<Vec<RowMajorMatrix<C>>> = Vec::with_capacity(num_heads);
     for _ in 0..num_heads {
         out.push(Vec::with_capacity(batch_size));
     }
@@ -546,7 +552,7 @@ fn split_gradient_into_heads_rm(previous_gradient_batch: &[RowMajorMatrix<Comple
         assert_eq!(g.cols, dim);
 
         for h in 0..num_heads {
-            let mut data = vec![Complex::new(0.0, 0.0); seq_len * head_dim];
+            let mut data = vec![C::new(ZERO, ZERO); seq_len * head_dim];
             for i in 0..seq_len {
                 let src_offset = i * dim + h * head_dim;
                 let dst_offset = i * head_dim;

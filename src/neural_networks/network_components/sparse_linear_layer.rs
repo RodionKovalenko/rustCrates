@@ -1,5 +1,4 @@
 use core::fmt::Debug;
-use num::Complex;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -9,6 +8,7 @@ use crate::neural_networks::{
     optimization::k_means_clustering::{kmeans, query_candidates},
     utils::{
         adam_w::{calculate_adam_w_bias_f32_sparse, calculate_adam_w_f32_sparse},
+        dtype::{r, C, Real, ZERO},
         matrix::{average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, RowMajorMatrix},
         weights_initializer::initialize_weights_f32,
     },
@@ -46,13 +46,13 @@ pub struct SparseLinearLayer {
     pub last_cluster_update_step: usize,
 
     #[serde(skip)]
-    pub gradients: Vec<Vec<Complex<f64>>>,
+    pub gradients: Vec<Vec<C>>,
     #[serde(skip)]
-    pub gradients_bias: Vec<Vec<Complex<f64>>>,
+    pub gradients_bias: Vec<Vec<C>>,
     #[serde(skip)]
-    pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub input_batch: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
-    pub input_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+    pub input_batch_rm: Option<Vec<RowMajorMatrix<C>>>,
     #[serde(skip)]
     pub gradient: Option<Gradient>,
     #[serde(skip)]
@@ -183,7 +183,7 @@ impl SparseLinearLayer {
         let input_batch_rm_ref = input.get_input_batch_rm_ref();
         let use_rm = input_batch_rm_ref.is_some_and(|rm| !rm.is_empty());
         // In rm_strict mode, never call get_input_batch() if RM activations exist.
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = if use_rm { vec![] } else { input.get_input_batch() };
+        let input_batch: Vec<Vec<Vec<C>>> = if use_rm { vec![] } else { input.get_input_batch() };
 
         // Store whichever representation was provided so backward can avoid reshaping.
         if !input_batch.is_empty() {
@@ -216,7 +216,7 @@ impl SparseLinearLayer {
                 // Preserve legacy output only when legacy input is used.
                 let need_legacy_output = !input_batch.is_empty();
                 if need_legacy_output {
-                    let output_batch: Vec<Vec<Vec<Complex<f64>>>> = output_batch_rm.iter().map(|m| m.to_rows()).collect();
+                    let output_batch: Vec<Vec<Vec<C>>> = output_batch_rm.iter().map(|m| m.to_rows()).collect();
                     layer_output.set_output_batch(output_batch);
                 }
 
@@ -230,7 +230,7 @@ impl SparseLinearLayer {
                 }
 
                 // This output is rectangular (seq_len x k), so provide RM output too.
-                let output_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = output_batch.iter().map(|rows| RowMajorMatrix::from_rows(rows)).collect();
+                let output_batch_rm: Vec<RowMajorMatrix<C>> = output_batch.iter().map(|rows| RowMajorMatrix::from_rows(rows)).collect();
 
                 layer_output.set_output_batch(output_batch);
                 layer_output.set_output_batch_rm(output_batch_rm);
@@ -262,7 +262,7 @@ impl SparseLinearLayer {
         }
 
         let total_valid_tokens = previous_gradient.get_total_valid_tokens();
-        let previous_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
+        let previous_gradient_input_batch: Vec<Vec<Vec<C>>> = previous_gradient.get_gradient_input_batch();
         let previous_gradient_rm_ref = previous_gradient.get_gradient_input_batch_rm_ref();
 
         let batch_len = if let Some(b) = input_batch_vec {
@@ -287,7 +287,7 @@ impl SparseLinearLayer {
             .expect("Output indices missing in sparse linear layer backward pass");
 
         // Determine (seq_len, embedding_d) from the first available non-empty input.
-        let first_input_rm: Option<RowMajorMatrix<Complex<f64>>> = if let Some(rm_batch) = input_batch_rm {
+        let first_input_rm: Option<RowMajorMatrix<C>> = if let Some(rm_batch) = input_batch_rm {
             rm_batch.get(0).cloned()
         } else {
             input_batch_vec
@@ -326,22 +326,22 @@ impl SparseLinearLayer {
             return gradient;
         }
 
-        let mut weight_gradients: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()]; batch_len];
-        let mut bias_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.bias.len()]; batch_len];
-        let mut gradient_input_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = vec![
-            RowMajorMatrix::from_data(seq_len, embedding_d, vec![Complex::new(0.0, 0.0); seq_len * embedding_d]);
+        let mut weight_gradients: Vec<Vec<Vec<C>>> = vec![vec![vec![C::new(ZERO, ZERO); self.weights[0].len()]; self.weights.len()]; batch_len];
+        let mut bias_gradients: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); self.bias.len()]; batch_len];
+        let mut gradient_input_batch_rm: Vec<RowMajorMatrix<C>> = vec![
+            RowMajorMatrix::from_data(seq_len, embedding_d, vec![C::new(ZERO, ZERO); seq_len * embedding_d]);
             batch_len
         ];
 
         for batch_idx in 0..batch_len {
-            let input_rm: RowMajorMatrix<Complex<f64>> = if let Some(rm_batch) = input_batch_rm {
+            let input_rm: RowMajorMatrix<C> = if let Some(rm_batch) = input_batch_rm {
                 rm_batch[batch_idx].clone()
             } else {
                 let input_sample = &input_batch_vec.expect("vec batch")[batch_idx];
                 RowMajorMatrix::from_rows(input_sample)
             };
 
-            let grad_rm: RowMajorMatrix<Complex<f64>> = if let Some(grads_rm) = previous_gradient_rm_ref {
+            let grad_rm: RowMajorMatrix<C> = if let Some(grads_rm) = previous_gradient_rm_ref {
                 grads_rm[batch_idx].clone()
             } else {
                 RowMajorMatrix::from_rows(&previous_gradient_input_batch[batch_idx])
@@ -376,7 +376,7 @@ impl SparseLinearLayer {
                     // Input gradient accumulation
                     let out_in_row = gradient_input_batch_rm[batch_idx].row_range(seq_idx);
                     for (emb_idx, &w) in self.weights[vocab_idx].iter().enumerate() {
-                        gradient_input_batch_rm[batch_idx].data[out_in_row.start + emb_idx] += Complex::new(w as f64, 0.0) * grad_val;
+                        gradient_input_batch_rm[batch_idx].data[out_in_row.start + emb_idx] += C::new(r(w as f64), ZERO) * grad_val;
                     }
                 }
             }
@@ -385,7 +385,7 @@ impl SparseLinearLayer {
         let mut gradient = Gradient::new_default();
         let legacy_mode = self.input_batch.is_some();
         if legacy_mode {
-            let gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient_input_batch_rm.iter().map(|m| m.to_rows()).collect();
+            let gradient_input_batch: Vec<Vec<Vec<C>>> = gradient_input_batch_rm.iter().map(|m| m.to_rows()).collect();
             gradient.set_gradient_input_batch(gradient_input_batch);
         }
         gradient.set_gradient_input_batch_rm(gradient_input_batch_rm);
@@ -420,12 +420,12 @@ impl SparseLinearLayer {
     }
 
     // Helper: Compute dot product with weights and bias
-    fn compute_output(input_row: &[Complex<f64>], weights_col: &[f32], bias: f32) -> Complex<f64> {
-        let mut sum = Complex::new(0.0, 0.0);
+    fn compute_output(input_row: &[C], weights_col: &[f32], bias: f32) -> C {
+        let mut sum_re: Real = ZERO;
         for (i, &input_val) in input_row.iter().enumerate() {
-            sum += input_val.re * weights_col[i] as f64;
+            sum_re += input_val.re * r(weights_col[i] as f64);
         }
-        sum + bias as f64
+        C::new(sum_re + r(bias as f64), ZERO)
     }
 
     // Helper: Ensure target is included in candidate indices
@@ -442,7 +442,7 @@ impl SparseLinearLayer {
     }
 
     // Helper: Maintain top-k heap with protected target
-    fn update_topk(top_k: &mut Vec<(f64, Complex<f64>, usize)>, real_value: f64, sum: Complex<f64>, col_idx: usize, is_target: bool, target_pos: &mut Option<usize>, k: usize) {
+    fn update_topk(top_k: &mut Vec<(Real, C, usize)>, real_value: Real, sum: C, col_idx: usize, is_target: bool, target_pos: &mut Option<usize>, k: usize) {
         if top_k.len() < k {
             // Still filling up to k elements
             top_k.push((real_value, sum, col_idx));
@@ -469,7 +469,7 @@ impl SparseLinearLayer {
     }
 
     // Multiply and select highest k per row, return k highest values per row and original indices
-    pub fn mutliply_hightest_k_per_row(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>, layer_input: &LayerInput) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<Vec<usize>>>) {
+    pub fn mutliply_hightest_k_per_row(&mut self, input_batch: &Vec<Vec<Vec<C>>>, layer_input: &LayerInput) -> (Vec<Vec<Vec<C>>>, Vec<Vec<Vec<usize>>>) {
         let target_batch = &layer_input.get_target_batch_ids();
         let k = layer_input.get_top_k_size();
         let padding_mask_batch = layer_input.get_padding_mask_batch();
@@ -520,7 +520,7 @@ impl SparseLinearLayer {
                         Self::update_topk(&mut top_k, sum.re, sum, col_idx, is_target, &mut target_pos, k);
                     }
 
-                    let values: Vec<Complex<f64>> = top_k.iter().map(|(_, val, _)| *val).collect();
+                    let values: Vec<C> = top_k.iter().map(|(_, val, _)| *val).collect();
                     let indices: Vec<usize> = top_k.iter().map(|(_, _, idx)| *idx).collect();
 
                     sample_values.push(values);
@@ -535,7 +535,7 @@ impl SparseLinearLayer {
     }
 
     // RM variant: returns a dense (seq_len x k) row-major matrix per batch.
-    pub fn mutliply_hightest_k_per_row_rm(&mut self, input_batch_rm: &[RowMajorMatrix<Complex<f64>>], layer_input: &LayerInput) -> (Vec<RowMajorMatrix<Complex<f64>>>, Vec<Vec<Vec<usize>>>) {
+    pub fn mutliply_hightest_k_per_row_rm(&mut self, input_batch_rm: &[RowMajorMatrix<C>], layer_input: &LayerInput) -> (Vec<RowMajorMatrix<C>>, Vec<Vec<Vec<usize>>>) {
         let target_batch = &layer_input.get_target_batch_ids();
         let k = layer_input.get_top_k_size();
         let padding_mask_batch = layer_input.get_padding_mask_batch();
@@ -549,7 +549,7 @@ impl SparseLinearLayer {
                 let seq_len = input_sample.rows;
                 let embedding_d = input_sample.cols;
 
-                let mut data: Vec<Complex<f64>> = Vec::with_capacity(seq_len * k);
+                let mut data: Vec<C> = Vec::with_capacity(seq_len * k);
                 let mut sample_indices: Vec<Vec<usize>> = Vec::with_capacity(seq_len);
 
                 let mut input_re_buf: Vec<f32> = vec![0.0; embedding_d];
@@ -588,7 +588,7 @@ impl SparseLinearLayer {
                         top_k.truncate(k);
                     }
                     while top_k.len() < k {
-                        top_k.push((f64::NEG_INFINITY, Complex::new(0.0, 0.0), 0));
+                        top_k.push((Real::NEG_INFINITY, C::new(ZERO, ZERO), 0));
                     }
 
                     for p in 0..k {
@@ -612,8 +612,9 @@ impl SparseLinearLayer {
         let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
         let total_valid_tokens = gradient.get_total_valid_tokens();
 
-        weight_gradients = average_matrix_by_scalar(&weight_gradients, total_valid_tokens as f64);
-        bias_gradients = average_vector_by_scalar(&bias_gradients, total_valid_tokens as f64);
+        let total_valid_tokens: Real = r(total_valid_tokens.max(1) as f64);
+        weight_gradients = average_matrix_by_scalar(&weight_gradients, total_valid_tokens);
+        bias_gradients = average_vector_by_scalar(&bias_gradients, total_valid_tokens);
 
         clip_all_gradients_by_global_norm_2d(&mut weight_gradients, &mut bias_gradients, self.global_norm, self.max_norm);
 
@@ -631,19 +632,19 @@ impl SparseLinearLayer {
         } else {
             // Initialize to zeros on first step
             (
-                vec![Complex::new(0.0, 0.0); self.bias.len()],
-                vec![Complex::new(0.0, 0.0); self.bias.len()],
-                vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()],
-                vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()],
-                vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()],
-                vec![Complex::new(0.0, 0.0); self.bias.len()],
+                vec![C::new(ZERO, ZERO); self.bias.len()],
+                vec![C::new(ZERO, ZERO); self.bias.len()],
+                vec![vec![C::new(ZERO, ZERO); self.weights[0].len()]; self.weights.len()],
+                vec![vec![C::new(ZERO, ZERO); self.weights[0].len()]; self.weights.len()],
+                vec![vec![C::new(ZERO, ZERO); self.weights[0].len()]; self.weights.len()],
+                vec![C::new(ZERO, ZERO); self.bias.len()],
             )
         };
 
         // Use sparse AdamW optimizers - only update indices that were actually used
         calculate_adam_w_bias_f32_sparse(
             &mut self.bias,
-            &gradient.get_gradient_bias(),
+            &bias_gradients,
             &mut prev_m_bias,
             &mut prev_v_bias,
             &mut prev_v_bias_hat,
@@ -653,7 +654,7 @@ impl SparseLinearLayer {
         );
         calculate_adam_w_f32_sparse(
             &mut self.weights,
-            &gradient.get_gradient_weights(),
+            &weight_gradients,
             &mut prev_m_weights,
             &mut prev_v_weights,
             &mut prev_v_weights_hat,
@@ -675,8 +676,8 @@ impl SparseLinearLayer {
         self.gradient = None;
     }
 
-    pub fn group_gradient_batch(&self, weight_gradients_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Complex<f64>>> {
-        let mut weight_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); weight_gradients_batch[0][0].len()]; weight_gradients_batch[0].len()];
+    pub fn group_gradient_batch(&self, weight_gradients_batch: &Vec<Vec<Vec<C>>>) -> Vec<Vec<C>> {
+        let mut weight_gradients: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); weight_gradients_batch[0][0].len()]; weight_gradients_batch[0].len()];
 
         for weight_gradient_batch in weight_gradients_batch {
             for (row, w_gradient) in weight_gradient_batch.iter().enumerate() {

@@ -1,3 +1,4 @@
+use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
 use num::{Complex, Float};
 use rayon::prelude::*;
 use std::f64::consts::E;
@@ -139,64 +140,65 @@ where
     }
 }
 
-// Implement activation functions for Complex<f64>
-pub fn sigmoid_complex(z: &Complex<f64>) -> Complex<f64> {
-    let one = Complex::new(1.0, 0.0);
-    if z.re >= 0.0 {
-        one / (one + (-z).exp())
+// Implement activation functions for Complex<Real>
+pub fn sigmoid_complex(z: &Complex<Real>) -> Complex<Real> {
+    let one = Complex::new(r(1.0), ZERO);
+    if z.re >= ZERO {
+        one / (one + (-*z).exp())
     } else {
         let exp_z = z.exp();
         exp_z / (one + exp_z)
     }
 }
 
-pub fn tanh_complex(z: Complex<f64>) -> Complex<f64> {
-    if z.re > 20.0 {
-        // large positive real part
-        Complex::new(1.0, 0.0)
-    } else if z.re < -20.0 {
-        // large negative real part
-        Complex::new(-1.0, 0.0)
+pub fn tanh_complex(z: Complex<Real>) -> Complex<Real> {
+    let limit = r(20.0);
+    if z.re > limit {
+        Complex::new(r(1.0), ZERO)
+    } else if z.re < -limit {
+        Complex::new(r(-1.0), ZERO)
     } else {
-        let exp_2z = (2.0 * z).exp();
-        (exp_2z - Complex::new(1.0, 0.0)) / (exp_2z + Complex::new(1.0, 0.0))
+        let exp_2z = (r(2.0) * z).exp();
+        (exp_2z - Complex::new(r(1.0), ZERO)) / (exp_2z + Complex::new(r(1.0), ZERO))
     }
 }
 
-fn relu_complex(z: Complex<f64>) -> Complex<f64> {
+fn relu_complex(z: Complex<Real>) -> Complex<Real> {
     // Gate the full complex value based on the real part.
     // This keeps the forward definition consistent with our backward pass,
     // which uses a single complex multiplier as the activation derivative.
     if z.re > 0.0 {
         z
     } else {
-        Complex::new(0.0, 0.0)
+        Complex::new(ZERO, ZERO)
     }
 }
 
-fn leaky_relu_complex(z: Complex<f64>, slope: f64) -> Complex<f64> {
+fn leaky_relu_complex(z: Complex<Real>, slope: Real) -> Complex<Real> {
     if z.re > 0.0 {
         z
     } else {
         // Scale the full complex value for the negative branch.
         // This matches our backward pass, which uses a single complex multiplier
         // (Complex{slope, 0.0}) as the derivative.
-        Complex::new(slope, 0.0) * z
+        Complex::new(slope, ZERO) * z
     }
 }
 
-fn elu_complex(z: Complex<f64>, alpha: f64) -> Complex<f64> {
+fn elu_complex(z: Complex<Real>, alpha: Real) -> Complex<Real> {
     if z.re > 0.0 {
         z
     } else {
         Complex::new(alpha * (z.exp().re - 1.0), z.im)
     }
 }
-fn selu_complex(z: &Complex<f64>) -> Complex<f64> {
-    if z.re >= 0.0 {
-        Complex::new(LAMBDA, 0.0) * z
+fn selu_complex(z: &Complex<Real>) -> Complex<Real> {
+    let lambda = r(LAMBDA);
+    let alpha = r(ALPHA);
+    if z.re >= ZERO {
+        Complex::new(lambda, ZERO) * *z
     } else {
-        Complex::new(LAMBDA * ALPHA, 0.0) * (z.exp() - Complex::new(1.0, 0.0))
+        Complex::new(lambda * alpha, ZERO) * (z.exp() - Complex::new(r(1.0), ZERO))
     }
 }
 
@@ -214,15 +216,16 @@ fn selu_complex(z: &Complex<f64>) -> Complex<f64> {
 //     0.5 * z * (Complex::new(1.0, 0.0) + tanh_f_z)
 // }
 
-pub fn gelu_complex(z: &Complex<f64>) -> Complex<f64> {
-    let sqrt_2_over_pi = (2.0 / PI).sqrt();
+pub fn gelu_complex(z: &Complex<Real>) -> Complex<Real> {
+    let sqrt_2_over_pi = r((2.0 / PI).sqrt());
+    let coeff = Complex::new(r(0.044715), ZERO);
 
     let z_cubed = z.powi(3);
-    let f_z = sqrt_2_over_pi * (z + Complex::new(0.044715, 0.0) * z_cubed);
+    let f_z = sqrt_2_over_pi * (*z + coeff * z_cubed);
 
     // Clamping to prevent numerical instability
-    let real_part = f_z.re.max(-30.0).min(30.0);
-    let im_part = f_z.im.max(-30.0).min(30.0);
+    let real_part = f_z.re.max(r(-30.0)).min(r(30.0));
+    let im_part = f_z.im.max(r(-30.0)).min(r(30.0));
     let clamped_f_z = Complex::new(real_part, im_part);
     let tanh_f_z = clamped_f_z.tanh();
 
@@ -230,28 +233,28 @@ pub fn gelu_complex(z: &Complex<f64>) -> Complex<f64> {
         panic!("NaN detected in tanh(f(z)), z: {:?}, f(z): {:?}, clamped f(z): {:?}", z, f_z, clamped_f_z);
     }
 
-    0.5 * z * (Complex::new(1.0, 0.0) + tanh_f_z)
+    r(0.5) * *z * (Complex::new(r(1.0), ZERO) + tanh_f_z)
 }
 
-pub fn erf_complex(z: Complex<f64>) -> Complex<f64> {
-    let sqrt_pi = PI.sqrt();
-    let two_over_sqrt_pi = 2.0 / sqrt_pi;
+pub fn erf_complex(z: C) -> C {
+    let sqrt_pi: Real = r(PI.sqrt());
+    let two_over_sqrt_pi: Real = r(2.0) / sqrt_pi;
 
     // Start with the first term of the series
     let mut term = z;
     let mut sum = term;
-    let mut n = 1.0;
+    let mut n: Real = r(1.0);
 
     // Series expansion with convergence check
     for _ in 1..100 {
         // Allow up to 100 iterations if necessary
-        n += 1.0;
+        n += r(1.0);
         term *= -z * z / n; // (-1)^n * z^(2n+1) / n!
-        let delta = term / (2.0 * n + 1.0); // Current term
+        let delta = term / (r(2.0) * n + r(1.0)); // Current term
         sum += delta;
 
         // Convergence check: Stop if the term becomes very small
-        if delta.norm() < 1e-12 {
+        if delta.norm() < r(1e-12) {
             break;
         }
     }
@@ -259,15 +262,16 @@ pub fn erf_complex(z: Complex<f64>) -> Complex<f64> {
     two_over_sqrt_pi * sum
 }
 
-pub fn softsign_complex(z: &Complex<f64>) -> Complex<f64> {
-    Complex::new(z.re / (1.0 + z.re.abs()), z.im / (1.0 + z.im.abs()))
+pub fn softsign_complex(z: &Complex<Real>) -> Complex<Real> {
+    let one = r(1.0);
+    Complex::new(z.re / (one + z.re.abs()), z.im / (one + z.im.abs()))
 }
 
-fn softplus_complex(z: &Complex<f64>) -> Complex<f64> {
-    (z.exp() + Complex::new(1.0, 0.0)).ln()
+fn softplus_complex(z: &Complex<Real>) -> Complex<Real> {
+    (z.exp() + Complex::new(r(1.0), ZERO)).ln()
 }
 
-pub fn swiglu_matrix(data: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+pub fn swiglu_matrix(data: &Vec<Vec<C>>) -> Vec<Vec<C>> {
     data.iter()
         .map(|row| {
             let column_split = row.len() / 2;
@@ -277,27 +281,27 @@ pub fn swiglu_matrix(data: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
         .collect()
 }
 
-pub fn swiglu_vector(a: &Vec<Complex<f64>>, b: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
+pub fn swiglu_vector(a: &Vec<C>, b: &Vec<C>) -> Vec<C> {
     a.iter().zip(b.iter()).map(|(a, b)| swiglu(a, b)).collect()
 }
 
-fn swiglu(a: &Complex<f64>, b: &Complex<f64>) -> Complex<f64> {
-    a * b * sigmoid_complex(b)
+fn swiglu(a: &C, b: &C) -> C {
+    *a * *b * sigmoid_complex(b)
 }
 
-pub fn swish(data: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+pub fn swish(data: &Vec<Vec<C>>) -> Vec<Vec<C>> {
     data.iter().map(|row| row.iter().map(|&x| x * sigmoid_complex(&x)).collect()).collect()
 }
 
 // Main activation function for complex numbers
-pub fn activate_output_complex(data: &Vec<Vec<Complex<f64>>>, activation: ActivationType) -> Vec<Vec<Complex<f64>>> {
+pub fn activate_output_complex(data: &Vec<Vec<C>>, activation: ActivationType) -> Vec<Vec<C>> {
     match activation {
         ActivationType::SIGMOID => data.iter().map(|row| row.iter().map(|&x| sigmoid_complex(&x)).collect()).collect(),
         ActivationType::TANH => data.iter().map(|row| row.iter().map(|&x| tanh_complex(x)).collect()).collect(),
         ActivationType::LINEAR => data.iter().map(|row| row.iter().map(|&x| x).collect()).collect(), // Linear is identity
         ActivationType::RELU => data.iter().map(|row| row.iter().map(|&x| relu_complex(x)).collect()).collect(),
-        ActivationType::LEAKYRELU => data.iter().map(|row| row.iter().map(|&x| leaky_relu_complex(x, 0.01)).collect()).collect(),
-        ActivationType::ELU => data.iter().map(|row| row.iter().map(|&x| elu_complex(x, 1.0)).collect()).collect(), // Assuming alpha = 1.0
+        ActivationType::LEAKYRELU => data.iter().map(|row| row.iter().map(|&x| leaky_relu_complex(x, r(0.01))).collect()).collect(),
+        ActivationType::ELU => data.iter().map(|row| row.iter().map(|&x| elu_complex(x, r(1.0))).collect()).collect(), // Assuming alpha = 1.0
         ActivationType::SELU => data.iter().map(|row| row.iter().map(|&x| selu_complex(&x)).collect()).collect(),   // Assuming scale = 1.0, alpha = 1.0
         ActivationType::GELU => data.iter().map(|row| row.iter().map(|&x| gelu_complex(&x)).collect()).collect(),
         ActivationType::SOFTSIGN => data.iter().map(|row| row.iter().map(|&x| softsign_complex(&x)).collect()).collect(),
@@ -310,71 +314,71 @@ pub fn activate_output_complex(data: &Vec<Vec<Complex<f64>>>, activation: Activa
 }
 
 // Main activation function for complex numbers with padding support
-pub fn activate_output_complex_padding(data: &Vec<Vec<Complex<f64>>>, activation: ActivationType, padding_mask: &Vec<u32>) -> Vec<Vec<Complex<f64>>> {
+pub fn activate_output_complex_padding(data: &Vec<Vec<C>>, activation: ActivationType, padding_mask: &Vec<u32>) -> Vec<Vec<C>> {
     match activation {
         ActivationType::SIGMOID => data
             .iter()
             .enumerate()
-            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { sigmoid_complex(&x) } else { Complex::new(0.0, 0.0) }).collect())
+            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { sigmoid_complex(&x) } else { Complex::new(ZERO, ZERO) }).collect())
             .collect(),
         ActivationType::TANH => data
             .iter()
             .enumerate()
-            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { tanh_complex(x) } else { Complex::new(0.0, 0.0) }).collect())
+            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { tanh_complex(x) } else { Complex::new(ZERO, ZERO) }).collect())
             .collect(),
         ActivationType::LINEAR => data
             .iter()
             .enumerate()
-            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { x } else { Complex::new(0.0, 0.0) }).collect())
+            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { x } else { Complex::new(ZERO, ZERO) }).collect())
             .collect(),
         ActivationType::RELU => data
             .iter()
             .enumerate()
-            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { relu_complex(x) } else { Complex::new(0.0, 0.0) }).collect())
+            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { relu_complex(x) } else { Complex::new(ZERO, ZERO) }).collect())
             .collect(),
         ActivationType::LEAKYRELU => data
             .iter()
             .enumerate()
             .map(|(row_ind, row)| {
                 row.iter()
-                    .map(|&x| if padding_mask[row_ind] != 0 { leaky_relu_complex(x, 0.01) } else { Complex::new(0.0, 0.0) })
+                    .map(|&x| if padding_mask[row_ind] != 0 { leaky_relu_complex(x, r(0.01)) } else { Complex::new(ZERO, ZERO) })
                     .collect()
             })
             .collect(),
         ActivationType::ELU => data
             .iter()
             .enumerate()
-            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { elu_complex(x, 1.0) } else { Complex::new(0.0, 0.0) }).collect())
+            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { elu_complex(x, r(1.0)) } else { Complex::new(ZERO, ZERO) }).collect())
             .collect(),
         ActivationType::SELU => data
             .iter()
             .enumerate()
-            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { selu_complex(&x) } else { Complex::new(0.0, 0.0) }).collect())
+            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { selu_complex(&x) } else { Complex::new(ZERO, ZERO) }).collect())
             .collect(),
         ActivationType::GELU => data
             .iter()
             .enumerate()
-            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { gelu_complex(&x) } else { Complex::new(0.0, 0.0) }).collect())
+            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { gelu_complex(&x) } else { Complex::new(ZERO, ZERO) }).collect())
             .collect(),
         ActivationType::SOFTSIGN => data
             .iter()
             .enumerate()
-            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { softsign_complex(&x) } else { Complex::new(0.0, 0.0) }).collect())
+            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { softsign_complex(&x) } else { Complex::new(ZERO, ZERO) }).collect())
             .collect(),
         ActivationType::SOFTPLUS => data
             .iter()
             .enumerate()
-            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { softplus_complex(&x) } else { Complex::new(0.0, 0.0) }).collect())
+            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { softplus_complex(&x) } else { Complex::new(ZERO, ZERO) }).collect())
             .collect(),
         ActivationType::PROBIT => data
             .iter()
             .enumerate()
-            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { x } else { Complex::new(0.0, 0.0) }).collect())
+            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { x } else { Complex::new(ZERO, ZERO) }).collect())
             .collect(),
         ActivationType::RANDOM => data
             .iter()
             .enumerate()
-            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { x } else { Complex::new(0.0, 0.0) }).collect())
+            .map(|(row_ind, row)| row.iter().map(|&x| if padding_mask[row_ind] != 0 { x } else { Complex::new(ZERO, ZERO) }).collect())
             .collect(),
         _ => vec![],
     }
@@ -428,21 +432,21 @@ where
 
     result
 }
-pub fn softmax_complex_norm(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<f64>> {
+pub fn softmax_complex_norm(input: &Vec<Vec<C>>) -> Vec<Vec<Real>> {
     input
         .par_iter() // Parallel iterator over rows of the input
         .map(|row| softmax_row_norm(row))
         .collect()
 }
 
-pub fn softmax_complex_real(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<f64>> {
+pub fn softmax_complex_real(input: &Vec<Vec<C>>) -> Vec<Vec<Real>> {
     input
         .par_iter() // Parallel iterator over rows of the input
         .map(|row| softmax_row_real(row))
         .collect()
 }
 
-pub fn softmax_complex_padding_norm(input: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<f64>> {
+pub fn softmax_complex_padding_norm(input: &Vec<Vec<C>>, padding_mask: &Vec<u32>) -> Vec<Vec<Real>> {
     // println!("softmax input len {}, {}", input.len(), input[0].len());
     // println!("padding_mask len {}", padding_mask.len());
     // println!("padding mask: {:?}", &padding_mask);
@@ -455,7 +459,7 @@ pub fn softmax_complex_padding_norm(input: &Vec<Vec<Complex<f64>>>, padding_mask
                 panic!("Row mask is smaller than the index: {}, {}", padding_mask.len(), row_ind);
             }
             if padding_mask[row_ind] == 0 {
-                return vec![0.0; row.len()];
+                return vec![ZERO; row.len()];
             }
 
             softmax_row_norm(row)
@@ -463,7 +467,7 @@ pub fn softmax_complex_padding_norm(input: &Vec<Vec<Complex<f64>>>, padding_mask
         .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
 }
 
-pub fn softmax_complex_padding_real(input: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<f64>> {
+pub fn softmax_complex_padding_real(input: &Vec<Vec<C>>, padding_mask: &Vec<u32>) -> Vec<Vec<Real>> {
     // println!("softmax input len {}, {}", input.len(), input[0].len());
     // println!("padding_mask len {}", padding_mask.len());
     // println!("padding mask: {:?}", &padding_mask);
@@ -476,7 +480,7 @@ pub fn softmax_complex_padding_real(input: &Vec<Vec<Complex<f64>>>, padding_mask
                 panic!("Row mask is smaller than the index: {}, {}", padding_mask.len(), row_ind);
             }
             if padding_mask[row_ind] == 0 {
-                return vec![0.0; row.len()];
+                return vec![ZERO; row.len()];
             }
 
             softmax_row_real(row)
@@ -484,7 +488,7 @@ pub fn softmax_complex_padding_real(input: &Vec<Vec<Complex<f64>>>, padding_mask
         .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
 }
 
-pub fn softmax_complex_padding_complex(input: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<Complex<f64>>> {
+pub fn softmax_complex_padding_complex(input: &Vec<Vec<C>>, padding_mask: &Vec<u32>) -> Vec<Vec<C>> {
     // println!("softmax input len {}, {}", input.len(), input[0].len());
     // println!("padding_mask len {}", padding_mask.len());
     // println!("padding mask: {:?}", &padding_mask);
@@ -497,21 +501,21 @@ pub fn softmax_complex_padding_complex(input: &Vec<Vec<Complex<f64>>>, padding_m
                 panic!("Row mask is smaller than the index: {}, {}", padding_mask.len(), row_ind);
             }
             if padding_mask[row_ind] == 0 {
-                return vec![Complex::new(0.0, 0.0); row.len()];
+                return vec![C::new(ZERO, ZERO); row.len()];
             }
 
             softmax_row_complex(row)
         })
-        .collect() // Collect the results into a Vec<Vec<Complex<f64>>>
+        .collect() // Collect the results into a Vec<Vec<C>>
 }
 
 pub fn softmax_backward_real_with_gradient(
-    logits: &Vec<Vec<Complex<f64>>>,
+    logits: &Vec<Vec<C>>,
     targets: &Vec<u32>,
     padding_mask: &Vec<u32>,
     total_valid_tokens: usize,
     logit_indices: &Vec<Vec<usize>>,
-) -> (Vec<Vec<Complex<f64>>>, Vec<Vec<Complex<f64>>>) {
+) -> (Vec<Vec<C>>, Vec<Vec<C>>) {
     let seq_len = logits.len();
     let target_len = targets.len();
 
@@ -531,14 +535,14 @@ pub fn softmax_backward_real_with_gradient(
     let offset = seq_len_unpadded.saturating_sub(target_len);
 
     // Normalize by total valid tokens across entire batch for consistent averaging
-    let scale = 1.0 / total_valid_tokens.max(1) as f64;
+    let scale: Real = r(1.0) / r(total_valid_tokens.max(1) as f64);
 
     logits
         .par_iter()
         .enumerate()
         .map(|(t, row)| {
             if padding_mask[t] == 0 || t < offset {
-                return (vec![Complex::new(0.0, 0.0)], vec![Complex::new(0.0, 0.0); row.len()]);
+                return (vec![C::new(ZERO, ZERO)], vec![C::new(ZERO, ZERO); row.len()]);
             }
 
             let target_idx = t - offset;
@@ -553,9 +557,9 @@ pub fn softmax_backward_real_with_gradient(
 
             let (loss_real, grad_complex) = softmax_ce_grad_complex(row, target_token, &indices_for_t);
 
-            let loss_complex = vec![Complex::new(loss_real * scale, 0.0)];
+            let loss_complex = vec![C::new(loss_real * scale, ZERO)];
 
-            let grad_scaled: Vec<Complex<f64>> = grad_complex.into_iter().map(|g| g * scale).collect();
+            let grad_scaled: Vec<C> = grad_complex.into_iter().map(|g| g * scale).collect();
 
             (loss_complex, grad_scaled)
         })
@@ -563,16 +567,16 @@ pub fn softmax_backward_real_with_gradient(
 }
 
 /// Slice-based version of `softmax_ce_grad_complex` to avoid per-row Vec allocations.
-pub fn softmax_ce_grad_complex_slice(logits: &[Complex<f64>], target: usize, logit_indices: &[usize]) -> (f64, Vec<Complex<f64>>) {
+pub fn softmax_ce_grad_complex_slice(logits: &[C], target: usize, logit_indices: &[usize]) -> (Real, Vec<C>) {
     let n = logits.len();
 
-    let max_re: f64 = logits.iter().map(|z| z.re).fold(f64::NEG_INFINITY, f64::max);
+    let max_re: Real = logits.iter().map(|z| z.re).fold(Real::NEG_INFINITY, Real::max);
 
-    let mut s: Vec<f64> = Vec::with_capacity(n);
-    let mut sum_s: f64 = 0.0;
+    let mut s: Vec<Real> = Vec::with_capacity(n);
+    let mut sum_s: Real = ZERO;
 
     for z in logits.iter() {
-        let scaled = (z.re - max_re).exp();
+        let scaled: Real = (z.re - max_re).exp();
         sum_s += scaled;
         s.push(scaled);
     }
@@ -581,17 +585,17 @@ pub fn softmax_ce_grad_complex_slice(logits: &[Complex<f64>], target: usize, log
     let target_ind = target_ind.min(n.saturating_sub(1));
 
     let p_k = s[target_ind] / sum_s;
-    let pk_norm: f64 = if p_k > 0.0 { p_k } else { 1e-300 };
-    let loss: f64 = -pk_norm.ln();
+    let pk_norm: Real = if p_k > ZERO { p_k } else { r(1e-30) };
+    let loss: Real = -pk_norm.ln();
 
-    let mut grad: Vec<Complex<f64>> = Vec::with_capacity(logit_indices.len());
+    let mut grad: Vec<C> = Vec::with_capacity(logit_indices.len());
     for (sparse_ind, real_ind) in logit_indices.iter().enumerate() {
-        let p_j: f64 = s[sparse_ind] / sum_s;
-        let mut g: f64 = p_j;
+        let p_j: Real = s[sparse_ind] / sum_s;
+        let mut g: Real = p_j;
         if *real_ind == target {
-            g -= 1.0;
+            g -= r(1.0);
         }
-        grad.push(Complex::new(g, 0.0));
+        grad.push(C::new(g, ZERO));
     }
 
     (loss, grad)
@@ -602,12 +606,12 @@ pub fn softmax_ce_grad_complex_slice(logits: &[Complex<f64>], target: usize, log
 /// - `logits` are shape (seq_len x vocab_or_k)
 /// - `logit_indices[t]` (optional) maps sparse column -> original vocab index for that timestep
 pub fn softmax_backward_real_with_gradient_rm(
-    logits: &crate::neural_networks::utils::matrix::RowMajorMatrix<Complex<f64>>,
+    logits: &crate::neural_networks::utils::matrix::RowMajorMatrix<C>,
     targets: &Vec<u32>,
     padding_mask: &Vec<u32>,
     total_valid_tokens: usize,
     logit_indices: &Vec<Vec<usize>>,
-) -> (Vec<Vec<Complex<f64>>>, crate::neural_networks::utils::matrix::RowMajorMatrix<Complex<f64>>) {
+) -> (Vec<Vec<C>>, crate::neural_networks::utils::matrix::RowMajorMatrix<C>) {
     let seq_len = logits.rows;
     let cols = logits.cols;
     let target_len = targets.len();
@@ -618,18 +622,18 @@ pub fn softmax_backward_real_with_gradient_rm(
     let seq_len_unpadded = padding_mask.iter().filter(|&&x| x != 0).count();
     let offset = seq_len_unpadded.saturating_sub(target_len);
 
-    let scale = 1.0 / total_valid_tokens.max(1) as f64;
+    let scale: Real = r(1.0) / r(total_valid_tokens.max(1) as f64);
 
-    let mut losses: Vec<Vec<Complex<f64>>> = Vec::with_capacity(seq_len);
+    let mut losses: Vec<Vec<C>> = Vec::with_capacity(seq_len);
     let mut grad_rm = crate::neural_networks::utils::matrix::RowMajorMatrix::from_data(
         seq_len,
         cols,
-        vec![Complex::new(0.0, 0.0); seq_len * cols],
+        vec![C::new(ZERO, ZERO); seq_len * cols],
     );
 
     for t in 0..seq_len {
         if padding_mask[t] == 0 || t < offset {
-            losses.push(vec![Complex::new(0.0, 0.0)]);
+            losses.push(vec![C::new(ZERO, ZERO)]);
             continue;
         }
 
@@ -646,7 +650,7 @@ pub fn softmax_backward_real_with_gradient_rm(
         let logits_row = &logits.data[row.start..row.start + cols];
 
         let (loss_real, grad_row) = softmax_ce_grad_complex_slice(logits_row, target_token, &indices_for_t);
-        losses.push(vec![Complex::new(loss_real * scale, 0.0)]);
+        losses.push(vec![C::new(loss_real * scale, ZERO)]);
 
         // grad_row is length = indices_for_t.len(); in sparse mode it should match cols.
         let g_len = grad_row.len().min(cols);
@@ -659,17 +663,17 @@ pub fn softmax_backward_real_with_gradient_rm(
 }
 
 /// COMPLEX-SAFE softmax + CE + gradient using Wirtinger calculus
-pub fn softmax_ce_grad_complex(logits: &Vec<Complex<f64>>, target: usize, logit_indices: &Vec<usize>) -> (f64, Vec<Complex<f64>>) {
+pub fn softmax_ce_grad_complex(logits: &Vec<C>, target: usize, logit_indices: &Vec<usize>) -> (Real, Vec<C>) {
     let n = logits.len();
     // assert!(target < n);
 
-    let max_norm: f64 = logits.iter().map(|z| z.re).fold(f64::NEG_INFINITY, f64::max);
+    let max_norm: Real = logits.iter().map(|z| z.re).fold(Real::NEG_INFINITY, Real::max);
 
-    let mut s: Vec<f64> = Vec::with_capacity(n);
-    let mut sum_s: f64 = 0.0;
+    let mut s: Vec<Real> = Vec::with_capacity(n);
+    let mut sum_s: Real = ZERO;
 
     for z in logits.iter() {
-        let scaled = (z.re - max_norm).exp();
+        let scaled: Real = (z.re - max_norm).exp();
         sum_s += scaled;
         s.push(scaled);
     }
@@ -680,17 +684,17 @@ pub fn softmax_ce_grad_complex(logits: &Vec<Complex<f64>>, target: usize, logit_
 
     let p_k = s[target_ind] / sum_s;
 
-    let pk_norm: f64 = if p_k > 0.0 { p_k } else { 1e-300 };
-    let loss: f64 = -pk_norm.ln();
+    let pk_norm: Real = if p_k > ZERO { p_k } else { r(1e-30) };
+    let loss: Real = -pk_norm.ln();
 
-    let mut grad: Vec<Complex<f64>> = Vec::with_capacity(n);
+    let mut grad: Vec<C> = Vec::with_capacity(n);
     for (sparse_ind, real_ind) in logit_indices.iter().enumerate() {
-        let p_j: f64 = s[sparse_ind] / sum_s;
-        let mut g: f64 = p_j;
+        let p_j: Real = s[sparse_ind] / sum_s;
+        let mut g: Real = p_j;
         if *real_ind == target {
-            g -= 1.0;
+            g -= r(1.0);
         }
-        grad.push(Complex::new(g, 0.0));
+        grad.push(C::new(g, ZERO));
     }
 
     (loss, grad)
@@ -710,49 +714,49 @@ pub fn softmax_row_f64(input: &Vec<f64>) -> Vec<f64> {
     exps.iter().map(|&x| x / sum).collect()
 }
 
-pub fn softmax_last_row(input: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<f64>> {
+pub fn softmax_last_row(input: &Vec<Vec<C>>) -> Vec<Vec<Real>> {
     // Softmax function to scale attention scores to probability values
-    let mut result: Vec<Vec<f64>> = vec![vec![0.0; input[0].len()]; input.len()];
+    let mut result: Vec<Vec<Real>> = vec![vec![ZERO; input[0].len()]; input.len()];
 
     // Get the last row from the input
     let last_row = &input[input.len() - 1];
 
-    result[input.len() - 1] = softmax_row_real(&last_row);
+    result[input.len() - 1] = softmax_row_real(last_row);
 
     result
 }
 
-pub fn softmax_row_norm(input: &Vec<Complex<f64>>) -> Vec<f64> {
-    let max_norm = input.iter().map(|c| c.norm()).fold(f64::NEG_INFINITY, f64::max);
+pub fn softmax_row_norm(input: &Vec<C>) -> Vec<Real> {
+    let max_norm = input.iter().map(|c| c.norm()).fold(Real::NEG_INFINITY, Real::max);
 
-    let exps: Vec<f64> = input.iter().map(|c| (c.norm() - max_norm).exp()).collect();
+    let exps: Vec<Real> = input.iter().map(|c| (c.norm() - max_norm).exp()).collect();
 
-    let sum: f64 = exps.iter().sum();
+    let sum: Real = exps.iter().sum();
 
     exps.into_iter().map(|x| x / sum).collect()
 }
 
-pub fn softmax_row_real(input: &Vec<Complex<f64>>) -> Vec<f64> {
-    let max_norm = input.iter().map(|c| c.re).fold(f64::NEG_INFINITY, f64::max);
+pub fn softmax_row_real(input: &Vec<C>) -> Vec<Real> {
+    let max_norm = input.iter().map(|c| c.re).fold(Real::NEG_INFINITY, Real::max);
 
-    let exps: Vec<f64> = input.iter().map(|c| (c.re - max_norm).exp()).collect();
+    let exps: Vec<Real> = input.iter().map(|c| (c.re - max_norm).exp()).collect();
 
-    let sum: f64 = exps.iter().sum();
+    let sum: Real = exps.iter().sum();
 
     exps.iter().map(|x| x / sum).collect()
 }
 
-pub fn softmax_row_complex(logits: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
+pub fn softmax_row_complex(logits: &Vec<C>) -> Vec<C> {
     let n = logits.len();
 
     // 1) Stability shift — use ONLY real parts
-    let max_re = logits.iter().map(|z| z.re).fold(f64::NEG_INFINITY, f64::max);
+    let max_re = logits.iter().map(|z| z.re).fold(Real::NEG_INFINITY, Real::max);
 
     // println!("Max real part for stability shift: {}", max_re);
 
     // 2) Compute exp(z - max_re) safely
-    let mut exps: Vec<Complex<f64>> = Vec::with_capacity(n);
-    let mut sum = 0.0;
+    let mut exps: Vec<C> = Vec::with_capacity(n);
+    let mut sum: Real = 0.0;
 
     for &z in logits.iter() {
         let e = (z.re - max_re).exp();
@@ -779,20 +783,20 @@ pub fn softmax_row_complex(logits: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
         .collect()
 }
 
-pub fn log_softmax_row(input: &Vec<Complex<f64>>) -> Vec<f64> {
+pub fn log_softmax_row(input: &Vec<C>) -> Vec<Real> {
     // Extract real parts only
-    let real_parts: Vec<f64> = input.iter().map(|c| c.re).collect();
+    let real_parts: Vec<Real> = input.iter().map(|c| c.re).collect();
 
     // Numerical stability: subtract max real part
-    let max_re = input.iter().map(|c| c.re).fold(f64::NEG_INFINITY, f64::max);
+    let max_re = input.iter().map(|c| c.re).fold(Real::NEG_INFINITY, Real::max);
 
-    let shifted_exps: Vec<f64> = real_parts.iter().map(|&x| (x - max_re).exp()).collect();
+    let shifted_exps: Vec<Real> = real_parts.iter().map(|&x| (x - max_re).exp()).collect();
 
-    let sum_exp: f64 = shifted_exps.iter().sum();
+    let sum_exp: Real = shifted_exps.iter().sum();
 
     let log_sum_exp = sum_exp.ln() + max_re;
 
-    let result: Vec<f64> = real_parts.iter().map(|&x| x - log_sum_exp).collect();
+    let result: Vec<Real> = real_parts.iter().map(|&x| x - log_sum_exp).collect();
 
     result
 }

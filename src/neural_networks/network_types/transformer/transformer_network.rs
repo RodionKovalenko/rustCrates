@@ -1,6 +1,6 @@
+use crate::neural_networks::utils::dtype::{r, C, Real, ZERO};
 use crate::neural_networks::utils::matrix::RowMajorMatrix;
 use colored::*;
-use num::Complex;
 use std::time::Instant;
 
 use crate::{
@@ -25,7 +25,6 @@ use crate::{
             tokenizer::{detokenize, tokenize_batch},
         },
     },
-    utils::data_converter::convert_c_to_f64_3d,
 };
 
 pub const MAX_CONTEXT_WINDOW_SIZE: usize = 50280;
@@ -37,25 +36,25 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
     // Setup data splits: 90% train, 10% validation (test set remains separate)
     dataset.setup_splits(None);
 
-    let mut total_loss: Complex<f64>;
-    let loss_threshold: f64 = 0.01;
+    let mut total_loss: C;
+    let loss_threshold: Real = r(0.01);
     let now = Instant::now();
-    let mut previous_last_losses: Vec<f64> = Vec::new();
-    let mut total_loss_exp_ma = 0.0;
-    let alpha = 0.2;
+    let mut previous_last_losses: Vec<Real> = Vec::new();
+    let mut total_loss_exp_ma: Real = ZERO;
+    let alpha: Real = r(0.2);
     let mut layer_input = LayerInput::new_default();
     let mut epoch_processed = 0;
     let mut timestep = 1;
     let mut total_valid_target_tokens_epoch: usize;
 
     // Early stopping parameters
-    let mut best_val_loss = f64::INFINITY;
+    let mut best_val_loss = Real::INFINITY;
     let mut best_epoch = 0;
     let patience = 100; // Stop if no improvement for 100 epochs
     let mut epochs_without_improvement = 0;
 
     'outer: for epoch in 0..num_epochs {
-        total_loss = Complex::new(0.0, 0.0);
+        total_loss = C::new(ZERO, ZERO);
         total_valid_target_tokens_epoch = 0;
         for (batch_ind, batch_dataset) in dataset.split_into_batches(batch_size).iter().enumerate() {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
@@ -127,7 +126,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
             transformer_network.time_step = timestep;
 
             let network_output = predict(transformer_network, &layer_input);
-            let (_predicted_softmax_batch, _padding_mask_batch) = (network_output.get_output_batch_f64(), network_output.get_padding_mask_batch());
+            let _padding_mask_batch = network_output.get_padding_mask_batch();
 
             // If there are no valid targets in this batch, skip loss/backward so we don't
             // early-stop on a meaningless 0.0 loss.
@@ -147,7 +146,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
                 );
             }
 
-            let loss: Complex<f64> = cross_entropy_sum_batch(&ce_loss_batch, &target_ids);
+            let loss: C = cross_entropy_sum_batch(&ce_loss_batch, &target_ids);
             total_loss += loss;
 
             if epoch > 0 && epoch == (num_epochs - 1) || loss.norm() <= loss_threshold || epoch % 50 == 0 {
@@ -181,11 +180,11 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
 
         update_k_mean_clusters(transformer_network, epoch);
 
-        if total_loss_exp_ma == 0.0 && epoch == 0 {
+        if total_loss_exp_ma == ZERO && epoch == 0 {
             total_loss_exp_ma = total_loss.re;
         }
 
-        total_loss_exp_ma = alpha * total_loss.re + (1.0 - alpha) * total_loss_exp_ma;
+        total_loss_exp_ma = alpha * total_loss.re + (r(1.0) - alpha) * total_loss_exp_ma;
 
         if epoch % 5 == 0 || total_loss.norm() <= loss_threshold {
             println!("Epoch: {}, TRAINING LOSS: {}", epoch.to_string().blue().bold(), total_loss.re.to_string().red().bold());
@@ -200,7 +199,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
             }
 
             // Early stopping check with improvement threshold
-            let improvement_threshold = 1e-4; // Consider it an improvement if loss decreases by at least this amount
+            let improvement_threshold: Real = r(1e-4); // Consider it an improvement if loss decreases by at least this amount
 
             if val_loss < best_val_loss - improvement_threshold {
                 let improvement = best_val_loss - val_loss;
@@ -354,7 +353,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         // layer_input.set_padding_mask_batch(vec![vec![1; batch_ids[0].len()]; batch_ids.len()]); // assuming all tokens are valid
 
         let network_output = predict(transformer_network, &layer_input);
-        let current_predictions = network_output.get_output_batch_f64();
+        let current_predictions = network_output.get_output_batch_real();
         let output_indices = network_output.get_output_indices();
 
         // let start = Instant::now();
@@ -431,8 +430,8 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
     // Forward pass
 
     // println!("forward pass start ----------------------------------------------------------------------");
-    let mut output: Option<Vec<Vec<Vec<Complex<f64>>>>> = None;
-    let mut output_softmax = None;
+    let mut output: Option<Vec<Vec<Vec<C>>>> = None;
+    let mut output_softmax: Option<Vec<Vec<Vec<Real>>>> = None;
     let mut padding_mask = None;
 
     let batch_ids = layer_input.get_batch_ids();
@@ -489,7 +488,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
     let mut layer_output = LayerOutput::new_default();
 
     // Optional contiguous row-major activations; used to avoid conversions between consecutive Linear layers.
-    let mut output_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>> = None;
+    let mut output_rm: Option<Vec<RowMajorMatrix<C>>> = None;
 
     let layers_len = transformer_network.layers.len();
     for layer_idx in 0..layers_len {
@@ -566,7 +565,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                         if layer_input.get_rm_strict() {
                             panic!("RM strict mode violation: PositionalEncoding produced RM but next layer requires Vec");
                         }
-                        let vec_out: Vec<Vec<Vec<Complex<f64>>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
+                        let vec_out: Vec<Vec<Vec<C>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
                         output = Some(vec_out);
                         output_rm = None;
                     }
@@ -579,7 +578,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                         }
                     };
                     layer_input.set_input_batch(previous_output);
-                    let positional_encodings: Vec<Vec<Vec<Complex<f64>>>> = positional_encoding_l.forward(&layer_input);
+                    let positional_encodings: Vec<Vec<Vec<C>>> = positional_encoding_l.forward(&layer_input);
                     output = Some(positional_encodings);
                     output_rm = None;
                 }
@@ -602,7 +601,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                         if layer_input.get_rm_strict() {
                             panic!("RM strict mode violation: Norm produced RM but next layer requires Vec");
                         }
-                        let vec_out: Vec<Vec<Vec<Complex<f64>>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
+                        let vec_out: Vec<Vec<Vec<C>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
                         output = Some(vec_out);
                         output_rm = None;
                     }
@@ -648,7 +647,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                             if layer_input.get_rm_strict() {
                                 panic!("RM strict mode violation: SelfAttention produced RM but next layer requires Vec");
                             }
-                            let vec_out: Vec<Vec<Vec<Complex<f64>>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
+                            let vec_out: Vec<Vec<Vec<C>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
                             output = Some(vec_out);
                             output_rm = None;
                         }
@@ -705,7 +704,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                             if layer_input.get_rm_strict() {
                                 panic!("RM strict mode violation: SparseSelfAttention produced RM but next layer requires Vec");
                             }
-                            let vec_out: Vec<Vec<Vec<Complex<f64>>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
+                            let vec_out: Vec<Vec<Vec<C>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
                             output = Some(vec_out);
                             output_rm = None;
                         }
@@ -761,7 +760,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                             if layer_input.get_rm_strict() {
                                 panic!("RM strict mode violation: SelfAttentionApproximation produced RM but next layer requires Vec");
                             }
-                            let vec_out: Vec<Vec<Vec<Complex<f64>>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
+                            let vec_out: Vec<Vec<Vec<C>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
                             output = Some(vec_out);
                             output_rm = None;
                         }
@@ -816,7 +815,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                         if layer_input.get_rm_strict() {
                             panic!("RM strict mode violation: FeedForward produced RM but next layer requires Vec");
                         }
-                        let vec_out: Vec<Vec<Vec<Complex<f64>>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
+                        let vec_out: Vec<Vec<Vec<C>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
                         output = Some(vec_out);
                         output_rm = None;
                     }
@@ -859,7 +858,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                             if layer_input.get_rm_strict() {
                                 panic!("RM strict mode violation: Linear requires Vec input but RM is present");
                             }
-                            let vec_out: Vec<Vec<Vec<Complex<f64>>>> = rm.iter().map(|m| m.to_rows()).collect();
+                            let vec_out: Vec<Vec<Vec<C>>> = rm.iter().map(|m| m.to_rows()).collect();
                             output = Some(vec_out);
                         }
                     }
@@ -894,7 +893,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     if layer_input.get_rm_strict() {
                         panic!("RM strict mode violation: Linear produced RM but next layer requires Vec");
                     }
-                    let vec_out: Vec<Vec<Vec<Complex<f64>>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
+                    let vec_out: Vec<Vec<Vec<C>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
                     output = Some(vec_out);
                     output_rm = None;
                 }
@@ -914,7 +913,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                             if layer_input.get_rm_strict() {
                                 panic!("RM strict mode violation: SparseLinear requires Vec input but RM is present");
                             }
-                            let vec_out: Vec<Vec<Vec<Complex<f64>>>> = rm.iter().map(|m| m.to_rows()).collect();
+                            let vec_out: Vec<Vec<Vec<C>>> = rm.iter().map(|m| m.to_rows()).collect();
                             output = Some(vec_out);
                         }
                     }
@@ -963,7 +962,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                             if layer_input.get_rm_strict() {
                                 panic!("RM strict mode violation: MultiLinear requires Vec input but RM is present");
                             }
-                            let vec_out: Vec<Vec<Vec<Complex<f64>>>> = rm.iter().map(|m| m.to_rows()).collect();
+                            let vec_out: Vec<Vec<Vec<C>>> = rm.iter().map(|m| m.to_rows()).collect();
                             output = Some(vec_out);
                         }
                     }
@@ -993,7 +992,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     if layer_input.get_rm_strict() {
                         panic!("RM strict mode violation: MultiLinear produced RM but next layer requires Vec");
                     }
-                    let vec_out: Vec<Vec<Vec<Complex<f64>>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
+                    let vec_out: Vec<Vec<Vec<C>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
                     output = Some(vec_out);
                     output_rm = None;
                 }
@@ -1009,7 +1008,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                             if layer_input.get_rm_strict() {
                                 panic!("RM strict mode violation: Wavelet requires Vec input but RM is present");
                             }
-                            let vec_out: Vec<Vec<Vec<Complex<f64>>>> = rm.iter().map(|m| m.to_rows()).collect();
+                            let vec_out: Vec<Vec<Vec<C>>> = rm.iter().map(|m| m.to_rows()).collect();
                             output = Some(vec_out);
                         }
                     }
@@ -1040,7 +1039,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                         if layer_input.get_rm_strict() {
                             panic!("RM strict mode violation: Wavelet produced RM but next layer requires Vec");
                         }
-                        let vec_out: Vec<Vec<Vec<Complex<f64>>>> = rm.iter().map(|m| m.to_rows()).collect();
+                        let vec_out: Vec<Vec<Vec<C>>> = rm.iter().map(|m| m.to_rows()).collect();
                         output = Some(vec_out);
                         output_rm = None;
                     } else {
@@ -1060,7 +1059,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                             if layer_input.get_rm_strict() {
                                 panic!("RM strict mode violation: DiscreteWavelet requires Vec input but RM is present");
                             }
-                            let vec_out: Vec<Vec<Vec<Complex<f64>>>> = rm.iter().map(|m| m.to_rows()).collect();
+                            let vec_out: Vec<Vec<Vec<C>>> = rm.iter().map(|m| m.to_rows()).collect();
                             output = Some(vec_out);
                         }
                     }
@@ -1095,7 +1094,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                         if layer_input.get_rm_strict() {
                             panic!("RM strict mode violation: DiscreteWavelet produced RM but next layer requires Vec");
                         }
-                        let vec_out: Vec<Vec<Vec<Complex<f64>>>> = rm.iter().map(|m| m.to_rows()).collect();
+                        let vec_out: Vec<Vec<Vec<C>>> = rm.iter().map(|m| m.to_rows()).collect();
                         output = Some(vec_out);
                         output_rm = None;
                     } else {
@@ -1123,7 +1122,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                         if layer_input.get_rm_strict() {
                             panic!("RM strict mode violation: ComplexToLinear produced RM but next layer requires Vec");
                         }
-                        let vec_out: Vec<Vec<Vec<Complex<f64>>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
+                        let vec_out: Vec<Vec<Vec<C>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
                         output = Some(vec_out);
                         output_rm = None;
                     }
@@ -1156,22 +1155,27 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     // If we have RM activations, avoid converting to nested Vec<Complex>.
                     if output.is_none() {
                         if let Some(rm) = &output_rm {
-                            let out_f64: Vec<Vec<Vec<f64>>> = rm
+                            let out_real: Vec<Vec<Vec<Real>>> = rm
                                 .iter()
                                 .map(|m| {
                                     (0..m.rows)
                                         .map(|r| {
                                             let row = m.row_range(r);
-                                            m.data[row].iter().map(|c| c.re).collect::<Vec<f64>>()
+                                            m.data[row].iter().map(|c| c.re).collect::<Vec<Real>>()
                                         })
-                                        .collect::<Vec<Vec<f64>>>()
+                                        .collect::<Vec<Vec<Real>>>()
                                 })
                                 .collect();
-                            output_softmax = Some(out_f64);
+                            output_softmax = Some(out_real);
                         }
                     } else {
                         let input_ref = layer_input.get_input_batch_ref().expect("softmax input batch missing");
-                        output_softmax = Some(convert_c_to_f64_3d(input_ref));
+                        output_softmax = Some(
+                            input_ref
+                                .iter()
+                                .map(|m| m.iter().map(|row| row.iter().map(|z| z.re).collect()).collect())
+                                .collect(),
+                        );
                     }
                 } else {
                     // Training always requires CE loss + gradients; ensure Softmax is in TRAINING
@@ -1189,7 +1193,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                                 if layer_input.get_rm_strict() {
                                     panic!("RM strict mode violation: Softmax training requires Vec input but RM is present");
                                 }
-                                let vec_out: Vec<Vec<Vec<Complex<f64>>>> = rm.iter().map(|m| m.to_rows()).collect();
+                                let vec_out: Vec<Vec<Vec<C>>> = rm.iter().map(|m| m.to_rows()).collect();
                                 output = Some(vec_out);
                             }
                         }
@@ -1207,12 +1211,12 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     }
 
                     layer_input.set_output_indices(linear_output_indices.clone());
-                    let softmax_result: Vec<Vec<Vec<f64>>> = if use_rm {
+                    let softmax_result_real: Vec<Vec<Vec<Real>>> = if use_rm {
                         softmax_layer.forward_rm(&layer_input, padding_mask.clone(), target_batch_ids_option.clone())
                     } else {
                         softmax_layer.forward(&layer_input, padding_mask.clone(), target_batch_ids_option.clone())
                     };
-                    output_softmax = Some(softmax_result);
+                    output_softmax = Some(softmax_result_real);
                     layer_output.set_cross_entropy_loss_batch(softmax_layer.cross_entropy_loss_batch.clone().unwrap());
                 }
 
@@ -1227,7 +1231,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
         }
     }
 
-    layer_output.set_output_batch_f64(output_softmax.unwrap());
+    layer_output.set_output_batch_real(output_softmax.unwrap());
     layer_output.set_padding_mask_batch(padding_mask.unwrap());
     layer_output.set_output_indices(linear_output_indices);
 
@@ -1368,7 +1372,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     let gradient_batch: Gradient = if previous_gradient.get_gradient_input_batch_rm_ref().is_some() {
                         dense_layer.backward_rm(&previous_gradient)
                     } else {
-                        let previous_gradient_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
+                        let previous_gradient_batch: Vec<Vec<Vec<C>>> = previous_gradient.get_gradient_input_batch();
                         dense_layer.backward(&previous_gradient_batch)
                     };
                     // println!("backward dense end");
@@ -1513,8 +1517,8 @@ pub fn predict_by_text(input: &Vec<String>) -> Vec<String> {
     all_predicted_tokens
 }
 
-pub fn cross_entropy_sum_batch(cross_entropy_loss_batch: &Vec<Vec<Vec<Complex<f64>>>>, _targets: &Vec<Vec<u32>>) -> Complex<f64> {
-    let mut total_loss = Complex::new(0.0, 0.0);
+pub fn cross_entropy_sum_batch(cross_entropy_loss_batch: &Vec<Vec<Vec<C>>>, _targets: &Vec<Vec<u32>>) -> C {
+    let mut total_loss = C::new(ZERO, ZERO);
 
     for batch in cross_entropy_loss_batch {
         for seq in batch {
@@ -1613,11 +1617,11 @@ fn clear_network_caches(transformer_network: &mut NeuralNetwork) {
 }
 
 /// Evaluate model on validation set (NO gradient updates, NO shuffling)
-fn evaluate_validation(transformer_network: &mut NeuralNetwork, dataset: &Dataset<String, String>, batch_size: usize, layer_input: &mut LayerInput) -> f64 {
+fn evaluate_validation(transformer_network: &mut NeuralNetwork, dataset: &Dataset<String, String>, batch_size: usize, layer_input: &mut LayerInput) -> Real {
     // Clear all caches before validation (important for correct batch size handling)
     clear_network_caches(transformer_network);
 
-    let mut total_val_loss = 0.0;
+    let mut total_val_loss: Real = ZERO;
     let mut num_batches = 0;
 
     // Get validation batches (NOT shuffled)
@@ -1631,7 +1635,7 @@ fn evaluate_validation(transformer_network: &mut NeuralNetwork, dataset: &Datase
             dataset.total_training_records_size,
             dataset.total_validation_records_size
         );
-        return f64::INFINITY;
+        return Real::INFINITY;
     }
 
     for batch_dataset in val_batches.iter() {
@@ -1690,7 +1694,7 @@ fn evaluate_validation(transformer_network: &mut NeuralNetwork, dataset: &Datase
 
         // Forward pass only
         let network_output = predict(transformer_network, &layer_input);
-        let loss: Complex<f64> = cross_entropy_sum_batch(&network_output.get_cross_entropy_loss_batch(), &target_ids);
+        let loss: C = cross_entropy_sum_batch(&network_output.get_cross_entropy_loss_batch(), &target_ids);
 
         total_val_loss += loss.re;
         num_batches += 1;
@@ -1698,10 +1702,10 @@ fn evaluate_validation(transformer_network: &mut NeuralNetwork, dataset: &Datase
 
     if num_batches == 0 {
         println!("⚠️  Warning: No validation batches processed!");
-        return f64::INFINITY;
+        return Real::INFINITY;
     }
 
-    let avg_val_loss = total_val_loss / num_batches as f64;
+    let avg_val_loss = total_val_loss / r(num_batches as f64);
 
     // Debug: print validation statistics on first epoch
     if transformer_network.time_step < 100 {
@@ -1712,11 +1716,11 @@ fn evaluate_validation(transformer_network: &mut NeuralNetwork, dataset: &Datase
 }
 
 /// Evaluate model on TEST set - call this ONLY ONCE after training is complete
-pub fn evaluate_test(transformer_network: &mut NeuralNetwork, dataset: &Dataset<String, String>, batch_size: usize) -> f64 {
+pub fn evaluate_test(transformer_network: &mut NeuralNetwork, dataset: &Dataset<String, String>, batch_size: usize) -> Real {
     // Clear all caches before test evaluation (important for correct batch size handling)
     clear_network_caches(transformer_network);
 
-    let mut total_test_loss = 0.0;
+    let mut total_test_loss: Real = ZERO;
     let mut num_batches = 0;
     let mut layer_input = LayerInput::new_default();
 
@@ -1725,7 +1729,7 @@ pub fn evaluate_test(transformer_network: &mut NeuralNetwork, dataset: &Dataset<
 
     if test_batches.is_empty() {
         println!("Warning: No test data available");
-        return f64::INFINITY;
+        return Real::INFINITY;
     }
 
     println!("\n{}", "=".repeat(60).bright_cyan());
@@ -1788,13 +1792,13 @@ pub fn evaluate_test(transformer_network: &mut NeuralNetwork, dataset: &Dataset<
 
         // Forward pass only
         let network_output = predict(transformer_network, &layer_input);
-        let loss: Complex<f64> = cross_entropy_sum_batch(&network_output.get_cross_entropy_loss_batch(), &target_ids);
+        let loss: C = cross_entropy_sum_batch(&network_output.get_cross_entropy_loss_batch(), &target_ids);
 
         total_test_loss += loss.re;
         num_batches += 1;
     }
 
-    let avg_test_loss = total_test_loss / num_batches as f64;
+    let avg_test_loss = total_test_loss / r(num_batches as f64);
 
     println!("\n{}", "FINAL TEST LOSS:".bright_cyan().bold());
     println!("{}", avg_test_loss.to_string().bright_green().bold());

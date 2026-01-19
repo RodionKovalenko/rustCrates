@@ -10,24 +10,25 @@ use crate::neural_networks::{
     network_types::transformer::masked_attention_head_approximation::MaskedAttentionHeadApproximation,
     utils::matrix::{add_matrix_3d, RowMajorMatrix},
 };
-use num::Complex;
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
+
+use crate::neural_networks::utils::dtype::{C, ZERO};
 
 // Layer struct
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelfAttentionLayerApproximation {
     pub attention_heads: Vec<MaskedAttentionHeadApproximation>,
-    pub activated_output: Vec<Vec<Complex<f64>>>,
+    pub activated_output: Vec<Vec<C>>,
     pub norm_layer: Option<LayerEnum>,
     #[serde(skip)]
-    pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub input_batch: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
-    pub input_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+    pub input_batch_rm: Option<Vec<RowMajorMatrix<C>>>,
     #[serde(skip)]
-    pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub output_batch: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
-    pub output_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+    pub output_batch_rm: Option<Vec<RowMajorMatrix<C>>>,
     #[serde(skip)]
     pub time_step: usize,
 }
@@ -84,7 +85,7 @@ impl SelfAttentionLayerApproximation {
                 li.set_input_batch_rm(input_batch_rm.to_vec());
                 li.set_padding_mask_batch(padding_mask_batch.clone());
 
-                let attention_head_outputs_rm: Vec<Vec<RowMajorMatrix<Complex<f64>>>> = self
+                let attention_head_outputs_rm: Vec<Vec<RowMajorMatrix<C>>> = self
                     .attention_heads
                     .par_iter_mut()
                     .map(|attention_head| {
@@ -98,9 +99,9 @@ impl SelfAttentionLayerApproximation {
                 let head_dim = attention_head_outputs_rm[0][0].cols;
                 assert_eq!(head_dim * num_heads, d_model);
 
-                let mut combined_rm: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(batch_size);
+                let mut combined_rm: Vec<RowMajorMatrix<C>> = Vec::with_capacity(batch_size);
                 for b in 0..batch_size {
-                    let mut out = RowMajorMatrix::from_data(sequence_size, d_model, vec![Complex::new(0.0, 0.0); sequence_size * d_model]);
+                    let mut out = RowMajorMatrix::from_data(sequence_size, d_model, vec![C::new(ZERO, ZERO); sequence_size * d_model]);
                     for t in 0..sequence_size {
                         let out_row = out.row_range(t);
                         let mut col_off = 0;
@@ -155,7 +156,7 @@ impl SelfAttentionLayerApproximation {
 
         let batch_size = input_batch.len();
         let sequence_size = input_batch[0].len();
-        let mut batch_output: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![]; sequence_size]; batch_size];
+        let mut batch_output: Vec<Vec<Vec<C>>> = vec![vec![vec![]; sequence_size]; batch_size];
         let batch_size = input_batch.len();
 
         // Apply the attention mechanism for each head
@@ -178,7 +179,7 @@ impl SelfAttentionLayerApproximation {
         // Combine the outputs of the attention heads (e.g., concatenating horizontally)
         for b in 0..batch_size {
             for i in 0..sequence_size {
-                let mut combined_output: Vec<Complex<f64>> = Vec::new();
+                let mut combined_output: Vec<C> = Vec::new();
                 for head_output in &attention_head_outputs {
                     combined_output.extend_from_slice(&head_output[b][i]);
                 }
@@ -216,12 +217,12 @@ impl SelfAttentionLayerApproximation {
         layer_output
     }
 
-    pub fn backward_rm(&mut self, previous_gradient_batch_rm: &[RowMajorMatrix<Complex<f64>>]) -> Gradient {
+    pub fn backward_rm(&mut self, previous_gradient_batch_rm: &[RowMajorMatrix<C>]) -> Gradient {
         let mut gradient = Gradient::new_default();
         gradient.set_gradient_input_batch_rm(previous_gradient_batch_rm.to_vec());
 
-        let mut grad_input_rm: Vec<RowMajorMatrix<Complex<f64>>> = previous_gradient_batch_rm.to_vec();
-        let mut output_gradient_norm_rm: Vec<RowMajorMatrix<Complex<f64>>> = Vec::new();
+        let mut grad_input_rm: Vec<RowMajorMatrix<C>> = previous_gradient_batch_rm.to_vec();
+        let mut output_gradient_norm_rm: Vec<RowMajorMatrix<C>> = Vec::new();
 
         if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
             match norm_layer_enum {
@@ -250,11 +251,11 @@ impl SelfAttentionLayerApproximation {
         assert!(dim % num_heads == 0);
 
         // Split into per-head RM gradients
-        let mut grad_heads_rm: Vec<Vec<RowMajorMatrix<Complex<f64>>>> = Vec::with_capacity(num_heads);
+        let mut grad_heads_rm: Vec<Vec<RowMajorMatrix<C>>> = Vec::with_capacity(num_heads);
         for h in 0..num_heads {
             let mut per_batch = Vec::with_capacity(batch_size);
             for b in 0..batch_size {
-                let mut m = RowMajorMatrix::from_data(seq_len, head_dim, vec![Complex::new(0.0, 0.0); seq_len * head_dim]);
+                let mut m = RowMajorMatrix::from_data(seq_len, head_dim, vec![C::new(ZERO, ZERO); seq_len * head_dim]);
                 for t in 0..seq_len {
                     let src_row = grad_input_rm[b].row_range(t);
                     let dst_row = m.row_range(t);
@@ -268,7 +269,7 @@ impl SelfAttentionLayerApproximation {
         }
 
         // Backprop through each head
-        let mut grad_inputs_per_head: Vec<Vec<RowMajorMatrix<Complex<f64>>>> = Vec::with_capacity(num_heads);
+        let mut grad_inputs_per_head: Vec<Vec<RowMajorMatrix<C>>> = Vec::with_capacity(num_heads);
         for h in 0..num_heads {
             let head_grad = self.attention_heads[h].backward_rm(&grad_heads_rm[h]);
             grad_inputs_per_head.push(head_grad.get_gradient_input_batch_rm());
@@ -276,8 +277,8 @@ impl SelfAttentionLayerApproximation {
 
         // Sum gradients from heads
         let d_model = grad_inputs_per_head[0][0].cols;
-        let mut combined: Vec<RowMajorMatrix<Complex<f64>>> = vec![
-            RowMajorMatrix::from_data(seq_len, d_model, vec![Complex::new(0.0, 0.0); seq_len * d_model]);
+        let mut combined: Vec<RowMajorMatrix<C>> = vec![
+            RowMajorMatrix::from_data(seq_len, d_model, vec![C::new(ZERO, ZERO); seq_len * d_model]);
             batch_size
         ];
         for h in 0..num_heads {
@@ -301,9 +302,9 @@ impl SelfAttentionLayerApproximation {
         gradient
     }
 
-    pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
+    pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<C>>>) -> Gradient {
         // let input_batch = self.input_batch.as_ref().expect("Input batch not found in self-attention layer backward");
-        let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient_batch.clone();
+        let mut gradient_input_batch: Vec<Vec<Vec<C>>> = previous_gradient_batch.clone();
 
         let mut gradient: Gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(previous_gradient_batch.clone());
@@ -333,7 +334,7 @@ impl SelfAttentionLayerApproximation {
         assert!(num_heads > 0, "No attention heads found in self-attention layer!");
 
         let previous_gradient_head_splitted = self.split_gradient_into_heads(&gradient_input_batch);
-        let mut gradient_input_batches: Vec<Vec<Vec<Vec<Complex<f64>>>>> = Vec::new();
+        let mut gradient_input_batches: Vec<Vec<Vec<Vec<C>>>> = Vec::new();
 
         // Backpropagate gradients through each attention head
         for (head_ind, attention_head) in self.attention_heads.iter_mut().enumerate() {
@@ -346,7 +347,13 @@ impl SelfAttentionLayerApproximation {
             // println!("gradient input head {:?}", &gradient.get_gradient_input_batch());
         }
 
-        let mut combined_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); gradient_input_batches[0][0][0].len()]; gradient_input_batches[0][0].len()]; gradient_input_batches[0].len()];
+        let mut combined_gradient_input_batch: Vec<Vec<Vec<C>>> = vec![
+            vec![
+                vec![C::new(ZERO, ZERO); gradient_input_batches[0][0][0].len()];
+                gradient_input_batches[0][0].len()
+            ];
+            gradient_input_batches[0].len()
+        ];
 
         for h in 0..gradient_input_batches.len() {
             for b in 0..gradient_input_batches[h].len() {
@@ -374,7 +381,7 @@ impl SelfAttentionLayerApproximation {
         gradient
     }
 
-    pub fn split_gradient_into_heads(&self, previous_gradient_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Vec<Vec<Complex<f64>>>>> {
+    pub fn split_gradient_into_heads(&self, previous_gradient_batch: &Vec<Vec<Vec<C>>>) -> Vec<Vec<Vec<Vec<C>>>> {
         let batch_size = previous_gradient_batch.len();
         let seq_len = previous_gradient_batch[0].len();
         let dim = previous_gradient_batch[0][0].len();
@@ -384,7 +391,7 @@ impl SelfAttentionLayerApproximation {
         assert!(dim % num_heads == 0, "dim={} must be divisible by num_heads={}", dim, num_heads);
 
         // Initialize a vector to store gradients for each attention head
-        let mut grad_heads = vec![vec![vec![vec![Complex::new(0.0, 0.0); head_dim]; seq_len]; batch_size]; num_heads];
+        let mut grad_heads = vec![vec![vec![vec![C::new(ZERO, ZERO); head_dim]; seq_len]; batch_size]; num_heads];
 
         for batch_ind in 0..batch_size {
             for seq_in in 0..seq_len {

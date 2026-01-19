@@ -1,8 +1,7 @@
-use num::Complex;
-
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer::LayerEnum},
     network_types::{neural_network_generic::NeuralNetwork, transformer::transformer_builder::NUM_SELF_ATT_LAYERS},
+    utils::dtype::{r, C, Real},
     utils::matrix::{normalize_bias, normalize_gradients, normalize_gradients_batch},
 };
 
@@ -85,9 +84,9 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                     global_weights.push(gradient.get_gradient_bias_pos());
 
                     let mut gradient_weight_k_batch = gradient.get_gradient_weights_k_batch();
-                    let mut gradient_weight_v_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_weights_v_batch();
-                    let mut gradient_weight_q_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_weights_q_batch();
-                    let mut gradient_weight_pos_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_bias_pos_batch();
+                    let mut gradient_weight_v_batch: Vec<Vec<Vec<C>>> = gradient.get_gradient_weights_v_batch();
+                    let mut gradient_weight_q_batch: Vec<Vec<Vec<C>>> = gradient.get_gradient_weights_q_batch();
+                    let mut gradient_weight_pos_batch: Vec<Vec<Vec<C>>> = gradient.get_gradient_bias_pos_batch();
 
                     normalize_gradients_batch(&mut gradient_weight_k_batch);
                     normalize_gradients_batch(&mut gradient_weight_v_batch);
@@ -165,9 +164,9 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                     global_weights.push(gradient.get_gradient_bias_pos());
 
                     let mut gradient_weight_k_batch = gradient.get_gradient_weights_k_batch();
-                    let mut gradient_weight_v_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_weights_v_batch();
-                    let mut gradient_weight_q_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_weights_q_batch();
-                    let mut gradient_weight_pos_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_bias_pos_batch();
+                    let mut gradient_weight_v_batch: Vec<Vec<Vec<C>>> = gradient.get_gradient_weights_v_batch();
+                    let mut gradient_weight_q_batch: Vec<Vec<Vec<C>>> = gradient.get_gradient_weights_q_batch();
+                    let mut gradient_weight_pos_batch: Vec<Vec<Vec<C>>> = gradient.get_gradient_bias_pos_batch();
 
                     normalize_gradients_batch(&mut gradient_weight_k_batch);
                     normalize_gradients_batch(&mut gradient_weight_v_batch);
@@ -270,9 +269,9 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                     global_weights.push(gradient.get_gradient_bias_pos());
 
                     let mut gradient_weight_k_batch = gradient.get_gradient_weights_k_batch();
-                    let mut gradient_weight_v_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_weights_v_batch();
-                    let mut gradient_weight_q_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_weights_q_batch();
-                    let mut gradient_weight_pos_batch: Vec<Vec<Vec<Complex<f64>>>> = gradient.get_gradient_bias_pos_batch();
+                    let mut gradient_weight_v_batch: Vec<Vec<Vec<C>>> = gradient.get_gradient_weights_v_batch();
+                    let mut gradient_weight_q_batch: Vec<Vec<Vec<C>>> = gradient.get_gradient_weights_q_batch();
+                    let mut gradient_weight_pos_batch: Vec<Vec<Vec<C>>> = gradient.get_gradient_bias_pos_batch();
 
                     normalize_gradients_batch(&mut gradient_weight_k_batch);
                     normalize_gradients_batch(&mut gradient_weight_v_batch);
@@ -644,11 +643,11 @@ pub fn update_k_mean_clusters(transformer_network: &mut NeuralNetwork, epoch: us
     }
 }
 
-pub fn max_weight(weights: &Vec<Vec<Complex<f64>>>) -> f64 {
+pub fn max_weight(weights: &Vec<Vec<C>>) -> f64 {
     let mut max_weight = 0.0;
     for row in weights.iter() {
         for &weight in row.iter() {
-            let abs_weight = weight.norm();
+            let abs_weight = weight.norm() as f64;
             if abs_weight > max_weight {
                 max_weight = abs_weight;
             }
@@ -661,10 +660,10 @@ pub fn max_weight(weights: &Vec<Vec<Complex<f64>>>) -> f64 {
     max_weight
 }
 
-pub fn max_bias(bias: &[Complex<f64>]) -> f64 {
+pub fn max_bias(bias: &[C]) -> f64 {
     let mut max_bias = 0.0;
     for &b in bias.iter() {
-        let abs_b = b.norm();
+        let abs_b = b.norm() as f64;
         if abs_b > max_bias {
             max_bias = abs_b;
         }
@@ -677,12 +676,12 @@ pub fn max_bias(bias: &[Complex<f64>]) -> f64 {
 }
 
 // for scaling the input
-pub fn calculate_alpha() -> f64 {
-    (3.0 * NUM_SELF_ATT_LAYERS as f64).powf(0.25)
+pub fn calculate_alpha() -> Real {
+    r((3.0f64 * NUM_SELF_ATT_LAYERS as f64).powf(0.25))
 }
 
 // for scaling the residuals
-pub fn calculate_beta() -> f64 {
+pub fn calculate_beta() -> Real {
     let alpha = calculate_alpha();
-    1.0 / alpha
+    r(1.0) / alpha
 }

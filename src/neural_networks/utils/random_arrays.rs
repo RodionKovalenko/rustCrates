@@ -1,7 +1,9 @@
 use num::Complex;
 use rand::Rng;
 
-pub fn generate_random_complex_3d(batch_size: usize, rows: usize, cols: usize) -> Vec<Vec<Vec<Complex<f64>>>> {
+use crate::neural_networks::utils::dtype::{r, Real};
+
+pub fn generate_random_complex_3d(batch_size: usize, rows: usize, cols: usize) -> Vec<Vec<Vec<Complex<Real>>>> {
     let mut rng = rand::rng();
 
     (0..batch_size)
@@ -12,7 +14,7 @@ pub fn generate_random_complex_3d(batch_size: usize, rows: usize, cols: usize) -
                         .map(|_| {
                             let real = rng.random_range(-1.0..1.0); // Random f64 in range [-1.0, 1.0)
                             let imag = rng.random_range(-1.0..1.0);
-                            Complex::new(real, imag)
+                            Complex::new(r(real), r(imag))
                         })
                         .collect()
                 })
@@ -70,7 +72,7 @@ pub fn generate_random_f32_2d(rows: usize, cols: usize) -> Vec<Vec<f32>> {
         .collect()
 }
 
-pub fn generate_random_complex_2d(rows: usize, cols: usize) -> Vec<Vec<Complex<f64>>> {
+pub fn generate_random_complex_2d(rows: usize, cols: usize) -> Vec<Vec<Complex<Real>>> {
     let mut rng = rand::rng();
 
     (0..rows)
@@ -79,7 +81,7 @@ pub fn generate_random_complex_2d(rows: usize, cols: usize) -> Vec<Vec<Complex<f
                 .map(|_| {
                     let real = rng.random_range(-1.0..1.0); // Random f64 in range [-1.0, 1.0)
                     let imag = rng.random_range(-1.0..1.0);
-                    Complex::new(real, imag)
+                    Complex::new(r(real), r(imag))
                 })
                 .collect()
         })

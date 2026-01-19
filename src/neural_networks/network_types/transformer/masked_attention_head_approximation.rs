@@ -1,4 +1,3 @@
-use num::Complex;
 use num_complex::ComplexFloat;
 use rand::Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -8,6 +7,7 @@ use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer::LayerType, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     utils::{
         adam_w::calculate_adam_w,
+        dtype::{r, C, Real, ONE, ZERO},
         matrix::{average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, RowMajorMatrix},
         weights_initializer::initialize_weights_complex,
     },
@@ -16,26 +16,26 @@ use crate::neural_networks::{
 // Precomputed gradient caches for optimization
 #[derive(Clone)]
 struct PrecomputedGradients {
-    numerator: Vec<Vec<Vec<Complex<f64>>>>,      // [batch][time][dv]
-    denominator: Vec<Vec<Complex<f64>>>,         // [batch][time]
-    grad_numerator: Vec<Vec<Vec<Complex<f64>>>>, // [batch][time][dv]
-    grad_denominator: Vec<Vec<Complex<f64>>>,    // [batch][time]
-    grad_phi_q: Vec<Vec<Vec<Complex<f64>>>>,     // [batch][time][r]
+    numerator: Vec<Vec<Vec<C>>>,      // [batch][time][dv]
+    denominator: Vec<Vec<C>>,         // [batch][time]
+    grad_numerator: Vec<Vec<Vec<C>>>, // [batch][time][dv]
+    grad_denominator: Vec<Vec<C>>,    // [batch][time]
+    grad_phi_q: Vec<Vec<Vec<C>>>,     // [batch][time][r]
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MaskedAttentionHeadApproximation {
-    pub weights_q: Vec<Vec<Complex<f64>>>,
-    pub weights_k: Vec<Vec<Complex<f64>>>,
-    pub weights_v: Vec<Vec<Complex<f64>>>,
-    pub bias_pos: Vec<Vec<Complex<f64>>>,
-    pub bias_q: Vec<Complex<f64>>,
-    pub bias_k: Vec<Complex<f64>>,
-    pub bias_v: Vec<Complex<f64>>,
+    pub weights_q: Vec<Vec<C>>,
+    pub weights_k: Vec<Vec<C>>,
+    pub weights_v: Vec<Vec<C>>,
+    pub bias_pos: Vec<Vec<C>>,
+    pub bias_q: Vec<C>,
+    pub bias_k: Vec<C>,
+    pub bias_v: Vec<C>,
     pub layer_type: LayerType,
     pub learning_rate: f64,
-    pub smoothing: f64,
-    pub ema: f64,
+    pub smoothing: Real,
+    pub ema: Real,
     pub batch_size: usize,
     pub total_valid_tokens: usize,
     pub global_norm: f64,
@@ -46,51 +46,53 @@ pub struct MaskedAttentionHeadApproximation {
     pub gradient: Option<Gradient>,
     pub time_step: usize,
     #[serde(skip)]
-    pub input_batch: Vec<Vec<Vec<Complex<f64>>>>,
+    pub input_batch: Vec<Vec<Vec<C>>>,
     #[serde(skip)]
-    pub input_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+    pub input_batch_rm: Option<Vec<RowMajorMatrix<C>>>,
     #[serde(skip)]
-    pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub output_batch: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
-    pub output_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+    pub output_batch_rm: Option<Vec<RowMajorMatrix<C>>>,
     #[serde(skip)]
     pub padding_mask: Vec<Vec<u32>>,
     #[serde(skip)]
-    pub q_scaled: Vec<Vec<Vec<Complex<f64>>>>,
+    pub q_scaled: Vec<Vec<Vec<C>>>,
     #[serde(skip)]
-    pub k_scaled: Vec<Vec<Vec<Complex<f64>>>>,
+    pub k_scaled: Vec<Vec<Vec<C>>>,
     #[serde(skip)]
-    pub v_batch: Vec<Vec<Vec<Complex<f64>>>>,
+    pub v_batch: Vec<Vec<Vec<C>>>,
     #[serde(skip)]
-    pub phi_q: Vec<Vec<Vec<Complex<f64>>>>,
+    pub phi_q: Vec<Vec<Vec<C>>>,
     #[serde(skip)]
-    pub phi_k: Vec<Vec<Vec<Complex<f64>>>>,
+    pub phi_k: Vec<Vec<Vec<C>>>,
     #[serde(skip)]
-    pub prefix_phi_k: Vec<Vec<Vec<Complex<f64>>>>,
+    pub prefix_phi_k: Vec<Vec<Vec<C>>>,
     #[serde(skip)]
-    pub prefix_phi_kv: Vec<Vec<Vec<Vec<Complex<f64>>>>>,
-    pub w: Vec<Vec<Complex<f64>>>,
-    pub b: Vec<Complex<f64>>,
-    pub m1: Vec<Vec<Complex<f64>>>,
-    pub v1: Vec<Vec<Complex<f64>>>,
+    pub prefix_phi_kv: Vec<Vec<Vec<Vec<C>>>>,
+    pub w: Vec<Vec<C>>,
+    pub b: Vec<C>,
+    pub m1: Vec<Vec<C>>,
+    pub v1: Vec<Vec<C>>,
 }
 
 impl MaskedAttentionHeadApproximation {
     pub fn new(rows: usize, cols: usize, learning_rate: f64) -> Self {
         let mut rng = rand::rng();
-        let mut weights_q = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
+        let mut weights_q = vec![vec![C::new(ZERO, ZERO); cols]; rows];
         let mut weights_k = weights_q.clone();
         let mut weights_v = weights_q.clone();
         initialize_weights_complex(rows, cols, &mut weights_q);
         initialize_weights_complex(rows, cols, &mut weights_k);
         initialize_weights_complex(rows, cols, &mut weights_v);
-        let mut bias_pos = vec![vec![Complex::new(0.0, 0.0); 5]; 5];
+        let mut bias_pos = vec![vec![C::new(ZERO, ZERO); 5]; 5];
         initialize_weights_complex(5, 5, &mut bias_pos);
-        let bias_q = vec![Complex::new(1.0, 0.0); cols];
+        let bias_q = vec![C::new(ONE, ZERO); cols];
         let bias_k = bias_q.clone();
         let bias_v = bias_q.clone();
-        let w = (0..cols).map(|_| (0..cols).map(|_| Complex::new(rng.random(), 0.0)).collect()).collect();
-        let b = (0..cols).map(|_| Complex::new(rng.random(), 0.0)).collect();
+        let w = (0..cols)
+            .map(|_| (0..cols).map(|_| C::new(rng.random::<Real>(), ZERO)).collect())
+            .collect();
+        let b = (0..cols).map(|_| C::new(rng.random::<Real>(), ZERO)).collect();
 
         Self {
             weights_q,
@@ -102,8 +104,8 @@ impl MaskedAttentionHeadApproximation {
             bias_v,
             layer_type: LayerType::InputLayer,
             learning_rate,
-            smoothing: 0.99,
-            ema: 0.0,
+            smoothing: r(0.99),
+            ema: ZERO,
             batch_size: 0,
             total_valid_tokens: 1,
             gradient: None,
@@ -123,8 +125,8 @@ impl MaskedAttentionHeadApproximation {
             prefix_phi_kv: vec![],
             w,
             b,
-            m1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
-            v1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
+            m1: vec![vec![C::new(ZERO, ZERO); cols]; rows],
+            v1: vec![vec![C::new(ZERO, ZERO); cols]; rows],
             global_norm: 0.0,
             max_norm: 0.0,
         }
@@ -137,10 +139,10 @@ impl MaskedAttentionHeadApproximation {
         attention_layer
     }
 
-    fn phi(&self, x: &[Complex<f64>], omega: &[Complex<f64>]) -> Complex<f64> {
-        let dot = omega.iter().zip(x).map(|(w, x)| w.conj() * x).sum::<Complex<f64>>();
-        let norm_sq = x.iter().map(|c| c.norm_sqr()).sum::<f64>();
-        (dot - Complex::new(norm_sq / 2.0, 0.0)).exp()
+    fn phi(&self, x: &[C], omega: &[C]) -> C {
+        let dot = omega.iter().zip(x).map(|(w, x)| w.conj() * *x).sum::<C>();
+        let norm_sq = x.iter().map(|c| c.norm_sqr()).sum::<Real>();
+        (dot - C::new(norm_sq / r(2.0), ZERO)).exp()
     }
 
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
@@ -161,7 +163,7 @@ impl MaskedAttentionHeadApproximation {
                 self.total_valid_tokens = layer_input.get_total_valid_tokens();
                 self.time_step = layer_input.get_time_step();
 
-                let mut q = vec![vec![vec![Complex::new(0.0, 0.0); d_k]; seq]; bsz];
+                let mut q = vec![vec![vec![C::new(ZERO, ZERO); d_k]; seq]; bsz];
                 let mut k = q.clone();
                 let mut v = q.clone();
 
@@ -184,7 +186,7 @@ impl MaskedAttentionHeadApproximation {
                 self.q_scaled = q.clone();
                 self.k_scaled = k.clone();
                 self.v_batch = v.clone();
-                let scale = 1.0 / (d_k as f64).sqrt();
+                let scale: Real = ONE / r(d_k as f64).sqrt();
                 for b in 0..bsz {
                     for t in 0..seq {
                         for j in 0..d_k {
@@ -194,7 +196,7 @@ impl MaskedAttentionHeadApproximation {
                     }
                 }
 
-                self.phi_q = vec![vec![vec![Complex::new(0.0, 0.0); self.w.len()]; seq]; bsz];
+                self.phi_q = vec![vec![vec![C::new(ZERO, ZERO); self.w.len()]; seq]; bsz];
                 self.phi_k = self.phi_q.clone();
                 for b in 0..bsz {
                     for t in 0..seq {
@@ -206,7 +208,7 @@ impl MaskedAttentionHeadApproximation {
                 }
 
                 self.prefix_phi_k = self.phi_k.clone();
-                self.prefix_phi_kv = vec![vec![vec![vec![Complex::new(0.0, 0.0); d_k]; self.w.len()]; seq]; bsz];
+                self.prefix_phi_kv = vec![vec![vec![vec![C::new(ZERO, ZERO); d_k]; self.w.len()]; seq]; bsz];
                 for b in 0..bsz {
                     for t in 0..seq {
                         if t == 0 {
@@ -226,23 +228,23 @@ impl MaskedAttentionHeadApproximation {
                     }
                 }
 
-                let mut out_rm: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(bsz);
+                let mut out_rm: Vec<RowMajorMatrix<C>> = Vec::with_capacity(bsz);
                 for b in 0..bsz {
-                    let mut out = RowMajorMatrix::from_data(seq, d_k, vec![Complex::new(0.0, 0.0); seq * d_k]);
+                    let mut out = RowMajorMatrix::from_data(seq, d_k, vec![C::new(ZERO, ZERO); seq * d_k]);
                     for t in 0..seq {
                         if pad[b][t] == 0 {
                             continue;
                         }
-                        let mut num = vec![Complex::new(0.0, 0.0); d_k];
-                        let mut den = Complex::new(0.0, 0.0);
+                        let mut num = vec![C::new(ZERO, ZERO); d_k];
+                        let mut den = C::new(ZERO, ZERO);
                         for r in 0..self.w.len() {
                             for dv in 0..d_k {
                                 num[dv] += self.prefix_phi_kv[b][t][r][dv] * self.phi_q[b][t][r];
                             }
                             den += self.prefix_phi_k[b][t][r] * self.phi_q[b][t][r];
                         }
-                        if den.abs() < 1e-8 {
-                            den += Complex::new(1e-8, 0.0);
+                        if den.abs() < r(1e-8) {
+                            den += C::new(r(1e-8), ZERO);
                         }
                         let row = out.row_range(t);
                         for dv in 0..d_k {
@@ -273,7 +275,7 @@ impl MaskedAttentionHeadApproximation {
         self.batch_size = bsz;
         self.total_valid_tokens = layer_input.get_total_valid_tokens();
         self.time_step = layer_input.get_time_step();
-        let mut q = vec![vec![vec![Complex::new(0.0, 0.0); d_k]; seq]; bsz];
+        let mut q = vec![vec![vec![C::new(ZERO, ZERO); d_k]; seq]; bsz];
         let mut k = q.clone();
         let mut v = q.clone();
         for b in 0..bsz {
@@ -290,7 +292,7 @@ impl MaskedAttentionHeadApproximation {
         self.q_scaled = q.clone();
         self.k_scaled = k.clone();
         self.v_batch = v.clone();
-        let scale = 1.0 / (d_k as f64).sqrt();
+        let scale: Real = ONE / r(d_k as f64).sqrt();
         for b in 0..bsz {
             for t in 0..seq {
                 for j in 0..d_k {
@@ -299,7 +301,7 @@ impl MaskedAttentionHeadApproximation {
                 }
             }
         }
-        self.phi_q = vec![vec![vec![Complex::new(0.0, 0.0); self.w.len()]; seq]; bsz];
+        self.phi_q = vec![vec![vec![C::new(ZERO, ZERO); self.w.len()]; seq]; bsz];
         self.phi_k = self.phi_q.clone();
         for b in 0..bsz {
             for t in 0..seq {
@@ -310,7 +312,7 @@ impl MaskedAttentionHeadApproximation {
             }
         }
         self.prefix_phi_k = self.phi_k.clone();
-        self.prefix_phi_kv = vec![vec![vec![vec![Complex::new(0.0, 0.0); d_k]; self.w.len()]; seq]; bsz];
+        self.prefix_phi_kv = vec![vec![vec![vec![C::new(ZERO, ZERO); d_k]; self.w.len()]; seq]; bsz];
         for b in 0..bsz {
             for t in 0..seq {
                 if t == 0 {
@@ -329,22 +331,22 @@ impl MaskedAttentionHeadApproximation {
                 }
             }
         }
-        let mut out = vec![vec![vec![Complex::new(0.0, 0.0); d_k]; seq]; bsz];
+        let mut out = vec![vec![vec![C::new(ZERO, ZERO); d_k]; seq]; bsz];
         for b in 0..bsz {
             for t in 0..seq {
                 if pad[b][t] == 0 {
                     continue;
                 }
-                let mut num = vec![Complex::new(0.0, 0.0); d_k];
-                let mut den = Complex::new(0.0, 0.0);
+                let mut num = vec![C::new(ZERO, ZERO); d_k];
+                let mut den = C::new(ZERO, ZERO);
                 for r in 0..self.w.len() {
                     for dv in 0..d_k {
                         num[dv] += self.prefix_phi_kv[b][t][r][dv] * self.phi_q[b][t][r];
                     }
                     den += self.prefix_phi_k[b][t][r] * self.phi_q[b][t][r];
                 }
-                if den.abs() < 1e-8 {
-                    den += Complex::new(1e-8, 0.0)
+                if den.abs() < r(1e-8) {
+                    den += C::new(r(1e-8), ZERO)
                 }
                 for dv in 0..d_k {
                     out[b][t][dv] = num[dv] / den;
@@ -357,7 +359,7 @@ impl MaskedAttentionHeadApproximation {
         lo
     }
 
-    pub fn backward_rm(&mut self, grad_output_rm: &[RowMajorMatrix<Complex<f64>>]) -> Gradient {
+    pub fn backward_rm(&mut self, grad_output_rm: &[RowMajorMatrix<C>]) -> Gradient {
         let input_batch_rm = self.input_batch_rm.as_ref().expect("RM input batch missing in attention head approximation backward_rm");
         if grad_output_rm.is_empty() {
             let mut gradient = Gradient::new_default();
@@ -370,11 +372,11 @@ impl MaskedAttentionHeadApproximation {
         let seq = input_batch_rm[0].rows;
         let d_model = input_batch_rm[0].cols;
         let d_k = self.weights_k[0].len();
-        let scale = 1.0 / (d_k as f64).sqrt();
+        let scale: Real = ONE / r(d_k as f64).sqrt();
 
         // Build Vec view of grad_output for reuse of existing precompute_gradients logic.
         // This avoids RM↔Vec conversions at transformer boundaries while keeping internal math identical.
-        let grad_output: Vec<Vec<Vec<Complex<f64>>>> = grad_output_rm
+        let grad_output: Vec<Vec<Vec<C>>> = grad_output_rm
             .iter()
             .map(|m| {
                 (0..m.rows)
@@ -388,21 +390,21 @@ impl MaskedAttentionHeadApproximation {
 
         let pg = self.precompute_gradients(bsz, seq, &grad_output);
 
-        let mut grad_in_rm: Vec<RowMajorMatrix<Complex<f64>>> = vec![
-            RowMajorMatrix::from_data(seq, d_model, vec![Complex::new(0.0, 0.0); seq * d_model]);
+        let mut grad_in_rm: Vec<RowMajorMatrix<C>> = vec![
+            RowMajorMatrix::from_data(seq, d_model, vec![C::new(ZERO, ZERO); seq * d_model]);
             bsz
         ];
-        let mut grad_wq = vec![vec![vec![Complex::new(0.0, 0.0); d_k]; d_model]; bsz];
+        let mut grad_wq = vec![vec![vec![C::new(ZERO, ZERO); d_k]; d_model]; bsz];
         let mut grad_wk = grad_wq.clone();
         let mut grad_wv = grad_wq.clone();
 
         let scratch: Vec<_> = (0..bsz)
             .into_par_iter()
             .map(|b| {
-                let mut local_wq = vec![vec![Complex::new(0.0, 0.0); d_k]; d_model];
-                let mut local_wk = vec![vec![Complex::new(0.0, 0.0); d_k]; d_model];
-                let mut local_wv = vec![vec![Complex::new(0.0, 0.0); d_k]; d_model];
-                let mut local_in = RowMajorMatrix::from_data(seq, d_model, vec![Complex::new(0.0, 0.0); seq * d_model]);
+                let mut local_wq = vec![vec![C::new(ZERO, ZERO); d_k]; d_model];
+                let mut local_wk = vec![vec![C::new(ZERO, ZERO); d_k]; d_model];
+                let mut local_wv = vec![vec![C::new(ZERO, ZERO); d_k]; d_model];
+                let mut local_in = RowMajorMatrix::from_data(seq, d_model, vec![C::new(ZERO, ZERO); seq * d_model]);
 
                 // Q path
                 for t in 0..seq {
@@ -427,7 +429,7 @@ impl MaskedAttentionHeadApproximation {
                     for tau in 0..=t {
                         let in_row_tau = input_batch_rm[b].row_range(tau);
                         for dv in 0..d_k {
-                            let mut gv = Complex::new(0.0, 0.0);
+                            let mut gv = C::new(ZERO, ZERO);
                             for r in 0..self.w.len() {
                                 gv += pg.grad_numerator[b][t][dv] * self.phi_q[b][t][r] * self.phi_k[b][tau][r];
                             }
@@ -448,12 +450,12 @@ impl MaskedAttentionHeadApproximation {
                         let phi = self.phi_k[b][tau][r];
                         for i in 0..d_k {
                             let dphi = phi * (self.w[r][i].conj() - self.k_scaled[b][tau][i]);
-                            let mut gk = Complex::new(0.0, 0.0);
+                                let mut gk = C::new(ZERO, ZERO);
                             for t in tau..seq {
                                 if self.padding_mask[b][t] == 0 {
                                     continue;
                                 }
-                                let mut gp = Complex::new(0.0, 0.0);
+                                let mut gp = C::new(ZERO, ZERO);
                                 for dv in 0..d_k {
                                     gp += pg.grad_numerator[b][t][dv] * self.phi_q[b][t][r] * self.v_batch[b][tau][dv];
                                 }
@@ -497,14 +499,14 @@ impl MaskedAttentionHeadApproximation {
     }
 
     /// Precompute numerator, denominator, and local gradient components for all (b,t)
-    fn precompute_gradients(&self, batch_size: usize, seq_len: usize, grad_output: &Vec<Vec<Vec<Complex<f64>>>>) -> PrecomputedGradients {
+    fn precompute_gradients(&self, batch_size: usize, seq_len: usize, grad_output: &Vec<Vec<Vec<C>>>) -> PrecomputedGradients {
         let d_v = self.weights_v[0].len();
         let mut pg = PrecomputedGradients {
-            numerator: vec![vec![vec![Complex::new(0.0, 0.0); d_v]; seq_len]; batch_size],
-            denominator: vec![vec![Complex::new(0.0, 0.0); seq_len]; batch_size],
-            grad_numerator: vec![vec![vec![Complex::new(0.0, 0.0); d_v]; seq_len]; batch_size],
-            grad_denominator: vec![vec![Complex::new(0.0, 0.0); seq_len]; batch_size],
-            grad_phi_q: vec![vec![vec![Complex::new(0.0, 0.0); self.w.len()]; seq_len]; batch_size],
+            numerator: vec![vec![vec![C::new(ZERO, ZERO); d_v]; seq_len]; batch_size],
+            denominator: vec![vec![C::new(ZERO, ZERO); seq_len]; batch_size],
+            grad_numerator: vec![vec![vec![C::new(ZERO, ZERO); d_v]; seq_len]; batch_size],
+            grad_denominator: vec![vec![C::new(ZERO, ZERO); seq_len]; batch_size],
+            grad_phi_q: vec![vec![vec![C::new(ZERO, ZERO); self.w.len()]; seq_len]; batch_size],
         };
 
         for b in 0..batch_size {
@@ -520,8 +522,8 @@ impl MaskedAttentionHeadApproximation {
                     }
                     pg.denominator[b][t] += self.prefix_phi_k[b][t][r] * phi_q_rt;
                 }
-                if pg.denominator[b][t].abs() < 1e-8 {
-                    pg.denominator[b][t] += Complex::new(1e-8, 0.0);
+                if pg.denominator[b][t].abs() < r(1e-8) {
+                    pg.denominator[b][t] += C::new(r(1e-8), ZERO);
                 }
                 // Compute grad_numerator & grad_denominator
                 for dv in 0..d_v {
@@ -531,7 +533,7 @@ impl MaskedAttentionHeadApproximation {
                 }
                 // Compute grad_phi_q
                 for r in 0..self.w.len() {
-                    let mut sum = Complex::new(0.0, 0.0);
+                    let mut sum = C::new(ZERO, ZERO);
                     for dv in 0..d_v {
                         sum += pg.grad_numerator[b][t][dv] * self.prefix_phi_kv[b][t][r][dv];
                     }
@@ -542,19 +544,19 @@ impl MaskedAttentionHeadApproximation {
         pg
     }
 
-    pub fn backward(&mut self, grad_output: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
+    pub fn backward(&mut self, grad_output: &Vec<Vec<Vec<C>>>) -> Gradient {
         let bsz = self.input_batch.len();
         let seq = self.input_batch[0].len();
         let d_model = self.input_batch[0][0].len();
         let d_k = self.weights_k[0].len();
-        let scale = 1.0 / (d_k as f64).sqrt();
+        let scale: Real = ONE / r(d_k as f64).sqrt();
 
         // Precompute shared gradient terms
         let pg = self.precompute_gradients(bsz, seq, grad_output);
 
         // Global accumulators
-        let mut grad_in = vec![vec![vec![Complex::new(0.0, 0.0); d_model]; seq]; bsz];
-        let mut grad_wq = vec![vec![vec![Complex::new(0.0, 0.0); d_k]; d_model]; bsz];
+        let mut grad_in = vec![vec![vec![C::new(ZERO, ZERO); d_model]; seq]; bsz];
+        let mut grad_wq = vec![vec![vec![C::new(ZERO, ZERO); d_k]; d_model]; bsz];
         let mut grad_wk = grad_wq.clone();
         let mut grad_wv = grad_wq.clone();
 
@@ -562,10 +564,10 @@ impl MaskedAttentionHeadApproximation {
         let scratch: Vec<_> = (0..bsz)
             .into_par_iter()
             .map(|b| {
-                let mut local_wq = vec![vec![Complex::new(0.0, 0.0); d_k]; d_model];
-                let mut local_wk = vec![vec![Complex::new(0.0, 0.0); d_k]; d_model];
-                let mut local_wv = vec![vec![Complex::new(0.0, 0.0); d_k]; d_model];
-                let mut local_in = vec![vec![Complex::new(0.0, 0.0); d_model]; seq];
+                let mut local_wq = vec![vec![C::new(ZERO, ZERO); d_k]; d_model];
+                let mut local_wk = vec![vec![C::new(ZERO, ZERO); d_k]; d_model];
+                let mut local_wv = vec![vec![C::new(ZERO, ZERO); d_k]; d_model];
+                let mut local_in = vec![vec![C::new(ZERO, ZERO); d_model]; seq];
 
                 // Q path
                 for t in 0..seq {
@@ -586,7 +588,7 @@ impl MaskedAttentionHeadApproximation {
                     // V path
                     for tau in 0..=t {
                         for dv in 0..d_k {
-                            let mut gv = Complex::new(0.0, 0.0);
+                            let mut gv = C::new(ZERO, ZERO);
                             for r in 0..self.w.len() {
                                 gv += pg.grad_numerator[b][t][dv] * self.phi_q[b][t][r] * self.phi_k[b][tau][r];
                             }
@@ -604,12 +606,12 @@ impl MaskedAttentionHeadApproximation {
                         let phi = self.phi_k[b][tau][r];
                         for i in 0..d_k {
                             let dphi = phi * (self.w[r][i].conj() - self.k_scaled[b][tau][i]);
-                            let mut gk = Complex::new(0.0, 0.0);
+                            let mut gk = C::new(ZERO, ZERO);
                             for t in tau..seq {
                                 if self.padding_mask[b][t] == 0 {
                                     continue;
                                 }
-                                let mut gp = Complex::new(0.0, 0.0);
+                                let mut gp = C::new(ZERO, ZERO);
                                 for dv in 0..d_k {
                                     gp += pg.grad_numerator[b][t][dv] * self.phi_q[b][t][r] * self.v_batch[b][tau][dv];
                                 }
@@ -660,7 +662,7 @@ impl MaskedAttentionHeadApproximation {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("Gradient is missing in attention head layer");
         let (mut grad_w_q, mut grad_w_v, mut grad_w_k) = (gradient.get_gradient_weights_q(), gradient.get_gradient_weights_v(), gradient.get_gradient_weights_k());
 
-        let total_valid_tokens = self.total_valid_tokens.max(1) as f64;
+        let total_valid_tokens: Real = r(self.total_valid_tokens.max(1) as f64);
 
         grad_w_q = average_matrix_by_scalar(&grad_w_q, total_valid_tokens);
         grad_w_v = average_matrix_by_scalar(&grad_w_v, total_valid_tokens);
@@ -695,15 +697,15 @@ impl MaskedAttentionHeadApproximation {
             )
         } else {
             (
-                vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()],
-                vec![vec![Complex::new(0.0, 0.0); grad_w_q[0].len()]; grad_w_q.len()],
-                vec![vec![Complex::new(0.0, 0.0); grad_w_k[0].len()]; grad_w_k.len()],
-                vec![vec![Complex::new(0.0, 0.0); grad_w_k[0].len()]; grad_w_k.len()],
-                vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
-                vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
-                vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
-                vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
-                vec![vec![Complex::new(0.0, 0.0); grad_w_v[0].len()]; grad_w_v.len()],
+                vec![vec![C::new(ZERO, ZERO); grad_w_q[0].len()]; grad_w_q.len()],
+                vec![vec![C::new(ZERO, ZERO); grad_w_q[0].len()]; grad_w_q.len()],
+                vec![vec![C::new(ZERO, ZERO); grad_w_k[0].len()]; grad_w_k.len()],
+                vec![vec![C::new(ZERO, ZERO); grad_w_k[0].len()]; grad_w_k.len()],
+                vec![vec![C::new(ZERO, ZERO); grad_w_v[0].len()]; grad_w_v.len()],
+                vec![vec![C::new(ZERO, ZERO); grad_w_v[0].len()]; grad_w_v.len()],
+                vec![vec![C::new(ZERO, ZERO); grad_w_v[0].len()]; grad_w_v.len()],
+                vec![vec![C::new(ZERO, ZERO); grad_w_v[0].len()]; grad_w_v.len()],
+                vec![vec![C::new(ZERO, ZERO); grad_w_v[0].len()]; grad_w_v.len()],
             )
         };
 

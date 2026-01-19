@@ -1,7 +1,7 @@
 #[cfg(test)]
 
 mod tests {
-    use num::Complex;
+    use crate::neural_networks::utils::dtype::{c_to_f64, C};
 
     use crate::neural_networks::{
         network_components::layer::{ActivationType, Layer, LayerType},
@@ -32,12 +32,12 @@ mod tests {
         println!("layers len {:?}", &feedforward_network.layers.len());
         println!( "minibatch size {:?}", &feedforward_network.get_minibatch_size());
 
-        assert_eq![feedforward_network.learning_rate, learning_rate];
-        assert_eq![
+        assert_eq!(feedforward_network.learning_rate, learning_rate);
+        assert_eq!(
             feedforward_network.layers.len(),
             0
-        ];
-        assert_eq![feedforward_network.get_minibatch_size(), minibatch_size];
+        );
+        assert_eq!(feedforward_network.get_minibatch_size(), minibatch_size);
     }
 
     #[test]
@@ -95,8 +95,8 @@ mod tests {
     }
 
     pub fn are_complex_arrays_equal<const M: usize, const N: usize>(
-        left: &Vec<Vec<Complex<f64>>>,
-        right: &Vec<Vec<Complex<f64>>>,
+        left: &Vec<Vec<C>>,
+        right: &Vec<Vec<C>>,
         epsilon: f64,
     ) -> bool {
         for i in 0..N {
@@ -109,7 +109,9 @@ mod tests {
         true
     }
 
-    fn is_complex_equal(a: &Complex<f64>, b: &Complex<f64>, epsilon: f64) -> bool {
-        (a.re - b.re).abs() < epsilon && (a.im - b.im).abs() < epsilon
+    fn is_complex_equal(a: &C, b: &C, epsilon: f64) -> bool {
+        let a64 = c_to_f64(*a);
+        let b64 = c_to_f64(*b);
+        (a64.re - b64.re).abs() < epsilon && (a64.im - b64.im).abs() < epsilon
     }
 }

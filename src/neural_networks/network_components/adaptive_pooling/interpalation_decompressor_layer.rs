@@ -1,11 +1,11 @@
-use num::Complex;
+use crate::neural_networks::utils::dtype::{r, C, Real, ZERO};
 
 // Interpolation-based decompression methods
 pub struct InterpolationDecompressorLayer;
 
 impl InterpolationDecompressorLayer {
     /// Linear interpolation decompression
-    pub fn linear_interpolate(compressed: &Vec<Vec<Vec<Complex<f64>>>>, target_length: usize) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn linear_interpolate(compressed: &Vec<Vec<Vec<C>>>, target_length: usize) -> Vec<Vec<Vec<C>>> {
         if compressed.is_empty() || target_length == 0 {
             return Vec::new();
         }
@@ -25,7 +25,7 @@ impl InterpolationDecompressorLayer {
         output
     }
 
-    fn interpolate_sequence(compressed: &Vec<Vec<Complex<f64>>>, target_length: usize, hidden_dim: usize) -> Vec<Vec<Complex<f64>>> {
+    fn interpolate_sequence(compressed: &Vec<Vec<C>>, target_length: usize, hidden_dim: usize) -> Vec<Vec<C>> {
         if compressed.is_empty() || target_length == 0 {
             return Vec::new();
         }
@@ -36,15 +36,17 @@ impl InterpolationDecompressorLayer {
         }
 
         let mut interpolated = Vec::with_capacity(target_length);
-        let scale = (compressed_length - 1) as f64 / (target_length - 1) as f64;
+        let scale: f64 = (compressed_length - 1) as f64 / (target_length - 1) as f64;
 
         for i in 0..target_length {
             let float_idx = i as f64 * scale;
             let left_idx = float_idx.floor() as usize;
             let right_idx = (left_idx + 1).min(compressed_length - 1);
             let weight = float_idx - left_idx as f64;
+            let w: Real = r(weight);
+            let one_minus_w: Real = r(1.0 - weight);
 
-            let mut interpolated_token = vec![Complex::new(0.0, 0.0); hidden_dim];
+            let mut interpolated_token = vec![C::new(ZERO, ZERO); hidden_dim];
 
             if left_idx == right_idx {
                 // No interpolation needed
@@ -54,7 +56,7 @@ impl InterpolationDecompressorLayer {
                 for dim in 0..hidden_dim {
                     let left_val = compressed[left_idx][dim];
                     let right_val = compressed[right_idx][dim];
-                    interpolated_token[dim] = left_val * (1.0 - weight) + right_val * weight;
+                    interpolated_token[dim] = left_val * one_minus_w + right_val * w;
                 }
             }
 
