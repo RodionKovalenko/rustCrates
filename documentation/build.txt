@@ -23,4 +23,4 @@ cargo test --release test_train_transformer -- --nocapture --ignored
 cargo test --no-default-features 
 
 // test for f64
-cargo test -- --features f64
+cargo test --features dtype-f64
