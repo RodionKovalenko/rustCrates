@@ -9,9 +9,9 @@ use crate::neural_networks::{
         norm_layer::NormalNormLayer,
     },
     network_types::transformer::transformer_updater::calculate_alpha,
+    utils::dtype::{real_from_f64, C, Real, ZERO},
     utils::matrix::{add_matrix_3d, scale_matrix_3d_by_scalar, RowMajorMatrix},
 };
-use num::Complex;
 use serde::{Deserialize, Serialize};
 
 // Layer struct
@@ -21,15 +21,15 @@ pub struct FeedForwardLayer {
     pub norm_layer: Option<LayerEnum>,
     pub gradient: Option<Gradient>,
     pub learning_rate: f64,
-    pub alpha: f64,
-    pub beta: f64,
+    pub alpha: Real,
+    pub beta: Real,
 
     #[serde(skip)]
-    pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub input_batch: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
-    pub input_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+    pub input_batch_rm: Option<Vec<RowMajorMatrix<C>>>,
     #[serde(skip)]
-    pub output_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub output_batch: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
     pub padding_mask_batch: Option<Vec<Vec<u32>>>,
     #[serde(skip)]
@@ -58,7 +58,7 @@ impl FeedForwardLayer {
         let _rms_norm_layer = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(rows, epsilon, learning_rate))));
 
         let alpha = calculate_alpha();
-        let beta = 1.0 / alpha;
+        let beta: Real = real_from_f64(1.0) / alpha;
 
         layers.push(LayerEnum::Dense(Box::new(dense_layer)));
         layers.push(LayerEnum::Dense(Box::new(_dense_layer_2)));
@@ -75,8 +75,8 @@ impl FeedForwardLayer {
             padding_mask_batch: None,
             time_step: 0,
             batch_size: 0,
-            alpha: alpha,
-            beta: beta,
+            alpha,
+            beta,
         }
     }
 }
@@ -107,7 +107,7 @@ impl FeedForwardLayer {
             layer_input.set_input_batch_rm(input_rm.to_vec());
             layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
-            let mut output_rm: Vec<RowMajorMatrix<Complex<f64>>> = input_rm.to_vec();
+            let mut output_rm: Vec<RowMajorMatrix<C>> = input_rm.to_vec();
             if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
                 match norm_layer_enum {
                     LayerEnum::RMSNorm(rms_norm_layer) => {
@@ -154,13 +154,13 @@ impl FeedForwardLayer {
             }
 
             // Residual: beta * FFN(x) + x
-            let mut output_final: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(output_rm.len());
+            let mut output_final: Vec<RowMajorMatrix<C>> = Vec::with_capacity(output_rm.len());
             for (y, x) in output_rm.into_iter().zip(input_rm.iter()) {
                 assert_eq!(y.rows, x.rows);
                 assert_eq!(y.cols, x.cols);
                 let mut out = y;
                 for i in 0..out.data.len() {
-                    out.data[i] = out.data[i] * Complex::new(self.beta, 0.0) + x.data[i];
+                    out.data[i] = out.data[i] * C::new(self.beta, ZERO) + x.data[i];
                 }
                 output_final.push(out);
             }
@@ -177,7 +177,7 @@ impl FeedForwardLayer {
         self.input_batch_rm = None;
         self.time_step = input.get_time_step();
 
-        let mut output: Vec<Vec<Vec<Complex<f64>>>> = input_batch.clone();
+        let mut output: Vec<Vec<Vec<C>>> = input_batch.clone();
         let mut padding_mask_batch = input.get_padding_mask_batch();
 
         if padding_mask_batch.is_empty() {
@@ -246,12 +246,12 @@ impl FeedForwardLayer {
             .get_gradient_input_batch_rm_ref()
             .expect("FFN backward_rm expects RM gradients");
 
-        let mut output_grad_rm: Vec<RowMajorMatrix<Complex<f64>>> = prev_rm_ref.to_vec();
+        let mut output_grad_rm: Vec<RowMajorMatrix<C>> = prev_rm_ref.to_vec();
 
         // Scale by beta for the FFN path
         for g in output_grad_rm.iter_mut() {
             for v in g.data.iter_mut() {
-                *v = *v * Complex::new(self.beta, 0.0);
+                *v = *v * C::new(self.beta, ZERO);
             }
         }
 
@@ -315,7 +315,7 @@ impl FeedForwardLayer {
         final_grad
     }
 
-    pub fn backward(&mut self, prev_gradients: &Vec<Vec<Vec<Complex<f64>>>>) -> Gradient {
+    pub fn backward(&mut self, prev_gradients: &Vec<Vec<Vec<C>>>) -> Gradient {
         let mut output_gradients = prev_gradients.clone();
         output_gradients = scale_matrix_3d_by_scalar(&output_gradients, self.beta);
 

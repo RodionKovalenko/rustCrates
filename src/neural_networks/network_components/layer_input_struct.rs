@@ -1,23 +1,23 @@
 use core::fmt::Debug;
-use num::Complex;
 use serde::{Deserialize, Serialize};
 
+use crate::neural_networks::utils::dtype::C;
 use crate::neural_networks::utils::matrix::RowMajorMatrix;
 use crate::neural_networks::{network_components::adaptive_pooling::adaptive_avg_pool1d_layer::CompressionMetadata, network_types::transformer::transformer_network::TOP_K_SIZE};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LayerInput {
-    input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    input_batch: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
-    input_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+    input_batch_rm: Option<Vec<RowMajorMatrix<C>>>,
     batch_ids: Option<Vec<Vec<u32>>>,
     target_batch_ids: Option<Vec<Vec<u32>>>,
-    input_batch_before: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    input_batch_before: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
-    input_batch_before_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
-    previous_gradient_input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    input_batch_before_rm: Option<Vec<RowMajorMatrix<C>>>,
+    previous_gradient_input_batch: Option<Vec<Vec<Vec<C>>>>,
     padding_mask_batch: Option<Vec<Vec<u32>>>,
-    input_record: Option<Vec<Vec<Complex<f64>>>>,
+    input_record: Option<Vec<Vec<C>>>,
     target_tokens_len: usize,
     batch_size: usize,
     time_step: usize,
@@ -76,7 +76,7 @@ impl LayerInput {
     pub fn get_rm_strict(&self) -> bool {
         self.rm_strict
     }
-    pub fn set_input_batch(&mut self, input_batch: Vec<Vec<Vec<Complex<f64>>>>) {
+    pub fn set_input_batch(&mut self, input_batch: Vec<Vec<Vec<C>>>) {
         // Only build RM cache for rectangular inputs. Training can legitimately produce
         // variable-length (ragged) rows (e.g. top-k / sparse representations), in which case
         // RM conversion is not possible.
@@ -114,7 +114,7 @@ impl LayerInput {
         self.input_batch = None;
     }
 
-    pub fn set_input_batch_rm(&mut self, input_batch_rm: Vec<RowMajorMatrix<Complex<f64>>>) {
+    pub fn set_input_batch_rm(&mut self, input_batch_rm: Vec<RowMajorMatrix<C>>) {
         self.input_batch_rm = Some(input_batch_rm);
     }
 
@@ -124,24 +124,24 @@ impl LayerInput {
     pub fn set_forward_only(&mut self, forward_only: bool) {
         self.forward_only = forward_only;
     }
-    pub fn set_input_batch_before(&mut self, input_batch_before: Vec<Vec<Vec<Complex<f64>>>>) {
+    pub fn set_input_batch_before(&mut self, input_batch_before: Vec<Vec<Vec<C>>>) {
         self.input_batch_before = Some(input_batch_before);
     }
 
-    pub fn set_input_batch_before_rm(&mut self, input_batch_before_rm: Vec<RowMajorMatrix<Complex<f64>>>) {
+    pub fn set_input_batch_before_rm(&mut self, input_batch_before_rm: Vec<RowMajorMatrix<C>>) {
         self.input_batch_before_rm = Some(input_batch_before_rm);
     }
 
     pub fn clear_input_batch_before_rm(&mut self) {
         self.input_batch_before_rm = None;
     }
-    pub fn set_previous_gradient_input_batch(&mut self, previous_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>>) {
+    pub fn set_previous_gradient_input_batch(&mut self, previous_gradient_input_batch: Vec<Vec<Vec<C>>>) {
         self.previous_gradient_input_batch = Some(previous_gradient_input_batch);
     }
     pub fn set_padding_mask_batch(&mut self, padding_mask_batch: Vec<Vec<u32>>) {
         self.padding_mask_batch = Some(padding_mask_batch);
     }
-    pub fn set_input_record(&mut self, input_record: Vec<Vec<Complex<f64>>>) {
+    pub fn set_input_record(&mut self, input_record: Vec<Vec<C>>) {
         self.input_record = Some(input_record);
     }
     pub fn set_batch_ids(&mut self, batch_ids: Vec<Vec<u32>>) {
@@ -192,7 +192,7 @@ impl LayerInput {
     pub fn get_padding_mask_batch_ref(&self) -> Option<&[Vec<u32>]> {
         self.padding_mask_batch.as_deref()
     }
-    pub fn get_input_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn get_input_batch(&self) -> Vec<Vec<Vec<C>>> {
         if let Some(input_batch) = &self.input_batch {
             return input_batch.clone();
         }
@@ -207,11 +207,11 @@ impl LayerInput {
         vec![]
     }
 
-    pub fn get_input_batch_ref(&self) -> Option<&[Vec<Vec<Complex<f64>>>]> {
+    pub fn get_input_batch_ref(&self) -> Option<&[Vec<Vec<C>>]> {
         self.input_batch.as_deref()
     }
 
-    pub fn get_input_batch_rm(&self) -> Vec<RowMajorMatrix<Complex<f64>>> {
+    pub fn get_input_batch_rm(&self) -> Vec<RowMajorMatrix<C>> {
         if let Some(input_batch_rm) = &self.input_batch_rm {
             return input_batch_rm.clone();
         }
@@ -242,15 +242,15 @@ impl LayerInput {
         vec![]
     }
 
-    pub fn take_input_batch_rm(&mut self) -> Option<Vec<RowMajorMatrix<Complex<f64>>>> {
+    pub fn take_input_batch_rm(&mut self) -> Option<Vec<RowMajorMatrix<C>>> {
         self.input_batch_rm.take()
     }
 
-    pub fn take_input_batch(&mut self) -> Option<Vec<Vec<Vec<Complex<f64>>>>> {
+    pub fn take_input_batch(&mut self) -> Option<Vec<Vec<Vec<C>>>> {
         self.input_batch.take()
     }
 
-    pub fn get_input_batch_rm_ref(&self) -> Option<&[RowMajorMatrix<Complex<f64>>]> {
+    pub fn get_input_batch_rm_ref(&self) -> Option<&[RowMajorMatrix<C>]> {
         self.input_batch_rm.as_deref()
     }
 
@@ -279,7 +279,7 @@ impl LayerInput {
             panic!("{}: LayerInput has no input (Vec and RM are empty)", layer_name);
         }
     }
-    pub fn get_input_batch_before(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn get_input_batch_before(&self) -> Vec<Vec<Vec<C>>> {
         if let Some(input_batch_before) = &self.input_batch_before {
             return input_batch_before.clone();
         }
@@ -294,24 +294,24 @@ impl LayerInput {
         vec![]
     }
 
-    pub fn get_input_batch_before_rm(&self) -> Vec<RowMajorMatrix<Complex<f64>>> {
+    pub fn get_input_batch_before_rm(&self) -> Vec<RowMajorMatrix<C>> {
         self.input_batch_before_rm.clone().unwrap_or_else(|| vec![])
     }
 
-    pub fn take_input_batch_before_rm(&mut self) -> Option<Vec<RowMajorMatrix<Complex<f64>>>> {
+    pub fn take_input_batch_before_rm(&mut self) -> Option<Vec<RowMajorMatrix<C>>> {
         self.input_batch_before_rm.take()
     }
 
-    pub fn get_input_batch_before_rm_ref(&self) -> Option<&[RowMajorMatrix<Complex<f64>>]> {
+    pub fn get_input_batch_before_rm_ref(&self) -> Option<&[RowMajorMatrix<C>]> {
         self.input_batch_before_rm.as_deref()
     }
     pub fn get_target_batch_ids(&self) -> Vec<Vec<u32>> {
         self.target_batch_ids.clone().unwrap_or_else(|| vec![])
     }
-    pub fn get_previous_gradient_input_batch(&self) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn get_previous_gradient_input_batch(&self) -> Vec<Vec<Vec<C>>> {
         self.previous_gradient_input_batch.clone().unwrap_or_else(|| vec![])
     }
-    pub fn get_input_record(&self) -> Vec<Vec<Complex<f64>>> {
+    pub fn get_input_record(&self) -> Vec<Vec<C>> {
         self.input_record.clone().unwrap_or_else(|| vec![])
     }
     pub fn get_batch_ids(&self) -> Vec<Vec<u32>> {

@@ -295,7 +295,7 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
             LayerEnum::Wavelet(_wavelet_layer) => {}
             LayerEnum::DiscreteWavelet(_wavelet_layer) => {}
             LayerEnum::ComplexToLinear(ctl) => {
-                ctl.learning_rate = learning_rate;
+                ctl.learning_rate = crate::neural_networks::utils::dtype::r(learning_rate);
             }
             LayerEnum::Softmax(_softmax_layer) => {}
             LayerEnum::PositionalEncoding(_positional_encoding_layer) => {}

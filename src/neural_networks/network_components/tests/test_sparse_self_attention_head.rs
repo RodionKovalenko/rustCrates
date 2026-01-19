@@ -307,13 +307,13 @@ mod test_sparse_self_attention_head {
 
         let windows_k: Vec<Vec<Vec<Vec<Complex<f64>>>>> = calculate_window_tokens_batch(&k, window_size);
 
-        let attention_weights = sparse_attention_head.calculate_local_attention::<Complex<f64>>(&q[0], &windows_k[0], false);
+        let attention_weights = sparse_attention_head.calculate_local_attention(&q[0], &windows_k[0], false);
 
         for row in &attention_weights {
             println!("\n sparse attention weights row Q*K: {:?}", row);
         }
 
-        let attention_scores = sparse_attention_head.calculate_local_attention::<Complex<f64>>(&attention_weights, &windows_k[0], false);
+        let attention_scores = sparse_attention_head.calculate_local_attention(&attention_weights, &windows_k[0], false);
 
         for row in &attention_scores {
             println!("\n sparse attention scores row (Q*K) * V: {:?}", row);

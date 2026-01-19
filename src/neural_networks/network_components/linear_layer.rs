@@ -1,5 +1,4 @@
 use core::fmt::Debug;
-use num::Complex;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -8,6 +7,7 @@ use crate::neural_networks::{
     network_types::{transformer::transformer_updater::VERBOSE, wavelet_discrete_layer::DiscreteWaveletLayer},
     utils::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
+        dtype::{r, C, ONE, ZERO},
         matrix::{
             add_vector_rm, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, conjugate_transpose_rm,
             conjugate_transpose_to_rm, multiply_complex, multiply_complex_rm, RowMajorMatrix,
@@ -20,9 +20,9 @@ use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_out
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinearLayer {
-    pub weights: Vec<Vec<Complex<f64>>>,
+    pub weights: Vec<Vec<C>>,
     pub learning_rate: f64,
-    pub bias: Vec<Complex<f64>>,
+    pub bias: Vec<C>,
     pub smoothing: f64,
     pub ema: f64,
     pub discrete_wavelet_layer: Option<DiscreteWaveletLayer>,
@@ -34,13 +34,13 @@ pub struct LinearLayer {
     pub is_complex: bool,
 
     #[serde(skip)]
-    pub gradients: Vec<Vec<Complex<f64>>>,
+    pub gradients: Vec<Vec<C>>,
     #[serde(skip)]
-    pub gradients_bias: Vec<Vec<Complex<f64>>>,
+    pub gradients_bias: Vec<Vec<C>>,
     #[serde(skip)]
-    pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub input_batch: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
-    pub input_batch_rm: Option<Vec<RowMajorMatrix<Complex<f64>>>>,
+    pub input_batch_rm: Option<Vec<RowMajorMatrix<C>>>,
     #[serde(skip)]
     pub gradient: Option<Gradient>,
     #[serde(skip)]
@@ -50,8 +50,8 @@ pub struct LinearLayer {
     #[serde(skip)]
     pub output_indices: Option<Vec<Vec<Vec<usize>>>>,
 
-    weights_rm_cache: Option<RowMajorMatrix<Complex<f64>>>,
-    weights_h_rm_cache: Option<RowMajorMatrix<Complex<f64>>>,
+    weights_rm_cache: Option<RowMajorMatrix<C>>,
+    weights_h_rm_cache: Option<RowMajorMatrix<C>>,
     #[serde(skip)]
     weights_cache_outer_ptr: usize,
     #[serde(skip)]
@@ -60,8 +60,8 @@ pub struct LinearLayer {
 
 impl LinearLayer {
     pub fn new(learning_rate: f64, rows: usize, cols: usize, is_complex: bool) -> Self {
-        let mut weights: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); cols]; rows];
-        let bias: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.0); cols];
+        let mut weights: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); cols]; rows];
+        let bias: Vec<C> = vec![C::new(ONE, ZERO); cols];
 
         if is_complex {
             initialize_weights_complex(rows, cols, &mut weights);
@@ -137,7 +137,7 @@ impl LinearLayer {
     }
 
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
-        let input_batch: Vec<Vec<Vec<Complex<f64>>>> = input.get_input_batch();
+        let input_batch: Vec<Vec<Vec<C>>> = input.get_input_batch();
         let input_batch_rm_ref = input.get_input_batch_rm_ref();
 
         self.time_step = input.get_time_step();
@@ -161,13 +161,13 @@ impl LinearLayer {
 
         let start = std::time::Instant::now();
 
-        let mut output_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![];
+        let mut output_batch: Vec<Vec<Vec<C>>> = vec![];
 
         if self.is_complex {
             self.ensure_weights_cache();
             let weights_rm = self.weights_rm_cache.as_ref().expect("weights cache missing");
 
-            let output_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = if let Some(input_batch_rm) = input_batch_rm_ref {
+            let output_batch_rm: Vec<RowMajorMatrix<C>> = if let Some(input_batch_rm) = input_batch_rm_ref {
                 input_batch_rm
                     .par_iter()
                     .map(|input_rm| {
@@ -233,7 +233,7 @@ impl LinearLayer {
         let mut gradient = Gradient::new_default();
 
         let total_valid_tokens = previous_gradient.get_total_valid_tokens();
-        let previous_gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = previous_gradient.get_gradient_input_batch();
+        let previous_gradient_input_batch: Vec<Vec<Vec<C>>> = previous_gradient.get_gradient_input_batch();
         let previous_gradient_rm_ref = previous_gradient.get_gradient_input_batch_rm_ref();
 
         if input_batch_vec.is_none() && input_batch_rm.is_none() {
@@ -253,24 +253,24 @@ impl LinearLayer {
             input_batch_rm.expect("rm batch").len()
         };
 
-        let mut weight_gradients: Vec<Vec<Vec<Complex<f64>>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()]; batch_len];
-        let mut bias_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); self.bias.len()]; batch_len];
-        let mut gradient_input_batch: Vec<Vec<Vec<Complex<f64>>>> = vec![];
+        let mut weight_gradients: Vec<Vec<Vec<C>>> = vec![vec![vec![C::new(ZERO, ZERO); self.weights[0].len()]; self.weights.len()]; batch_len];
+        let mut bias_gradients: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); self.bias.len()]; batch_len];
+        let mut gradient_input_batch: Vec<Vec<Vec<C>>> = vec![];
 
-        let mut gradient_input_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(batch_len);
+        let mut gradient_input_batch_rm: Vec<RowMajorMatrix<C>> = Vec::with_capacity(batch_len);
 
         if self.is_complex {
             let weights_h_rm = self.weights_h_rm_cache.as_ref().expect("weights^H cache missing");
 
             for batch_ind in 0..batch_len {
-                let input_rm: RowMajorMatrix<Complex<f64>> = if let Some(rm_batch) = input_batch_rm {
+                let input_rm: RowMajorMatrix<C> = if let Some(rm_batch) = input_batch_rm {
                     rm_batch[batch_ind].clone()
                 } else {
                     let input_sample = &input_batch_vec.expect("vec batch")[batch_ind];
                     RowMajorMatrix::from_rows(input_sample)
                 };
 
-                let grad_rm: RowMajorMatrix<Complex<f64>> = if let Some(grads_rm) = previous_gradient_rm_ref {
+                let grad_rm: RowMajorMatrix<C> = if let Some(grads_rm) = previous_gradient_rm_ref {
                     grads_rm[batch_ind].clone()
                 } else {
                     RowMajorMatrix::from_rows(&previous_gradient_input_batch[batch_ind])
@@ -296,7 +296,7 @@ impl LinearLayer {
             let output_indices_batch = self.output_indices.as_ref().expect("Output indices missing in linear layer backward pass");
 
             let input_batch = input_batch_vec.expect("Input batch is missing in sparse linear layer backward");
-            gradient_input_batch = vec![vec![vec![Complex::new(0.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
+            gradient_input_batch = vec![vec![vec![C::new(ZERO, ZERO); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
 
             for batch_idx in 0..input_batch.len() {
                 let input_sample = &input_batch[batch_idx];
@@ -305,7 +305,7 @@ impl LinearLayer {
 
                 // Reconstruct full gradient from sparse gradients using indices
                 let num_output_cols = self.weights[0].len();
-                let mut full_gradient: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); num_output_cols]; input_sample.len()];
+                let mut full_gradient: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); num_output_cols]; input_sample.len()];
 
                 for row_idx in 0..sparse_grad.len().min(indices.len()) {
                     let grad_row = &sparse_grad[row_idx];
@@ -363,7 +363,7 @@ impl LinearLayer {
     }
 
     // multiply normally, select highest k per row, return k highest values per row and original indices
-    pub fn mutliply_hightest_k_per_row(&mut self, input_batch: &Vec<Vec<Vec<Complex<f64>>>>, layer_input: &LayerInput) -> (Vec<Vec<Vec<Complex<f64>>>>, Vec<Vec<Vec<usize>>>) {
+    pub fn mutliply_hightest_k_per_row(&mut self, input_batch: &Vec<Vec<Vec<C>>>, layer_input: &LayerInput) -> (Vec<Vec<Vec<C>>>, Vec<Vec<Vec<usize>>>) {
         let target_batch: &Vec<Vec<u32>> = &layer_input.get_target_batch_ids();
         let k: usize = layer_input.get_top_k_size();
         let padding_mask_batch: Vec<Vec<u32>> = layer_input.get_padding_mask_batch();
@@ -375,7 +375,7 @@ impl LinearLayer {
             .par_iter()
             .enumerate()
             .map(|(batch_idx, input_sample)| {
-                let mut sample_values: Vec<Vec<Complex<f64>>> = vec![];
+                let mut sample_values: Vec<Vec<C>> = vec![];
                 let mut sample_indices: Vec<Vec<usize>> = vec![];
 
                 // Calculate offset only if target_batch has data for this batch
@@ -401,21 +401,21 @@ impl LinearLayer {
                     };
 
                     // Track top k values: (real_value, value, index)
-                    let mut top_k: Vec<(f64, Complex<f64>, usize)> = Vec::with_capacity(k + 1);
+                    let mut top_k: Vec<(f64, C, usize)> = Vec::with_capacity(k + 1);
                     let mut min_value = f64::NEG_INFINITY;
                     let mut target_idx_in_topk: Option<usize> = None; // Track position of target in top_k
 
                     // Compute each output element on the fly
                     for col_idx in 0..num_output_cols {
                         // Compute dot product: input_row · weights[:, col_idx]
-                        let mut sum = Complex::new(0.0, 0.0);
+                        let mut sum = C::new(ZERO, ZERO);
                         for (i, &input_val) in input_row.iter().enumerate() {
                             sum += input_val * self.weights[i][col_idx];
                         }
                         // Add bias
                         sum += self.bias[col_idx];
 
-                        let real_value = sum.re;
+                        let real_value = sum.re as f64;
                         let is_target = target_id.map_or(false, |tid| col_idx == tid);
 
                         // Maintain top k elements without sorting until the end
@@ -467,7 +467,7 @@ impl LinearLayer {
                     }
 
                     // Extract values and indices (no need to sort for correctness)
-                    let values: Vec<Complex<f64>> = top_k.iter().map(|(_, val, _)| *val).collect();
+                    let values: Vec<C> = top_k.iter().map(|(_, val, _)| *val).collect();
                     let indices: Vec<usize> = top_k.iter().map(|(_, _, idx)| *idx).collect();
 
                     // println!("Batch {}, Row {}: Top k indices: {}", batch_idx, row_idx, &indices.len());
@@ -492,8 +492,8 @@ impl LinearLayer {
             let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
             let total_valid_tokens = gradient.get_total_valid_tokens();
 
-            weight_gradients = average_matrix_by_scalar(&weight_gradients, total_valid_tokens as f64);
-            bias_gradients = average_vector_by_scalar(&bias_gradients, total_valid_tokens as f64);
+            weight_gradients = average_matrix_by_scalar(&weight_gradients, r(total_valid_tokens as f64));
+            bias_gradients = average_vector_by_scalar(&bias_gradients, r(total_valid_tokens as f64));
 
             clip_all_gradients_by_global_norm_2d(&mut weight_gradients, &mut bias_gradients, self.global_norm, self.max_norm);
 
@@ -511,12 +511,12 @@ impl LinearLayer {
             } else {
                 // Initialize to zeros on first step
                 (
-                    vec![Complex::new(0.0, 0.0); self.bias.len()],
-                    vec![Complex::new(0.0, 0.0); self.bias.len()],
-                    vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()],
-                    vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()],
-                    vec![vec![Complex::new(0.0, 0.0); self.weights[0].len()]; self.weights.len()],
-                    vec![Complex::new(0.0, 0.0); self.bias.len()],
+                    vec![C::new(ZERO, ZERO); self.bias.len()],
+                    vec![C::new(ZERO, ZERO); self.bias.len()],
+                    vec![vec![C::new(ZERO, ZERO); self.weights[0].len()]; self.weights.len()],
+                    vec![vec![C::new(ZERO, ZERO); self.weights[0].len()]; self.weights.len()],
+                    vec![vec![C::new(ZERO, ZERO); self.weights[0].len()]; self.weights.len()],
+                    vec![C::new(ZERO, ZERO); self.bias.len()],
                 )
             };
 
@@ -556,8 +556,8 @@ impl LinearLayer {
         self.invalidate_weights_cache();
     }
 
-    pub fn group_gradient_batch(&self, weight_gradients_batch: &Vec<Vec<Vec<Complex<f64>>>>) -> Vec<Vec<Complex<f64>>> {
-        let mut weight_gradients: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(0.0, 0.0); weight_gradients_batch[0][0].len()]; weight_gradients_batch[0].len()];
+    pub fn group_gradient_batch(&self, weight_gradients_batch: &Vec<Vec<Vec<C>>>) -> Vec<Vec<C>> {
+        let mut weight_gradients: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); weight_gradients_batch[0][0].len()]; weight_gradients_batch[0].len()];
 
         for weight_gradient_batch in weight_gradients_batch {
             for (row, w_gradient) in weight_gradient_batch.iter().enumerate() {

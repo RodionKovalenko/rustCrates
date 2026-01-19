@@ -1,7 +1,7 @@
-use num_complex::Complex;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
+use crate::neural_networks::utils::dtype::{r, C, Real, ZERO};
 
 // Compression metadata for decompression
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,10 +115,10 @@ impl AdaptiveAvgPool1dLayer {
     }
 
     // Helper compress function
-    fn compress_sequence_with_windows(sequence: &Vec<Vec<Complex<f64>>>, windows: &[Vec<usize>], hidden_dim: usize) -> Vec<Vec<Complex<f64>>> {
+    fn compress_sequence_with_windows(sequence: &Vec<Vec<C>>, windows: &[Vec<usize>], hidden_dim: usize) -> Vec<Vec<C>> {
         let mut compressed = Vec::with_capacity(windows.len());
         for window in windows.iter() {
-            let mut pooled_token = vec![Complex::new(0.0, 0.0); hidden_dim];
+            let mut pooled_token = vec![C::new(ZERO, ZERO); hidden_dim];
             let window_size = window.len();
             if window_size > 0 {
                 for &pos in window.iter() {
@@ -130,7 +130,7 @@ impl AdaptiveAvgPool1dLayer {
                         }
                     }
                 }
-                let divisor = window_size as f64;
+                let divisor: Real = r(window_size as f64);
                 for dim in 0..hidden_dim {
                     pooled_token[dim] /= divisor;
                 }
@@ -159,7 +159,7 @@ impl AdaptiveAvgPool1dLayer {
         let hidden_dim = if !grad_in[0].is_empty() { grad_in[0][0].len() } else { 0 };
 
         // gradient for *original* sequence length
-        let mut grad_out = vec![vec![vec![Complex::new(0.0, 0.0); hidden_dim]; original_length]; batch_size];
+        let mut grad_out = vec![vec![vec![C::new(ZERO, ZERO); hidden_dim]; original_length]; batch_size];
 
         for batch_idx in 0..batch_size {
             for win_idx in 0..compressed_len {
@@ -179,7 +179,7 @@ impl AdaptiveAvgPool1dLayer {
                     }
                     for dim in 0..hidden_dim {
                         // distribute gradient equally (avg pooling backward)
-                        grad_out[batch_idx][pos][dim] += grad_vec[dim] / Complex::new(n as f64, 0.0);
+                        grad_out[batch_idx][pos][dim] += grad_vec[dim] / r(n as f64);
                     }
                 }
             }
@@ -211,7 +211,7 @@ impl AdaptiveAvgPool1dLayer {
         let hidden_dim = if !grad_in[0].is_empty() { grad_in[0][0].len() } else { 0 };
 
         // zero-initialized gradient for compressed tokens
-        let mut grad_compressed = vec![vec![vec![Complex::new(0.0, 0.0); hidden_dim]; compressed_len]; batch_size];
+        let mut grad_compressed = vec![vec![vec![C::new(ZERO, ZERO); hidden_dim]; compressed_len]; batch_size];
 
         let sample_len = grad_in[0].len();
 
@@ -274,7 +274,7 @@ impl AdaptiveAvgPool1dLayer {
     }
 
     // Decompression implementation
-    pub fn decompress(&self, compressed: &[Vec<Vec<Complex<f64>>>]) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn decompress(&self, compressed: &[Vec<Vec<C>>]) -> Vec<Vec<Vec<C>>> {
         let metadata = &self.metadata;
         if compressed.is_empty() || metadata.original_length == 0 {
             return Vec::new();
@@ -294,8 +294,8 @@ impl AdaptiveAvgPool1dLayer {
     }
 
     // Helper decompress function
-    fn decompress_sequence(compressed: &Vec<Vec<Complex<f64>>>, original_length: usize, window_mappings: &[Vec<usize>], hidden_dim: usize) -> Vec<Vec<Complex<f64>>> {
-        let mut decompressed = vec![vec![Complex::new(0.0, 0.0); hidden_dim]; original_length];
+    fn decompress_sequence(compressed: &Vec<Vec<C>>, original_length: usize, window_mappings: &[Vec<usize>], hidden_dim: usize) -> Vec<Vec<C>> {
+        let mut decompressed = vec![vec![C::new(ZERO, ZERO); hidden_dim]; original_length];
         for (comp_idx, window) in window_mappings.iter().enumerate() {
             if comp_idx >= compressed.len() {
                 break;
@@ -306,7 +306,7 @@ impl AdaptiveAvgPool1dLayer {
                     if token.len() == hidden_dim {
                         decompressed[pos] = token.clone();
                     } else {
-                        let mut tmp = vec![Complex::new(0.0, 0.0); hidden_dim];
+                        let mut tmp = vec![C::new(ZERO, ZERO); hidden_dim];
                         let n = usize::min(token.len(), hidden_dim);
                         for i in 0..n {
                             tmp[i] = token[i];

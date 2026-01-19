@@ -1,24 +1,23 @@
-use num_complex::Complex;
-
 use crate::neural_networks::network_components::adaptive_pooling::{adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, interpalation_decompressor_layer::InterpolationDecompressorLayer};
+use crate::neural_networks::utils::dtype::{r, C, Real, ZERO};
 
 // Helper function to calculate reconstruction error (Mean Squared Error)
-pub fn calculate_reconstruction_error(original: &Vec<Vec<Vec<Complex<f64>>>>, reconstructed: &Vec<Vec<Vec<Complex<f64>>>>) -> f64 {
+pub fn calculate_reconstruction_error(original: &Vec<Vec<Vec<C>>>, reconstructed: &Vec<Vec<Vec<C>>>) -> Real {
     if original.len() != reconstructed.len() || original.is_empty() {
-        return f64::INFINITY;
+        return Real::INFINITY;
     }
 
-    let mut total_error = 0.0;
+    let mut total_error: Real = ZERO;
     let mut total_elements = 0;
 
     for (batch_orig, batch_recon) in original.iter().zip(reconstructed.iter()) {
         if batch_orig.len() != batch_recon.len() {
-            return f64::INFINITY;
+            return Real::INFINITY;
         }
 
         for (seq_orig, seq_recon) in batch_orig.iter().zip(batch_recon.iter()) {
             if seq_orig.len() != seq_recon.len() {
-                return f64::INFINITY;
+                return Real::INFINITY;
             }
 
             for (orig_val, recon_val) in seq_orig.iter().zip(seq_recon.iter()) {
@@ -30,20 +29,21 @@ pub fn calculate_reconstruction_error(original: &Vec<Vec<Vec<Complex<f64>>>>, re
     }
 
     if total_elements > 0 {
-        total_error / total_elements as f64
+        total_error / r(total_elements as f64)
     } else {
-        0.0
+        ZERO
     }
 }
 
+
 // Test different decompression methods
-pub fn test_decompression_methods(original: &Vec<Vec<Vec<Complex<f64>>>>, compressed: &Vec<Vec<Vec<Complex<f64>>>>, adaptive_pool: &AdaptiveAvgPool1dLayer) {
+pub fn test_decompression_methods(original: &Vec<Vec<Vec<C>>>, compressed: &Vec<Vec<Vec<C>>>, adaptive_pool: &AdaptiveAvgPool1dLayer) {
     // Method 1: Window-based decompression
     let decompressed_windows = adaptive_pool.decompress(compressed);
     let window_error = calculate_reconstruction_error(original, &decompressed_windows);
 
     // Method 2: Linear interpolation
-    let decompressed_interpolation: Vec<Vec<Vec<Complex<f64>>>> = InterpolationDecompressorLayer::linear_interpolate(compressed, adaptive_pool.output_size);
+    let decompressed_interpolation: Vec<Vec<Vec<C>>> = InterpolationDecompressorLayer::linear_interpolate(compressed, adaptive_pool.output_size);
     let interpolation_error = calculate_reconstruction_error(original, &decompressed_interpolation);
 
     println!("Window-based decompression error: {:.6}", window_error);
@@ -57,7 +57,7 @@ pub fn test_decompression_methods(original: &Vec<Vec<Vec<Complex<f64>>>>, compre
 }
 
 // Helper function to create random complex input (reused from previous version)
-pub fn create_random_input(batch_size: usize, seq_len: usize, hidden_dim: usize) -> Vec<Vec<Vec<Complex<f64>>>> {
+pub fn create_random_input(batch_size: usize, seq_len: usize, hidden_dim: usize) -> Vec<Vec<Vec<C>>> {
     use std::f64::consts::PI;
 
     let mut input = Vec::with_capacity(batch_size);
@@ -73,10 +73,10 @@ pub fn create_random_input(batch_size: usize, seq_len: usize, hidden_dim: usize)
                 let phase = 2.0 * PI * (seq as f64) / (seq_len as f64) + (dim as f64) * 0.1;
                 let magnitude = 1.0 / (1.0 + (seq as f64) * 0.001); // Decay over sequence
 
-                let real = magnitude * phase.cos() + (batch as f64) * 0.01;
-                let imag = magnitude * phase.sin() + (dim as f64) * 0.001;
+                let real: Real = r(magnitude * phase.cos() + (batch as f64) * 0.01);
+                let imag: Real = r(magnitude * phase.sin() + (dim as f64) * 0.001);
 
-                features.push(Complex::new(real, imag));
+                features.push(C::new(real, imag));
             }
 
             sequence.push(features);
@@ -115,7 +115,7 @@ mod adaptive_pooling_complex_tests {
         // Error should be finite (not perfect reconstruction, but reasonable)
         let error = calculate_reconstruction_error(&input, &decompressed);
         println!("Reconstruction error: {:?}", error);
-        assert!(error.is_finite() && error >= 0.0);
+        assert!(error.is_finite() && error >= ZERO);
     }
 
     #[test]

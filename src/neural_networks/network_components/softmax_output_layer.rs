@@ -1,5 +1,4 @@
 use core::fmt::Debug;
-use num::Complex;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -8,6 +7,7 @@ use crate::neural_networks::{
     network_types::neural_network_generic::OperationMode,
     utils::{
         activation::{softmax_backward_real_with_gradient, softmax_backward_real_with_gradient_rm, softmax_last_row},
+        dtype::{C, Real},
         matrix::RowMajorMatrix,
     },
 };
@@ -22,11 +22,11 @@ pub struct SoftmaxLayer {
     pub complex_to_linear_layer: Option<ComplexToLinearLayer>,
 
     #[serde(skip)]
-    pub softmax_output_batch: Option<Vec<Vec<Vec<f64>>>>,
+    pub softmax_output_batch: Option<Vec<Vec<Vec<Real>>>>,
     #[serde(skip)]
-    pub cross_entropy_loss_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub cross_entropy_loss_batch: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
-    pub input_batch: Option<Vec<Vec<Vec<Complex<f64>>>>>,
+    pub input_batch: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
     pub gradient: Option<Gradient>,
     #[serde(skip)]
@@ -52,7 +52,7 @@ impl SoftmaxLayer {
             batch_size: 1,
         }
     }
-    pub fn forward(&mut self, layer_input: &LayerInput, padding_mask_option: Option<Vec<Vec<u32>>>, target_token_ids: Option<Vec<Vec<u32>>>) -> Vec<Vec<Vec<f64>>> {
+    pub fn forward(&mut self, layer_input: &LayerInput, padding_mask_option: Option<Vec<Vec<u32>>>, target_token_ids: Option<Vec<Vec<u32>>>) -> Vec<Vec<Vec<Real>>> {
         self.time_step = layer_input.get_time_step();
         self.batch_size = layer_input.get_batch_size();
 
@@ -95,7 +95,7 @@ impl SoftmaxLayer {
 
         let (layer_output_batch, losses, mut input_gradient_batch) = match self.operation_mode {
             OperationMode::PRODUCTION => {
-                let output: Vec<Vec<Vec<f64>>> = input_batch
+                let output: Vec<Vec<Vec<Real>>> = input_batch
                     .par_iter()
                     .map(|input| softmax_last_row(input)) // Apply `softmax_last_row` to each input
                     .collect(); // Collect results into a Vec
@@ -167,7 +167,7 @@ impl SoftmaxLayer {
         layer_output_batch
     }
 
-    pub fn forward_rm(&mut self, layer_input: &LayerInput, padding_mask_option: Option<Vec<Vec<u32>>>, target_token_ids: Option<Vec<Vec<u32>>>) -> Vec<Vec<Vec<f64>>> {
+    pub fn forward_rm(&mut self, layer_input: &LayerInput, padding_mask_option: Option<Vec<Vec<u32>>>, target_token_ids: Option<Vec<Vec<u32>>>) -> Vec<Vec<Vec<Real>>> {
         self.time_step = layer_input.get_time_step();
         self.batch_size = layer_input.get_batch_size();
 
@@ -193,7 +193,7 @@ impl SoftmaxLayer {
         let target_token_batch_ids = target_token_ids.unwrap_or(Vec::new());
 
         // Optional Complex->Linear projection in RM.
-        let input_batch_linear_rm: Vec<RowMajorMatrix<Complex<f64>>> = if let Some(complex_to_linear_layer) = &mut self.complex_to_linear_layer {
+        let input_batch_linear_rm: Vec<RowMajorMatrix<C>> = if let Some(complex_to_linear_layer) = &mut self.complex_to_linear_layer {
             let mut li = layer_input.clone();
             li.clear_input_batch();
             li.set_input_batch_rm(input_batch_rm_ref.to_vec());
@@ -206,7 +206,7 @@ impl SoftmaxLayer {
 
         let mut total_valid_tokens: usize = 0;
 
-        let (layer_output_batch, losses, mut input_gradient_batch_rm): (Vec<Vec<Vec<f64>>>, Vec<Vec<Vec<Complex<f64>>>>, Vec<RowMajorMatrix<Complex<f64>>>) = match self.operation_mode {
+        let (layer_output_batch, losses, mut input_gradient_batch_rm): (Vec<Vec<Vec<Real>>>, Vec<Vec<Vec<C>>>, Vec<RowMajorMatrix<C>>) = match self.operation_mode {
             OperationMode::PRODUCTION => {
                 // Keep behavior consistent with Vec path (softmax only last row). We return an empty batch here
                 // because transformer inference path already bypasses this function.
@@ -225,7 +225,7 @@ impl SoftmaxLayer {
                     })
                     .sum();
 
-                let per_batch: Vec<(Vec<Vec<Complex<f64>>>, RowMajorMatrix<Complex<f64>>)> = (0..batch_size)
+                let per_batch: Vec<(Vec<Vec<C>>, RowMajorMatrix<C>)> = (0..batch_size)
                     .into_par_iter()
                     .map(|batch_ind| {
                         let output_indices = if !output_indices_batch.is_empty() { &output_indices_batch[batch_ind] } else { &vec![] };
@@ -240,8 +240,8 @@ impl SoftmaxLayer {
                     })
                     .collect();
 
-                let mut losses_batch: Vec<Vec<Vec<Complex<f64>>>> = Vec::with_capacity(batch_size);
-                let mut grads_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = Vec::with_capacity(batch_size);
+                let mut losses_batch: Vec<Vec<Vec<C>>> = Vec::with_capacity(batch_size);
+                let mut grads_batch_rm: Vec<RowMajorMatrix<C>> = Vec::with_capacity(batch_size);
                 for (l, g) in per_batch {
                     losses_batch.push(l);
                     grads_batch_rm.push(g);

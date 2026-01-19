@@ -2,14 +2,35 @@
 mod tests {
     use std::time::Instant;
 
-    use num::Complex;
+    use crate::neural_networks::utils::dtype::{c, c_to_f64, r, C};
 
     use crate::neural_networks::utils::{
-        derivative::test_gradient_error_2d,
         low_rank_approx::{low_rank_approx, reconstruction_error},
-        matrix::{multiply, multiply_complex, multiply_complex_fear, transpose},
-        random_arrays::{generate_random_complex_2d, generate_random_complex_3d},
+        matrix::{multiply, multiply_complex, transpose},
+        random_arrays::generate_random_complex_2d,
     };
+
+    #[cfg(feature = "dtype-f64")]
+    use crate::neural_networks::utils::{
+        matrix::multiply_complex_fear,
+        random_arrays::generate_random_complex_3d,
+    };
+
+    fn relative_l2_error(a: &[Vec<C>], b: &[Vec<C>]) -> f64 {
+        let mut num = 0.0f64;
+        let mut den = 0.0f64;
+        for (row_a, row_b) in a.iter().zip(b.iter()) {
+            for (za, zb) in row_a.iter().zip(row_b.iter()) {
+                let za64 = c_to_f64(*za);
+                let zb64 = c_to_f64(*zb);
+                let dr = za64.re - zb64.re;
+                let di = za64.im - zb64.im;
+                num += dr * dr + di * di;
+                den += za64.re * za64.re + za64.im * za64.im;
+            }
+        }
+        (num.sqrt()) / (den.sqrt() + 1e-12)
+    }
 
     #[test]
     fn test_multiply_arrays() {
@@ -51,38 +72,38 @@ mod tests {
         assert_eq!(product, [[105.0, 78.0], [135.0, 102.0], [165.0, 126.0]]);
 
         // 4x3 * 4x2 =>  3x4 * 4x2 => 3x2
-        let m1: Vec<Vec<Complex<f64>>> = vec![
-            vec![Complex::new(1.0, 0.0), Complex::new(2.0, 0.0), Complex::new(3.0, 0.0)],
-            vec![Complex::new(4.0, 0.0), Complex::new(5.0, 0.0), Complex::new(6.0, 0.0)],
-            vec![Complex::new(4.0, 0.0), Complex::new(5.0, 0.0), Complex::new(6.0, 0.0)],
-            vec![Complex::new(4.0, 0.0), Complex::new(5.0, 0.0), Complex::new(6.0, 0.0)],
+        let m1: Vec<Vec<C>> = vec![
+            vec![c(1.0, 0.0), c(2.0, 0.0), c(3.0, 0.0)],
+            vec![c(4.0, 0.0), c(5.0, 0.0), c(6.0, 0.0)],
+            vec![c(4.0, 0.0), c(5.0, 0.0), c(6.0, 0.0)],
+            vec![c(4.0, 0.0), c(5.0, 0.0), c(6.0, 0.0)],
         ];
-        let m2: Vec<Vec<Complex<f64>>> = vec![
-            vec![Complex::new(5.0, 0.0), Complex::new(6.0, 0.0)],
-            vec![Complex::new(7.0, 0.0), Complex::new(8.0, 0.0)],
-            vec![Complex::new(9.0, 0.0), Complex::new(5.0, 0.0)],
-            vec![Complex::new(9.0, 0.0), Complex::new(5.0, 0.0)],
+        let m2: Vec<Vec<C>> = vec![
+            vec![c(5.0, 0.0), c(6.0, 0.0)],
+            vec![c(7.0, 0.0), c(8.0, 0.0)],
+            vec![c(9.0, 0.0), c(5.0, 0.0)],
+            vec![c(9.0, 0.0), c(5.0, 0.0)],
         ];
 
-        let product: Vec<Vec<Complex<f64>>> = multiply_complex(&transpose(&m1), &m2);
+        let product: Vec<Vec<C>> = multiply_complex(&transpose(&m1), &m2);
 
         assert_eq!(
             product,
             [
-                [Complex { re: 105.0, im: 0.0 }, Complex { re: 78.0, im: 0.0 }],
-                [Complex { re: 135.0, im: 0.0 }, Complex { re: 102.0, im: 0.0 }],
-                [Complex { re: 165.0, im: 0.0 }, Complex { re: 126.0, im: 0.0 }]
+                [c(105.0, 0.0), c(78.0, 0.0)],
+                [c(135.0, 0.0), c(102.0, 0.0)],
+                [c(165.0, 0.0), c(126.0, 0.0)]
             ]
         );
 
         // 3x2 * 2x6 =>  3x6
-        let m1: Vec<Vec<Complex<f64>>> = vec![vec![Complex::new(1.0, 0.0), Complex::new(2.0, 0.0)], vec![Complex::new(3.0, 0.0), Complex::new(4.0, 0.0)], vec![Complex::new(5.0, 0.0), Complex::new(6.0, 0.0)]];
-        let m2: Vec<Vec<Complex<f64>>> = vec![
-            vec![Complex::new(1.0, 0.0), Complex::new(2.0, 0.0), Complex::new(3.0, 0.0), Complex::new(4.0, 0.0), Complex::new(5.0, 0.0), Complex::new(6.0, 0.0)],
-            vec![Complex::new(7.0, 0.0), Complex::new(8.0, 0.0), Complex::new(9.0, 0.0), Complex::new(10.0, 0.0), Complex::new(11.0, 0.0), Complex::new(12.0, 0.0)],
+        let m1: Vec<Vec<C>> = vec![vec![c(1.0, 0.0), c(2.0, 0.0)], vec![c(3.0, 0.0), c(4.0, 0.0)], vec![c(5.0, 0.0), c(6.0, 0.0)]];
+        let m2: Vec<Vec<C>> = vec![
+            vec![c(1.0, 0.0), c(2.0, 0.0), c(3.0, 0.0), c(4.0, 0.0), c(5.0, 0.0), c(6.0, 0.0)],
+            vec![c(7.0, 0.0), c(8.0, 0.0), c(9.0, 0.0), c(10.0, 0.0), c(11.0, 0.0), c(12.0, 0.0)],
         ];
 
-        let product: Vec<Vec<Complex<f64>>> = multiply_complex(&m1, &m2);
+        let product: Vec<Vec<C>> = multiply_complex(&m1, &m2);
 
         println!("product : {:?}", product);
 
@@ -90,34 +111,35 @@ mod tests {
             product,
             [
                 [
-                    Complex { re: 15.0, im: 0.0 },
-                    Complex { re: 18.0, im: 0.0 },
-                    Complex { re: 21.0, im: 0.0 },
-                    Complex { re: 24.0, im: 0.0 },
-                    Complex { re: 27.0, im: 0.0 },
-                    Complex { re: 30.0, im: 0.0 },
+                    c(15.0, 0.0),
+                    c(18.0, 0.0),
+                    c(21.0, 0.0),
+                    c(24.0, 0.0),
+                    c(27.0, 0.0),
+                    c(30.0, 0.0),
                 ],
                 [
-                    Complex { re: 31.0, im: 0.0 },
-                    Complex { re: 38.0, im: 0.0 },
-                    Complex { re: 45.0, im: 0.0 },
-                    Complex { re: 52.0, im: 0.0 },
-                    Complex { re: 59.0, im: 0.0 },
-                    Complex { re: 66.0, im: 0.0 },
+                    c(31.0, 0.0),
+                    c(38.0, 0.0),
+                    c(45.0, 0.0),
+                    c(52.0, 0.0),
+                    c(59.0, 0.0),
+                    c(66.0, 0.0),
                 ],
                 [
-                    Complex { re: 47.0, im: 0.0 },
-                    Complex { re: 58.0, im: 0.0 },
-                    Complex { re: 69.0, im: 0.0 },
-                    Complex { re: 80.0, im: 0.0 },
-                    Complex { re: 91.0, im: 0.0 },
-                    Complex { re: 102.0, im: 0.0 },
+                    c(47.0, 0.0),
+                    c(58.0, 0.0),
+                    c(69.0, 0.0),
+                    c(80.0, 0.0),
+                    c(91.0, 0.0),
+                    c(102.0, 0.0),
                 ]
             ]
         );
     }
 
     #[test]
+    #[cfg(feature = "dtype-f64")]
     fn test_multiply_complex_arrays() {
         let batch_size = 1;
         let seq_len = 5;
@@ -133,16 +155,20 @@ mod tests {
             println!("\n matrix cuda: {:?}", matrix_multip_cuda);
             println!("\n matrix fear: {:?}", matrix_multip_fear);
 
-            test_gradient_error_2d(&matrix_multip_cuda, &matrix_multip_fear, 1e-8);
+            crate::neural_networks::utils::derivative::test_gradient_error_2d(
+                &matrix_multip_cuda,
+                &matrix_multip_fear,
+                1e-8,
+            );
         }
     }
 
     #[test]
     fn test_low_rank_approx() {
         // Low-rank approximation
-        let m: Vec<Vec<Complex<f64>>> = generate_random_complex_2d(10, 5);
+        let m: Vec<Vec<C>> = generate_random_complex_2d(10, 5);
         let rank = 6;
-        let (u, v) = low_rank_approx(&m, rank, 200, 1e-6);
+        let (u, v) = low_rank_approx(&m, rank, 200, r(1e-6));
 
         println!("\n Rank: {}", rank);
         println!("\n Original matrix: {:?}", m);
@@ -160,14 +186,14 @@ mod tests {
         println!("\n Reconstructed matrix: {:?}", reconstructed);
         let error = reconstruction_error(&m, &u, &v);
         println!("\n Reconstruction error (Frobenius norm): {}", error);
-        assert!(error < 1e-5);
+        assert!(error < r(1e-5));
     }
     #[test]
     fn test_input_multiplication_with_low_rank_approx() {
         // Example input matrix (replace with your data)
         let start = Instant::now();
-        let input: Vec<Vec<Complex<f64>>> = generate_random_complex_2d(50, 10);
-        let m: Vec<Vec<Complex<f64>>> = generate_random_complex_2d(10, 100);
+        let input: Vec<Vec<C>> = generate_random_complex_2d(50, 10);
+        let m: Vec<Vec<C>> = generate_random_complex_2d(10, 100);
         println!("\n Generating random arrays took: {:?}", start.elapsed().as_secs_f64());
 
         // direkt multiplication
@@ -178,7 +204,7 @@ mod tests {
         // Low-rank approximation
         let start = Instant::now();
         let rank = 16;
-        let (u, v) = low_rank_approx(&m, rank, 400, 1e-6);
+        let (u, v) = low_rank_approx(&m, rank, 400, r(1e-6));
 
         println!("\n Rank: {}", rank);
 
@@ -187,6 +213,9 @@ mod tests {
         let result_2 = multiply_complex(&result_1, &v);
         println!("\nLow-rank approximation took: {:?}", start.elapsed().as_secs_f64());
 
-        test_gradient_error_2d(&matrix_result, &result_2, 1e-5);
+        let rel_err = relative_l2_error(&matrix_result, &result_2);
+        let tol = if cfg!(feature = "dtype-f64") { 1e-5 } else { 1e-2 };
+        println!("\nRelative L2 error: {}", rel_err);
+        assert!(rel_err < tol);
     }
 }

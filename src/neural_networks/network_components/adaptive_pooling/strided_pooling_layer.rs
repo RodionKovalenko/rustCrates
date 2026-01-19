@@ -1,6 +1,5 @@
-use num::Complex;
-
 use crate::neural_networks::network_components::adaptive_pooling::adaptive_avg_pool1d_layer::{CompressionMetadata, CompressionType};
+use crate::neural_networks::utils::dtype::{r, C, Real, ZERO};
 
 // StridedPooling implementation with forward/backward/backward_gradient
 pub struct StridedPoolingLayer {
@@ -13,7 +12,7 @@ impl StridedPoolingLayer {
         Self { stride, kernel_size: kernel_size.unwrap_or(stride) }
     }
 
-    pub fn forward(&self, input: &Vec<Vec<Vec<Complex<f64>>>>) -> (Vec<Vec<Vec<Complex<f64>>>>, CompressionMetadata) {
+    pub fn forward(&self, input: &Vec<Vec<Vec<C>>>) -> (Vec<Vec<Vec<C>>>, CompressionMetadata) {
         if input.is_empty() {
             return (
                 Vec::new(),
@@ -56,7 +55,7 @@ impl StridedPoolingLayer {
         )
     }
 
-    pub fn decompress(&self, compressed: &Vec<Vec<Vec<Complex<f64>>>>, metadata: &CompressionMetadata) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn decompress(&self, compressed: &Vec<Vec<Vec<C>>>, metadata: &CompressionMetadata) -> Vec<Vec<Vec<C>>> {
         if compressed.is_empty() || metadata.original_length == 0 {
             return Vec::new();
         }
@@ -69,7 +68,7 @@ impl StridedPoolingLayer {
         decompressed
     }
 
-    pub fn backward(&self, grad_output: &[Vec<Vec<Complex<f64>>>], metadata: &CompressionMetadata) -> Vec<Vec<Vec<Complex<f64>>>> {
+    pub fn backward(&self, grad_output: &[Vec<Vec<C>>], metadata: &CompressionMetadata) -> Vec<Vec<Vec<C>>> {
         // Similar to AdaptiveAvgPool1d.backward_gradient but adjusted for overlapping windows
         if grad_output.is_empty() || metadata.original_length == 0 {
             return Vec::new();
@@ -77,14 +76,14 @@ impl StridedPoolingLayer {
         let batch_size = grad_output.len();
         let original_length = metadata.original_length;
         let hidden_dim = if batch_size > 0 && !grad_output[0].is_empty() { grad_output[0][0].len() } else { 0 };
-        let mut grad_input = vec![vec![vec![Complex::new(0.0, 0.0); hidden_dim]; original_length]; batch_size];
+        let mut grad_input = vec![vec![vec![C::new(ZERO, ZERO); hidden_dim]; original_length]; batch_size];
 
         for batch_idx in 0..batch_size {
             for (comp_idx, window) in metadata.window_mappings.iter().enumerate() {
                 if comp_idx >= grad_output[batch_idx].len() {
                     continue;
                 }
-                let window_len = window.len() as f64;
+                let window_len: Real = r(window.len() as f64);
                 for &pos in window {
                     if pos < original_length {
                         for dim in 0..hidden_dim {
@@ -97,12 +96,12 @@ impl StridedPoolingLayer {
         grad_input
     }
 
-    fn apply_strided_pooling(&self, sequence: &Vec<Vec<Complex<f64>>>, output_len: usize, hidden_dim: usize) -> Vec<Vec<Complex<f64>>> {
+    fn apply_strided_pooling(&self, sequence: &Vec<Vec<C>>, output_len: usize, hidden_dim: usize) -> Vec<Vec<C>> {
         let mut output = Vec::with_capacity(output_len);
         for i in 0..output_len {
             let start_pos = i * self.stride;
             let end_pos = (start_pos + self.kernel_size).min(sequence.len());
-            let mut pooled_token = vec![Complex::new(0.0, 0.0); hidden_dim];
+            let mut pooled_token = vec![C::new(ZERO, ZERO); hidden_dim];
             let window_size = end_pos - start_pos;
 
             for pos in start_pos..end_pos {
@@ -111,9 +110,9 @@ impl StridedPoolingLayer {
                 }
             }
             if window_size > 0 {
-                let window_size_f64 = window_size as f64;
+                let window_size_real: Real = r(window_size as f64);
                 for dim in 0..hidden_dim {
-                    pooled_token[dim] /= window_size_f64;
+                    pooled_token[dim] /= window_size_real;
                 }
             }
             output.push(pooled_token);
@@ -121,8 +120,8 @@ impl StridedPoolingLayer {
         output
     }
 
-    fn decompress_sequence_strided(&self, compressed: &Vec<Vec<Complex<f64>>>, original_length: usize, window_mappings: &[Vec<usize>], hidden_dim: usize) -> Vec<Vec<Complex<f64>>> {
-        let mut decompressed = vec![vec![Complex::new(0.0, 0.0); hidden_dim]; original_length];
+    fn decompress_sequence_strided(&self, compressed: &Vec<Vec<C>>, original_length: usize, window_mappings: &[Vec<usize>], hidden_dim: usize) -> Vec<Vec<C>> {
+        let mut decompressed = vec![vec![C::new(ZERO, ZERO); hidden_dim]; original_length];
         let mut position_counts = vec![0usize; original_length];
         for (comp_idx, window) in window_mappings.iter().enumerate() {
             if comp_idx >= compressed.len() {
@@ -140,9 +139,9 @@ impl StridedPoolingLayer {
         }
         for pos in 0..original_length {
             if position_counts[pos] > 1 {
-                let count_f64 = position_counts[pos] as f64;
+                let count_real: Real = r(position_counts[pos] as f64);
                 for dim in 0..hidden_dim {
-                    decompressed[pos][dim] /= count_f64;
+                    decompressed[pos][dim] /= count_real;
                 }
             }
         }

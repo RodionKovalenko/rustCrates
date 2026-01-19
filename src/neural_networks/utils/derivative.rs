@@ -2,17 +2,19 @@ use crate::neural_networks::{network_components::layer::ActivationType, utils::a
 use num::abs;
 use num_complex::{Complex, ComplexFloat};
 
+use crate::neural_networks::utils::dtype::{r, C, Real, PI, ZERO};
+
 use super::activation::{ALPHA, LAMBDA};
 
-pub fn sigmoid_derivative_complex(z: Complex<f64>) -> Complex<f64> {
+pub fn sigmoid_derivative_complex(z: C) -> C {
     z * (Complex::new(1.0, 0.0) - z)
 }
 
-fn tanh_derivative_complex(z: Complex<f64>) -> Complex<f64> {
+fn tanh_derivative_complex(z: C) -> C {
     Complex::new(1.0, 0.0) - (z * z) // 1 - tanh^2(z)
 }
 
-fn relu_derivative_complex(z: Complex<f64>) -> Complex<f64> {
+fn relu_derivative_complex(z: C) -> C {
     if z.re > 0.0 {
         Complex::new(1.0, 0.0)
     } else {
@@ -20,7 +22,7 @@ fn relu_derivative_complex(z: Complex<f64>) -> Complex<f64> {
     }
 }
 
-fn leaky_relu_derivative_complex(z: Complex<f64>, alpha: f64) -> Complex<f64> {
+fn leaky_relu_derivative_complex(z: C, alpha: Real) -> C {
     if z.re > 0.0 {
         Complex::new(1.0, 0.0)
     } else {
@@ -28,7 +30,7 @@ fn leaky_relu_derivative_complex(z: Complex<f64>, alpha: f64) -> Complex<f64> {
     }
 }
 
-fn elu_derivative_complex(z: Complex<f64>, alpha: f64) -> Complex<f64> {
+fn elu_derivative_complex(z: C, alpha: Real) -> C {
     if z.re > 0.0 {
         Complex::new(1.0, 0.0)
     } else {
@@ -37,22 +39,20 @@ fn elu_derivative_complex(z: Complex<f64>, alpha: f64) -> Complex<f64> {
 }
 
 // Derivative of SELU for complex numbers
-fn selu_derivative_complex(z: Complex<f64>) -> Complex<f64> {
+fn selu_derivative_complex(z: C) -> C {
     if z.re >= 0.0 {
-        Complex::new(LAMBDA, 0.0)
+        Complex::new(r(LAMBDA), 0.0)
     } else {
-        Complex::new(LAMBDA * ALPHA, 0.0) * z.exp()
+        Complex::new(r(LAMBDA * ALPHA), 0.0) * z.exp()
     }
 }
 
-pub fn gelu_derivative_complex(inactivated_input: Complex<f64>) -> Complex<f64> {
-    use std::f64::consts::PI;
-
-    let sqrt_2_over_pi = (2.0 / PI).sqrt();
+pub fn gelu_derivative_complex(inactivated_input: C) -> C {
+    let sqrt_2_over_pi: Real = (r(2.0) / PI).sqrt();
 
     // f(x) = sqrt(2 / pi) * (x + 0.044715 * x^3)
     let x3 = inactivated_input.powi(3);
-    let f_x = sqrt_2_over_pi * (inactivated_input + Complex::new(0.044715, 0.0) * x3);
+    let f_x = (inactivated_input + Complex::new(r(0.044715), 0.0) * x3) * sqrt_2_over_pi;
 
     // Match activation.rs GELU implementation: clamp f(x) before tanh.
     // Important: the clamp makes the forward non-smooth; when clamped, treat f(x) as constant
@@ -63,7 +63,7 @@ pub fn gelu_derivative_complex(inactivated_input: Complex<f64>) -> Complex<f64> 
     let sech_f_x_squared = Complex::new(1.0, 0.0) - tanh_f_x.powi(2);
 
     // f'(x) = sqrt(2 / pi) * (1 + 0.134145 * x^2)
-    let f_prime_x = sqrt_2_over_pi * (Complex::new(1.0, 0.0) + Complex::new(0.134145, 0.0) * inactivated_input.powi(2));
+    let f_prime_x = (Complex::new(1.0, 0.0) + Complex::new(r(0.134145), 0.0) * inactivated_input.powi(2)) * sqrt_2_over_pi;
 
     // GELU'(x) = 0.5 * (1 + tanh(f(x))) + 0.5 * x * sech^2(f(x)) * f'(x)
     // If f(x) was clamped, d/dx tanh(clamp(f(x))) is treated as 0.
@@ -74,27 +74,27 @@ pub fn gelu_derivative_complex(inactivated_input: Complex<f64>) -> Complex<f64> 
     gelu_derivative
 }
 
-pub fn softsign_derivative_complex(z: Complex<f64>) -> Complex<f64> {
+pub fn softsign_derivative_complex(z: C) -> C {
     let real_part = z.re / (1.0 + z.re.abs()).powf(2.0);
     let imag_part = z.im / (1.0 + z.im.abs()).powf(2.0);
 
     Complex::new(real_part.abs() + imag_part.abs(), 0.0)
 }
 
-fn softplus_derivative_complex(z: Complex<f64>) -> Complex<f64> {
+fn softplus_derivative_complex(z: C) -> C {
     Complex::new(1.0 / (1.0 + (-z.re).exp()), 0.0)
 }
 
 // Function to compute the derivative (Jacobian) of softmax for a matrix of complex numbers
-fn softmax_derivative_complex(data: &Vec<f64>) -> Vec<Vec<f64>> {
-    let mut jacobian: Vec<Vec<f64>> = vec![vec![0.0; data.len()]; data.len()];
+fn softmax_derivative_complex(data: &Vec<Real>) -> Vec<Vec<Real>> {
+    let mut jacobian: Vec<Vec<Real>> = vec![vec![r(0.0); data.len()]; data.len()];
 
     // Loop through each pair of indices (i, j)
     for i in 0..data.len() {
         for j in 0..data.len() {
             if i == j {
                 // Diagonal elements: s_i * (1 - s_i)
-                jacobian[i][j] = data[i] * (1.0 - data[i]);
+                jacobian[i][j] = data[i] * (r(1.0) - data[i]);
             } else {
                 // Off-diagonal elements: -s_i * s_j
                 jacobian[i][j] = -data[i] * data[j];
@@ -105,12 +105,12 @@ fn softmax_derivative_complex(data: &Vec<f64>) -> Vec<Vec<f64>> {
     jacobian
 }
 
-pub fn softmax_derivative_complex_jacobian(softmax_values: &Vec<Vec<f64>>) -> Vec<Vec<Vec<f64>>> {
+pub fn softmax_derivative_complex_jacobian(softmax_values: &Vec<Vec<Real>>) -> Vec<Vec<Vec<Real>>> {
     let num_rows = softmax_values.len();
     let num_cols = softmax_values[0].len();
 
     // 3D tensor to hold Jacobian matrices for each row
-    let mut derivative: Vec<Vec<Vec<f64>>> = vec![vec![vec![0.0; num_cols]; num_cols]; num_rows];
+    let mut derivative: Vec<Vec<Vec<Real>>> = vec![vec![vec![r(0.0); num_cols]; num_cols]; num_rows];
 
     for i in 0..num_rows {
         derivative[i] = softmax_derivative_complex(&softmax_values[i]);
@@ -121,19 +121,19 @@ pub fn softmax_derivative_complex_jacobian(softmax_values: &Vec<Vec<f64>>) -> Ve
     derivative
 }
 
-pub fn softmax_derivative_complex_matrix(softmax_values: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
+pub fn softmax_derivative_complex_matrix(softmax_values: &Vec<Vec<Real>>) -> Vec<Vec<Real>> {
     let num_rows = softmax_values.len();
     let num_cols = softmax_values[0].len();
 
     // 3D tensor to hold Jacobian matrices for each row
-    let mut derivative: Vec<Vec<Vec<f64>>> = vec![vec![vec![0.0; num_cols]; num_cols]; num_rows];
+    let mut derivative: Vec<Vec<Vec<Real>>> = vec![vec![vec![ZERO; num_cols]; num_cols]; num_rows];
 
     for i in 0..num_rows {
         derivative[i] = softmax_derivative_complex(&softmax_values[i]);
     }
 
     // println!("original softmax derivative 3d: {:?} ", &derivative);
-    let mut grouped_derivated: Vec<Vec<f64>> = vec![vec![0.0; num_cols]; num_rows];
+    let mut grouped_derivated: Vec<Vec<Real>> = vec![vec![ZERO; num_cols]; num_rows];
 
     for i in 0..num_rows {
         for j in 0..num_cols {
@@ -149,19 +149,19 @@ pub fn softmax_derivative_complex_matrix(softmax_values: &Vec<Vec<f64>>) -> Vec<
 }
 
 pub fn softmax_attention_backward_fused(
-    softmax_vals: &Vec<Vec<f64>>,   // s: 16×16
-    dl_do: &Vec<Vec<Complex<f64>>>, // ∂L/∂o: 16×4
-    do_ds: &Vec<Vec<Complex<f64>>>, // do_ds matrix: 16×4
+    softmax_vals: &Vec<Vec<Real>>, // s: n×n
+    dl_do: &Vec<Vec<C>>,           // ∂L/∂o: n×d
+    do_ds: &Vec<Vec<C>>,           // do_ds matrix: n×d
     padding_mask: &Vec<u32>,
-) -> Vec<Vec<Complex<f64>>> // ∂L/∂z: 16×16
+) -> Vec<Vec<C>> // ∂L/∂z: n×n
 {
     let n = softmax_vals.len(); // 16
     let d = dl_do[0].len(); // 4
 
-    let mut dl_dz = vec![vec![Complex::new(0.0, 0.0); n]; n];
+    let mut dl_dz = vec![vec![C::new(ZERO, ZERO); n]; n];
 
     // Pretranspose V for better cache
-    let mut v_t = vec![vec![Complex::new(0.0, 0.0); n]; d];
+    let mut v_t = vec![vec![C::new(ZERO, ZERO); n]; d];
 
     for i in 0..n {
         for j in 0..d {
@@ -177,10 +177,10 @@ pub fn softmax_attention_backward_fused(
         // Compute u = sum_j dl/do[i][j] * Vᵀ[j]   (length n) but lazily
         // Actually we only care about dot = s·u, not u fully
 
-        let mut dot = 0.0;
+        let mut dot: Real = ZERO;
 
         for k in 0..n {
-            let mut u_k = 0.0;
+            let mut u_k: Real = ZERO;
             for j in 0..d {
                 u_k += dl_do[i][j].re * v_t[j][k].re;
             }
@@ -189,11 +189,11 @@ pub fn softmax_attention_backward_fused(
 
         // Final dl/dz row
         for j in 0..n {
-            let mut u_j = 0.0;
+            let mut u_j: Real = ZERO;
             for c in 0..d {
                 u_j += dl_do[i][c].re * v_t[c][j].re;
             }
-            dl_dz[i][j] = Complex::new(softmax_vals[i][j] * (u_j - dot), 0.0);
+            dl_dz[i][j] = C::new(softmax_vals[i][j] * (u_j - dot), ZERO);
         }
     }
 
@@ -291,11 +291,11 @@ pub fn backpropagate_softmax_masked_norm(softmax_jacobian: &Vec<Vec<Vec<Complex<
     dl_dz
 }
 
-pub fn backpropagate_softmax_masked_real(softmax_jacobian: &Vec<Vec<Vec<f64>>>, dl_ds: &Vec<Vec<Complex<f64>>>, padding_mask: &Vec<u32>) -> Vec<Vec<f64>> {
+pub fn backpropagate_softmax_masked_real(softmax_jacobian: &Vec<Vec<Vec<Real>>>, dl_ds: &Vec<Vec<C>>, padding_mask: &Vec<u32>) -> Vec<Vec<Real>> {
     let num_rows = dl_ds.len();
     let num_cols = dl_ds[0].len();
 
-    let mut dl_dz = vec![vec![0.0; num_cols]; num_rows];
+    let mut dl_dz = vec![vec![r(0.0); num_cols]; num_rows];
 
     for i in 0..num_rows {
         if padding_mask[i] == 0 {
@@ -374,7 +374,7 @@ pub fn get_adam_value(gradient: &f64, b1: f64, m1: f64) -> f64 {
 }
 
 //dy/d Swish(b) = sigma(b) + b * sigma(b) * (1 - sigma(b))
-pub fn get_gradient_swish(b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+pub fn get_gradient_swish(b: &Vec<Vec<C>>) -> Vec<Vec<C>> {
     let sigmoid = activate_output_complex(b, ActivationType::SIGMOID);
     let one = Complex::new(1.0, 0.0);
 
@@ -384,7 +384,7 @@ pub fn get_gradient_swish(b: &Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> 
         .collect()
 }
 
-pub fn get_gradient_complex(activated_data: &Vec<Vec<Complex<f64>>>, input_data: &Vec<Vec<Complex<f64>>>, activation: ActivationType) -> Vec<Vec<Complex<f64>>> {
+pub fn get_gradient_complex(activated_data: &Vec<Vec<C>>, input_data: &Vec<Vec<C>>, activation: ActivationType) -> Vec<Vec<C>> {
     match activation {
         ActivationType::SIGMOID => activated_data.iter().map(|row| row.iter().map(|&x| sigmoid_derivative_complex(x)).collect()).collect(),
         ActivationType::TANH => activated_data.iter().map(|row| row.iter().map(|&x| tanh_derivative_complex(x)).collect()).collect(),

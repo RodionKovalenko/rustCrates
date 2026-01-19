@@ -16,4 +16,5 @@ pub mod performer_complex;
 pub mod adaptive_pooling;
 pub mod complex_to_linear_layer;
 pub mod sparse_linear_layer;
+#[cfg(test)]
 pub mod tests;

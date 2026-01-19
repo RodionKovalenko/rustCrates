@@ -26,7 +26,6 @@ mod test_transformer {
                 tokenizer::tokenize_batch,
             },
         },
-        utils::data_converter::convert_to_c_f64_3d,
     };
 
     #[test]
@@ -195,9 +194,7 @@ mod test_transformer {
         layer_input.set_batch_ids(batch_ids.clone());
 
         let network_output = predict(&mut transformer_network, &layer_input);
-        let output_batch = network_output.get_output_batch_f64();
-
-        let output_batch: Vec<Vec<Vec<Complex<f64>>>> = convert_to_c_f64_3d::<Vec<Vec<Vec<f64>>>>(&output_batch);
+        let output_batch = network_output.get_output_batch();
         let (_tokens, target_ids) = tokenize_batch(&target_batch_str, true).unwrap();
         backward(&mut transformer_network, &target_ids, false);
 
