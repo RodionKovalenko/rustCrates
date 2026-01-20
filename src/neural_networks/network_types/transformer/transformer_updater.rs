@@ -1,8 +1,5 @@
 use crate::neural_networks::{
-    network_components::{gradient_struct::Gradient, layer::LayerEnum},
-    network_types::{neural_network_generic::NeuralNetwork, transformer::transformer_builder::NUM_SELF_ATT_LAYERS},
-    utils::dtype::{r, C, Real},
-    utils::matrix::{normalize_bias, normalize_gradients, normalize_gradients_batch},
+    network_components::gradient_struct::Gradient, network_layers::layer::LayerEnum, network_types::{neural_network_generic::NeuralNetwork, transformer::transformer_builder::NUM_SELF_ATT_LAYERS}, utils::{dtype::{C, Real, r}, matrix::{normalize_bias, normalize_gradients, normalize_gradients_batch}}
 };
 
 pub const VERBOSE: bool = false;
@@ -524,7 +521,7 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                     max_bias(&gradient.get_gradient_bias());
                 }
             }
-             LayerEnum::SparseLinear(sparse_linear_layer) => {
+            LayerEnum::SparseLinear(sparse_linear_layer) => {
                 gradient = sparse_linear_layer.gradient.as_mut().expect("No gradient found");
 
                 global_weights.push(gradient.get_gradient_weights());

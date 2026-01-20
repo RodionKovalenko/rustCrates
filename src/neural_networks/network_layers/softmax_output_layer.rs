@@ -3,24 +3,20 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
-    network_components::{complex_to_linear_layer::ComplexToLinearLayer, layer_input_struct::LayerInput},
+    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
     network_types::neural_network_generic::OperationMode,
     utils::{
         activation::{softmax_backward_real_with_gradient, softmax_backward_real_with_gradient_rm, softmax_last_row},
-        dtype::{C, Real},
+        dtype::{Real, C},
         matrix::RowMajorMatrix,
     },
 };
-
-use super::gradient_struct::Gradient;
 
 // RMSNorm Layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SoftmaxLayer {
     pub learning_rate: f64,
     pub operation_mode: OperationMode,
-    pub complex_to_linear_layer: Option<ComplexToLinearLayer>,
-
     #[serde(skip)]
     pub softmax_output_batch: Option<Vec<Vec<Vec<Real>>>>,
     #[serde(skip)]
@@ -42,7 +38,6 @@ impl SoftmaxLayer {
         Self {
             learning_rate,
             operation_mode,
-            complex_to_linear_layer: None,
             softmax_output_batch: None,
             input_batch: None,
             gradient: None,
@@ -82,12 +77,6 @@ impl SoftmaxLayer {
 
         let padding_mask_batch = padding_mask_option.unwrap_or_else(|| vec![vec![1; seq_len]; batch_size]);
         let target_token_batch_ids = target_token_ids.unwrap_or(Vec::new());
-
-        let input_batch_linear = if let Some(complex_to_linear_layer) = &mut self.complex_to_linear_layer {
-            complex_to_linear_layer.forward(&layer_input).get_output_batch()
-        } else {
-            input_batch.clone()
-        };
 
         let output_indices_batch = layer_input.get_output_indices();
 
@@ -131,7 +120,7 @@ impl SoftmaxLayer {
                         let output_indices = if !output_indices_batch.is_empty() { &output_indices_batch[batch_ind] } else { &vec![] };
 
                         let outputs = softmax_backward_real_with_gradient(
-                            &input_batch_linear[batch_ind],
+                            &input_batch[batch_ind],
                             &target_token_batch_ids[batch_ind],
                             &padding_mask_batch[batch_ind],
                             total_valid_tokens,
@@ -144,15 +133,6 @@ impl SoftmaxLayer {
                 (Vec::new(), output_gradients.0, output_gradients.1)
             }
         };
-
-        if let Some(complex_to_linear_layer) = &mut self.complex_to_linear_layer {
-            let mut complex_to_linear_gradient = Gradient::new_default();
-            complex_to_linear_gradient.set_gradient_input_batch(input_gradient_batch);
-            complex_to_linear_gradient.set_total_valid_tokens(total_valid_tokens);
-
-            complex_to_linear_gradient = complex_to_linear_layer.backward(&complex_to_linear_gradient);
-            input_gradient_batch = complex_to_linear_gradient.get_gradient_input_batch()
-        }
 
         self.padding_mask_batch = Some(padding_mask_batch);
         self.softmax_output_batch = Some(layer_output_batch.clone());
@@ -192,16 +172,6 @@ impl SoftmaxLayer {
         let padding_mask_batch = padding_mask_option.unwrap_or_else(|| vec![vec![1; seq_len]; batch_size]);
         let target_token_batch_ids = target_token_ids.unwrap_or(Vec::new());
 
-        // Optional Complex->Linear projection in RM.
-        let input_batch_linear_rm: Vec<RowMajorMatrix<C>> = if let Some(complex_to_linear_layer) = &mut self.complex_to_linear_layer {
-            let mut li = layer_input.clone();
-            li.clear_input_batch();
-            li.set_input_batch_rm(input_batch_rm_ref.to_vec());
-            complex_to_linear_layer.forward(&li).get_output_batch_rm()
-        } else {
-            input_batch_rm_ref.to_vec()
-        };
-
         let output_indices_batch = layer_input.get_output_indices();
 
         let mut total_valid_tokens: usize = 0;
@@ -231,7 +201,7 @@ impl SoftmaxLayer {
                         let output_indices = if !output_indices_batch.is_empty() { &output_indices_batch[batch_ind] } else { &vec![] };
 
                         softmax_backward_real_with_gradient_rm(
-                            &input_batch_linear_rm[batch_ind],
+                            &input_batch_rm_ref[batch_ind],
                             &target_token_batch_ids[batch_ind],
                             &padding_mask_batch[batch_ind],
                             total_valid_tokens,
@@ -250,14 +220,6 @@ impl SoftmaxLayer {
             }
         };
 
-        if let Some(complex_to_linear_layer) = &mut self.complex_to_linear_layer {
-            let mut complex_to_linear_gradient = Gradient::new_default();
-            complex_to_linear_gradient.set_gradient_input_batch_rm(input_gradient_batch_rm);
-            complex_to_linear_gradient.set_total_valid_tokens(total_valid_tokens);
-            complex_to_linear_gradient = complex_to_linear_layer.backward(&complex_to_linear_gradient);
-            input_gradient_batch_rm = complex_to_linear_gradient.get_gradient_input_batch_rm();
-        }
-
         self.padding_mask_batch = Some(padding_mask_batch);
         self.softmax_output_batch = Some(layer_output_batch.clone());
         self.cross_entropy_loss_batch = Some(losses);
@@ -272,9 +234,7 @@ impl SoftmaxLayer {
     }
 
     pub fn update_parameters(&mut self) {
-        if let Some(complex_to_linear_layer) = &mut self.complex_to_linear_layer {
-            complex_to_linear_layer.update_parameters();
-        }
+      
     }
 
     pub fn backward(&mut self, _target_token_ids: &Vec<Vec<u32>>) -> Gradient {

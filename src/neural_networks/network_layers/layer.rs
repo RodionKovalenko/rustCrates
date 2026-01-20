@@ -1,13 +1,11 @@
 use crate::neural_networks::{
-    network_components::{
-        adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, complex_to_linear_layer::ComplexToLinearLayer, multi_linear_layer::MultiLinearLayer,
-        sparse_linear_layer::SparseLinearLayer,
+    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+    network_layers::{
+        adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, complex_to_linear_layer::ComplexToLinearLayer, feedforward_layer::FeedForwardLayer, multi_linear_layer::MultiLinearLayer,
+        sparse_linear_layer::SparseLinearLayer, wavelet_complex_layer::ComplexWaveletLayer, wavelet_discrete_layer::DiscreteWaveletLayer,
     },
-    network_types::{
-        feedforward_layer::FeedForwardLayer,
-        transformer::{self_attention_layer::SelfAttentionLayer, self_attention_layer_approximation::SelfAttentionLayerApproximation, sparse_self_attention_layer::SparseSelfAttentionLayer},
-        wavelet_complex_layer::ComplexWaveletLayer,
-        wavelet_discrete_layer::DiscreteWaveletLayer,
+    network_types::transformer::{
+        self_attention_layer::SelfAttentionLayer, self_attention_layer_approximation::SelfAttentionLayerApproximation, sparse_self_attention_layer::SparseSelfAttentionLayer,
     },
     utils::{
         activation::{activate_output_complex, swish},
@@ -24,11 +22,11 @@ use core::fmt::Debug;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::utils::dtype::{r, C, Real, ONE, ZERO};
+use crate::neural_networks::utils::dtype::{r, Real, C, ONE, ZERO};
 
 use super::{
-    add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput, linear_layer::LinearLayer,
-    norm_layer::NormalNormLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer,
+    add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, linear_layer::LinearLayer, norm_layer::NormalNormLayer, positional_encoding_layer::PositionalEncodingLayer,
+    softmax_output_layer::SoftmaxLayer,
 };
 
 use crate::neural_networks::utils::activation::{sigmoid_complex, tanh_complex};
@@ -181,7 +179,7 @@ impl Layer {
         let rm_available = input_batch_rm_ref.is_some() && input_batch_ref.map_or(true, |v| v.is_empty());
         let activation_supported_rm = matches!(
             self.activation_type,
-            ActivationType::LINEAR | ActivationType::TANH | ActivationType::RELU |  ActivationType::LEAKYRELU | ActivationType::SIGMOID | ActivationType::GELU | ActivationType::SWiGLU
+            ActivationType::LINEAR | ActivationType::TANH | ActivationType::RELU | ActivationType::LEAKYRELU | ActivationType::SIGMOID | ActivationType::GELU | ActivationType::SWiGLU
         );
         let use_rm = rm_available && activation_supported_rm;
 
@@ -257,7 +255,7 @@ impl Layer {
         let inactivated_batch_output: Vec<Vec<Vec<C>>> = input_batch
             .par_iter()
             .map(|input| {
-            let mut output: Vec<Vec<C>> = multiply_complex(input, &self.weights);
+                let mut output: Vec<Vec<C>> = multiply_complex(input, &self.weights);
 
                 // Add bias to the result
                 add_vector(&mut output, &self.bias);

@@ -1,11 +1,13 @@
 use core::fmt::Debug;
 use serde::{Deserialize, Serialize};
 
+use crate::neural_networks::network_layers::layer::LayerEnum;
+use crate::neural_networks::network_layers::norm_layer::NormalNormLayer;
 use crate::neural_networks::utils::dtype::{c_from_f64, c_to_f64, C, CF64};
 
 use crate::{
     neural_networks::{
-        network_components::{gradient_struct::Gradient, layer::LayerEnum, layer_input_struct::LayerInput, layer_output_struct::LayerOutput, norm_layer::NormalNormLayer},
+        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
         utils::matrix::{add_matrix, add_matrix_3d, transpose, transpose_rm, RowMajorMatrix},
     },
     wavelet_transform::{
@@ -203,10 +205,7 @@ impl DiscreteWaveletLayer {
     }
 
     pub fn forward_rm(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        let input_batch_rm: Vec<RowMajorMatrix<C>> = layer_input
-            .get_input_batch_rm_ref()
-            .expect("DiscreteWaveletLayer::forward_rm expects RM input")
-            .to_vec();
+        let input_batch_rm: Vec<RowMajorMatrix<C>> = layer_input.get_input_batch_rm_ref().expect("DiscreteWaveletLayer::forward_rm expects RM input").to_vec();
 
         let target_batch_ids: Vec<Vec<u32>> = layer_input.get_target_batch_ids();
         let forward_only = layer_input.get_forward_only();
@@ -313,9 +312,7 @@ impl DiscreteWaveletLayer {
 
                 // Mixed mode: Vec forward but caller provided RM gradients.
                 if self.last_rm_strict {
-                    panic!(
-                        "RM strict mode violation: DiscreteWaveletLayer backward would convert RM gradients to Vec (forward was Vec)"
-                    );
+                    panic!("RM strict mode violation: DiscreteWaveletLayer backward would convert RM gradients to Vec (forward was Vec)");
                 }
 
                 let prev_vec: Vec<Vec<Vec<C>>> = prev_rm.iter().map(|m| m.to_rows()).collect();
@@ -329,15 +326,9 @@ impl DiscreteWaveletLayer {
         // Mixed mode: RM forward but caller provided Vec gradients.
         if self.input_batch_rm.is_some() && !previous_gradient.get_gradient_input_batch().is_empty() {
             if self.last_rm_strict {
-                panic!(
-                    "RM strict mode violation: DiscreteWaveletLayer backward would convert Vec gradients to RM (forward was RM)"
-                );
+                panic!("RM strict mode violation: DiscreteWaveletLayer backward would convert Vec gradients to RM (forward was RM)");
             }
-            let prev_rm: Vec<RowMajorMatrix<C>> = previous_gradient
-                .get_gradient_input_batch()
-                .iter()
-                .map(|m| RowMajorMatrix::from_rows(m))
-                .collect();
+            let prev_rm: Vec<RowMajorMatrix<C>> = previous_gradient.get_gradient_input_batch().iter().map(|m| RowMajorMatrix::from_rows(m)).collect();
             let mut g = Gradient::new_default();
             g.set_time_step(previous_gradient.get_time_step());
             g.set_gradient_input_batch_rm(prev_rm);
@@ -401,11 +392,7 @@ impl DiscreteWaveletLayer {
     }
 
     pub fn backward_rm(&mut self, previous_gradient: &Gradient) -> Gradient {
-        let input_batch_rm = self
-            .input_batch_rm
-            .as_ref()
-            .expect("DiscreteWaveletLayer::backward_rm expects RM cache from forward_rm")
-            .to_vec();
+        let input_batch_rm = self.input_batch_rm.as_ref().expect("DiscreteWaveletLayer::backward_rm expects RM cache from forward_rm").to_vec();
 
         let mut grad_output_batch_rm = previous_gradient
             .get_gradient_input_batch_rm_ref()
@@ -452,20 +439,8 @@ impl DiscreteWaveletLayer {
         out
     }
 
-    fn compress_partial_rm(
-        &mut self,
-        input_rm: &RowMajorMatrix<C>,
-    ) -> (
-        RowMajorMatrix<C>,
-        RowMajorMatrix<C>,
-        Vec<usize>,
-        Vec<RowMajorMatrix<C>>,
-    ) {
-        let mut wav_out_f64 = RowMajorMatrix::from_data(
-            input_rm.rows,
-            input_rm.cols,
-            input_rm.data.iter().copied().map(c_to_f64).collect(),
-        );
+    fn compress_partial_rm(&mut self, input_rm: &RowMajorMatrix<C>) -> (RowMajorMatrix<C>, RowMajorMatrix<C>, Vec<usize>, Vec<RowMajorMatrix<C>>) {
+        let mut wav_out_f64 = RowMajorMatrix::from_data(input_rm.rows, input_rm.cols, input_rm.data.iter().copied().map(c_to_f64).collect());
         let mut details_last_f64: RowMajorMatrix<CF64> = RowMajorMatrix::from_data(0, 0, vec![]);
         let mut compression_dims: Vec<usize> = Vec::new();
         let mut detail_coefficients_levels_c: Vec<RowMajorMatrix<C>> = Vec::new();
@@ -488,11 +463,7 @@ impl DiscreteWaveletLayer {
 
             wav_out_f64 = next;
             details_last_f64 = details.clone();
-            detail_coefficients_levels_c.push(RowMajorMatrix::from_data(
-                details.rows,
-                details.cols,
-                details.data.into_iter().map(c_from_f64).collect(),
-            ));
+            detail_coefficients_levels_c.push(RowMajorMatrix::from_data(details.rows, details.cols, details.data.into_iter().map(c_from_f64).collect()));
             compression_dims.push(wav_out_f64.rows);
 
             self.compression_levels_used = level + 1;
@@ -501,43 +472,22 @@ impl DiscreteWaveletLayer {
             }
         }
 
-        let wav_out_c = RowMajorMatrix::from_data(
-            wav_out_f64.rows,
-            wav_out_f64.cols,
-            wav_out_f64.data.into_iter().map(c_from_f64).collect(),
-        );
-        let details_last_c = RowMajorMatrix::from_data(
-            details_last_f64.rows,
-            details_last_f64.cols,
-            details_last_f64.data.into_iter().map(c_from_f64).collect(),
-        );
+        let wav_out_c = RowMajorMatrix::from_data(wav_out_f64.rows, wav_out_f64.cols, wav_out_f64.data.into_iter().map(c_from_f64).collect());
+        let details_last_c = RowMajorMatrix::from_data(details_last_f64.rows, details_last_f64.cols, details_last_f64.data.into_iter().map(c_from_f64).collect());
 
         (wav_out_c, details_last_c, compression_dims, detail_coefficients_levels_c)
     }
 
-    fn decompress_partial_gradient_rm(
-        &mut self,
-        grad_output_rm: &RowMajorMatrix<C>,
-        compression_dim: &Vec<usize>,
-        batch_ind: usize,
-    ) -> RowMajorMatrix<C> {
+    fn decompress_partial_gradient_rm(&mut self, grad_output_rm: &RowMajorMatrix<C>, compression_dim: &Vec<usize>, batch_ind: usize) -> RowMajorMatrix<C> {
         let input_batch_rm = self.input_batch_rm.as_ref().expect("Input batch RM not found");
         let original_seq_len = input_batch_rm[batch_ind].rows;
 
-        let grad_output_f64 = RowMajorMatrix::from_data(
-            grad_output_rm.rows,
-            grad_output_rm.cols,
-            grad_output_rm.data.iter().copied().map(c_to_f64).collect(),
-        );
+        let grad_output_f64 = RowMajorMatrix::from_data(grad_output_rm.rows, grad_output_rm.cols, grad_output_rm.data.iter().copied().map(c_to_f64).collect());
         let mut grad_transp = transpose_rm(&grad_output_f64); // dim x trend_len
 
         for _ in (0..compression_dim.len()).rev() {
             let ll_len = grad_transp.cols;
-            let mut combined = RowMajorMatrix::from_data(
-                grad_transp.rows,
-                ll_len * 2,
-                vec![CF64::new(0.0, 0.0); grad_transp.rows * ll_len * 2],
-            );
+            let mut combined = RowMajorMatrix::from_data(grad_transp.rows, ll_len * 2, vec![CF64::new(0.0, 0.0); grad_transp.rows * ll_len * 2]);
 
             for r in 0..grad_transp.rows {
                 let row_ll = grad_transp.row_range(r);
@@ -571,10 +521,7 @@ impl DiscreteWaveletLayer {
 
         for (_batch_ind, gradient_input) in gradient_input_batch.iter().enumerate() {
             // Run wavelet ops in f64 then convert back.
-            let grad_f64: Vec<Vec<CF64>> = gradient_input
-                .iter()
-                .map(|row| row.iter().copied().map(c_to_f64).collect())
-                .collect();
+            let grad_f64: Vec<Vec<CF64>> = gradient_input.iter().map(|row| row.iter().copied().map(c_to_f64).collect()).collect();
 
             // Transpose to align data dimensions with grad_dwt_2d_partial expectation
             let mut wav_out: Vec<Vec<CF64>> = transpose(&grad_f64);
@@ -597,10 +544,7 @@ impl DiscreteWaveletLayer {
 
             // Transpose back to original axis order expected downstream
             let out_f64 = transpose(&wav_out);
-            let out_c: Vec<Vec<C>> = out_f64
-                .iter()
-                .map(|row| row.iter().copied().map(c_from_f64).collect())
-                .collect();
+            let out_c: Vec<Vec<C>> = out_f64.iter().map(|row| row.iter().copied().map(c_from_f64).collect()).collect();
             batch_output.push(out_c);
         }
 
@@ -610,10 +554,7 @@ impl DiscreteWaveletLayer {
         gradient
     }
     pub fn compress_partial(&mut self, input: &[Vec<C>], batch_ind: usize) -> (Vec<Vec<C>>, Vec<Vec<C>>, Vec<usize>) {
-        let mut wav_out: Vec<Vec<CF64>> = input
-            .iter()
-            .map(|row| row.iter().copied().map(c_to_f64).collect())
-            .collect();
+        let mut wav_out: Vec<Vec<CF64>> = input.iter().map(|row| row.iter().copied().map(c_to_f64).collect()).collect();
 
         let mut details: Vec<Vec<CF64>> = Vec::new();
         let mut compression_dims: Vec<usize> = Vec::new();
@@ -634,10 +575,7 @@ impl DiscreteWaveletLayer {
             } else {
                 wav_out = trend.clone();
             }
-            let details_c: Vec<Vec<C>> = details
-                .iter()
-                .map(|row| row.iter().copied().map(c_from_f64).collect())
-                .collect();
+            let details_c: Vec<Vec<C>> = details.iter().map(|row| row.iter().copied().map(c_from_f64).collect()).collect();
             detail_coefficients.push(details_c);
             compression_dims.push(trend.len());
 
@@ -660,28 +598,19 @@ impl DiscreteWaveletLayer {
         }
 
         //println!("trend dim: {} {}", trend.len(), trend[0].len());
-        let wav_out_c: Vec<Vec<C>> = wav_out
-            .iter()
-            .map(|row| row.iter().copied().map(c_from_f64).collect())
-            .collect();
-        let details_c: Vec<Vec<C>> = details
-            .iter()
-            .map(|row| row.iter().copied().map(c_from_f64).collect())
-            .collect();
+        let wav_out_c: Vec<Vec<C>> = wav_out.iter().map(|row| row.iter().copied().map(c_from_f64).collect()).collect();
+        let details_c: Vec<Vec<C>> = details.iter().map(|row| row.iter().copied().map(c_from_f64).collect()).collect();
 
         (wav_out_c, details_c, compression_dims)
     }
 
     pub fn decompress_partial_gradient(
         &mut self,
-        grad_output: &Vec<Vec<C>>, // gradient w.r.t. reconstructed signal for one batch entry
-        compression_dim: &Vec<usize>,         // per-level trend sizes (stored during forward)
+        grad_output: &Vec<Vec<C>>,    // gradient w.r.t. reconstructed signal for one batch entry
+        compression_dim: &Vec<usize>, // per-level trend sizes (stored during forward)
         batch_ind: usize,
     ) -> Vec<Vec<C>> {
-        let gradient_without_target_f64: Vec<Vec<CF64>> = grad_output
-            .iter()
-            .map(|row| row.iter().copied().map(c_to_f64).collect())
-            .collect();
+        let gradient_without_target_f64: Vec<Vec<CF64>> = grad_output.iter().map(|row| row.iter().copied().map(c_to_f64).collect()).collect();
         let mut gradient_transp: Vec<Vec<CF64>> = transpose(&gradient_without_target_f64);
 
         // load stored detail coefficients for this batch
@@ -726,17 +655,11 @@ impl DiscreteWaveletLayer {
             self.truncate_matrix(&mut gradient_transposed, input_batch[batch_ind].len());
         }
 
-        gradient_transposed
-            .iter()
-            .map(|row| row.iter().copied().map(c_from_f64).collect())
-            .collect()
+        gradient_transposed.iter().map(|row| row.iter().copied().map(c_from_f64).collect()).collect()
     }
 
     pub fn decompress_partial(&mut self, grad_output: &Vec<Vec<C>>, compression_dim: &Vec<usize>, batch_ind: usize) -> Vec<Vec<C>> {
-        let gradient_without_target_f64: Vec<Vec<CF64>> = grad_output
-            .iter()
-            .map(|row| row.iter().copied().map(c_to_f64).collect())
-            .collect();
+        let gradient_without_target_f64: Vec<Vec<CF64>> = grad_output.iter().map(|row| row.iter().copied().map(c_to_f64).collect()).collect();
         let mut gradient_transp: Vec<Vec<CF64>> = transpose(&gradient_without_target_f64);
 
         let detail_coefficients_batch = self.details_batch_coefficients.as_ref().expect("no details_batch_coefficients found").clone();
@@ -776,10 +699,7 @@ impl DiscreteWaveletLayer {
             self.truncate_matrix(&mut gradient_transposed, input_batch[batch_ind].len());
         }
 
-        gradient_transposed
-            .iter()
-            .map(|row| row.iter().copied().map(c_from_f64).collect())
-            .collect()
+        gradient_transposed.iter().map(|row| row.iter().copied().map(c_from_f64).collect()).collect()
     }
 
     pub fn align_vectors<T>(&self, a: &mut Vec<T>, b: &mut Vec<T>) {

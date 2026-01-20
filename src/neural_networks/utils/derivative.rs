@@ -1,4 +1,4 @@
-use crate::neural_networks::{network_components::layer::ActivationType, utils::activation::activate_output_complex};
+use crate::neural_networks::{network_layers::layer::ActivationType, utils::activation::activate_output_complex};
 use num::abs;
 use num_complex::{Complex, ComplexFloat};
 

@@ -1,5 +1,7 @@
-use crate::neural_networks::network_components::adaptive_pooling::{adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, interpalation_decompressor_layer::InterpolationDecompressorLayer};
-use crate::neural_networks::utils::dtype::{r, C, Real, ZERO};
+use crate::neural_networks::{
+    network_layers::adaptive_pooling::{adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, interpalation_decompressor_layer::InterpolationDecompressorLayer},
+    utils::dtype::{r, Real, C, ZERO},
+};
 
 // Helper function to calculate reconstruction error (Mean Squared Error)
 pub fn calculate_reconstruction_error(original: &Vec<Vec<Vec<C>>>, reconstructed: &Vec<Vec<Vec<C>>>) -> Real {
@@ -34,7 +36,6 @@ pub fn calculate_reconstruction_error(original: &Vec<Vec<Vec<C>>>, reconstructed
         ZERO
     }
 }
-
 
 // Test different decompression methods
 pub fn test_decompression_methods(original: &Vec<Vec<Vec<C>>>, compressed: &Vec<Vec<Vec<C>>>, adaptive_pool: &AdaptiveAvgPool1dLayer) {
@@ -90,9 +91,12 @@ pub fn create_random_input(batch_size: usize, seq_len: usize, hidden_dim: usize)
 
 #[cfg(test)]
 mod adaptive_pooling_complex_tests {
-    use crate::neural_networks::network_components::{
-        adaptive_pooling::{adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, dynamic_sequence_compressor_layer::DynamicSequenceCompressorLayer, interpalation_decompressor_layer::InterpolationDecompressorLayer, strided_pooling_layer::StridedPoolingLayer},
-        layer_input_struct::LayerInput,
+    use crate::neural_networks::{
+        network_components::layer_input_struct::LayerInput,
+        network_layers::adaptive_pooling::{
+            adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, dynamic_sequence_compressor_layer::DynamicSequenceCompressorLayer, interpalation_decompressor_layer::InterpolationDecompressorLayer,
+            strided_pooling_layer::StridedPoolingLayer,
+        },
     };
 
     use super::*;

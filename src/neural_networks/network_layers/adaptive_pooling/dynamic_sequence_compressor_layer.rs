@@ -1,7 +1,7 @@
+use crate::neural_networks::network_layers::adaptive_pooling::adaptive_avg_pool1d_layer::{AdaptiveAvgPool1dLayer, CompressionMetadata, CompressionType};
 use crate::neural_networks::utils::dtype::C;
 
 use crate::neural_networks::network_components::{
-    adaptive_pooling::adaptive_avg_pool1d_layer::{AdaptiveAvgPool1dLayer, CompressionMetadata, CompressionType},
     layer_input_struct::LayerInput,
     layer_output_struct::LayerOutput,
 };

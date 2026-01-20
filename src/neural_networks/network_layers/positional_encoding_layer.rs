@@ -1,8 +1,8 @@
+use crate::neural_networks::network_components::gradient_struct::Gradient;
 use crate::neural_networks::network_components::layer_input_struct::LayerInput;
 use crate::neural_networks::utils::matrix::RowMajorMatrix;
 use crate::neural_networks::utils::dtype::{r, C, Real, ZERO};
 
-use super::gradient_struct::Gradient;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 

@@ -1,3 +1,4 @@
+use crate::neural_networks::network_layers::layer::LayerEnum;
 use crate::neural_networks::utils::dtype::{r, C, Real, ZERO};
 use crate::neural_networks::utils::matrix::RowMajorMatrix;
 use colored::*;
@@ -9,7 +10,6 @@ use crate::{
         network_components::{
             gradient_struct::Gradient,
             input::{concat_batches, extend_input_with_bos, DataTrait, Dataset},
-            layer::LayerEnum,
             layer_input_struct::LayerInput,
             layer_output_struct::LayerOutput,
         },

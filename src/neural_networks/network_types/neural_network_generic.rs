@@ -4,7 +4,7 @@ use std::{fmt::Debug, path::Path};
 use crate::{
     database::sled_db::get_storage_path_transformer_db,
     neural_networks::{
-        network_components::layer::LayerEnum,
+        network_layers::layer::LayerEnum,
         utils::file::{derialize_bin, serialize_bin},
     },
 };

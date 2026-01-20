@@ -1,6 +1,6 @@
 use num::Complex;
 
-use crate::neural_networks::network_components::adaptive_pooling::adaptive_avg_pool1d_layer::{CompressionMetadata, CompressionType};
+use crate::neural_networks::network_layers::adaptive_pooling::adaptive_avg_pool1d_layer::{CompressionMetadata, CompressionType};
 
 // ContentAwarePooling struct and implementation
 pub struct ContentAwarePoolingLayer {

@@ -6,10 +6,12 @@ use num::{Complex, Zero};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
+use crate::neural_networks::network_layers::complex_to_linear_layer::ComplexToLinearLayer;
+use crate::neural_networks::network_layers::layer::LayerType;
 use crate::neural_networks::utils::dtype::{r, C, Real};
 
 use crate::neural_networks::{
-    network_components::{complex_to_linear_layer::ComplexToLinearLayer, gradient_struct::Gradient, layer::LayerType, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     utils::{
         activation::softmax_complex_padding_complex,
         adam_w::calculate_adam_w,

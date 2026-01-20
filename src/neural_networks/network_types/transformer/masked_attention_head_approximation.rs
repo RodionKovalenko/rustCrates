@@ -4,10 +4,11 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
-    network_components::{gradient_struct::Gradient, layer::LayerType, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+    network_layers::layer::LayerType,
     utils::{
         adam_w::calculate_adam_w,
-        dtype::{r, C, Real, ONE, ZERO},
+        dtype::{r, Real, C, ONE, ZERO},
         matrix::{average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, RowMajorMatrix},
         weights_initializer::initialize_weights_complex,
     },
@@ -89,9 +90,7 @@ impl MaskedAttentionHeadApproximation {
         let bias_q = vec![C::new(ONE, ZERO); cols];
         let bias_k = bias_q.clone();
         let bias_v = bias_q.clone();
-        let w = (0..cols)
-            .map(|_| (0..cols).map(|_| C::new(rng.random::<Real>(), ZERO)).collect())
-            .collect();
+        let w = (0..cols).map(|_| (0..cols).map(|_| C::new(rng.random::<Real>(), ZERO)).collect()).collect();
         let b = (0..cols).map(|_| C::new(rng.random::<Real>(), ZERO)).collect();
 
         Self {
@@ -390,10 +389,7 @@ impl MaskedAttentionHeadApproximation {
 
         let pg = self.precompute_gradients(bsz, seq, &grad_output);
 
-        let mut grad_in_rm: Vec<RowMajorMatrix<C>> = vec![
-            RowMajorMatrix::from_data(seq, d_model, vec![C::new(ZERO, ZERO); seq * d_model]);
-            bsz
-        ];
+        let mut grad_in_rm: Vec<RowMajorMatrix<C>> = vec![RowMajorMatrix::from_data(seq, d_model, vec![C::new(ZERO, ZERO); seq * d_model]); bsz];
         let mut grad_wq = vec![vec![vec![C::new(ZERO, ZERO); d_k]; d_model]; bsz];
         let mut grad_wk = grad_wq.clone();
         let mut grad_wv = grad_wq.clone();
@@ -450,7 +446,7 @@ impl MaskedAttentionHeadApproximation {
                         let phi = self.phi_k[b][tau][r];
                         for i in 0..d_k {
                             let dphi = phi * (self.w[r][i].conj() - self.k_scaled[b][tau][i]);
-                                let mut gk = C::new(ZERO, ZERO);
+                            let mut gk = C::new(ZERO, ZERO);
                             for t in tau..seq {
                                 if self.padding_mask[b][t] == 0 {
                                     continue;

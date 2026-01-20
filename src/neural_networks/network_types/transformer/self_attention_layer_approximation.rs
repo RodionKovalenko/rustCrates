@@ -1,14 +1,9 @@
 use crate::neural_networks::{
     network_components::{
-        add_rms_norm_layer::RMSNormLayer,
         gradient_struct::Gradient,
-        layer::{LayerEnum, LayerType},
         layer_input_struct::LayerInput,
         layer_output_struct::LayerOutput,
-        norm_layer::NormalNormLayer,
-    },
-    network_types::transformer::masked_attention_head_approximation::MaskedAttentionHeadApproximation,
-    utils::matrix::{add_matrix_3d, RowMajorMatrix},
+    }, network_layers::{add_rms_norm_layer::RMSNormLayer, layer::{LayerEnum, LayerType}, norm_layer::NormalNormLayer}, network_types::transformer::masked_attention_head_approximation::MaskedAttentionHeadApproximation, utils::matrix::{RowMajorMatrix, add_matrix_3d}
 };
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};

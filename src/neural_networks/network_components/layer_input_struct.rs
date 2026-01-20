@@ -1,9 +1,10 @@
 use core::fmt::Debug;
 use serde::{Deserialize, Serialize};
 
+use crate::neural_networks::network_layers::adaptive_pooling::adaptive_avg_pool1d_layer::CompressionMetadata;
 use crate::neural_networks::utils::dtype::C;
 use crate::neural_networks::utils::matrix::RowMajorMatrix;
-use crate::neural_networks::{network_components::adaptive_pooling::adaptive_avg_pool1d_layer::CompressionMetadata, network_types::transformer::transformer_network::TOP_K_SIZE};
+use crate::neural_networks::{network_types::transformer::transformer_network::TOP_K_SIZE};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LayerInput {

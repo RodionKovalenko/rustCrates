@@ -1,16 +1,9 @@
 use crate::neural_networks::{
     network_components::{
-        add_rms_norm_layer::RMSNormLayer,
         gradient_struct::Gradient,
-        layer::{ActivationType, Layer, LayerEnum, LayerType},
         layer_input_struct::LayerInput,
         layer_output_struct::LayerOutput,
-        linear_layer::LinearLayer,
-        norm_layer::NormalNormLayer,
-    },
-    network_types::transformer::transformer_updater::calculate_alpha,
-    utils::dtype::{real_from_f64, C, Real, ZERO},
-    utils::matrix::{add_matrix_3d, scale_matrix_3d_by_scalar, RowMajorMatrix},
+    }, network_layers::{add_rms_norm_layer::RMSNormLayer, layer::{ActivationType, Layer, LayerEnum, LayerType}, linear_layer::LinearLayer, norm_layer::NormalNormLayer}, network_types::transformer::transformer_updater::calculate_alpha, utils::{dtype::{C, Real, ZERO, real_from_f64}, matrix::{RowMajorMatrix, add_matrix_3d, scale_matrix_3d_by_scalar}}
 };
 use serde::{Deserialize, Serialize};
 
@@ -112,9 +105,7 @@ impl FeedForwardLayer {
                 match norm_layer_enum {
                     LayerEnum::RMSNorm(rms_norm_layer) => {
                         let mut rms_output = rms_norm_layer.forward(&layer_input);
-                        output_rm = rms_output
-                            .take_output_batch_rm()
-                            .expect("FeedForwardLayer RM path expects RMSNorm RM output");
+                        output_rm = rms_output.take_output_batch_rm().expect("FeedForwardLayer RM path expects RMSNorm RM output");
                     }
                     LayerEnum::Norm(norm_layer) => {
                         let mut layer_output = norm_layer.forward(&layer_input);
@@ -122,9 +113,7 @@ impl FeedForwardLayer {
                             output_rm = rm;
                         } else {
                             if layer_input.get_rm_strict() {
-                                panic!(
-                                    "RM strict mode violation: FeedForwardLayer RM path received Vec output from Norm (would convert Vec -> RM)"
-                                );
+                                panic!("RM strict mode violation: FeedForwardLayer RM path received Vec output from Norm (would convert Vec -> RM)");
                             }
                             let vec_out = layer_output.take_output_batch().unwrap_or_default();
                             output_rm = vec_out.iter().map(|m| RowMajorMatrix::from_rows(m)).collect();
@@ -242,9 +231,7 @@ impl FeedForwardLayer {
     }
 
     pub fn backward_rm(&mut self, previous_gradient: &Gradient) -> Gradient {
-        let prev_rm_ref = previous_gradient
-            .get_gradient_input_batch_rm_ref()
-            .expect("FFN backward_rm expects RM gradients");
+        let prev_rm_ref = previous_gradient.get_gradient_input_batch_rm_ref().expect("FFN backward_rm expects RM gradients");
 
         let mut output_grad_rm: Vec<RowMajorMatrix<C>> = prev_rm_ref.to_vec();
 

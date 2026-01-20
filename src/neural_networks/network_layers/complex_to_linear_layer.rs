@@ -2,14 +2,15 @@ use core::fmt::Debug;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::utils::{
-    dtype::{r, C, Real, ZERO},
-    adam_w::calculate_adam_w,
-    matrix::{average_matrix_by_scalar, RowMajorMatrix},
-    weights_initializer::initialize_weights_complex_only_real,
+use crate::neural_networks::{
+    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+    utils::{
+        adam_w::calculate_adam_w,
+        dtype::{r, Real, C, ZERO},
+        matrix::{average_matrix_by_scalar, RowMajorMatrix},
+        weights_initializer::initialize_weights_complex_only_real,
+    },
 };
-
-use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComplexToLinearLayer {
@@ -178,11 +179,7 @@ impl ComplexToLinearLayer {
         let previous_gradient_input_batch: Vec<Vec<Vec<C>>> = previous_gradient.get_gradient_input_batch();
 
         // Prefer non-empty row-major inputs; fall back to legacy Vec.
-        let batch_len = if let Some(b) = input_batch_rm {
-            b.len()
-        } else {
-            input_batch_vec.expect("vec batch").len()
-        };
+        let batch_len = if let Some(b) = input_batch_rm { b.len() } else { input_batch_vec.expect("vec batch").len() };
 
         let in_f = self.weights_1.len();
         let out_f = self.weights_1[0].len();

@@ -1,10 +1,10 @@
 #[cfg(test)]
 
 mod tests {
+    use crate::neural_networks::network_layers::layer::{ActivationType, Layer, LayerType};
     use crate::neural_networks::utils::dtype::{c_to_f64, C};
 
     use crate::neural_networks::{
-        network_components::layer::{ActivationType, Layer, LayerType},
         network_types::neural_network_generic::{create, NeuralNetwork}        
     };
 

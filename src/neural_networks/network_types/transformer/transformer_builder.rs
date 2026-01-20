@@ -1,14 +1,9 @@
 use crate::neural_networks::{
     network_components::{
-        complex_to_linear_layer::ComplexToLinearLayer, embedding_layer::EmbeddingLayer, layer::LayerEnum, norm_layer::NormalNormLayer, positional_encoding_layer::PositionalEncodingLayer,
-        softmax_output_layer::SoftmaxLayer, sparse_linear_layer::SparseLinearLayer,
-    },
-    network_types::{
-        feedforward_layer::FeedForwardLayer,
-        neural_network_generic::{create, NeuralNetwork, OperationMode},
+    }, network_layers::{complex_to_linear_layer::ComplexToLinearLayer, embedding_layer::EmbeddingLayer, feedforward_layer::FeedForwardLayer, layer::LayerEnum, norm_layer::NormalNormLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer, sparse_linear_layer::SparseLinearLayer, wavelet_network::DECOMPOSITION_LEVELS}, network_types::{
+        neural_network_generic::{NeuralNetwork, OperationMode, create},
         transformer::{self_attention_layer::SelfAttentionLayer, sparse_self_attention_layer::SparseSelfAttentionLayer},
-        wavelet_network::DECOMPOSITION_LEVELS,
-    },
+    }
 };
 
 pub const NUM_SELF_ATT_LAYERS: usize = 7;

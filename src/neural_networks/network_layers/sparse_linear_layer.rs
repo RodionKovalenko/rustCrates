@@ -3,21 +3,12 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
-    network_components::layer::LayerEnum,
-    network_types::{transformer::transformer_updater::VERBOSE, wavelet_discrete_layer::DiscreteWaveletLayer},
-    optimization::k_means_clustering::{kmeans, query_candidates},
-    utils::{
+    network_components::{gradient_struct::Gradient, layer_input_struct::{InputRepresentation, LayerInput}, layer_output_struct::LayerOutput}, network_layers::layer::LayerEnum, network_types::transformer::transformer_updater::VERBOSE, optimization::k_means_clustering::{kmeans, query_candidates}, utils::{
         adam_w::{calculate_adam_w_bias_f32_sparse, calculate_adam_w_f32_sparse},
-        dtype::{r, C, Real, ZERO},
-        matrix::{average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, RowMajorMatrix},
+        dtype::{C, Real, ZERO, r},
+        matrix::{RowMajorMatrix, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d},
         weights_initializer::initialize_weights_f32,
-    },
-};
-
-use super::{
-    gradient_struct::Gradient,
-    layer_input_struct::{InputRepresentation, LayerInput},
-    layer_output_struct::LayerOutput,
+    }
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,7 +19,6 @@ pub struct SparseLinearLayer {
     pub bias: Vec<f32>,
     pub smoothing: f64,
     pub ema: f64,
-    pub discrete_wavelet_layer: Option<DiscreteWaveletLayer>,
     pub norm_layer: Option<LayerEnum>,
     pub global_norm: f64,
     pub max_norm: f64,
@@ -63,7 +53,6 @@ pub struct SparseLinearLayer {
     pub output_indices: Option<Vec<Vec<Vec<usize>>>>,
 }
 
-
 pub const TOP_K_SELECTION: usize = 300;
 
 impl SparseLinearLayer {
@@ -91,7 +80,6 @@ impl SparseLinearLayer {
             cluster_to_tokens: cluster_to_tokens,
             n_clusters: n_clusters,
             gradients: vec![],
-            discrete_wavelet_layer: None,
             norm_layer: None,
             gradients_bias: vec![],
             input_batch: None,
@@ -265,11 +253,7 @@ impl SparseLinearLayer {
         let previous_gradient_input_batch: Vec<Vec<Vec<C>>> = previous_gradient.get_gradient_input_batch();
         let previous_gradient_rm_ref = previous_gradient.get_gradient_input_batch_rm_ref();
 
-        let batch_len = if let Some(b) = input_batch_vec {
-            b.len()
-        } else {
-            input_batch_rm.expect("rm batch").len()
-        };
+        let batch_len = if let Some(b) = input_batch_vec { b.len() } else { input_batch_rm.expect("rm batch").len() };
 
         if batch_len == 0 {
             let mut gradient = Gradient::new_default();
@@ -281,18 +265,13 @@ impl SparseLinearLayer {
             return gradient;
         }
 
-        let output_indices_batch: &Vec<Vec<Vec<usize>>> = self
-            .output_indices
-            .as_ref()
-            .expect("Output indices missing in sparse linear layer backward pass");
+        let output_indices_batch: &Vec<Vec<Vec<usize>>> = self.output_indices.as_ref().expect("Output indices missing in sparse linear layer backward pass");
 
         // Determine (seq_len, embedding_d) from the first available non-empty input.
         let first_input_rm: Option<RowMajorMatrix<C>> = if let Some(rm_batch) = input_batch_rm {
             rm_batch.get(0).cloned()
         } else {
-            input_batch_vec
-                .and_then(|b| b.get(0))
-                .map(|rows| RowMajorMatrix::from_rows(rows))
+            input_batch_vec.and_then(|b| b.get(0)).map(|rows| RowMajorMatrix::from_rows(rows))
         };
 
         let (seq_len, embedding_d) = if let Some(rm) = &first_input_rm {
@@ -310,10 +289,7 @@ impl SparseLinearLayer {
         let k = if let Some(grm) = previous_gradient_rm_ref {
             grm.get(0).map(|m| m.cols).unwrap_or(0)
         } else {
-            previous_gradient_input_batch
-                .get(0)
-                .map(|rows| RowMajorMatrix::from_rows(rows).cols)
-                .unwrap_or(0)
+            previous_gradient_input_batch.get(0).map(|rows| RowMajorMatrix::from_rows(rows).cols).unwrap_or(0)
         };
 
         if k == 0 {
@@ -328,10 +304,7 @@ impl SparseLinearLayer {
 
         let mut weight_gradients: Vec<Vec<Vec<C>>> = vec![vec![vec![C::new(ZERO, ZERO); self.weights[0].len()]; self.weights.len()]; batch_len];
         let mut bias_gradients: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); self.bias.len()]; batch_len];
-        let mut gradient_input_batch_rm: Vec<RowMajorMatrix<C>> = vec![
-            RowMajorMatrix::from_data(seq_len, embedding_d, vec![C::new(ZERO, ZERO); seq_len * embedding_d]);
-            batch_len
-        ];
+        let mut gradient_input_batch_rm: Vec<RowMajorMatrix<C>> = vec![RowMajorMatrix::from_data(seq_len, embedding_d, vec![C::new(ZERO, ZERO); seq_len * embedding_d]); batch_len];
 
         for batch_idx in 0..batch_len {
             let input_rm: RowMajorMatrix<C> = if let Some(rm_batch) = input_batch_rm {
@@ -563,12 +536,7 @@ impl SparseLinearLayer {
                         *dst = src.re as f32;
                     }
 
-                    let mut selected_indices = query_candidates(
-                        &mut input_re_buf,
-                        &self.centroids,
-                        &self.cluster_to_tokens,
-                        TOP_K_SELECTION,
-                    );
+                    let mut selected_indices = query_candidates(&mut input_re_buf, &self.centroids, &self.cluster_to_tokens, TOP_K_SELECTION);
 
                     if is_training {
                         Self::ensure_target_in_candidates(&mut selected_indices, target_id, k);

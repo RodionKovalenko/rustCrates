@@ -1,16 +1,13 @@
 use core::fmt::Debug;
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::utils::dtype::{r, C, Real, ONE, ZERO};
+use crate::neural_networks::network_components::gradient_struct::{Gradient, GradientBatch};
+use crate::neural_networks::network_components::layer_input_struct::LayerInput;
+use crate::neural_networks::network_components::layer_output_struct::LayerOutput;
+use crate::neural_networks::utils::dtype::{r, Real, C, ONE, ZERO};
 use crate::neural_networks::utils::{
     adam_w::calculate_adam_w_bias,
     matrix::{add_vectors, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_1d, RowMajorMatrix},
-};
-
-use super::{
-    gradient_struct::{Gradient, GradientBatch},
-    layer_input_struct::LayerInput,
-    layer_output_struct::LayerOutput,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,11 +128,7 @@ impl NormalNormLayer {
 
         self.batch_size = layer_input.get_batch_size();
 
-        let feature_dim = if use_rm {
-            input_batch_rm_ref.unwrap()[0].cols
-        } else {
-            input_batch_ref.unwrap()[0][0].len()
-        };
+        let feature_dim = if use_rm { input_batch_rm_ref.unwrap()[0].cols } else { input_batch_ref.unwrap()[0][0].len() };
 
         if self.gamma.len() != feature_dim {
             self.gamma = vec![C::new(ONE, ZERO); feature_dim];
@@ -293,9 +286,7 @@ impl NormalNormLayer {
         } else if let Some(gr_rm) = previous_gradient_batch_rm_ref {
             // Forward was Vec-based but caller provided RM gradients; fall back gracefully.
             if self.last_rm_strict {
-                panic!(
-                    "RM strict mode violation: NormalNormLayer backward would convert RM gradients to Vec (forward was not RM)"
-                );
+                panic!("RM strict mode violation: NormalNormLayer backward would convert RM gradients to Vec (forward was not RM)");
             }
             Some(GradientBatch::Complex(gr_rm.iter().map(|m| m.to_rows()).collect()))
         } else if !previous_gradient.get_gradient_input_batch().is_empty() {
@@ -303,7 +294,7 @@ impl NormalNormLayer {
         } else {
             Some(GradientBatch::Real(previous_gradient.get_gradient_input_batch_softmax()))
         };
-        
+
         let empty_mask = vec![];
         let padding_mask_batch = self.padding_mask_batch.as_ref().unwrap_or(&empty_mask);
 
@@ -329,17 +320,10 @@ impl NormalNormLayer {
             let input_rm = input_batch_rm.unwrap();
             let norm_rm = normalized_batch_rm.unwrap();
 
-            input_grads_rm = input_rm
-                .iter()
-                .map(|m| RowMajorMatrix::from_data(m.rows, m.cols, vec![C::new(ZERO, ZERO); m.rows * m.cols]))
-                .collect();
+            input_grads_rm = input_rm.iter().map(|m| RowMajorMatrix::from_data(m.rows, m.cols, vec![C::new(ZERO, ZERO); m.rows * m.cols])).collect();
 
             for b in 0..batch_size {
-                let padding_mask = if b < padding_mask_batch.len() {
-                    &padding_mask_batch[b]
-                } else {
-                    &vec![1u32; seq_len]
-                };
+                let padding_mask = if b < padding_mask_batch.len() { &padding_mask_batch[b] } else { &vec![1u32; seq_len] };
 
                 for s in 0..seq_len {
                     if s < padding_mask.len() && padding_mask[s] == 0 {
@@ -387,68 +371,65 @@ impl NormalNormLayer {
             }
         } else if let Some(previous_gradient_batch) = previous_gradient_batch {
             match previous_gradient_batch {
-            GradientBatch::Complex(previous_gradient) => {
-                let input_batch = input_batch.expect("Input batch not found");
-                let normalized_batch = normalized_batch.expect("Normalized batch not found");
-                for b in 0..batch_size {
-                    let padding_mask = if b < padding_mask_batch.len() {
-                        &padding_mask_batch[b]
-                    } else {
-                        &vec![1u32; seq_len]
-                    };
-                    
-                    for s in 0..seq_len {
-                        // Skip gradient computation for padded positions
-                        if s < padding_mask.len() && padding_mask[s] == 0 {
-                            continue;
-                        }
-                        
-                        let mu: C = mean_batch[b][s];
-                        let var: C = var_batch[b][s] + C::new(eps, ZERO);
-                        let var_sqrt = var.sqrt();
-                        let std_inv: C = C::new(ONE, ZERO) / var_sqrt;
-                        let var_pow_minus_3_2: C = C::new(ONE, ZERO) / (var * var_sqrt);
+                GradientBatch::Complex(previous_gradient) => {
+                    let input_batch = input_batch.expect("Input batch not found");
+                    let normalized_batch = normalized_batch.expect("Normalized batch not found");
+                    for b in 0..batch_size {
+                        let padding_mask = if b < padding_mask_batch.len() { &padding_mask_batch[b] } else { &vec![1u32; seq_len] };
 
-                        for f in 0..feature_dim {
-                            let x_hat: C = normalized_batch[b][s][f];
-                            let dout: C = previous_gradient[b][s][f].conj();
-
-                            // Accumulate gamma and beta gradients
-                            gamma_grad[f] += dout * x_hat;
-                            beta_grad[f] += dout;
-
-                            let mut d_common_1 = C::new(ZERO, ZERO);
-                            let mut dmu_term_2 = C::new(ZERO, ZERO);
-                            let mut dmu_term_3 = C::new(ZERO, ZERO);
-
-                            // Compute sums over d features
-                            for d in 0..feature_dim {
-                                let x: C = input_batch[b][s][d];
-                                let dout: C = previous_gradient[b][s][d].conj();
-
-                                let dxhat: C = dout * self.gamma[f];
-                                d_common_1 += dxhat * (x - mu);
-                                dmu_term_2 += dout;
-                                dmu_term_3 += (x - mu) / n;
+                        for s in 0..seq_len {
+                            // Skip gradient computation for padded positions
+                            if s < padding_mask.len() && padding_mask[s] == 0 {
+                                continue;
                             }
 
-                            let dvar_sum = d_common_1 * r(-0.5) * var_pow_minus_3_2;
-                            let dmu_sum = self.gamma[f] * (-std_inv) * dmu_term_2 + var_pow_minus_3_2 * d_common_1 * dmu_term_3;
+                            let mu: C = mean_batch[b][s];
+                            let var: C = var_batch[b][s] + C::new(eps, ZERO);
+                            let var_sqrt = var.sqrt();
+                            let std_inv: C = C::new(ONE, ZERO) / var_sqrt;
+                            let var_pow_minus_3_2: C = C::new(ONE, ZERO) / (var * var_sqrt);
 
-                            let dxhat: C = previous_gradient[b][s][f].conj() * self.gamma[f];
-                            let x: C = input_batch[b][s][f];
+                            for f in 0..feature_dim {
+                                let x_hat: C = normalized_batch[b][s][f];
+                                let dout: C = previous_gradient[b][s][f].conj();
 
-                            let gradient: C = (dxhat * std_inv) + (dvar_sum * ((r(2.0) * (x - mu)) / n)) + dmu_sum / n;
+                                // Accumulate gamma and beta gradients
+                                gamma_grad[f] += dout * x_hat;
+                                beta_grad[f] += dout;
 
-                            input_grads[b][s][f] = gradient.conj();
+                                let mut d_common_1 = C::new(ZERO, ZERO);
+                                let mut dmu_term_2 = C::new(ZERO, ZERO);
+                                let mut dmu_term_3 = C::new(ZERO, ZERO);
+
+                                // Compute sums over d features
+                                for d in 0..feature_dim {
+                                    let x: C = input_batch[b][s][d];
+                                    let dout: C = previous_gradient[b][s][d].conj();
+
+                                    let dxhat: C = dout * self.gamma[f];
+                                    d_common_1 += dxhat * (x - mu);
+                                    dmu_term_2 += dout;
+                                    dmu_term_3 += (x - mu) / n;
+                                }
+
+                                let dvar_sum = d_common_1 * r(-0.5) * var_pow_minus_3_2;
+                                let dmu_sum = self.gamma[f] * (-std_inv) * dmu_term_2 + var_pow_minus_3_2 * d_common_1 * dmu_term_3;
+
+                                let dxhat: C = previous_gradient[b][s][f].conj() * self.gamma[f];
+                                let x: C = input_batch[b][s][f];
+
+                                let gradient: C = (dxhat * std_inv) + (dvar_sum * ((r(2.0) * (x - mu)) / n)) + dmu_sum / n;
+
+                                input_grads[b][s][f] = gradient.conj();
+                            }
                         }
                     }
                 }
+                GradientBatch::Real(_previous_gradient) => {
+                    panic!("Backward pass for real gradients not implemented for NormalNormLayer");
+                }
             }
-            GradientBatch::Real(_previous_gradient) => {
-                panic!("Backward pass for real gradients not implemented for NormalNormLayer");
-            }
-        }}
+        }
 
         if self.gradient.is_some() {
             let previous_gradient = self.gradient.as_ref().expect("");

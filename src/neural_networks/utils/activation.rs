@@ -7,7 +7,7 @@ use std::fmt::Debug;
 use std::marker::Copy;
 use std::ops::{Add, Div, Mul};
 
-use crate::neural_networks::network_components::layer::ActivationType;
+use crate::neural_networks::network_layers::layer::ActivationType;
 /// SELU hyperparameters
 pub const LAMBDA: f64 = 1.050700987355480493419334985294598;
 pub const ALPHA: f64 = 1.673263242354377284817042991671750;

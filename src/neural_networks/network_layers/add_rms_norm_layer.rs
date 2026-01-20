@@ -1,24 +1,25 @@
 use core::fmt::Debug;
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::utils::{
-    adam_w::calculate_adam_w_bias,
-    matrix::{add_matrix, add_matrix_2d_c, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d},
+use crate::neural_networks::{
+    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+    utils::{
+        adam_w::calculate_adam_w_bias,
+        matrix::{add_matrix, add_matrix_2d_c, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d},
+    },
 };
 
+use crate::neural_networks::utils::dtype::{c, r, Real, C};
 use crate::neural_networks::utils::matrix::RowMajorMatrix;
-use crate::neural_networks::utils::dtype::{c, r, C, Real};
-
-use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
 
 pub const EPSILON: f64 = 0.0000000000000000000000001;
 
 // RMSNorm Layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RMSNormLayer {
-    pub gamma: Vec<C>, // Learnable scaling parameter (for each feature)
-    pub epsilon: Real, // Small constant for numerical stability
-    pub learning_rate: f64,       // Learning rate for gamma updates
+    pub gamma: Vec<C>,      // Learnable scaling parameter (for each feature)
+    pub epsilon: Real,      // Small constant for numerical stability
+    pub learning_rate: f64, // Learning rate for gamma updates
     pub smoothing: f64,
     pub ema: f64,
     pub global_norm: f64,
@@ -124,10 +125,7 @@ impl RMSNormLayer {
     }
 
     pub fn forward_rm(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        let input_batch_rm = layer_input
-            .get_input_batch_rm_ref()
-            .expect("RMSNormLayer::forward_rm expects RM input")
-            .to_vec();
+        let input_batch_rm = layer_input.get_input_batch_rm_ref().expect("RMSNormLayer::forward_rm expects RM input").to_vec();
         let input_before_transform_batch_rm = layer_input
             .get_input_batch_before_rm_ref()
             .expect("RMSNormLayer::forward_rm expects RM residual input (input_batch_before_rm)")
@@ -220,10 +218,7 @@ impl RMSNormLayer {
     }
 
     pub fn backward_rm(&mut self, previous_gradient_batch_rm: &[RowMajorMatrix<C>]) -> Gradient {
-        let input_batch_rm = self
-            .input_batch_rm
-            .as_ref()
-            .expect("Input batch RM not found in RMSNorm layer (did you call forward_rm?)");
+        let input_batch_rm = self.input_batch_rm.as_ref().expect("Input batch RM not found in RMSNorm layer (did you call forward_rm?)");
 
         let batch_size = input_batch_rm.len();
         if batch_size == 0 {
@@ -310,10 +305,22 @@ impl RMSNormLayer {
             (previous_gradient.get_prev_m_gamma(), previous_gradient.get_prev_v_gamma(), previous_gradient.get_prev_v_gamma_hat())
         } else {
             // Initialize to zeros on first step
-            (vec![c(0.0, 0.0); gradient_gamma.len()], vec![c(0.0, 0.0); gradient_gamma.len()], vec![c(0.0, 0.0); gradient_gamma.len()])
+            (
+                vec![c(0.0, 0.0); gradient_gamma.len()],
+                vec![c(0.0, 0.0); gradient_gamma.len()],
+                vec![c(0.0, 0.0); gradient_gamma.len()],
+            )
         };
 
-        calculate_adam_w_bias(&mut self.gamma, &gradient.get_gradient_gamma(), &mut prev_m_gamma, &mut prev_v_gamma, &mut prev_v_gamma_hat, learning_rate, gradient.get_time_step());
+        calculate_adam_w_bias(
+            &mut self.gamma,
+            &gradient.get_gradient_gamma(),
+            &mut prev_m_gamma,
+            &mut prev_v_gamma,
+            &mut prev_v_gamma_hat,
+            learning_rate,
+            gradient.get_time_step(),
+        );
 
         gradient.set_prev_m_gamma(prev_m_gamma);
         gradient.set_prev_v_gamma(prev_v_gamma);

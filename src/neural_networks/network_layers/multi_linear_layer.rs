@@ -4,17 +4,16 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::neural_networks::{
-    network_components::linear_layer::LinearLayer,
+    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+    network_layers::linear_layer::LinearLayer,
     utils::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         array_splitting::split_sizes,
-        matrix::{average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, normalize_bias, normalize_gradients, RowMajorMatrix},
         dtype::{r, C},
+        matrix::{average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, normalize_bias, normalize_gradients, RowMajorMatrix},
         weights_initializer::initialize_weights_complex,
     },
 };
-
-use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultiLinearLayer {
@@ -126,11 +125,7 @@ impl MultiLinearLayer {
                 .as_ref()
                 .map(|g| g.get_gradient_weights())
                 .unwrap_or_else(|| vec![vec![Complex::new(r(0.0), r(0.0)); chunk_size]; rows]);
-            let layer_bias_gradients = layer
-                .gradient
-                .as_ref()
-                .map(|g| g.get_gradient_bias())
-                .unwrap_or_else(|| vec![Complex::new(r(0.0), r(0.0)); chunk_size]);
+            let layer_bias_gradients = layer.gradient.as_ref().map(|g| g.get_gradient_bias()).unwrap_or_else(|| vec![Complex::new(r(0.0), r(0.0)); chunk_size]);
 
             // Copy weight gradients
             for (row_idx, row) in layer_weight_gradients.iter().enumerate() {
@@ -156,21 +151,20 @@ impl MultiLinearLayer {
         self.batch_size = input.get_batch_size();
 
         // Prefer RM-only input to avoid any Vec<Vec<...>> materialization.
-        let (batch_size, seq_len, input_batch_rm, legacy_mode): (usize, usize, Vec<RowMajorMatrix<C>>, bool) =
-            if let Some(rm) = input_batch_rm_ref {
-                let batch_size = rm.len();
-                let seq_len = rm.first().map(|m| m.rows).unwrap_or(0);
-                (batch_size, seq_len, rm.to_vec(), false)
-            } else {
-                let input_batch_vec = input.get_input_batch();
-                let input_batch = Arc::new(input_batch_vec);
-                self.input_batch = Some(input_batch.clone());
+        let (batch_size, seq_len, input_batch_rm, legacy_mode): (usize, usize, Vec<RowMajorMatrix<C>>, bool) = if let Some(rm) = input_batch_rm_ref {
+            let batch_size = rm.len();
+            let seq_len = rm.first().map(|m| m.rows).unwrap_or(0);
+            (batch_size, seq_len, rm.to_vec(), false)
+        } else {
+            let input_batch_vec = input.get_input_batch();
+            let input_batch = Arc::new(input_batch_vec);
+            self.input_batch = Some(input_batch.clone());
 
-                let batch_size = input_batch.len();
-                let seq_len = input_batch[0].len();
-                let input_batch_rm: Vec<RowMajorMatrix<C>> = input_batch.iter().map(|sample| RowMajorMatrix::from_rows(sample)).collect();
-                (batch_size, seq_len, input_batch_rm, true)
-            };
+            let batch_size = input_batch.len();
+            let seq_len = input_batch[0].len();
+            let input_batch_rm: Vec<RowMajorMatrix<C>> = input_batch.iter().map(|sample| RowMajorMatrix::from_rows(sample)).collect();
+            (batch_size, seq_len, input_batch_rm, true)
+        };
 
         self.input_batch_rm = Some(input_batch_rm.clone());
 
@@ -368,7 +362,15 @@ impl MultiLinearLayer {
         let time_step = self.time_step;
 
         calculate_adam_w_bias(&mut combined_bias, &bias_gradients, &mut prev_m_bias, &mut prev_v_bias, &mut prev_v_bias_hat, learning_rate, time_step);
-        calculate_adam_w(&mut combined_weights, &weight_gradients, &mut prev_m_weights, &mut prev_v_weights, &mut prev_v_weights_hat, learning_rate, time_step);
+        calculate_adam_w(
+            &mut combined_weights,
+            &weight_gradients,
+            &mut prev_m_weights,
+            &mut prev_v_weights,
+            &mut prev_v_weights_hat,
+            learning_rate,
+            time_step,
+        );
 
         // Store updated optimizer states
         if let Some(gradient) = &mut self.gradient {

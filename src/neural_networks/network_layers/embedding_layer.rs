@@ -12,13 +12,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::database::sled_db::{get_db_embedding, get_storage_path_embedding_db};
-use crate::neural_networks::network_types::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
+use crate::neural_networks::network_components::gradient_struct::Gradient;
+use crate::neural_networks::network_components::layer_input_struct::LayerInput;
+use crate::neural_networks::network_layers::wavelet_network::{DECOMPOSITION_LEVELS, decompose_in_wavelet_2d_default};
 use crate::neural_networks::utils::dtype::{c_from_f64, c_to_f64, r, C, ONE, Real, ZERO};
 use crate::neural_networks::utils::matrix::{clip_all_gradients_by_global_norm_3d, is_nan_or_inf};
 use crate::neural_networks::utils::matrix::RowMajorMatrix;
 
-use super::gradient_struct::Gradient;
-use super::layer_input_struct::LayerInput;
 use std::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

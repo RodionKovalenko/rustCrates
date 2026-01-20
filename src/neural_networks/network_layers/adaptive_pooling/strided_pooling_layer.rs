@@ -1,5 +1,4 @@
-use crate::neural_networks::network_components::adaptive_pooling::adaptive_avg_pool1d_layer::{CompressionMetadata, CompressionType};
-use crate::neural_networks::utils::dtype::{r, C, Real, ZERO};
+use crate::neural_networks::{network_layers::adaptive_pooling::adaptive_avg_pool1d_layer::{CompressionMetadata, CompressionType}, utils::dtype::{C, Real, ZERO, r}};
 
 // StridedPooling implementation with forward/backward/backward_gradient
 pub struct StridedPoolingLayer {

@@ -2,19 +2,16 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIter
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
-    network_components::{gradient_struct::Gradient, layer::LayerType, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
-    utils::{
+    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput}, network_layers::layer::LayerType, utils::{
         activation::softmax_complex_padding_real,
         adam_w::calculate_adam_w,
         derivative::{backpropagate_softmax_masked_real, softmax_derivative_complex_jacobian},
-        dtype::{r, C, Real, ONE, ZERO},
+        dtype::{C, ONE, Real, ZERO, r},
         matrix::{
-            add_matrix, append_rows_rm, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, conjugate_transpose_rm, multiply_complex,
-            multiply_complex_rm, multiply_complex_with_f64, multiply_complex_with_f64_rm, multiply_f64_complex, multiply_f64_complex_rm, transpose, transpose_rm, transpose_rm_f64,
-            RowMajorMatrix,
+            RowMajorMatrix, add_matrix, append_rows_rm, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, conjugate_transpose_rm, multiply_complex, multiply_complex_rm, multiply_complex_with_f64, multiply_complex_with_f64_rm, multiply_f64_complex, multiply_f64_complex_rm, transpose, transpose_rm, transpose_rm_f64
         },
         weights_initializer::initialize_weights_complex,
-    },
+    }
 };
 
 // Layer struct

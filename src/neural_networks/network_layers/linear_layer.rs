@@ -3,20 +3,19 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
-    network_components::layer::LayerEnum,
-    network_types::{transformer::transformer_updater::VERBOSE, wavelet_discrete_layer::DiscreteWaveletLayer},
+    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+    network_layers::layer::LayerEnum,
+    network_types::transformer::transformer_updater::VERBOSE,
     utils::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         dtype::{r, C, ONE, ZERO},
         matrix::{
-            add_vector_rm, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, conjugate_transpose_rm,
-            conjugate_transpose_to_rm, multiply_complex, multiply_complex_rm, RowMajorMatrix,
+            add_vector_rm, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, conjugate_transpose_rm, conjugate_transpose_to_rm,
+            multiply_complex, multiply_complex_rm, RowMajorMatrix,
         },
         weights_initializer::{initialize_weights_complex, initialize_weights_complex_only_real},
     },
 };
-
-use super::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinearLayer {
@@ -25,7 +24,6 @@ pub struct LinearLayer {
     pub bias: Vec<C>,
     pub smoothing: f64,
     pub ema: f64,
-    pub discrete_wavelet_layer: Option<DiscreteWaveletLayer>,
     pub norm_layer: Option<LayerEnum>,
     pub global_norm: f64,
     pub max_norm: f64,
@@ -74,7 +72,6 @@ impl LinearLayer {
             bias,
             learning_rate,
             gradients: vec![],
-            discrete_wavelet_layer: None,
             norm_layer: None,
             gradients_bias: vec![],
             input_batch: None,
@@ -247,11 +244,7 @@ impl LinearLayer {
         }
 
         // Initialize gradients for weights and biases
-        let batch_len = if let Some(b) = input_batch_vec {
-            b.len()
-        } else {
-            input_batch_rm.expect("rm batch").len()
-        };
+        let batch_len = if let Some(b) = input_batch_vec { b.len() } else { input_batch_rm.expect("rm batch").len() };
 
         let mut weight_gradients: Vec<Vec<Vec<C>>> = vec![vec![vec![C::new(ZERO, ZERO); self.weights[0].len()]; self.weights.len()]; batch_len];
         let mut bias_gradients: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); self.bias.len()]; batch_len];

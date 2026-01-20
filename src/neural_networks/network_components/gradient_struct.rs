@@ -1,8 +1,8 @@
 use core::fmt::Debug;
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::network_components::adaptive_pooling::adaptive_avg_pool1d_layer::CompressionMetadata;
-use crate::neural_networks::utils::dtype::{C, Real, ZERO};
+use crate::neural_networks::network_layers::adaptive_pooling::adaptive_avg_pool1d_layer::CompressionMetadata;
+use crate::neural_networks::utils::dtype::{Real, C, ZERO};
 use crate::neural_networks::utils::matrix::RowMajorMatrix;
 
 #[derive(Debug, Clone)]
@@ -481,7 +481,7 @@ impl Gradient {
     pub fn get_prev_v_weights_hat_2(&self) -> Vec<Vec<C>> {
         self.prev_v_weights_hat_2.clone().unwrap_or_else(|| vec![])
     }
-    
+
     pub fn get_prev_m_weights_2(&self) -> Vec<Vec<C>> {
         self.prev_m_weights_2.clone().unwrap_or_else(|| vec![])
     }
