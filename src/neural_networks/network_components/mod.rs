@@ -1,5 +1,4 @@
 pub mod layer;
-pub mod neuron;
 pub mod input;
 pub mod add_rms_norm_layer;
 pub mod norm_layer;
