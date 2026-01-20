@@ -82,7 +82,7 @@ impl SoftmaxLayer {
 
         let mut total_valid_tokens: usize = 0;
 
-        let (layer_output_batch, losses, mut input_gradient_batch) = match self.operation_mode {
+        let (layer_output_batch, losses, input_gradient_batch) = match self.operation_mode {
             OperationMode::PRODUCTION => {
                 let output: Vec<Vec<Vec<Real>>> = input_batch
                     .par_iter()
@@ -176,7 +176,7 @@ impl SoftmaxLayer {
 
         let mut total_valid_tokens: usize = 0;
 
-        let (layer_output_batch, losses, mut input_gradient_batch_rm): (Vec<Vec<Vec<Real>>>, Vec<Vec<Vec<C>>>, Vec<RowMajorMatrix<C>>) = match self.operation_mode {
+        let (layer_output_batch, losses, input_gradient_batch_rm): (Vec<Vec<Vec<Real>>>, Vec<Vec<Vec<C>>>, Vec<RowMajorMatrix<C>>) = match self.operation_mode {
             OperationMode::PRODUCTION => {
                 // Keep behavior consistent with Vec path (softmax only last row). We return an empty batch here
                 // because transformer inference path already bypasses this function.
@@ -233,9 +233,7 @@ impl SoftmaxLayer {
         layer_output_batch
     }
 
-    pub fn update_parameters(&mut self) {
-      
-    }
+    pub fn update_parameters(&mut self) {}
 
     pub fn backward(&mut self, _target_token_ids: &Vec<Vec<u32>>) -> Gradient {
         // let softmax_output_batch: &Vec<Vec<Vec<f64>>> = self.softmax_output_batch.as_ref().expect("Softmax output batch is missing in softmax layer");

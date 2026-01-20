@@ -140,7 +140,7 @@ impl SelfAttentionLayer {
 
         let mut batch_output = layer_input.get_input_batch();
         let input_batch = layer_input.get_input_batch();
-        let mut padding_mask_batch = layer_input.get_padding_mask_batch();
+        let padding_mask_batch = layer_input.get_padding_mask_batch();
 
         let mut layer_input = layer_input.clone();
         layer_input.set_input_batch(input_batch.clone());
