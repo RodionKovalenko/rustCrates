@@ -30,7 +30,7 @@ use crate::{
 pub const MAX_CONTEXT_WINDOW_SIZE: usize = 50280;
 pub const CONTEXT_OVERLAPPING: usize = 16;
 pub const EMA_SCALER: f64 = 1.1;
-pub const TOP_K_SIZE: usize = 300;
+pub const TOP_K_SIZE: usize = 100;
 
 pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<String, String>, num_epochs: usize, batch_size: usize) {
     // Setup data splits: 90% train, 10% validation (test set remains separate)
