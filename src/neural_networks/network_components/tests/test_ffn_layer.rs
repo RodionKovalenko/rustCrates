@@ -1,10 +1,9 @@
 #[cfg(test)]
 pub mod test_ffn_layer {
     use crate::neural_networks::{
-        network_components::{
-            gradient_struct::Gradient, layer::LayerEnum, layer_input_struct::LayerInput, layer_output_struct::LayerOutput, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer,
-        },
-        network_types::{feedforward_layer::FeedForwardLayer, neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch},
+        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+        network_layers::{feedforward_layer::FeedForwardLayer, layer::LayerEnum, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
+        network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch},
         utils::{
             derivative::{
                 global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_bias, numerical_gradient_input_batch, numerical_gradient_weights, test_gradient_batch_error,

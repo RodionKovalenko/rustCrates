@@ -3,7 +3,7 @@ mod test_attention_head_approximation {
     use num::Complex;
 
     use crate::neural_networks::{
-        network_components::{performer::Performer, performer_complex::PerformerComplex},
+        network_layers::{performer::Performer, performer_complex::PerformerComplex},
         network_types::transformer::masked_attention_head::{scale_attention_scores, scale_attention_scores_f64},
         utils::{
             activation::{softmax_complex_real, softmax_matrix_f64},

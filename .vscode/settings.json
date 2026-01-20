@@ -1,4 +1,4 @@
 {
     "diffEditor.wordWrap": "off",
-    "rust-analyzer.cargo.features": ["cuda"]
+    "rust-analyzer.cargo.features": ["cuda", "dtype-f64"]
 }

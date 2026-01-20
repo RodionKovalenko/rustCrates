@@ -3,7 +3,8 @@ mod test_linear_layer {
     use std::time::Instant;
 
     use crate::neural_networks::{
-        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, linear_layer::LinearLayer, multi_linear_layer::MultiLinearLayer, softmax_output_layer::SoftmaxLayer},
+        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
+        network_layers::{linear_layer::LinearLayer, multi_linear_layer::MultiLinearLayer, softmax_output_layer::SoftmaxLayer},
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch},
         utils::{
             derivative::{

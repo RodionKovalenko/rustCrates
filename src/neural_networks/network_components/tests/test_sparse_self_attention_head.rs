@@ -3,7 +3,8 @@ mod test_sparse_self_attention_head {
     use num::Complex;
 
     use crate::neural_networks::{
-        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, softmax_output_layer::SoftmaxLayer},
+        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
+        network_layers::softmax_output_layer::SoftmaxLayer,
         network_types::{
             neural_network_generic::OperationMode,
             transformer::{

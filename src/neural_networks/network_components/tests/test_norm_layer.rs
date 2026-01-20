@@ -1,7 +1,8 @@
 #[cfg(test)]
 mod test_norm_layer {
     use crate::neural_networks::{
-        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, linear_layer::LinearLayer, norm_layer::NormalNormLayer, softmax_output_layer::SoftmaxLayer},
+        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
+        network_layers::{linear_layer::LinearLayer, norm_layer::NormalNormLayer, softmax_output_layer::SoftmaxLayer},
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch},
         utils::{
             derivative::{global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_bias, numerical_gradient_input_batch, test_gradient_batch_error, test_gradient_error_1d},

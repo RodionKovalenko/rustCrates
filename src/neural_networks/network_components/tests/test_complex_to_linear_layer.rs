@@ -2,7 +2,8 @@
 mod test_complex_to_linear_layer {
 
     use crate::neural_networks::{
-        network_components::{complex_to_linear_layer::ComplexToLinearLayer, gradient_struct::Gradient, layer_input_struct::LayerInput, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
+        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
+        network_layers::{complex_to_linear_layer::ComplexToLinearLayer, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch},
         utils::{
             derivative::{global_relative_error_2d_l2, numerical_gradient_bias, numerical_gradient_weights, test_gradient_error_1d, test_gradient_error_2d},

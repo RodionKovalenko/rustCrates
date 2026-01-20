@@ -4,7 +4,8 @@ mod test_self_attention_layer_with_loss {
     use num::Complex;
 
     use crate::neural_networks::{
-        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, softmax_output_layer::SoftmaxLayer},
+        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
+        network_layers::softmax_output_layer::SoftmaxLayer,
         network_types::{
             neural_network_generic::OperationMode,
             transformer::{masked_attention_head::MaskedAttentionHead, transformer_network::cross_entropy_sum_batch},

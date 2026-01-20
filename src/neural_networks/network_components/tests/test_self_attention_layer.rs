@@ -5,12 +5,11 @@ mod test_self_attention_layer {
     use num::Complex;
 
     use crate::neural_networks::{
-        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
+        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
+        network_layers::{feedforward_layer::FeedForwardLayer, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer, wavelet_complex_layer::ComplexWaveletLayer},
         network_types::{
-            feedforward_layer::FeedForwardLayer,
             neural_network_generic::OperationMode,
             transformer::{masked_attention_head::MaskedAttentionHead, self_attention_layer::SelfAttentionLayer, transformer_network::cross_entropy_sum_batch},
-            wavelet_complex_layer::ComplexWaveletLayer,
         },
         utils::{
             derivative::{

@@ -2,9 +2,8 @@
 mod test_sparse_linear_layer {
 
     use crate::neural_networks::{
-        network_components::{
-            complex_to_linear_layer::ComplexToLinearLayer, gradient_struct::Gradient, layer_input_struct::LayerInput, softmax_output_layer::SoftmaxLayer, sparse_linear_layer::SparseLinearLayer,
-        },
+        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
+        network_layers::{complex_to_linear_layer::ComplexToLinearLayer, softmax_output_layer::SoftmaxLayer, sparse_linear_layer::SparseLinearLayer},
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch},
         utils::{
             derivative::{

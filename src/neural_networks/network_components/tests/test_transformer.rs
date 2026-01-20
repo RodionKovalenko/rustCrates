@@ -4,21 +4,26 @@ mod test_transformer {
 
     use crate::{
         neural_networks::{
-            network_components::{
-                embedding_layer::EmbeddingLayer, gradient_struct::Gradient, input::concat_batches, layer::LayerEnum, layer_input_struct::LayerInput, linear_layer::LinearLayer,
-                norm_layer::NormalNormLayer, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer,
+            network_components::{gradient_struct::Gradient, input::concat_batches, layer_input_struct::LayerInput},
+            network_layers::{
+                embedding_layer::EmbeddingLayer,
+                feedforward_layer::FeedForwardLayer,
+                layer::LayerEnum,
+                linear_layer::LinearLayer,
+                norm_layer::NormalNormLayer,
+                positional_encoding_layer::PositionalEncodingLayer,
+                softmax_output_layer::SoftmaxLayer,
+                wavelet_complex_layer::ComplexWaveletLayer,
+                wavelet_discrete_layer::DiscreteWaveletLayer,
+                wavelet_network::DECOMPOSITION_LEVELS,
             },
             network_types::{
-                feedforward_layer::FeedForwardLayer,
                 neural_network_generic::{create, NeuralNetwork, OperationMode},
                 transformer::{
                     masked_attention_head::MaskedAttentionHead,
                     self_attention_layer::SelfAttentionLayer,
                     transformer_network::{backward, cross_entropy_sum_batch, predict},
                 },
-                wavelet_complex_layer::ComplexWaveletLayer,
-                wavelet_discrete_layer::DiscreteWaveletLayer,
-                wavelet_network::DECOMPOSITION_LEVELS,
             },
             utils::{
                 derivative::{global_relative_error_2d_l2, numerical_gradient_input, numerical_gradient_weights, test_gradient_error_2d},

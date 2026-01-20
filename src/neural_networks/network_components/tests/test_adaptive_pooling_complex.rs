@@ -3,7 +3,8 @@ mod test_adaptive_pooling_complex {
     use num::Complex;
 
     use crate::neural_networks::{
-        network_components::{
+        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+        network_layers::{
             adaptive_pooling::{
                 adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer,
                 adaptive_pooling_complex::{calculate_reconstruction_error, create_random_input, test_decompression_methods},
@@ -12,9 +13,6 @@ mod test_adaptive_pooling_complex {
                 interpalation_decompressor_layer::InterpolationDecompressorLayer,
                 strided_pooling_layer::StridedPoolingLayer,
             },
-            gradient_struct::Gradient,
-            layer_input_struct::LayerInput,
-            layer_output_struct::LayerOutput,
             linear_layer::LinearLayer,
             softmax_output_layer::SoftmaxLayer,
         },

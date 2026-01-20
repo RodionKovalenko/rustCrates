@@ -2,8 +2,9 @@
 mod test_wavelet_layer {
     use crate::{
         neural_networks::{
-            network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
-            network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch, wavelet_complex_layer::ComplexWaveletLayer},
+            network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
+            network_layers::{linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer, wavelet_complex_layer::ComplexWaveletLayer},
+            network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch},
             utils::{
                 derivative::{
                     global_relative_error_2d_l2, global_relative_error_l2, numerical_gradient_input, numerical_gradient_input_batch, numerical_gradient_input_batch_sum_without_loss,

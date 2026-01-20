@@ -1,7 +1,8 @@
 #[cfg(test)]
 mod test_positional_encoding_layer {
     use crate::neural_networks::{
-        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
+        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
+        network_layers::{positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer},
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch},
         utils::{
             derivative::{

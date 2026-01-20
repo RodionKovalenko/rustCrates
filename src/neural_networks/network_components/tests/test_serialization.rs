@@ -3,7 +3,7 @@ mod test_serialization {
     use crate::{
         database::sled_db::get_storage_path_transformer_db,
         neural_networks::{
-            network_components::{embedding_layer::EmbeddingLayer, layer::LayerEnum},
+            network_layers::{embedding_layer::EmbeddingLayer, layer::LayerEnum},
             network_types::{
                 neural_network_generic::{NeuralNetwork, OperationMode},
                 transformer::transformer_builder::create_transformer,

@@ -6,7 +6,8 @@ mod test_linear_matrix_mul {
     use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 
     use crate::neural_networks::{
-        network_components::{layer_input_struct::LayerInput, linear_layer::LinearLayer},
+        network_components::layer_input_struct::LayerInput,
+        network_layers::linear_layer::LinearLayer,
         utils::{derivative::test_gradient_batch_error, random_arrays::generate_random_complex_3d},
     };
 
