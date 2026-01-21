@@ -3,6 +3,7 @@ mod test_wavelet_discrete_layer {
     use crate::neural_networks::{
         network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
         network_layers::{feedforward_layer::FeedForwardLayer, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer, wavelet_discrete_layer::DiscreteWaveletLayer},
+        network_layers::wavelet_discrete_layer_rm::DiscreteWaveletLayerRm,
         network_types::{
             neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch,
         },
@@ -523,7 +524,7 @@ mod test_wavelet_discrete_layer {
 
     #[test]
     fn test_wavelet_discrete_rm_forward_backward_smoke() {
-        let mut wavelet_layer: DiscreteWaveletLayer = DiscreteWaveletLayer::new();
+        let mut wavelet_layer: DiscreteWaveletLayerRm = DiscreteWaveletLayerRm::new();
 
         // 1 batch, 4 rows, 4 cols
         let input_rm = vec![RowMajorMatrix::from_data(

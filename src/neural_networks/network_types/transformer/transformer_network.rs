@@ -497,16 +497,23 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
             Some(
                 LayerEnum::Linear(_)
                     | LayerEnum::SparseLinear(_)
+                    | LayerEnum::SparseLinearRm(_)
                     | LayerEnum::MultiLinear(_)
                     | LayerEnum::Norm(_)
+                    | LayerEnum::NormRm(_)
                     | LayerEnum::RMSNorm(_)
                     | LayerEnum::PositionalEncoding(_)
+                    | LayerEnum::PositionalEncodingRm(_)
                     | LayerEnum::FeedForward(_)
+                    | LayerEnum::FeedForwardRm(_)
+                    | LayerEnum::DenseRm(_)
                     | LayerEnum::SelfAttention(_)
                     | LayerEnum::SparseSelfAttention(_)
-                    | LayerEnum::SelfAttentionApproximation(_)
+                    | LayerEnum::SparseSelfAttentionRm(_)
+                    | LayerEnum::SelfAttentionApproximationRm(_)
                     | LayerEnum::ComplexToLinear(_)
                     | LayerEnum::Softmax(_)
+                    | LayerEnum::SoftmaxRm(_)
             )
         );
 
@@ -547,28 +554,45 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                 // println!("padding mask: {:?}", &padding_mask);
             }
             LayerEnum::PositionalEncoding(positional_encoding_layer) => {
-                let positional_encoding_l = Some(positional_encoding_layer).unwrap();
                 if VERBOSE {
-                    println!("forward pos encoding");
+                    println!("forward pos encoding (vec)");
+                }
+                let start = Instant::now();
+
+                if output.is_none() && output_rm.as_ref().is_some_and(|rm| !rm.is_empty()) {
+                    if layer_input.get_rm_strict() {
+                        panic!("RM strict mode violation: PositionalEncoding(Vec) would consume RM output");
+                    }
+                    let vec_out: Vec<Vec<Vec<C>>> = output_rm.take().unwrap().iter().map(|m| m.to_rows()).collect();
+                    output = Some(vec_out);
+                }
+
+                let previous_output = match output.take() {
+                    Some(v) => v,
+                    None => {
+                        println!("No previous output for Attention layer");
+                        continue;
+                    }
+                };
+
+                layer_input.set_input_batch(previous_output);
+                let positional_encodings: Vec<Vec<Vec<C>>> = positional_encoding_layer.forward(&layer_input);
+                output = Some(positional_encodings);
+                output_rm = None;
+
+                if VERBOSE {
+                    println!("time elapsed in seconds in positional encoding: {:?}", start.elapsed().as_secs_f64());
+                }
+            }
+            LayerEnum::PositionalEncodingRm(positional_encoding_layer) => {
+                if VERBOSE {
+                    println!("forward pos encoding (rm)");
                 }
                 let start = Instant::now();
 
                 if output.is_none() && output_rm.as_ref().is_some_and(|rm| !rm.is_empty()) {
                     layer_input.clear_input_batch();
                     layer_input.set_input_batch_rm(output_rm.take().unwrap());
-                    let enc_rm = positional_encoding_l.forward_rm(&layer_input);
-                    output_rm = Some(enc_rm);
-
-                    if next_supports_rm {
-                        output = None;
-                    } else {
-                        if layer_input.get_rm_strict() {
-                            panic!("RM strict mode violation: PositionalEncoding produced RM but next layer requires Vec");
-                        }
-                        let vec_out: Vec<Vec<Vec<C>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
-                        output = Some(vec_out);
-                        output_rm = None;
-                    }
                 } else {
                     let previous_output = match output.take() {
                         Some(v) => v,
@@ -578,8 +602,19 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                         }
                     };
                     layer_input.set_input_batch(previous_output);
-                    let positional_encodings: Vec<Vec<Vec<C>>> = positional_encoding_l.forward(&layer_input);
-                    output = Some(positional_encodings);
+                }
+
+                let enc_rm = positional_encoding_layer.forward(&layer_input);
+                output_rm = Some(enc_rm);
+
+                if next_supports_rm {
+                    output = None;
+                } else {
+                    if layer_input.get_rm_strict() {
+                        panic!("RM strict mode violation: PositionalEncodingRm produced RM but next layer requires Vec");
+                    }
+                    let vec_out: Vec<Vec<Vec<C>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
+                    output = Some(vec_out);
                     output_rm = None;
                 }
 
@@ -589,22 +624,32 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
             }
             LayerEnum::Norm(norm_layer) => {
                 if output.is_none() && output_rm.as_ref().is_some_and(|rm| !rm.is_empty()) {
+                    if layer_input.get_rm_strict() {
+                        panic!("RM strict mode violation: Norm(Vec) would consume RM output");
+                    }
+                    let vec_out: Vec<Vec<Vec<C>>> = output_rm.take().unwrap().iter().map(|m| m.to_rows()).collect();
+                    output = Some(vec_out);
+                }
+
+                let previous_output = match output.take() {
+                    Some(v) => v,
+                    None => {
+                        println!("No previous output for Attention layer");
+                        continue;
+                    }
+                };
+
+                layer_input.set_input_batch_before(previous_output.clone());
+                layer_input.set_input_batch(previous_output);
+
+                let mut norm_output = norm_layer.forward(&layer_input);
+                output = norm_output.take_output_batch();
+                output_rm = None;
+            }
+            LayerEnum::NormRm(norm_layer) => {
+                if output.is_none() && output_rm.as_ref().is_some_and(|rm| !rm.is_empty()) {
                     layer_input.clear_input_batch();
                     layer_input.set_input_batch_rm(output_rm.take().unwrap());
-
-                    let mut norm_output = norm_layer.forward(&layer_input);
-                    output_rm = norm_output.take_output_batch_rm();
-
-                    if next_supports_rm {
-                        output = None;
-                    } else {
-                        if layer_input.get_rm_strict() {
-                            panic!("RM strict mode violation: Norm produced RM but next layer requires Vec");
-                        }
-                        let vec_out: Vec<Vec<Vec<C>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
-                        output = Some(vec_out);
-                        output_rm = None;
-                    }
                 } else {
                     let previous_output = match output.take() {
                         Some(v) => v,
@@ -613,12 +658,20 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                             continue;
                         }
                     };
-
-                    layer_input.set_input_batch_before(previous_output.clone());
                     layer_input.set_input_batch(previous_output);
+                }
 
-                    let mut norm_output = norm_layer.forward(&layer_input);
-                    output = norm_output.take_output_batch();
+                let mut norm_output = norm_layer.forward(&layer_input);
+                output_rm = norm_output.take_output_batch_rm();
+
+                if next_supports_rm {
+                    output = None;
+                } else {
+                    if layer_input.get_rm_strict() {
+                        panic!("RM strict mode violation: NormRm produced RM but next layer requires Vec");
+                    }
+                    let vec_out: Vec<Vec<Vec<C>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
+                    output = Some(vec_out);
                     output_rm = None;
                 }
             }
@@ -682,32 +735,47 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
             LayerEnum::SparseSelfAttention(attention) => {
                 // Ensure there's an output from the previous layer before forwarding
                 if let Some(padding_m) = &padding_mask {
+                    // Vec-only layer: convert RM -> Vec when needed.
+                    if output.is_none() && output_rm.as_ref().is_some_and(|rm| !rm.is_empty()) {
+                        if layer_input.get_rm_strict() {
+                            panic!("RM strict mode violation: SparseSelfAttention(Vec) would consume RM output; use SparseSelfAttentionRm");
+                        }
+                        let vec_out: Vec<Vec<Vec<C>>> = output_rm.take().unwrap().iter().map(|m| m.to_rows()).collect();
+                        output = Some(vec_out);
+                    }
+
+                    let previous_output = match output.take() {
+                        Some(v) => v,
+                        None => {
+                            println!("No previous output for Attention layer");
+                            continue;
+                        }
+                    };
+
+                    layer_input.set_input_batch(previous_output);
+                    layer_input.set_padding_mask_batch(padding_m.clone());
+
+                    if VERBOSE {
+                        println!("forward sparse self-attention start (vec)");
+                    }
+                    let start = Instant::now();
+                    let mut output_attention = attention.forward(&layer_input);
+
+                    if VERBOSE {
+                        println!("time elapsed in seconds in sparse self attention layer: {:?}", start.elapsed().as_secs_f64());
+                    }
+                    output = output_attention.take_output_batch();
+                    output_rm = None;
+                } else {
+                    println!("No previous output for Attention layer");
+                }
+            }
+            LayerEnum::SparseSelfAttentionRm(attention) => {
+                if let Some(padding_m) = &padding_mask {
                     if output.is_none() && output_rm.as_ref().is_some_and(|rm| !rm.is_empty()) {
                         layer_input.clear_input_batch();
                         layer_input.set_input_batch_rm(output_rm.take().unwrap());
                         layer_input.set_padding_mask_batch(padding_m.clone());
-
-                        if VERBOSE {
-                            println!("forward sparse self-attention start");
-                        }
-                        let start = Instant::now();
-                        let mut output_attention = attention.forward(&layer_input);
-
-                        if VERBOSE {
-                            println!("time elapsed in seconds in sparse self attention layer: {:?}", start.elapsed().as_secs_f64());
-                        }
-
-                        output_rm = output_attention.take_output_batch_rm();
-                        if next_supports_rm {
-                            output = None;
-                        } else {
-                            if layer_input.get_rm_strict() {
-                                panic!("RM strict mode violation: SparseSelfAttention produced RM but next layer requires Vec");
-                            }
-                            let vec_out: Vec<Vec<Vec<C>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
-                            output = Some(vec_out);
-                            output_rm = None;
-                        }
                     } else {
                         let previous_output = match output.take() {
                             Some(v) => v,
@@ -716,20 +784,31 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                                 continue;
                             }
                         };
-
-                        layer_input.set_input_batch(previous_output);
+                        let rm_out: Vec<RowMajorMatrix<C>> = previous_output.iter().map(|rows| RowMajorMatrix::from_rows(rows)).collect();
+                        layer_input.clear_input_batch();
+                        layer_input.set_input_batch_rm(rm_out);
                         layer_input.set_padding_mask_batch(padding_m.clone());
+                    }
 
-                        if VERBOSE {
-                            println!("forward sparse self-attention start");
-                        }
-                        let start = Instant::now();
-                        let mut output_attention = attention.forward(&layer_input);
+                    if VERBOSE {
+                        println!("forward sparse self-attention start (rm)");
+                    }
+                    let start = Instant::now();
+                    let mut output_attention = attention.forward(&layer_input);
+                    output_rm = output_attention.take_output_batch_rm();
 
-                        if VERBOSE {
-                            println!("time elapsed in seconds in sparse self attention layer: {:?}", start.elapsed().as_secs_f64());
+                    if VERBOSE {
+                        println!("time elapsed in seconds in sparse self attention layer (rm): {:?}", start.elapsed().as_secs_f64());
+                    }
+
+                    if next_supports_rm {
+                        output = None;
+                    } else {
+                        if layer_input.get_rm_strict() {
+                            panic!("RM strict mode violation: SparseSelfAttentionRm produced RM but next layer requires Vec");
                         }
-                        output = output_attention.take_output_batch();
+                        let vec_out: Vec<Vec<Vec<C>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
+                        output = Some(vec_out);
                         output_rm = None;
                     }
                 } else {
@@ -739,31 +818,52 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
             LayerEnum::SelfAttentionApproximation(attention) => {
                 // Ensure there's an output from the previous layer before forwarding
                 if let Some(padding_m) = &padding_mask {
+                    let previous_output: Vec<Vec<Vec<C>>> = if output.is_none() && output_rm.as_ref().is_some_and(|rm| !rm.is_empty()) {
+                        if layer_input.get_rm_strict() {
+                            panic!("RM strict mode violation: SelfAttentionApproximation (Vec) cannot consume RM; use SelfAttentionApproximationRm");
+                        }
+                        output_rm
+                            .take()
+                            .unwrap()
+                            .iter()
+                            .map(|m| m.to_rows())
+                            .collect()
+                    } else {
+                        match output.take() {
+                            Some(v) => v,
+                            None => {
+                                println!("No previous output for Attention layer");
+                                continue;
+                            }
+                        }
+                    };
+
+                    layer_input.set_input_batch(previous_output);
+                    layer_input.set_padding_mask_batch(padding_m.clone());
+                    layer_input.set_input_batch_rm(vec![]);
+
+                    if VERBOSE {
+                        println!("forward self-attention approximation start");
+                    }
+                    let start = Instant::now();
+                    let mut output_attention = attention.forward(&layer_input);
+
+                    if VERBOSE {
+                        println!("time elapsed in seconds in self attention approximation layer: {:?}", start.elapsed().as_secs_f64());
+                    }
+
+                    output = output_attention.take_output_batch();
+                    output_rm = None;
+                } else {
+                    println!("No previous output for Attention layer");
+                }
+            }
+            LayerEnum::SelfAttentionApproximationRm(attention) => {
+                if let Some(padding_m) = &padding_mask {
                     if output.is_none() && output_rm.as_ref().is_some_and(|rm| !rm.is_empty()) {
                         layer_input.clear_input_batch();
                         layer_input.set_input_batch_rm(output_rm.take().unwrap());
                         layer_input.set_padding_mask_batch(padding_m.clone());
-
-                        if VERBOSE {
-                            println!("forward self-attention approximation start (rm)");
-                        }
-                        let start = Instant::now();
-                        let mut output_attention = attention.forward(&layer_input);
-
-                        if VERBOSE {
-                            println!("time elapsed in seconds in self attention approximation layer (rm): {:?}", start.elapsed().as_secs_f64());
-                        }
-                        output_rm = output_attention.take_output_batch_rm();
-                        if next_supports_rm {
-                            output = None;
-                        } else {
-                            if layer_input.get_rm_strict() {
-                                panic!("RM strict mode violation: SelfAttentionApproximation produced RM but next layer requires Vec");
-                            }
-                            let vec_out: Vec<Vec<Vec<C>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
-                            output = Some(vec_out);
-                            output_rm = None;
-                        }
                     } else {
                         let previous_output = match output.take() {
                             Some(v) => v,
@@ -772,21 +872,37 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                                 continue;
                             }
                         };
-
-                        layer_input.set_input_batch(previous_output);
+                        if layer_input.get_rm_strict() {
+                            panic!("RM strict mode violation: SelfAttentionApproximationRm requires RM input");
+                        }
+                        let previous_output_rm: Vec<RowMajorMatrix<C>> = previous_output
+                            .iter()
+                            .map(|rows: &Vec<Vec<C>>| RowMajorMatrix::from_rows(rows.as_slice()))
+                            .collect();
+                        layer_input.clear_input_batch();
+                        layer_input.set_input_batch_rm(previous_output_rm);
                         layer_input.set_padding_mask_batch(padding_m.clone());
-                        layer_input.set_input_batch_rm(vec![]);
+                    }
 
-                        if VERBOSE {
-                            println!("forward self-attention approximation start");
-                        }
-                        let start = Instant::now();
-                        let mut output_attention = attention.forward(&layer_input);
+                    if VERBOSE {
+                        println!("forward self-attention approximation start (rm)");
+                    }
+                    let start = Instant::now();
+                    let mut output_attention = attention.forward(&layer_input);
 
-                        if VERBOSE {
-                            println!("time elapsed in seconds in self attention approximation layer: {:?}", start.elapsed().as_secs_f64());
+                    if VERBOSE {
+                        println!("time elapsed in seconds in self attention approximation layer (rm): {:?}", start.elapsed().as_secs_f64());
+                    }
+
+                    output_rm = output_attention.take_output_batch_rm();
+                    if next_supports_rm {
+                        output = None;
+                    } else {
+                        if layer_input.get_rm_strict() {
+                            panic!("RM strict mode violation: SelfAttentionApproximationRm produced RM but next layer requires Vec");
                         }
-                        output = output_attention.take_output_batch();
+                        let vec_out: Vec<Vec<Vec<C>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
+                        output = Some(vec_out);
                         output_rm = None;
                     }
                 } else {
@@ -838,6 +954,56 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                 }
 
                 //check_nan_or_inf_3d(&mut layer_output.get_output_batch(), "output ffn dense");
+            }
+            LayerEnum::FeedForwardRm(ffn_layer) => {
+                ffn_layer.padding_mask_batch = padding_mask.clone();
+
+                if VERBOSE {
+                    println!("forward feed-forward RM network start");
+                }
+
+                let start = Instant::now();
+
+                if output_rm.as_ref().is_some_and(|rm| !rm.is_empty()) {
+                    layer_input.clear_input_batch();
+                    layer_input.set_input_batch_rm(output_rm.take().unwrap());
+
+                    let mut layer_output = ffn_layer.forward(&layer_input);
+                    output_rm = layer_output.take_output_batch_rm();
+
+                    if next_supports_rm {
+                        output = None;
+                    } else {
+                        if layer_input.get_rm_strict() {
+                            panic!("RM strict mode violation: FeedForwardRm produced RM but next layer requires Vec");
+                        }
+                        let vec_out: Vec<Vec<Vec<C>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
+                        output = Some(vec_out);
+                        output_rm = None;
+                    }
+                } else {
+                    let previous_output = match output.take() {
+                        Some(v) => v,
+                        None => {
+                            println!("No previous output for FeedForwardRm layer");
+                            continue;
+                        }
+                    };
+
+                    if layer_input.get_rm_strict() {
+                        panic!("RM strict mode violation: FeedForwardRm requires RM input but received Vec");
+                    }
+                    let previous_output_rm: Vec<RowMajorMatrix<C>> = previous_output.iter().map(|m| RowMajorMatrix::from_rows(m)).collect();
+                    layer_input.clear_input_batch();
+                    layer_input.set_input_batch_rm(previous_output_rm);
+                    let mut layer_output = ffn_layer.forward(&layer_input);
+                    output_rm = layer_output.take_output_batch_rm();
+                    output = None;
+                }
+
+                if VERBOSE {
+                    println!("time elapsed in seconds in ffn_rm layer: {:?}", start.elapsed().as_secs_f64());
+                }
             }
             LayerEnum::Linear(linear_layer) => {
                 if VERBOSE {
@@ -903,31 +1069,26 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     println!("forward sparse linear start");
                 }
 
-                let use_rm_only = output.is_none() && output_rm.as_ref().is_some_and(|rm| !rm.is_empty());
-                if use_rm_only {
-                    layer_input.clear_input_batch();
-                    layer_input.set_input_batch_rm(output_rm.take().unwrap());
-                } else {
-                    if output.is_none() {
-                        if let Some(rm) = &output_rm {
-                            if layer_input.get_rm_strict() {
-                                panic!("RM strict mode violation: SparseLinear requires Vec input but RM is present");
-                            }
-                            let vec_out: Vec<Vec<Vec<C>>> = rm.iter().map(|m| m.to_rows()).collect();
-                            output = Some(vec_out);
+                if output.is_none() {
+                    if let Some(rm) = &output_rm {
+                        if layer_input.get_rm_strict() {
+                            panic!("RM strict mode violation: SparseLinear(Vec) requires Vec input but RM is present");
                         }
+                        let vec_out: Vec<Vec<Vec<C>>> = rm.iter().map(|m| m.to_rows()).collect();
+                        output = Some(vec_out);
+                        output_rm = None;
                     }
-
-                    let previous_output = match output.take() {
-                        Some(v) => v,
-                        None => {
-                            println!("No previous output for Dense layer");
-                            continue;
-                        }
-                    };
-                    layer_input.set_input_batch(previous_output);
-                    layer_input.set_input_batch_rm(vec![]);
                 }
+
+                let previous_output = match output.take() {
+                    Some(v) => v,
+                    None => {
+                        println!("No previous output for SparseLinear(Vec) layer");
+                        continue;
+                    }
+                };
+                layer_input.set_input_batch(previous_output);
+                layer_input.set_input_batch_rm(vec![]);
 
                 let start = Instant::now();
                 let mut output_linear = sparse_linear_layer.forward(&layer_input);
@@ -938,12 +1099,53 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     println!("time elapsed in seconds in sparse linear layer: {:?}", start.elapsed().as_secs_f64());
                 }
 
+                output = output_linear.take_output_batch();
+                output_rm = None;
+            }
+            LayerEnum::SparseLinearRm(sparse_linear_layer) => {
+                if VERBOSE {
+                    println!("forward sparse linear_rm start");
+                }
+
+                if output_rm.is_none() {
+                    if let Some(vec_out) = &output {
+                        if layer_input.get_rm_strict() {
+                            panic!("RM strict mode violation: SparseLinearRm requires RM input but Vec is present");
+                        }
+                        output_rm = Some(vec_out.iter().map(|rows| RowMajorMatrix::from_rows(rows)).collect());
+                        output = None;
+                    }
+                }
+
+                let rm_in = match output_rm.take() {
+                    Some(v) => v,
+                    None => {
+                        println!("No previous RM output for SparseLinearRm layer");
+                        continue;
+                    }
+                };
+
+                layer_input.clear_input_batch();
+                layer_input.set_input_batch_rm(rm_in);
+
+                let start = Instant::now();
+                let mut output_linear = sparse_linear_layer.forward(&layer_input);
+                linear_output_indices = output_linear.get_output_indices();
+
+                if VERBOSE {
+                    println!("time elapsed in seconds in sparse linear_rm layer: {:?}", start.elapsed().as_secs_f64());
+                }
+
                 output_rm = output_linear.take_output_batch_rm();
-                if next_supports_rm && output_rm.as_ref().is_some_and(|rm| !rm.is_empty()) {
-                    // Preserve RM logits for Softmax/next RM-capable layer.
+                if next_supports_rm {
                     output = None;
                 } else {
-                    output = output_linear.take_output_batch();
+                    if layer_input.get_rm_strict() {
+                        panic!("RM strict mode violation: SparseLinearRm produced RM but next layer requires Vec");
+                    }
+                    let vec_out: Vec<Vec<Vec<C>>> = output_rm.as_ref().unwrap().iter().map(|m| m.to_rows()).collect();
+                    output = Some(vec_out);
+                    output_rm = None;
                 }
             }
             LayerEnum::MultiLinear(multi_linear_layer) => {
@@ -1000,29 +1202,23 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
             LayerEnum::Wavelet(wavelet_layer) => {
                 let use_rm_only = output.is_none() && output_rm.as_ref().is_some_and(|rm| !rm.is_empty());
                 if use_rm_only {
-                    layer_input.clear_input_batch();
-                    layer_input.set_input_batch_rm(output_rm.take().unwrap());
-                } else {
-                    if output.is_none() {
-                        if let Some(rm) = &output_rm {
-                            if layer_input.get_rm_strict() {
-                                panic!("RM strict mode violation: Wavelet requires Vec input but RM is present");
-                            }
-                            let vec_out: Vec<Vec<Vec<C>>> = rm.iter().map(|m| m.to_rows()).collect();
-                            output = Some(vec_out);
-                        }
+                    if layer_input.get_rm_strict() {
+                        panic!("RM strict mode violation: Wavelet (Vec) received RM-only input");
                     }
-
-                    let previous_output = match output.take() {
-                        Some(v) => v,
-                        None => {
-                            println!("No previous output for Wavelet layer");
-                            continue;
-                        }
-                    };
-                    layer_input.set_input_batch(previous_output);
-                    layer_input.set_input_batch_rm(vec![]);
+                    let rm = output_rm.take().unwrap();
+                    let vec_out: Vec<Vec<Vec<C>>> = rm.iter().map(|m| m.to_rows()).collect();
+                    output = Some(vec_out);
+                    output_rm = None;
                 }
+
+                if output.is_none() {
+                    println!("No previous output for Wavelet layer");
+                    continue;
+                }
+
+                let previous_output = output.take().unwrap();
+                layer_input.set_input_batch(previous_output);
+                layer_input.set_input_batch_rm(vec![]);
 
                 let start = Instant::now();
                 let mut output_cwt = wavelet_layer.forward(&layer_input);
@@ -1048,32 +1244,71 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     }
                 }
             }
+            LayerEnum::WaveletRm(wavelet_layer) => {
+                if output_rm.as_ref().is_none_or(|rm| rm.is_empty()) {
+                    if output.is_some() {
+                        if layer_input.get_rm_strict() {
+                            panic!("RM strict mode violation: WaveletRm requires RM input but Vec is present");
+                        }
+                        let vec_batch = output.take().unwrap();
+                        let rm_out: Vec<RowMajorMatrix<C>> = vec_batch.iter().map(|m| RowMajorMatrix::from_rows(m)).collect();
+                        output_rm = Some(rm_out);
+                    }
+                }
+
+                let use_rm_only = output.is_none() && output_rm.as_ref().is_some_and(|rm| !rm.is_empty());
+                if !use_rm_only {
+                    println!("No previous output for WaveletRm layer");
+                    continue;
+                }
+
+                layer_input.clear_input_batch();
+                layer_input.set_input_batch_rm(output_rm.take().unwrap());
+
+                let start = Instant::now();
+                let mut output_cwt = wavelet_layer.forward(&layer_input);
+
+                if VERBOSE {
+                    println!("time elapsed in seconds in wavelet rm layer: {:?}", start.elapsed().as_secs_f64());
+                }
+
+                output_rm = output_cwt.take_output_batch_rm();
+                if next_supports_rm {
+                    output = None;
+                } else {
+                    if let Some(rm) = &output_rm {
+                        if layer_input.get_rm_strict() {
+                            panic!("RM strict mode violation: WaveletRm produced RM but next layer requires Vec");
+                        }
+                        let vec_out: Vec<Vec<Vec<C>>> = rm.iter().map(|m| m.to_rows()).collect();
+                        output = Some(vec_out);
+                        output_rm = None;
+                    } else {
+                        output = output_cwt.take_output_batch();
+                        output_rm = None;
+                    }
+                }
+            }
             LayerEnum::DiscreteWavelet(wavelet_layer) => {
                 let use_rm_only = output.is_none() && output_rm.as_ref().is_some_and(|rm| !rm.is_empty());
                 if use_rm_only {
-                    layer_input.clear_input_batch();
-                    layer_input.set_input_batch_rm(output_rm.take().unwrap());
-                } else {
-                    if output.is_none() {
-                        if let Some(rm) = &output_rm {
-                            if layer_input.get_rm_strict() {
-                                panic!("RM strict mode violation: DiscreteWavelet requires Vec input but RM is present");
-                            }
-                            let vec_out: Vec<Vec<Vec<C>>> = rm.iter().map(|m| m.to_rows()).collect();
-                            output = Some(vec_out);
-                        }
+                    if layer_input.get_rm_strict() {
+                        panic!("RM strict mode violation: DiscreteWavelet (Vec) received RM-only input");
                     }
-
-                    let previous_output = match output.take() {
-                        Some(v) => v,
-                        None => {
-                            println!("No previous output for DiscreteWavelet layer");
-                            continue;
-                        }
-                    };
-                    layer_input.set_input_batch(previous_output);
-                    layer_input.set_input_batch_rm(vec![]);
+                    let rm = output_rm.take().unwrap();
+                    let vec_out: Vec<Vec<Vec<C>>> = rm.iter().map(|m| m.to_rows()).collect();
+                    output = Some(vec_out);
+                    output_rm = None;
                 }
+
+                if output.is_none() {
+                    println!("No previous output for DiscreteWavelet layer");
+                    continue;
+                }
+
+                let previous_output = output.take().unwrap();
+                layer_input.set_input_batch(previous_output);
+                layer_input.set_input_batch_rm(vec![]);
 
                 let start = Instant::now();
                 let mut output_dwt = wavelet_layer.forward(&layer_input);
@@ -1093,6 +1328,55 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     if let Some(rm) = &output_rm {
                         if layer_input.get_rm_strict() {
                             panic!("RM strict mode violation: DiscreteWavelet produced RM but next layer requires Vec");
+                        }
+                        let vec_out: Vec<Vec<Vec<C>>> = rm.iter().map(|m| m.to_rows()).collect();
+                        output = Some(vec_out);
+                        output_rm = None;
+                    } else {
+                        output = output_dwt.take_output_batch();
+                        output_rm = None;
+                    }
+                }
+            }
+            LayerEnum::DiscreteWaveletRm(wavelet_layer) => {
+                if output_rm.as_ref().is_none_or(|rm| rm.is_empty()) {
+                    if output.is_some() {
+                        if layer_input.get_rm_strict() {
+                            panic!("RM strict mode violation: DiscreteWaveletRm requires RM input but Vec is present");
+                        }
+                        let vec_batch = output.take().unwrap();
+                        let rm_out: Vec<RowMajorMatrix<C>> = vec_batch.iter().map(|m| RowMajorMatrix::from_rows(m)).collect();
+                        output_rm = Some(rm_out);
+                    }
+                }
+
+                let use_rm_only = output.is_none() && output_rm.as_ref().is_some_and(|rm| !rm.is_empty());
+                if !use_rm_only {
+                    println!("No previous output for DiscreteWaveletRm layer");
+                    continue;
+                }
+
+                layer_input.clear_input_batch();
+                layer_input.set_input_batch_rm(output_rm.take().unwrap());
+
+                let start = Instant::now();
+                let mut output_dwt = wavelet_layer.forward(&layer_input);
+
+                let new_padding_mask = output_dwt.get_padding_mask_batch();
+                padding_mask = Some(new_padding_mask.clone());
+                layer_input.set_padding_mask_batch(new_padding_mask);
+
+                if VERBOSE {
+                    println!("time elapsed in seconds in discrete wavelet rm layer: {:?}", start.elapsed().as_secs_f64());
+                }
+
+                output_rm = output_dwt.take_output_batch_rm();
+                if next_supports_rm {
+                    output = None;
+                } else {
+                    if let Some(rm) = &output_rm {
+                        if layer_input.get_rm_strict() {
+                            panic!("RM strict mode violation: DiscreteWaveletRm produced RM but next layer requires Vec");
                         }
                         let vec_out: Vec<Vec<Vec<C>>> = rm.iter().map(|m| m.to_rows()).collect();
                         output = Some(vec_out);
@@ -1182,40 +1466,31 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     // even if a prior inference call switched it to PRODUCTION.
                     softmax_layer.operation_mode = OperationMode::TRAINING;
 
-                    // Training path: prefer RM-native CE + gradient when logits are RM.
-                    let use_rm = output_rm.as_ref().is_some_and(|rm| !rm.is_empty());
-                    if use_rm {
-                        layer_input.clear_input_batch();
-                        layer_input.set_input_batch_rm(output_rm.take().unwrap());
-                    } else {
-                        if output.is_none() {
-                            if let Some(rm) = &output_rm {
-                                if layer_input.get_rm_strict() {
-                                    panic!("RM strict mode violation: Softmax training requires Vec input but RM is present");
-                                }
-                                let vec_out: Vec<Vec<Vec<C>>> = rm.iter().map(|m| m.to_rows()).collect();
-                                output = Some(vec_out);
+                    // Vec-only softmax: ensure logits are in Vec form.
+                    if output.is_none() {
+                        if let Some(rm) = &output_rm {
+                            if layer_input.get_rm_strict() {
+                                panic!("RM strict mode violation: Softmax(Vec) training requires Vec input but RM logits are present");
                             }
+                            let vec_out: Vec<Vec<Vec<C>>> = rm.iter().map(|m| m.to_rows()).collect();
+                            output = Some(vec_out);
+                            output_rm = None;
                         }
-
-                        let previous_output = match output.take() {
-                            Some(v) => v,
-                            None => {
-                                println!("No previous output for Dense layer");
-                                continue;
-                            }
-                        };
-
-                        layer_input.set_input_batch(previous_output);
-                        layer_input.set_input_batch_rm(vec![]);
                     }
 
-                    layer_input.set_output_indices(linear_output_indices.clone());
-                    let softmax_result_real: Vec<Vec<Vec<Real>>> = if use_rm {
-                        softmax_layer.forward_rm(&layer_input, padding_mask.clone(), target_batch_ids_option.clone())
-                    } else {
-                        softmax_layer.forward(&layer_input, padding_mask.clone(), target_batch_ids_option.clone())
+                    let previous_output = match output.take() {
+                        Some(v) => v,
+                        None => {
+                            println!("No previous output for Softmax(Vec) layer");
+                            continue;
+                        }
                     };
+
+                    layer_input.set_input_batch(previous_output);
+                    layer_input.set_input_batch_rm(vec![]);
+
+                    layer_input.set_output_indices(linear_output_indices.clone());
+                    let softmax_result_real: Vec<Vec<Vec<Real>>> = softmax_layer.forward(&layer_input, padding_mask.clone(), target_batch_ids_option.clone());
                     output_softmax = Some(softmax_result_real);
                     layer_output.set_cross_entropy_loss_batch(softmax_layer.cross_entropy_loss_batch.clone().unwrap());
                 }
@@ -1224,6 +1499,65 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     println!("time elapsed in seconds in softmax layer: {:?}", start.elapsed().as_secs_f64());
                 }
                 // println!("forward softmax end");
+            }
+            LayerEnum::SoftmaxRm(softmax_layer) => {
+                let start = Instant::now();
+
+                if forward_only {
+                    if let Some(rm) = &output_rm {
+                        let out_real: Vec<Vec<Vec<Real>>> = rm
+                            .iter()
+                            .map(|m| {
+                                (0..m.rows)
+                                    .map(|r| {
+                                        let row = m.row_range(r);
+                                        m.data[row].iter().map(|c| c.re).collect::<Vec<Real>>()
+                                    })
+                                    .collect::<Vec<Vec<Real>>>()
+                            })
+                            .collect();
+                        output_softmax = Some(out_real);
+                    } else if let Some(vec_logits) = layer_input.get_input_batch_ref() {
+                        output_softmax = Some(
+                            vec_logits
+                                .iter()
+                                .map(|m| m.iter().map(|row| row.iter().map(|z| z.re).collect()).collect())
+                                .collect(),
+                        );
+                    }
+                } else {
+                    softmax_layer.operation_mode = OperationMode::TRAINING;
+
+                    // RM-only softmax: ensure logits are in RM form.
+                    if output_rm.is_none() {
+                        if let Some(vec_logits) = output.take() {
+                            if layer_input.get_rm_strict() {
+                                panic!("RM strict mode violation: SoftmaxRm requires RM logits but Vec logits are present");
+                            }
+                            output_rm = Some(vec_logits.iter().map(|rows| RowMajorMatrix::from_rows(rows)).collect());
+                        }
+                    }
+
+                    let logits_rm = match output_rm.take() {
+                        Some(v) => v,
+                        None => {
+                            println!("No previous RM output for SoftmaxRm layer");
+                            continue;
+                        }
+                    };
+
+                    layer_input.clear_input_batch();
+                    layer_input.set_input_batch_rm(logits_rm);
+
+                    layer_input.set_output_indices(linear_output_indices.clone());
+                    let softmax_result_real: Vec<Vec<Vec<Real>>> = softmax_layer.forward(&layer_input, padding_mask.clone(), target_batch_ids_option.clone());
+                    output_softmax = Some(softmax_result_real);
+                    layer_output.set_cross_entropy_loss_batch(softmax_layer.cross_entropy_loss_batch.clone().unwrap());
+                }
+
+                if VERBOSE {
+                    println!("time elapsed in seconds in softmax_rm layer: {:?}", start.elapsed().as_secs_f64());
+                }
             }
             _ => {
                 panic!("Layer type not supported for backward pass");
@@ -1283,29 +1617,71 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             }
             LayerEnum::PositionalEncoding(positional_encoding_layer) => {
                 if let Some(previous_gradient) = gradient {
-                    // println!("backward positional encoding start");
                     let start = Instant::now();
-                    let gradient_batch: Gradient = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
-                        positional_encoding_layer.backward_rm(gr_rm)
+
+                    let grad_vec: Vec<Vec<Vec<C>>> = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
+                        gr_rm.iter().map(|m| m.to_rows()).collect()
                     } else {
-                        positional_encoding_layer.backward(&previous_gradient.get_gradient_input_batch())
+                        previous_gradient.get_gradient_input_batch()
                     };
 
-                    // println!("backward positional encoding end");
+                    let gradient_batch: Gradient = positional_encoding_layer.backward(&grad_vec);
+
                     if VERBOSE {
                         println!("time elapsed in seconds in positional encoding layer backward: {}", start.elapsed().as_secs_f64());
                     }
                     gradient = Some(gradient_batch);
-                } else {
-                    // println!("No previous gradient in Positional Encoding Layer");
+                }
+            }
+            LayerEnum::PositionalEncodingRm(positional_encoding_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    let start = Instant::now();
+                    let gr_rm = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
+                        gr_rm.to_vec()
+                    } else {
+                        previous_gradient.get_gradient_input_batch_rm()
+                    };
+
+                    let gradient_batch: Gradient = positional_encoding_layer.backward(&gr_rm);
+
+                    if VERBOSE {
+                        println!("time elapsed in seconds in positional encoding layer backward: {}", start.elapsed().as_secs_f64());
+                    }
+                    gradient = Some(gradient_batch);
                 }
             }
             LayerEnum::Norm(norm_layer) => {
                 if let Some(previous_gradient) = gradient {
-                    // println!("backward norm start");
-
                     let start = Instant::now();
-                    let gradient_batch: Gradient = norm_layer.backward(&previous_gradient);
+
+                    let gradient_batch: Gradient = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
+                        let mut pg = previous_gradient.clone();
+                        pg.set_gradient_input_batch(gr_rm.iter().map(|m| m.to_rows()).collect());
+                        pg.set_gradient_input_batch_rm(vec![]);
+                        norm_layer.backward(&pg)
+                    } else {
+                        norm_layer.backward(&previous_gradient)
+                    };
+                    gradient = Some(gradient_batch);
+
+                    if VERBOSE {
+                        println!("time elapsed in seconds in norm layer backward: {}", start.elapsed().as_secs_f64());
+                    }
+                } else {
+                    println!("No previous gradient for norm layer");
+                }
+            }
+            LayerEnum::NormRm(norm_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    let start = Instant::now();
+                    let gradient_batch: Gradient = if previous_gradient.get_gradient_input_batch_rm_ref().is_some() {
+                        norm_layer.backward(&previous_gradient)
+                    } else {
+                        let mut pg = previous_gradient.clone();
+                        let gr_rm = pg.get_gradient_input_batch_rm();
+                        pg.set_gradient_input_batch_rm(gr_rm);
+                        norm_layer.backward(&pg)
+                    };
                     gradient = Some(gradient_batch);
 
                     if VERBOSE {
@@ -1336,7 +1712,8 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                 if let Some(previous_gradient) = gradient {
                     let start = Instant::now();
                     let gradient_batch: Gradient = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
-                        attention_layer.backward_rm(gr_rm)
+                        let previous_gradient_batch: Vec<Vec<Vec<C>>> = gr_rm.iter().map(|m| m.to_rows()).collect();
+                        attention_layer.backward(&previous_gradient_batch)
                     } else {
                         attention_layer.backward(&previous_gradient.get_gradient_input_batch())
                     };
@@ -1349,11 +1726,35 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     println!("No previous gradient in Self Attention Layer");
                 }
             }
+            LayerEnum::SparseSelfAttentionRm(attention_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    let start = Instant::now();
+
+                    let gradient_batch: Gradient = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
+                        attention_layer.backward_rm(gr_rm)
+                    } else {
+                        let previous_gradient_batch_rm: Vec<RowMajorMatrix<C>> = previous_gradient
+                            .get_gradient_input_batch()
+                            .iter()
+                            .map(|rows| RowMajorMatrix::from_rows(rows))
+                            .collect();
+                        attention_layer.backward_rm(&previous_gradient_batch_rm)
+                    };
+
+                    if VERBOSE {
+                        println!("time elapsed in seconds in sparse self attention layer backward (rm): {:?}", start.elapsed().as_secs_f64());
+                    }
+                    gradient = Some(gradient_batch);
+                } else {
+                    println!("No previous gradient in SparseSelfAttentionLayerRm");
+                }
+            }
             LayerEnum::SelfAttentionApproximation(attention_layer) => {
                 if let Some(previous_gradient) = gradient {
                     let start = Instant::now();
                     let gradient_batch: Gradient = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
-                        attention_layer.backward_rm(gr_rm)
+                        let previous_gradient_batch: Vec<Vec<Vec<C>>> = gr_rm.iter().map(|m| m.to_rows()).collect();
+                        attention_layer.backward(&previous_gradient_batch)
                     } else {
                         attention_layer.backward(&previous_gradient.get_gradient_input_batch())
                     };
@@ -1366,11 +1767,36 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     println!("No previous gradient in Self Attention Layer");
                 }
             }
+            LayerEnum::SelfAttentionApproximationRm(attention_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    let start = Instant::now();
+
+                    let gradient_batch: Gradient = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
+                        attention_layer.backward_rm(gr_rm)
+                    } else {
+                        let previous_gradient_batch_rm: Vec<RowMajorMatrix<C>> = previous_gradient
+                            .get_gradient_input_batch()
+                            .iter()
+                            .map(|rows| RowMajorMatrix::from_rows(rows))
+                            .collect();
+                        attention_layer.backward_rm(&previous_gradient_batch_rm)
+                    };
+
+                    if VERBOSE {
+                        println!("time elapsed in seconds in self attention approximation layer backward (rm): {:?}", start.elapsed().as_secs_f64());
+                    }
+                    gradient = Some(gradient_batch);
+                } else {
+                    println!("No previous gradient in Self Attention Layer");
+                }
+            }
             LayerEnum::FeedForward(dense_layer) => {
                 if let Some(previous_gradient) = gradient {
                     let start = Instant::now();
-                    let gradient_batch: Gradient = if previous_gradient.get_gradient_input_batch_rm_ref().is_some() {
-                        dense_layer.backward_rm(&previous_gradient)
+                    let gradient_batch: Gradient = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
+                        // FeedForwardLayer is Vec-only now; convert RM -> Vec.
+                        let previous_gradient_batch: Vec<Vec<Vec<C>>> = gr_rm.iter().map(|m| m.to_rows()).collect();
+                        dense_layer.backward(&previous_gradient_batch)
                     } else {
                         let previous_gradient_batch: Vec<Vec<Vec<C>>> = previous_gradient.get_gradient_input_batch();
                         dense_layer.backward(&previous_gradient_batch)
@@ -1383,6 +1809,33 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     }
                 } else {
                     println!("No previous gradient in Dense Layer");
+                }
+            }
+            LayerEnum::FeedForwardRm(ffn_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    let start = Instant::now();
+
+                    let gradient_batch: Gradient = if previous_gradient.get_gradient_input_batch_rm_ref().is_some() {
+                        ffn_layer.backward(&previous_gradient)
+                    } else {
+                        let previous_gradient_batch: Vec<RowMajorMatrix<C>> = previous_gradient
+                            .get_gradient_input_batch()
+                            .iter()
+                            .map(|rows| RowMajorMatrix::from_rows(rows))
+                            .collect();
+                        let mut g = Gradient::new_default();
+                        g.set_gradient_input_batch_rm(previous_gradient_batch);
+                        g.set_total_valid_tokens(previous_gradient.get_total_valid_tokens());
+                        ffn_layer.backward(&g)
+                    };
+
+                    gradient = Some(gradient_batch);
+
+                    if VERBOSE {
+                        println!("time elapsed in seconds in ffn_rm layer backward: {:?}", start.elapsed().as_secs_f64());
+                    }
+                } else {
+                    println!("No previous gradient in FeedForwardRm Layer");
                 }
             }
             LayerEnum::Linear(linear_layer) => {
@@ -1408,6 +1861,19 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     }
                 } else {
                     println!("No previous gradient in Linear Layer");
+                }
+            }
+            LayerEnum::SparseLinearRm(sparse_linear_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    let start = Instant::now();
+                    let gradient_batch: Gradient = sparse_linear_layer.backward(&previous_gradient);
+                    gradient = Some(gradient_batch);
+
+                    if VERBOSE {
+                        println!("time elapsed in seconds in sparse linear_rm layer backward: {:?}", start.elapsed().as_secs_f64());
+                    }
+                } else {
+                    println!("No previous gradient in SparseLinearRm Layer");
                 }
             }
             LayerEnum::MultiLinear(multi_linear_layer) => {
@@ -1436,6 +1902,33 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     println!("No previous gradient in Linear Layer");
                 }
             }
+            LayerEnum::WaveletRm(wavelet_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    let start = Instant::now();
+
+                    let gradient_batch: Gradient = if previous_gradient.get_gradient_input_batch_rm_ref().is_some() {
+                        wavelet_layer.backward(&previous_gradient)
+                    } else {
+                        let previous_gradient_batch: Vec<RowMajorMatrix<C>> = previous_gradient
+                            .get_gradient_input_batch()
+                            .iter()
+                            .map(|rows| RowMajorMatrix::from_rows(rows))
+                            .collect();
+                        let mut g = Gradient::new_default();
+                        g.set_gradient_input_batch_rm(previous_gradient_batch);
+                        g.set_total_valid_tokens(previous_gradient.get_total_valid_tokens());
+                        wavelet_layer.backward(&g)
+                    };
+
+                    gradient = Some(gradient_batch);
+
+                    if VERBOSE {
+                        println!("time elapsed in seconds in wavelet rm layer backward: {:?}", start.elapsed().as_secs_f64());
+                    }
+                } else {
+                    println!("No previous gradient in WaveletRm Layer");
+                }
+            }
             LayerEnum::DiscreteWavelet(wavelet_layer) => {
                 if let Some(previous_gradient) = gradient {
                     let start = Instant::now();
@@ -1447,6 +1940,33 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     }
                 } else {
                     println!("No previous gradient in Linear Layer");
+                }
+            }
+            LayerEnum::DiscreteWaveletRm(wavelet_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    let start = Instant::now();
+
+                    let gradient_batch: Gradient = if previous_gradient.get_gradient_input_batch_rm_ref().is_some() {
+                        wavelet_layer.backward(&previous_gradient)
+                    } else {
+                        let previous_gradient_batch: Vec<RowMajorMatrix<C>> = previous_gradient
+                            .get_gradient_input_batch()
+                            .iter()
+                            .map(|rows| RowMajorMatrix::from_rows(rows))
+                            .collect();
+                        let mut g = Gradient::new_default();
+                        g.set_gradient_input_batch_rm(previous_gradient_batch);
+                        g.set_total_valid_tokens(previous_gradient.get_total_valid_tokens());
+                        wavelet_layer.backward(&g)
+                    };
+
+                    gradient = Some(gradient_batch);
+
+                    if VERBOSE {
+                        println!("time elapsed in seconds in discrete wavelet rm layer backward: {:?}", start.elapsed().as_secs_f64());
+                    }
+                } else {
+                    println!("No previous gradient in DiscreteWaveletRm Layer");
                 }
             }
             LayerEnum::ComplexToLinear(complex_to_linear_layer) => {
@@ -1470,6 +1990,10 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
 
                 gradient = Some(softmax_layer.gradient.as_ref().unwrap().clone());
                 // println!("backward softmax end");
+            }
+            LayerEnum::SoftmaxRm(softmax_layer) => {
+                softmax_layer.batch_size = batch_size;
+                gradient = Some(softmax_layer.gradient.as_ref().unwrap().clone());
             }
             _ => {
                 panic!("Layer type not supported for backward pass");

@@ -4,7 +4,14 @@ use crate::neural_networks::{
         gradient_struct::Gradient,
         layer_input_struct::LayerInput,
         layer_output_struct::LayerOutput,
-    }, network_layers::{add_rms_norm_layer::RMSNormLayer, layer::{LayerEnum, LayerType}, norm_layer::NormalNormLayer}, network_types::transformer::transformer_updater::calculate_alpha, utils::matrix::{RowMajorMatrix, add_matrix_3d, scale_matrix_3d_by_scalar}
+    },
+    network_layers::{
+        add_rms_norm_layer::RMSNormLayer,
+        layer::{LayerEnum, LayerType},
+        norm_layer_rm::NormalNormLayerRm,
+    },
+    network_types::transformer::transformer_updater::calculate_alpha,
+    utils::matrix::{RowMajorMatrix, add_matrix_3d, scale_matrix_3d_by_scalar},
 };
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
@@ -47,7 +54,7 @@ impl SelfAttentionLayer {
 
         let epsilon: f64 = 0.000000000001;
         let _norm_layer_rms = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(cols, epsilon, learning_rate))));
-        let _norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(cols, epsilon, learning_rate))));
+        let _norm_layer = Some(LayerEnum::NormRm(Box::new(NormalNormLayerRm::new(cols, epsilon, learning_rate))));
 
         let alpha = calculate_alpha();
         let beta = r(1.0) / alpha;
@@ -92,14 +99,16 @@ impl SelfAttentionLayer {
                         // RMSNorm is still Vec-only in this codepath.
                         panic!("RMSNorm is not supported for RM SelfAttentionLayer yet");
                     }
+                    LayerEnum::NormRm(norm_layer) => {
+                        let mut output = norm_layer.forward(&local_input);
+                        batch_output_rm = output.take_output_batch_rm().expect("NormRm did not return RM output");
+                        local_input.set_input_batch_rm(batch_output_rm.clone());
+                    }
                     LayerEnum::Norm(norm_layer) => {
+                        // Fallback: convert Vec output -> RM via LayerOutput helpers.
                         let output = norm_layer.forward(&local_input);
-                        if let Some(out_rm) = output.get_output_batch_rm_ref() {
-                            batch_output_rm = out_rm.to_vec();
-                            local_input.set_input_batch_rm(batch_output_rm.clone());
-                        } else {
-                            panic!("NormalNormLayer did not return RM output");
-                        }
+                        batch_output_rm = output.get_output_batch_rm();
+                        local_input.set_input_batch_rm(batch_output_rm.clone());
                     }
                     _ => {}
                 }
@@ -157,6 +166,10 @@ impl SelfAttentionLayer {
                     let output = norm_layer.forward(&layer_input);
                     batch_output = output.get_output_batch();
                     //println!("RMS NORM input in ffn: {:?}, {:?}", &output.len(), &output[0].len());
+                }
+                LayerEnum::NormRm(norm_layer) => {
+                    let output = norm_layer.forward(&layer_input);
+                    batch_output = output.get_output_batch();
                 }
                 _ => {}
             }
@@ -253,10 +266,13 @@ impl SelfAttentionLayer {
                 LayerEnum::RMSNorm(_rms_norm_layer) => {
                     panic!("RMSNorm is not supported for RM SelfAttentionLayer backward yet");
                 }
-                LayerEnum::Norm(norm_layer) => {
+                LayerEnum::NormRm(norm_layer) => {
                     let mut g = Gradient::new_default();
                     g.set_gradient_input_batch_rm(combined);
                     combined = norm_layer.backward(&g).get_gradient_input_batch_rm();
+                }
+                LayerEnum::Norm(_norm_layer) => {
+                    panic!("SelfAttentionLayer RM backward requires NormRm");
                 }
                 _ => {}
             }
@@ -327,6 +343,14 @@ impl SelfAttentionLayer {
                     gradient_input_batch = norm_gradient.get_gradient_input_batch();
                     gradient.set_gradient_input_batch(gradient_input_batch.clone());
                 }
+                LayerEnum::NormRm(norm_layer) => {
+                    let mut g = Gradient::new_default();
+                    let gr_rm: Vec<RowMajorMatrix<C>> = gradient_input_batch.iter().map(|rows| RowMajorMatrix::from_rows(rows)).collect();
+                    g.set_gradient_input_batch_rm(gr_rm);
+                    let norm_gradient = norm_layer.backward(&g);
+                    gradient_input_batch = norm_gradient.get_gradient_input_batch();
+                    gradient.set_gradient_input_batch(gradient_input_batch.clone());
+                }
                 _ => {}
             }
         }
@@ -374,6 +398,9 @@ impl SelfAttentionLayer {
                     rms_norm_layer.update_parameters();
                 }
                 LayerEnum::Norm(norm_layer) => {
+                    norm_layer.update_parameters();
+                }
+                LayerEnum::NormRm(norm_layer) => {
                     norm_layer.update_parameters();
                 }
                 _ => {}

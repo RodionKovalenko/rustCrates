@@ -24,3 +24,4 @@ cargo test --no-default-features
 
 // test for f64
 cargo test --features dtype-f64
+cargo test --features dtype-f64 -- --nocapture

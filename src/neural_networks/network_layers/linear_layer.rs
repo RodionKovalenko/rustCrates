@@ -129,10 +129,6 @@ impl LinearLayer {
         self.weights_cache_row0_ptr = row0;
     }
 
-    pub fn prepare_for_save(&mut self) {
-        self.ensure_weights_cache();
-    }
-
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
         let input_batch: Vec<Vec<Vec<C>>> = input.get_input_batch();
         let input_batch_rm_ref = input.get_input_batch_rm_ref();

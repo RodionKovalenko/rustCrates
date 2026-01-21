@@ -299,7 +299,7 @@ impl NormalNormLayer {
             }
             Some(GradientBatch::Complex(gr_rm.iter().map(|m| m.to_rows()).collect()))
         } else if !previous_gradient.get_gradient_input_batch().is_empty() {
-            Some(GradientBatch::Complex(previous_gradient.get_gradient_input_batch()))
+                Some(GradientBatch::Real(previous_gradient.get_gradient_input_batch_softmax()))
         } else {
             Some(GradientBatch::Real(previous_gradient.get_gradient_input_batch_softmax()))
         };

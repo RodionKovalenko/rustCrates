@@ -17,8 +17,7 @@ use crate::neural_networks::{
         adam_w::calculate_adam_w,
         low_rank_approx::transpose,
         matrix::{
-            add_matrix, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, conjugate_transpose_rm, multiply_complex, multiply_complex_rm,
-            RowMajorMatrix,
+            add_matrix, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex,
         },
         weights_initializer::initialize_weights_complex,
     },
@@ -60,17 +59,11 @@ pub struct SparseMaskedAttentionHead {
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
-    pub input_batch_rm: Option<Vec<RowMajorMatrix<C>>>,
-    #[serde(skip)]
     pub attention_weights_batch: Option<Vec<Vec<Vec<C>>>>,
-    #[serde(skip)]
-    pub attention_weights_batch_rm: Option<Vec<RowMajorMatrix<C>>>,
     #[serde(skip)]
     pub attention_weights_batch_raw: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
     pub output_batch: Option<Vec<Vec<Vec<C>>>>,
-    #[serde(skip)]
-    pub output_batch_rm: Option<Vec<RowMajorMatrix<C>>>,
     #[serde(skip)]
     pub padding_mask_batch: Option<Vec<Vec<u32>>>,
     #[serde(skip)]
@@ -78,21 +71,9 @@ pub struct SparseMaskedAttentionHead {
     #[serde(skip)]
     pub v_cache: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
-    pub k_cache_rm: Option<Vec<RowMajorMatrix<C>>>,
-    #[serde(skip)]
-    pub v_cache_rm: Option<Vec<RowMajorMatrix<C>>>,
-    #[serde(skip)]
     pub k_ctl: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
     pub q_ctl: Option<Vec<Vec<Vec<C>>>>,
-    #[serde(skip)]
-    pub k_ctl_rm: Option<Vec<RowMajorMatrix<C>>>,
-    #[serde(skip)]
-    pub q_ctl_rm: Option<Vec<RowMajorMatrix<C>>>,
-
-    pub weights_q_rm: Option<RowMajorMatrix<C>>,
-    pub weights_k_rm: Option<RowMajorMatrix<C>>,
-    pub weights_v_rm: Option<RowMajorMatrix<C>>,
     #[serde(skip)]
     pub batch_size: usize,
     #[serde(skip)]
@@ -140,24 +121,14 @@ impl SparseMaskedAttentionHead {
             gradient: None,
             previous_gradient: None,
             input_batch: None,
-            input_batch_rm: None,
             output_batch: None,
-            output_batch_rm: None,
             padding_mask_batch: None,
             attention_weights_batch: None,
-            attention_weights_batch_rm: None,
             attention_weights_batch_raw: None,
             k_cache: None,
             v_cache: None,
-            k_cache_rm: None,
-            v_cache_rm: None,
             k_ctl: None,
             q_ctl: None,
-            k_ctl_rm: None,
-            q_ctl_rm: None,
-            weights_q_rm: None,
-            weights_k_rm: None,
-            weights_v_rm: None,
             m1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
             v1: vec![vec![Complex::new(0.0, 0.0); cols]; rows],
             time_step: 0,
@@ -166,8 +137,10 @@ impl SparseMaskedAttentionHead {
         }
     }
 
-    fn set_layer_type(&mut self, layer_type: LayerType) {
-        self.layer_type = layer_type;
+    pub fn create_default_attention_layer(rows: usize, cols: usize, layer_type: LayerType, window_size: usize, learning_rate: f64) -> Self {
+        let mut layer = SparseMaskedAttentionHead::new(rows, cols, window_size, learning_rate);
+        layer.layer_type = layer_type;
+        layer
     }
 
     pub fn clear_cache(&mut self) {
@@ -175,579 +148,74 @@ impl SparseMaskedAttentionHead {
         self.v_cache = None;
         self.k_ctl = None;
         self.q_ctl = None;
-
-        self.k_cache_rm = None;
-        self.v_cache_rm = None;
-        self.k_ctl_rm = None;
-        self.q_ctl_rm = None;
-
-        self.attention_weights_batch_rm = None;
-    }
-
-    pub fn create_default_attention_layer(rows: usize, cols: usize, layer_type: LayerType, window_size: usize, learning_rate: f64) -> SparseMaskedAttentionHead {
-        let mut attention_layer: SparseMaskedAttentionHead = SparseMaskedAttentionHead::new(rows, cols, window_size, learning_rate);
-        attention_layer.set_layer_type(layer_type);
-
-        attention_layer
-    }
-}
-
-// Implement BaseLayer for Layer struct
-impl SparseMaskedAttentionHead {
-    fn ensure_weights_cache_rm(&mut self) {
-        let rebuild_q = self.weights_q_rm.is_none()
-            || self
-                .weights_q_rm
-                .as_ref()
-                .is_some_and(|w| w.rows != self.weights_q.len() || w.cols != self.weights_q[0].len());
-        if rebuild_q {
-            self.weights_q_rm = Some(RowMajorMatrix::from_rows(&self.weights_q));
-        }
-        let rebuild_k = self.weights_k_rm.is_none()
-            || self
-                .weights_k_rm
-                .as_ref()
-                .is_some_and(|w| w.rows != self.weights_k.len() || w.cols != self.weights_k[0].len());
-        if rebuild_k {
-            self.weights_k_rm = Some(RowMajorMatrix::from_rows(&self.weights_k));
-        }
-        let rebuild_v = self.weights_v_rm.is_none()
-            || self
-                .weights_v_rm
-                .as_ref()
-                .is_some_and(|w| w.rows != self.weights_v.len() || w.cols != self.weights_v[0].len());
-        if rebuild_v {
-            self.weights_v_rm = Some(RowMajorMatrix::from_rows(&self.weights_v));
-        }
-    }
-
-    pub fn prepare_for_save(&mut self) {
-        self.ensure_weights_cache_rm();
-    }
-
-    fn tail_rows_rm(matrix: &RowMajorMatrix<C>, max_rows: usize) -> RowMajorMatrix<C> {
-        if matrix.rows <= max_rows {
-            return matrix.clone();
-        }
-
-        let start_row = matrix.rows - max_rows;
-        let start = start_row * matrix.cols;
-        let data = matrix.data[start..].to_vec();
-        RowMajorMatrix::from_data(max_rows, matrix.cols, data)
-    }
-
-    fn last_row_rm(matrix: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
-        assert!(matrix.rows > 0);
-        let start = (matrix.rows - 1) * matrix.cols;
-        let data = matrix.data[start..start + matrix.cols].to_vec();
-        RowMajorMatrix::from_data(1, matrix.cols, data)
+        self.attention_weights_batch = None;
+        self.attention_weights_batch_raw = None;
+        self.input_batch = None;
+        self.output_batch = None;
+        self.padding_mask_batch = None;
     }
 
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
         let input_batch_rm_ref = layer_input.get_input_batch_rm_ref();
         let input_batch_ref = layer_input.get_input_batch_ref();
-        let use_rm = input_batch_ref.is_none() && input_batch_rm_ref.is_some();
-
-        if use_rm {
-            let input_batch_rm = input_batch_rm_ref.unwrap();
-            self.ensure_weights_cache_rm();
-            let weights_q_rm = self.weights_q_rm.as_ref().unwrap();
-            let weights_k_rm = self.weights_k_rm.as_ref().unwrap();
-            let weights_v_rm = self.weights_v_rm.as_ref().unwrap();
-
-            let padding_mask_batch: Vec<Vec<u32>> = layer_input.get_padding_mask_batch();
-            // Keep the original mask around; softmax uses row-index masking.
-            self.padding_mask_batch = Some(padding_mask_batch.clone());
-            self.time_step = layer_input.get_time_step();
-            self.batch_size = layer_input.get_batch_size();
-            self.total_valid_tokens = layer_input.get_total_valid_tokens();
-
-            self.input_batch = None;
-            self.output_batch = None;
-            self.k_cache = None;
-            self.v_cache = None;
-            self.k_ctl = None;
-            self.q_ctl = None;
-
-            self.attention_weights_batch = None;
-            self.attention_weights_batch_rm = None;
-
-            self.input_batch_rm = Some(input_batch_rm.to_vec());
-
-            let cache_limit = 2 * self.window_size;
-
-            // Step 1: Compute Q for the entire sequence
-            let q_batch_rm: Vec<RowMajorMatrix<C>> = input_batch_rm.par_iter().map(|input| multiply_complex_rm(input, weights_q_rm)).collect();
-
-            // Step 1b: Trim Q batch for KV-cache inference
-            let mut q_batch_trimmed_rm: Vec<RowMajorMatrix<C>> = if layer_input.get_calculate_k_v_cache() {
-                q_batch_rm.iter().map(|q| Self::tail_rows_rm(q, cache_limit)).collect()
-            } else {
-                q_batch_rm.clone()
-            };
-
-            // Cache pre-CTL Q (will be overwritten if CTL is enabled)
-            self.q_ctl_rm = Some(q_batch_trimmed_rm.clone());
-
-            // Trim padding mask to match trimmed Q tokens
-            let padding_mask_batch_trimmed: Vec<Vec<u32>> = if layer_input.get_calculate_k_v_cache() {
-                padding_mask_batch
-                    .iter()
-                    .map(|mask_seq| {
-                        let seq_len = mask_seq.len();
-                        if seq_len > cache_limit {
-                            mask_seq[seq_len - cache_limit..].to_vec()
-                        } else {
-                            mask_seq.clone()
-                        }
-                    })
-                    .collect()
-            } else {
-                padding_mask_batch.clone()
-            };
-
-            // Steps 2 & 3: Compute/update K/V cache
-            let (k_new_batch_rm, v_new_batch_rm): (Vec<RowMajorMatrix<C>>, Vec<RowMajorMatrix<C>>) =
-                if self.k_cache_rm.is_none() || !layer_input.get_calculate_k_v_cache() {
-                    let k_new: Vec<_> = input_batch_rm.par_iter().map(|input| multiply_complex_rm(input, weights_k_rm)).collect();
-                    let v_new: Vec<_> = input_batch_rm.par_iter().map(|input| multiply_complex_rm(input, weights_v_rm)).collect();
-                    (k_new, v_new)
-                } else {
-                    // In KV-cache inference mode, only compute projections for the newest token.
-                    let k_new: Vec<_> = input_batch_rm
-                        .par_iter()
-                        .map(|input| {
-                            let last = Self::last_row_rm(input);
-                            multiply_complex_rm(&last, weights_k_rm)
-                        })
-                        .collect();
-                    let v_new: Vec<_> = input_batch_rm
-                        .par_iter()
-                        .map(|input| {
-                            let last = Self::last_row_rm(input);
-                            multiply_complex_rm(&last, weights_v_rm)
-                        })
-                        .collect();
-                    (k_new, v_new)
-                };
-
-            let (k_cache_rm, v_cache_rm): (Vec<RowMajorMatrix<C>>, Vec<RowMajorMatrix<C>>) = if layer_input.get_calculate_k_v_cache() {
-                if self.k_cache_rm.is_none() {
-                    self.k_cache_rm = Some(k_new_batch_rm.iter().map(|k| Self::tail_rows_rm(k, cache_limit)).collect());
-                    self.v_cache_rm = Some(v_new_batch_rm.iter().map(|v| Self::tail_rows_rm(v, cache_limit)).collect());
-                } else {
-                    let k_cache = self.k_cache_rm.as_mut().unwrap();
-                    let v_cache = self.v_cache_rm.as_mut().unwrap();
-
-                    for b in 0..k_cache.len() {
-                        let mut new_k = k_cache[b].data.clone();
-                        new_k.extend_from_slice(&k_new_batch_rm[b].data);
-                        let mut new_v = v_cache[b].data.clone();
-                        new_v.extend_from_slice(&v_new_batch_rm[b].data);
-
-                        let total_rows = new_k.len() / k_cache[b].cols;
-                        let keep_rows = total_rows.min(cache_limit);
-                        let start_row = total_rows - keep_rows;
-
-                        k_cache[b] = RowMajorMatrix::from_data(keep_rows, k_cache[b].cols, new_k[start_row * k_cache[b].cols..].to_vec());
-                        v_cache[b] = RowMajorMatrix::from_data(keep_rows, v_cache[b].cols, new_v[start_row * v_cache[b].cols..].to_vec());
-                    }
-                }
-
-                (self.k_cache_rm.as_ref().unwrap().clone(), self.v_cache_rm.as_ref().unwrap().clone())
-            } else {
-                (k_new_batch_rm, v_new_batch_rm)
-            };
-
-            // CTL Q/K (RM)
-            if let Some(ctl_q) = &mut self.ctl_q {
-                let mut local_in = layer_input.clone();
-                local_in.clear_input_batch();
-                local_in.set_input_batch_rm(q_batch_trimmed_rm.clone());
-                let ctl_q_output = ctl_q.forward(&local_in);
-                if let Some(out_rm) = ctl_q_output.get_output_batch_rm_ref() {
-                    q_batch_trimmed_rm = out_rm.to_vec();
-                    self.q_ctl_rm = Some(q_batch_trimmed_rm.clone());
-                } else {
-                    panic!("ComplexToLinearLayer did not return RM output");
-                }
-            }
-
-            let mut k_cache_ctl_rm = k_cache_rm.clone();
-
-            // Cache pre-CTL K (will be overwritten if CTL is enabled)
-            self.k_ctl_rm = Some(k_cache_ctl_rm.clone());
-            if let Some(ctl_k) = &mut self.ctl_k {
-                let mut local_in = layer_input.clone();
-                local_in.clear_input_batch();
-                local_in.set_input_batch_rm(k_cache_ctl_rm.clone());
-                let ctl_k_output = ctl_k.forward(&local_in);
-                if let Some(out_rm) = ctl_k_output.get_output_batch_rm_ref() {
-                    k_cache_ctl_rm = out_rm.to_vec();
-                    self.k_ctl_rm = Some(k_cache_ctl_rm.clone());
-                } else {
-                    panic!("ComplexToLinearLayer did not return RM output");
-                }
-            }
-
-            let batch_output_rm = self.calculated_sparse_masked_attention_rm(&q_batch_trimmed_rm, &k_cache_ctl_rm, &v_cache_rm, &padding_mask_batch_trimmed);
-            self.output_batch_rm = Some(batch_output_rm.clone());
-
-            let mut layer_output = LayerOutput::new_default();
-            layer_output.set_output_batch_rm(batch_output_rm);
-            return layer_output;
+        let rm_only = input_batch_ref.is_none() && input_batch_rm_ref.is_some_and(|rm| !rm.is_empty());
+        if rm_only {
+            panic!("SparseMaskedAttentionHead is Vec-only; use SparseMaskedAttentionHeadRm for RM inputs");
         }
 
-        let input_batch: Vec<Vec<Vec<C>>> = layer_input.get_input_batch();
-        let padding_mask_batch: Vec<Vec<u32>> = layer_input.get_padding_mask_batch();
+        let input_batch = layer_input.get_input_batch();
+        if input_batch.is_empty() {
+            let mut out = LayerOutput::new_default();
+            out.set_output_batch(vec![]);
+            return out;
+        }
 
-        self.input_batch = Some(input_batch.clone());
+        let padding_mask_batch = layer_input.get_padding_mask_batch();
         self.padding_mask_batch = Some(padding_mask_batch.clone());
         self.time_step = layer_input.get_time_step();
         self.batch_size = layer_input.get_batch_size();
         self.total_valid_tokens = layer_input.get_total_valid_tokens();
-        let cache_limit = 2 * self.window_size;
+        self.input_batch = Some(input_batch.clone());
 
-        // Step 1: Compute Q for the entire sequence (all tokens up to current step)
-        let q_batch: Vec<_> = input_batch.par_iter().map(|input| multiply_complex(input, &self.weights_q)).collect();
+        let q_batch: Vec<Vec<Vec<C>>> = input_batch
+            .par_iter()
+            .map(|input| multiply_complex(input, &self.weights_q))
+            .collect();
+        let k_batch: Vec<Vec<Vec<C>>> = input_batch
+            .par_iter()
+            .map(|input| multiply_complex(input, &self.weights_k))
+            .collect();
+        let v_batch: Vec<Vec<Vec<C>>> = input_batch
+            .par_iter()
+            .map(|input| multiply_complex(input, &self.weights_v))
+            .collect();
 
-        // Step 1b: Trim Q batch to last cache_limit tokens for inference to align with KV cache
-        let mut q_batch_trimmed: Vec<Vec<Vec<C>>> = if layer_input.get_calculate_k_v_cache() {
+        // Optional CTL layers
+        let q_ctl_batch: Vec<Vec<Vec<C>>> = if let Some(ctl_q) = self.ctl_q.as_mut() {
+            let mut li = LayerInput::new_default();
+            li.set_input_batch(q_batch.clone());
+            ctl_q.forward(&li).get_output_batch()
+        } else {
             q_batch
-                .iter()
-                .map(|q_seq| {
-                    let seq_len = q_seq.len();
-                    if seq_len > cache_limit {
-                        q_seq[seq_len - cache_limit..].to_vec()
-                    } else {
-                        q_seq.clone()
-                    }
-                })
-                .collect()
-        } else {
-            q_batch.clone()
         };
 
-        // Similarly trim padding mask to align with trimmed Q tokens
-        let padding_mask_batch: Vec<Vec<u32>> = if layer_input.get_calculate_k_v_cache() {
-            padding_mask_batch
-                .iter()
-                .map(|mask_seq| {
-                    let seq_len = mask_seq.len();
-                    if seq_len > cache_limit {
-                        mask_seq[seq_len - cache_limit..].to_vec()
-                    } else {
-                        mask_seq.clone()
-                    }
-                })
-                .collect()
+        let k_ctl_batch: Vec<Vec<Vec<C>>> = if let Some(ctl_k) = self.ctl_k.as_mut() {
+            let mut li = LayerInput::new_default();
+            li.set_input_batch(k_batch.clone());
+            ctl_k.forward(&li).get_output_batch()
         } else {
-            padding_mask_batch.clone()
+            k_batch
         };
 
-        // Steps 2 & 3: Compute K and V for new tokens and update KV cache (your existing logic)
-        let (k_new_batch, v_new_batch): (Vec<_>, Vec<_>) = if self.k_cache.is_none() || !layer_input.get_calculate_k_v_cache() {
-            let k_new_batch: Vec<_> = input_batch.par_iter().map(|input| multiply_complex(input, &self.weights_k)).collect();
-            let v_new_batch: Vec<_> = input_batch.par_iter().map(|input| multiply_complex(input, &self.weights_v)).collect();
-            (k_new_batch, v_new_batch)
-        } else {
-            let k_new_batch: Vec<_> = input_batch.last().map_or(vec![], |input| {
-                input.last().map_or(vec![], |last_token: &Vec<C>| vec![multiply_complex(&vec![last_token.clone()], &self.weights_k)])
-            });
+        self.q_ctl = Some(q_ctl_batch.clone());
+        self.k_ctl = Some(k_ctl_batch.clone());
 
-            let v_new_batch: Vec<_> = input_batch.last().map_or(vec![], |input| {
-                input.last().map_or(vec![], |last_token| vec![multiply_complex(&vec![last_token.clone()], &self.weights_v)])
-            });
+        let output_batch = self.calculated_sparse_masked_attention(q_ctl_batch, k_ctl_batch, v_batch, padding_mask_batch);
+        self.output_batch = Some(output_batch.clone());
 
-            (k_new_batch, v_new_batch)
-        };
-
-        let (mut k_cache, v_cache): (Vec<Vec<Vec<C>>>, Vec<Vec<Vec<C>>>) = if layer_input.get_calculate_k_v_cache() {
-            if self.k_cache.is_none() {
-                self.k_cache = Some(
-                    k_new_batch
-                        .iter()
-                        .map(|k_batch| k_batch.iter().rev().take(cache_limit).cloned().collect::<Vec<_>>().into_iter().rev().collect())
-                        .collect(),
-                );
-
-                self.v_cache = Some(
-                    v_new_batch
-                        .iter()
-                        .map(|v_batch| v_batch.iter().rev().take(cache_limit).cloned().collect::<Vec<_>>().into_iter().rev().collect())
-                        .collect(),
-                );
-            } else {
-                let k_cache = self.k_cache.as_mut().unwrap();
-                let v_cache = self.v_cache.as_mut().unwrap();
-
-                for ((cache_k, new_k), (cache_v, new_v)) in k_cache.iter_mut().zip(&k_new_batch).zip(v_cache.iter_mut().zip(&v_new_batch)) {
-                    cache_k.extend_from_slice(new_k);
-                    cache_v.extend_from_slice(new_v);
-
-                    if cache_k.len() > cache_limit {
-                        let start = cache_k.len() - cache_limit;
-                        *cache_k = cache_k[start..].to_vec();
-                        *cache_v = cache_v[start..].to_vec();
-                    }
-                }
-            }
-            (self.k_cache.as_ref().unwrap().clone(), self.v_cache.as_ref().unwrap().clone())
-        } else {
-            (k_new_batch, v_new_batch)
-        };
-
-        if let Some(ctl_q) = &mut self.ctl_q {
-            let mut layer_input = layer_input.clone();
-            layer_input.set_input_batch(q_batch_trimmed.clone());
-            let ctl_q_output = ctl_q.forward(&layer_input);
-            q_batch_trimmed = ctl_q_output.get_output_batch();
-
-            self.q_ctl = Some(q_batch_trimmed.clone());
-        }
-
-        if let Some(ctl_k) = &mut self.ctl_k {
-            let mut layer_input = layer_input.clone();
-            layer_input.set_input_batch(k_cache.clone());
-            let ctl_k_output = ctl_k.forward(&layer_input);
-            k_cache = ctl_k_output.get_output_batch();
-
-            self.k_ctl = Some(k_cache.clone());
-        }
-
-        // Step 4: Use trimmed Q batch and trimmed padding mask for attention computation
-        let batch_output: Vec<_> = self.calculated_sparse_masked_attention(q_batch_trimmed, k_cache, v_cache, padding_mask_batch);
-        self.output_batch = Some(batch_output.clone());
-
-        let mut layer_output = LayerOutput::new_default();
-        layer_output.set_output_batch(batch_output);
-
-        layer_output
-    }
-
-    pub fn backward_rm(&mut self, previous_gradient_batch_rm: &[RowMajorMatrix<C>]) -> Gradient {
-        self.ensure_weights_cache_rm();
-        let weights_q_rm = self.weights_q_rm.as_ref().unwrap();
-        let weights_k_rm = self.weights_k_rm.as_ref().unwrap();
-        let weights_v_rm = self.weights_v_rm.as_ref().unwrap();
-
-        let input_batch_rm = self
-            .input_batch_rm
-            .as_ref()
-            .expect("Input batch RM is missing in sparse attention head");
-        let padding_mask_batch = self
-            .padding_mask_batch
-            .as_ref()
-            .expect("Padding mask batch is missing in sparse attention head");
-        let attention_weights_batch_rm = self
-            .attention_weights_batch_rm
-            .as_ref()
-            .expect("Attention weights RM batch is missing in sparse attention head");
-
-        let batch_size = previous_gradient_batch_rm.len();
-        assert_eq!(input_batch_rm.len(), batch_size);
-        assert_eq!(attention_weights_batch_rm.len(), batch_size);
-        assert_eq!(padding_mask_batch.len(), batch_size);
-
-        let mut gradient_input_batch_rm: Vec<RowMajorMatrix<C>> = Vec::with_capacity(batch_size);
-        let mut gradient_q_batch: Vec<Vec<Vec<C>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_q[0].len()]; self.weights_q.len()]; batch_size];
-        let mut gradient_k_batch: Vec<Vec<Vec<C>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_k[0].len()]; self.weights_k.len()]; batch_size];
-        let mut gradient_v_batch: Vec<Vec<Vec<C>>> = vec![vec![vec![Complex::new(0.0, 0.0); self.weights_v[0].len()]; self.weights_v.len()]; batch_size];
-
-        let q_ctl_rm = self
-            .q_ctl_rm
-            .as_ref()
-            .expect("Q CTL RM is missing in sparse attention head");
-        let k_ctl_rm = self
-            .k_ctl_rm
-            .as_ref()
-            .expect("K CTL RM is missing in sparse attention head");
-
-        let mut dl_dq_ctl_batch_rm: Vec<RowMajorMatrix<C>> = Vec::with_capacity(batch_size);
-        let mut dl_dk_ctl_batch_rm: Vec<RowMajorMatrix<C>> = Vec::with_capacity(batch_size);
-        let mut dl_dv_batch_rm: Vec<RowMajorMatrix<C>> = Vec::with_capacity(batch_size);
-
-        for b in 0..batch_size {
-            let prev_grad_rm = &previous_gradient_batch_rm[b];
-            let seq_len = prev_grad_rm.rows;
-            let embed_dim = prev_grad_rm.cols;
-
-            let attn_probs_rm = &attention_weights_batch_rm[b];
-            assert_eq!(attn_probs_rm.rows, seq_len);
-
-            let window_width = attn_probs_rm.cols;
-
-            // V used in forward. Prefer cache if present.
-            let v_used_rm: RowMajorMatrix<C> = if let Some(v_cache) = self.v_cache_rm.as_ref() {
-                v_cache[b].clone()
-            } else {
-                multiply_complex_rm(&input_batch_rm[b], weights_v_rm)
-            };
-            assert_eq!(v_used_rm.rows, seq_len);
-            assert_eq!(v_used_rm.cols, embed_dim);
-
-            // dV and dA (sparse, stored as fixed-width RM: seq_len x window_width)
-            let mut dl_dv = RowMajorMatrix::from_data(seq_len, embed_dim, vec![Complex::zero(); seq_len * embed_dim]);
-            let mut dl_da = RowMajorMatrix::from_data(seq_len, window_width, vec![Complex::zero(); seq_len * window_width]);
-
-            for i in 0..seq_len {
-                if padding_mask_batch[b][i] == 0 {
-                    continue;
-                }
-                let (start_ind, end_ind) = calculate_start_end_indices(i, self.window_size, seq_len);
-                let len = end_ind - start_ind;
-                let len = len.min(window_width);
-
-                let do_row = prev_grad_rm.row_range(i);
-
-                for local_pos in 0..len {
-                    let j = start_ind + local_pos;
-                    let w = attn_probs_rm.data[attn_probs_rm.idx(i, local_pos)].re;
-
-                    // dV[j] += w * dO[i]
-                    let dv_row = dl_dv.row_range(j);
-                    for f in 0..embed_dim {
-                        dl_dv.data[dv_row.start + f].re += w * prev_grad_rm.data[do_row.start + f].re;
-                    }
-
-                    // dA[i, local_pos] = dO[i] · V[j]
-                    let v_row = v_used_rm.row_range(j);
-                    let mut dot: Real = 0.0;
-                    for f in 0..embed_dim {
-                        dot += prev_grad_rm.data[do_row.start + f].re * v_used_rm.data[v_row.start + f].re;
-                    }
-                    let a_i = dl_da.idx(i, local_pos);
-                    dl_da.data[a_i] = Complex::new(dot, 0.0);
-                }
-            }
-
-            // Softmax backward: dZ = A * (dA - <A,dA>)
-            let mut dl_dz = RowMajorMatrix::from_data(seq_len, window_width, vec![Complex::zero(); seq_len * window_width]);
-            for i in 0..seq_len {
-                if padding_mask_batch[b][i] == 0 {
-                    continue;
-                }
-                let (start_ind, end_ind) = calculate_start_end_indices(i, self.window_size, seq_len);
-                let len = (end_ind - start_ind).min(window_width);
-
-                let mut dot: Real = 0.0;
-                for local_pos in 0..len {
-                    let a = attn_probs_rm.data[attn_probs_rm.idx(i, local_pos)].re;
-                    let u = dl_da.data[dl_da.idx(i, local_pos)].re;
-                    dot += a * u;
-                }
-
-                for local_pos in 0..len {
-                    let a = attn_probs_rm.data[attn_probs_rm.idx(i, local_pos)].re;
-                    let u = dl_da.data[dl_da.idx(i, local_pos)].re;
-                    let dz_i = i * window_width + local_pos;
-                    dl_dz.data[dz_i] = Complex::new(a * (u - dot), 0.0);
-                }
-            }
-
-            // dQ_ctl and dK_ctl from sparse scores: scores = (Q · K^T) / sqrt(dk)
-            let d_k = k_ctl_rm[b].cols as Real;
-            let scale: Real = r(1.0) / (d_k.sqrt() + r(1e-12));
-            let mut dl_dq_ctl = RowMajorMatrix::from_data(seq_len, q_ctl_rm[b].cols, vec![Complex::zero(); seq_len * q_ctl_rm[b].cols]);
-            let mut dl_dk_ctl = RowMajorMatrix::from_data(seq_len, k_ctl_rm[b].cols, vec![Complex::zero(); seq_len * k_ctl_rm[b].cols]);
-
-            for i in 0..seq_len {
-                if padding_mask_batch[b][i] == 0 {
-                    continue;
-                }
-                let (start_ind, end_ind) = calculate_start_end_indices(i, self.window_size, seq_len);
-                let len = (end_ind - start_ind).min(window_width);
-
-                let q_row = q_ctl_rm[b].row_range(i);
-
-                for local_pos in 0..len {
-                    let j = start_ind + local_pos;
-                    let dz = dl_dz.data[dl_dz.idx(i, local_pos)];
-                    let k_row = k_ctl_rm[b].row_range(j);
-
-                    // dQ[i] += dz * K[j] * scale
-                    let dq_row = dl_dq_ctl.row_range(i);
-                    for f in 0..q_ctl_rm[b].cols {
-                        dl_dq_ctl.data[dq_row.start + f] += dz * (k_ctl_rm[b].data[k_row.start + f] * scale);
-                    }
-
-                    // dK[j] += dz * Q[i] * scale
-                    let dk_row = dl_dk_ctl.row_range(j);
-                    for f in 0..k_ctl_rm[b].cols {
-                        dl_dk_ctl.data[dk_row.start + f] += dz * (q_ctl_rm[b].data[q_row.start + f] * scale);
-                    }
-                }
-            }
-
-            // dWv = X^H * dV
-            let x_h = conjugate_transpose_rm(&input_batch_rm[b]);
-            let d_wv_rm = multiply_complex_rm(&x_h, &dl_dv);
-            gradient_v_batch[b] = d_wv_rm.to_rows();
-
-            dl_dq_ctl_batch_rm.push(dl_dq_ctl);
-            dl_dk_ctl_batch_rm.push(dl_dk_ctl);
-            dl_dv_batch_rm.push(dl_dv);
-
-            let _ = embed_dim;
-        }
-
-        // Backprop through CTL layers (RM)
-        let mut dl_dq_batch_rm: Vec<RowMajorMatrix<C>> = dl_dq_ctl_batch_rm.clone();
-        if self.ctl_q.is_some() {
-            let mut g = Gradient::new_default();
-            g.set_gradient_input_batch_rm(dl_dq_ctl_batch_rm);
-            let ctl_q = self.ctl_q.as_mut().expect("CTL Q is missing");
-            let ctl_q_gradient = ctl_q.backward(&g);
-            dl_dq_batch_rm = ctl_q_gradient.get_gradient_input_batch_rm();
-        }
-
-        let mut dl_dk_batch_rm: Vec<RowMajorMatrix<C>> = dl_dk_ctl_batch_rm.clone();
-        if self.ctl_k.is_some() {
-            let mut g = Gradient::new_default();
-            g.set_gradient_input_batch_rm(dl_dk_ctl_batch_rm);
-            let ctl_k = self.ctl_k.as_mut().expect("CTL K is missing");
-            let ctl_k_gradient = ctl_k.backward(&g);
-            dl_dk_batch_rm = ctl_k_gradient.get_gradient_input_batch_rm();
-        }
-
-        // Parameter grads and input grads
-        for b in 0..batch_size {
-            let dl_dq = &dl_dq_batch_rm[b];
-            let dl_dk = &dl_dk_batch_rm[b];
-
-            let x_h = conjugate_transpose_rm(&input_batch_rm[b]);
-
-            let d_wq_rm = multiply_complex_rm(&x_h, dl_dq);
-            gradient_q_batch[b] = d_wq_rm.to_rows();
-
-            let d_wk_rm = multiply_complex_rm(&x_h, dl_dk);
-            gradient_k_batch[b] = d_wk_rm.to_rows();
-
-            let wq_h = conjugate_transpose_rm(weights_q_rm);
-            let wk_h = conjugate_transpose_rm(weights_k_rm);
-            let wv_h = conjugate_transpose_rm(weights_v_rm);
-
-            let dl_dqx = multiply_complex_rm(dl_dq, &wq_h);
-            let dl_dkx = multiply_complex_rm(dl_dk, &wk_h);
-
-            let dl_dvx = multiply_complex_rm(&dl_dv_batch_rm[b], &wv_h);
-
-            let mut grad_in = dl_dqx;
-            for i in 0..grad_in.data.len() {
-                grad_in.data[i] += dl_dkx.data[i];
-                grad_in.data[i] += dl_dvx.data[i];
-            }
-            gradient_input_batch_rm.push(grad_in);
-        }
-
-        let mut gradient = Gradient::new_default();
-        gradient.set_gradient_weights_v_batch(gradient_v_batch);
-        gradient.set_gradient_weights_q_batch(gradient_q_batch);
-        gradient.set_gradient_weights_k_batch(gradient_k_batch);
-        gradient.set_gradient_input_batch_rm(gradient_input_batch_rm);
-
-        self.gradient = Some(gradient.clone());
-        gradient
+        let mut output = LayerOutput::new_default();
+        output.set_output_batch(output_batch);
+        output
     }
 
     pub fn calculated_sparse_masked_attention(
@@ -790,160 +258,6 @@ impl SparseMaskedAttentionHead {
         self.output_batch = Some(batch_output_compr.clone());
 
         batch_output_compr
-    }
-
-    fn calculated_sparse_masked_attention_rm(
-        &mut self,
-        q_batch: &[RowMajorMatrix<C>],
-        k_batch: &[RowMajorMatrix<C>],
-        v_batch: &[RowMajorMatrix<C>],
-        padding_mask_batch: &[Vec<u32>],
-    ) -> Vec<RowMajorMatrix<C>> {
-        assert_eq!(q_batch.len(), k_batch.len());
-        assert_eq!(q_batch.len(), v_batch.len());
-        assert_eq!(q_batch.len(), padding_mask_batch.len());
-
-        let window_width = 2 * self.window_size + 1;
-
-        let attn_probs_batch_rm: Vec<RowMajorMatrix<C>> = q_batch
-            .par_iter()
-            .enumerate()
-            .map(|(batch_ind, q_rm)| {
-                let logits = self.calculate_local_attention_logits_rm_fixed_window(q_rm, &k_batch[batch_ind], window_width, true);
-                self.softmax_fixed_window_rm(&logits, &padding_mask_batch[batch_ind])
-            })
-            .collect();
-
-        let batch_output_rm: Vec<RowMajorMatrix<C>> = attn_probs_batch_rm
-            .iter()
-            .enumerate()
-            .map(|(batch_ind, probs)| self.multiply_sparse_fixed_window_rm(probs, &v_batch[batch_ind]))
-            .collect();
-
-        self.attention_weights_batch_rm = Some(attn_probs_batch_rm);
-        self.output_batch_rm = Some(batch_output_rm.clone());
-
-        batch_output_rm
-    }
-
-    fn calculate_local_attention_logits_rm_fixed_window(
-        &self,
-        q: &RowMajorMatrix<C>,
-        k: &RowMajorMatrix<C>,
-        window_width: usize,
-        scale_by_dk: bool,
-    ) -> RowMajorMatrix<C> {
-        assert_eq!(q.cols, k.cols);
-        assert_eq!(q.rows, k.rows);
-
-        let seq_len = q.rows;
-        let d_k_sqrt: Real = (q.cols as Real).sqrt() + r(1e-12);
-        let inv_scale: Real = if scale_by_dk { r(1.0) / d_k_sqrt } else { r(1.0) };
-
-        let neg_inf = Complex::new(Real::NEG_INFINITY, Real::NEG_INFINITY);
-        let mut logits = RowMajorMatrix::from_data(seq_len, window_width, vec![neg_inf; seq_len * window_width]);
-
-        for i in 0..seq_len {
-            let (start_ind, end_ind) = calculate_start_end_indices(i, self.window_size, seq_len);
-            let len = (end_ind - start_ind).min(window_width);
-
-            let q_row = q.row_range(i);
-            for local_pos in 0..len {
-                let j = start_ind + local_pos;
-                if j > i {
-                    // causal mask
-                    continue;
-                }
-                let k_row = k.row_range(j);
-                let mut sum = Complex::zero();
-                for f in 0..q.cols {
-                    sum += q.data[q_row.start + f] * k.data[k_row.start + f];
-                }
-                sum *= inv_scale;
-                let logits_i = i * window_width + local_pos;
-                logits.data[logits_i] = sum;
-            }
-        }
-
-        logits
-    }
-
-    fn softmax_fixed_window_rm(&self, logits: &RowMajorMatrix<C>, padding_mask: &Vec<u32>) -> RowMajorMatrix<C> {
-        assert_eq!(logits.rows, padding_mask.len());
-        let seq_len = logits.rows;
-        let window_width = logits.cols;
-
-        let mut out = RowMajorMatrix::from_data(seq_len, window_width, vec![Complex::zero(); seq_len * window_width]);
-
-        for i in 0..seq_len {
-            if padding_mask[i] == 0 {
-                continue;
-            }
-
-            let row = logits.row_range(i);
-            let mut max_re = Real::NEG_INFINITY;
-            for local_pos in 0..window_width {
-                let v = logits.data[row.start + local_pos].re;
-                if v.is_finite() {
-                    max_re = max_re.max(v);
-                }
-            }
-
-            if !max_re.is_finite() {
-                // All masked: keep zeros
-                continue;
-            }
-
-            let mut sum: Real = r(0.0);
-            for local_pos in 0..window_width {
-                let v = logits.data[row.start + local_pos].re;
-                if v.is_finite() {
-                    sum += (v - max_re).exp();
-                }
-            }
-
-            if sum <= r(0.0) {
-                continue;
-            }
-
-            for local_pos in 0..window_width {
-                let v = logits.data[row.start + local_pos].re;
-                if v.is_finite() {
-                    let p = (v - max_re).exp() / sum;
-                    let out_i = i * window_width + local_pos;
-                    out.data[out_i] = Complex::new(p, r(0.0));
-                }
-            }
-        }
-
-        out
-    }
-
-    fn multiply_sparse_fixed_window_rm(&self, attention_probs: &RowMajorMatrix<C>, v: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
-        let seq_len = attention_probs.rows;
-        let window_width = attention_probs.cols;
-        let embedding_dim = v.cols;
-        assert_eq!(v.rows, seq_len);
-
-        let mut out = RowMajorMatrix::from_data(seq_len, embedding_dim, vec![Complex::zero(); seq_len * embedding_dim]);
-
-        for i in 0..seq_len {
-            let (start_ind, end_ind) = calculate_start_end_indices(i, self.window_size, seq_len);
-            let len = (end_ind - start_ind).min(window_width);
-
-            for k_col in 0..embedding_dim {
-                let mut acc: Real = r(0.0);
-                for local_pos in 0..len {
-                    let j = start_ind + local_pos;
-                    let w = attention_probs.data[attention_probs.idx(i, local_pos)].re;
-                    acc += w * v.data[v.idx(j, k_col)].re;
-                }
-                let out_i = i * embedding_dim + k_col;
-                out.data[out_i] = Complex::new(acc, r(0.0));
-            }
-        }
-
-        out
     }
 
     pub fn multiply_sparse(&self, attention_sparse_weights: &Vec<Vec<C>>, v: &Vec<Vec<C>>) -> Vec<Vec<C>> {
@@ -1292,18 +606,6 @@ impl SparseMaskedAttentionHead {
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<C>>>) -> Gradient {
         if self.input_batch.is_none() {
-            if self.input_batch_rm.is_some() {
-                let previous_gradient_batch_rm: Vec<RowMajorMatrix<C>> = previous_gradient_batch
-                    .iter()
-                    .map(|rows| RowMajorMatrix::from_rows(rows))
-                    .collect();
-
-                let mut gradient = self.backward_rm(&previous_gradient_batch_rm);
-                let legacy_gx: Vec<Vec<Vec<C>>> = gradient.get_gradient_input_batch_rm().iter().map(|m| m.to_rows()).collect();
-                gradient.set_gradient_input_batch(legacy_gx);
-                return gradient;
-            }
-
             let mut gradient = Gradient::new_default();
             gradient.set_gradient_input_batch(vec![]);
             gradient.set_gradient_input_batch_rm(vec![]);
@@ -1516,11 +818,6 @@ impl SparseMaskedAttentionHead {
         gradient.set_prev_v_weights_v_hat(prev_v_weights_v_hat);
 
         self.previous_gradient = Some(gradient.clone());
-
-        // weights changed; invalidate RM caches
-        self.weights_q_rm = None;
-        self.weights_k_rm = None;
-        self.weights_v_rm = None;
 
         self.gradient = None;
     }

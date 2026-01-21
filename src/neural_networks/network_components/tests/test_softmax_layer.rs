@@ -3,7 +3,7 @@ mod test_softmax_layer {
     use crate::{
         neural_networks::{
             network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
-            network_layers::{linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer},
+            network_layers::{linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer, softmax_output_layer_rm::SoftmaxLayerRm},
             network_types::{
                 neural_network_generic::OperationMode,
                 transformer::{
@@ -30,7 +30,7 @@ mod test_softmax_layer {
     #[test]
     fn test_softmax_layer_forward_rm_smoke() {
         let learning_rate = 0.01;
-        let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, OperationMode::TRAINING, 0);
+        let mut softmax_layer: SoftmaxLayerRm = SoftmaxLayerRm::new(learning_rate, OperationMode::TRAINING, 0);
 
         let batch_size = 1;
         let seq_len = 4;
@@ -47,7 +47,7 @@ mod test_softmax_layer {
         layer_input.clear_input_batch();
         layer_input.set_input_batch_rm(vec![logits_rm]);
 
-        let _ = softmax_layer.forward_rm(&layer_input, Some(padding_mask_batch), Some(target_token_id_batch));
+        let _ = softmax_layer.forward(&layer_input, Some(padding_mask_batch), Some(target_token_id_batch));
 
         let grad = softmax_layer.gradient.as_ref().expect("Softmax gradient missing");
         let gr_rm = grad.get_gradient_input_batch_rm();

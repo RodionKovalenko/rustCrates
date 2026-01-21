@@ -186,10 +186,6 @@ impl MaskedAttentionHead {
         }
     }
 
-    pub fn prepare_for_save(&mut self) {
-        self.ensure_weights_cache_rm();
-    }
-
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
         let input_batch_rm_ref = layer_input.get_input_batch_rm_ref();
         let input_batch_ref = layer_input.get_input_batch_ref();

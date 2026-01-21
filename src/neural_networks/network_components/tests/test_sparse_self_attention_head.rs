@@ -9,6 +9,7 @@ mod test_sparse_self_attention_head {
             neural_network_generic::OperationMode,
             transformer::{
                 sparse_masked_attention_head::{calculate_window_tokens, calculate_window_tokens_batch, SparseMaskedAttentionHead},
+                sparse_masked_attention_head_rm::SparseMaskedAttentionHeadRm,
                 transformer_network::cross_entropy_sum_batch,
             },
         },
@@ -367,7 +368,7 @@ mod test_sparse_self_attention_head {
         let feature_dim = 8;
         let learning_rate = 0.0001;
 
-        let mut attention_head_layer: SparseMaskedAttentionHead = SparseMaskedAttentionHead::new(feature_dim, feature_dim, 2, learning_rate);
+        let mut attention_head_layer: SparseMaskedAttentionHeadRm = SparseMaskedAttentionHeadRm::new(feature_dim, feature_dim, 2, learning_rate);
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; seq_len]; batch_size];
 
         let input_batch_vec: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, seq_len, feature_dim);
@@ -395,6 +396,5 @@ mod test_sparse_self_attention_head {
 
         // Also ensure we cached RM attention weights for RM backward.
         assert!(attention_head_layer.attention_weights_batch_rm.is_some());
-        assert!(attention_head_layer.attention_weights_batch.is_none());
     }
 }

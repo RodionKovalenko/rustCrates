@@ -1,7 +1,7 @@
 use num::Complex;
 use num_traits::Float;
 
-use crate::neural_networks::utils::dtype::{r, C, Real, ZERO};
+use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
 
 pub static B_1: f64 = 0.9;
 pub static B_2: f64 = 0.999;
@@ -17,15 +17,7 @@ pub fn is_nan_or_inf<T: Float>(c: &Complex<T>) -> bool {
     c.re.is_nan() || c.re.is_infinite() || c.im.is_nan() || c.im.is_infinite() || ns.is_nan() || ns.is_infinite() || ns > T::from(1e10).unwrap()
 }
 
-pub fn calculate_adam_w(
-    weights: &mut Vec<Vec<C>>,
-    weight_gradients: &Vec<Vec<C>>,
-    prev_m: &mut Vec<Vec<C>>,
-    prev_v: &mut Vec<Vec<C>>,
-    prev_v_hat: &mut Vec<Vec<C>>,
-    learning_rate: f64,
-    t: usize,
-) {
+pub fn calculate_adam_w(weights: &mut Vec<Vec<C>>, weight_gradients: &Vec<Vec<C>>, prev_m: &mut Vec<Vec<C>>, prev_v: &mut Vec<Vec<C>>, prev_v_hat: &mut Vec<Vec<C>>, learning_rate: f64, t: usize) {
     if weight_gradients.is_empty() || weight_gradients[0].is_empty() {
         return;
     }
@@ -40,10 +32,10 @@ pub fn calculate_adam_w(
     for i in 0..weights.len() {
         for j in 0..weights[i].len() {
             if i >= weight_gradients.len() || j >= weight_gradients[i].len() {
-                continue;
+                panic!("Index out of bounds in adam w weights: i={}, j={}", i, j);
             }
             if i >= prev_m.len() || j >= prev_m[i].len() || i >= prev_v.len() || j >= prev_v[i].len() || i >= prev_v_hat.len() || j >= prev_v_hat[i].len() {
-                continue;
+                panic!("Index out of bounds in adam w weights: i={}, j={}", i, j);
             }
 
             let g = weight_gradients[i][j];
@@ -77,16 +69,9 @@ pub fn calculate_adam_w(
         }
     }
 }
+
 // AdamW optimizer for complex biases (vector)
-pub fn calculate_adam_w_bias(
-    bias: &mut Vec<C>,
-    gradient: &Vec<C>,
-    prev_m: &mut Vec<C>,
-    prev_v: &mut Vec<C>,
-    prev_v_hat: &mut Vec<C>,
-    learning_rate: f64,
-    time_step: usize,
-) {
+pub fn calculate_adam_w_bias(bias: &mut Vec<C>, gradient: &Vec<C>, prev_m: &mut Vec<C>, prev_v: &mut Vec<C>, prev_v_hat: &mut Vec<C>, learning_rate: f64, time_step: usize) {
     if gradient.is_empty() {
         return;
     }

@@ -9,7 +9,11 @@ mod test_sparse_self_attention_layer {
         network_layers::{feedforward_layer::FeedForwardLayer, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer, wavelet_complex_layer::ComplexWaveletLayer},
         network_types::{
             neural_network_generic::OperationMode,
-            transformer::{sparse_self_attention_layer::SparseSelfAttentionLayer, transformer_network::cross_entropy_sum_batch},
+            transformer::{
+                sparse_self_attention_layer::SparseSelfAttentionLayer,
+                sparse_self_attention_layer_rm::SparseSelfAttentionLayerRm,
+                transformer_network::cross_entropy_sum_batch,
+            },
         },
         utils::{
             derivative::{global_relative_error_2d_l2, numerical_gradient_input_batch, numerical_gradient_weights, test_gradient_error_2d},
@@ -382,7 +386,7 @@ mod test_sparse_self_attention_layer {
         let num_attention_heads = 4;
         let partition_shift = 2;
 
-        let mut attention_layer: SparseSelfAttentionLayer = SparseSelfAttentionLayer::new(num_attention_heads, feature_dim, feature_dim, partition_shift, learning_rate);
+        let mut attention_layer: SparseSelfAttentionLayerRm = SparseSelfAttentionLayerRm::new(num_attention_heads, feature_dim, feature_dim, partition_shift, learning_rate);
 
         let input_batch_vec: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, seq_len, feature_dim);
         let input_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = input_batch_vec.iter().map(|m| RowMajorMatrix::from_rows(m)).collect();

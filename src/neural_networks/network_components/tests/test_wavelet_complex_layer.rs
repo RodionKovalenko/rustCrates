@@ -3,7 +3,12 @@ mod test_wavelet_layer {
     use crate::{
         neural_networks::{
             network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
-            network_layers::{linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer, wavelet_complex_layer::ComplexWaveletLayer},
+            network_layers::{
+                linear_layer::LinearLayer,
+                softmax_output_layer::SoftmaxLayer,
+                wavelet_complex_layer::ComplexWaveletLayer,
+                wavelet_complex_layer_rm::ComplexWaveletLayerRm,
+            },
             network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch},
             utils::{
                 derivative::{
@@ -281,7 +286,7 @@ mod test_wavelet_layer {
 
     #[test]
     fn test_wavelet_layer_rm_forward_backward_smoke() {
-        let mut wavelet_layer: ComplexWaveletLayer = ComplexWaveletLayer::new();
+        let mut wavelet_layer: ComplexWaveletLayerRm = ComplexWaveletLayerRm::new();
 
         // 1 batch, 2 rows, 3 cols
         let input_rm = vec![RowMajorMatrix::from_data(
