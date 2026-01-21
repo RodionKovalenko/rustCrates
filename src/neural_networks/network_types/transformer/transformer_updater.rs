@@ -28,6 +28,10 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                     max_weight(&gradient.get_gradient_input());
                 }
             }
+            LayerEnum::EmbeddingRm(_embedding_layer) => {
+                // RM embedding gradients live in gradient_input_batch_rm; this updater currently
+                // normalizes only legacy Vec gradient batches, so leave RM gradients unchanged.
+            }
             LayerEnum::Norm(norm_layer) => {
                 gradient = norm_layer.gradient.as_mut().expect("No gradient found");
 
@@ -812,6 +816,21 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                     max_bias(&gradient.get_gradient_bias());
                 }
             }
+            LayerEnum::LinearRm(linear_layer) => {
+                gradient = linear_layer.gradient.as_mut().expect("No gradient found");
+
+                global_weights.push(gradient.get_gradient_weights());
+                global_biases.push(gradient.get_gradient_bias());
+
+                let mut weight_gradient_batch = gradient.get_gradient_weight_batch();
+                let mut bias_gradient_batch = gradient.get_gradient_bias_batch();
+
+                normalize_gradients_batch(&mut weight_gradient_batch);
+                normalize_gradients(&mut bias_gradient_batch);
+
+                gradient.set_gradient_weight_batch(weight_gradient_batch);
+                gradient.set_gradient_bias_batch(bias_gradient_batch);
+            }
             LayerEnum::SparseLinear(sparse_linear_layer) => {
                 gradient = sparse_linear_layer.gradient.as_mut().expect("No gradient found");
 
@@ -881,6 +900,17 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
                 gradient.set_gradient_weight_batch(weight_gradient_batch_1);
                 gradient.set_gradient_weight_2_batch(weight_gradient_batch_2);
             }
+            LayerEnum::ComplexToLinearRm(ctl_layer) => {
+                gradient = ctl_layer.gradient.as_mut().expect("No gradient found");
+                let mut weight_gradient_batch_1 = gradient.get_gradient_weight_batch();
+                let mut weight_gradient_batch_2 = gradient.get_gradient_weight_2_batch();
+
+                normalize_gradients_batch(&mut weight_gradient_batch_1);
+                normalize_gradients_batch(&mut weight_gradient_batch_2);
+
+                gradient.set_gradient_weight_batch(weight_gradient_batch_1);
+                gradient.set_gradient_weight_2_batch(weight_gradient_batch_2);
+            }
             LayerEnum::Softmax(_softmax_layer) => {
                 if VERBOSE && SHOW_MAX_PARAMS {
                     println!("softmax layer - no parameters to update");
@@ -904,6 +934,9 @@ pub fn update_transformer(transformer_network: &mut NeuralNetwork, target_batch_
         match layer {
             LayerEnum::AdaptiveAvgPool1d(_adaptive_pooling) => {}
             LayerEnum::Embedding(embedding_layer) => {
+                embedding_layer.update_parameters(&target_batch_ids, transformer_network.learning_rate);
+            }
+            LayerEnum::EmbeddingRm(embedding_layer) => {
                 embedding_layer.update_parameters(&target_batch_ids, transformer_network.learning_rate);
             }
             LayerEnum::PositionalEncoding(_positional_encoding_layer) => {}
@@ -938,6 +971,9 @@ pub fn update_transformer(transformer_network: &mut NeuralNetwork, target_batch_
             LayerEnum::Linear(linear_layer) => {
                 linear_layer.update_parameters();
             }
+            LayerEnum::LinearRm(linear_layer) => {
+                linear_layer.update_parameters();
+            }
             LayerEnum::SparseLinear(sparse_linear_layer) => {
                 sparse_linear_layer.update_parameters();
             }
@@ -953,6 +989,9 @@ pub fn update_transformer(transformer_network: &mut NeuralNetwork, target_batch_
                 wavelet_layer.update_parameters();
             }
             LayerEnum::ComplexToLinear(ctl_layer) => {
+                ctl_layer.update_parameters();
+            }
+            LayerEnum::ComplexToLinearRm(ctl_layer) => {
                 ctl_layer.update_parameters();
             }
             LayerEnum::Softmax(_softmax_layer) => {

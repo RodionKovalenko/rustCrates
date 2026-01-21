@@ -132,7 +132,6 @@ impl EmbeddingLayer {
         let max_token_len = token_input_ids_batch.iter().map(|seq| seq.len()).max().unwrap_or(0);
         // max_token_len = max_token_len - target_batch_ids.len();
 
-        //println!("token input before padding: {:?}", &token_input_ids_batch);
         // Initialize a new vector to hold padded sequences
         let mut token_input_ids_padded: Vec<Vec<u32>> = Vec::new();
         let mut padding_mask_batch: Vec<Vec<u32>> = Vec::new();
