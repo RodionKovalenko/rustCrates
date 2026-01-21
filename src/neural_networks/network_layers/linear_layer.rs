@@ -131,7 +131,7 @@ impl LinearLayer {
 
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
         let input_batch: Vec<Vec<Vec<C>>> = input.get_input_batch();
-        let input_batch_rm_ref = input.get_input_batch_rm_ref();
+        let input_batch_rm_ref = input.get_input_batch_rm_ref().filter(|rm| !rm.is_empty());
 
         self.time_step = input.get_time_step();
         self.batch_size = input.get_batch_size();
@@ -142,13 +142,7 @@ impl LinearLayer {
         } else {
             self.input_batch = None;
         }
-        if let Some(rm) = input_batch_rm_ref {
-            if !rm.is_empty() {
-                self.input_batch_rm = Some(rm.to_vec());
-            }
-        } else {
-            self.input_batch_rm = None;
-        }
+        self.input_batch_rm = input_batch_rm_ref.map(|rm| rm.to_vec());
 
         let mut output_indices: Vec<Vec<Vec<usize>>> = vec![];
 
@@ -221,13 +215,13 @@ impl LinearLayer {
             self.ensure_weights_cache();
         }
 
-        let input_batch_vec = self.input_batch.as_ref();
-        let input_batch_rm = self.input_batch_rm.as_ref();
+        let input_batch_vec = self.input_batch.as_ref().filter(|b| !b.is_empty());
+        let input_batch_rm = self.input_batch_rm.as_ref().filter(|b| !b.is_empty());
         let mut gradient = Gradient::new_default();
 
         let total_valid_tokens = previous_gradient.get_total_valid_tokens();
         let previous_gradient_input_batch: Vec<Vec<Vec<C>>> = previous_gradient.get_gradient_input_batch();
-        let previous_gradient_rm_ref = previous_gradient.get_gradient_input_batch_rm_ref();
+        let previous_gradient_rm_ref = previous_gradient.get_gradient_input_batch_rm_ref().filter(|rm| !rm.is_empty());
 
         if input_batch_vec.is_none() && input_batch_rm.is_none() {
             gradient.set_gradient_input_batch(vec![]);

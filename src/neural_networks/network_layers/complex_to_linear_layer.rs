@@ -7,7 +7,7 @@ use crate::neural_networks::{
     utils::{
         adam_w::calculate_adam_w,
         dtype::{r, Real, C, ZERO},
-        matrix::{average_matrix_by_scalar, RowMajorMatrix},
+        matrix::average_matrix_by_scalar,
         weights_initializer::initialize_weights_complex_only_real,
     },
 };
@@ -29,8 +29,6 @@ pub struct ComplexToLinearLayer {
     pub gradients_bias: Vec<Vec<C>>,
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<C>>>>,
-    #[serde(skip)]
-    pub input_batch_rm: Option<Vec<RowMajorMatrix<C>>>,
     #[serde(skip)]
     pub gradient: Option<Gradient>,
     #[serde(skip)]
@@ -54,7 +52,6 @@ impl ComplexToLinearLayer {
             gradients: vec![],
             gradients_bias: vec![],
             input_batch: None,
-            input_batch_rm: None,
             gradient: None,
             previous_gradient: None,
             time_step: 0,
@@ -69,104 +66,65 @@ impl ComplexToLinearLayer {
         self.time_step = input.get_time_step();
         self.batch_size = input.get_batch_size();
 
-        let input_batch_rm_ref: Option<&[RowMajorMatrix<C>]> = input.get_input_batch_rm_ref();
-        let use_rm = input_batch_rm_ref.is_some_and(|rm| !rm.is_empty());
+        let has_vec_input = input.has_non_empty_input_batch();
+        let has_rm_input = input.has_non_empty_input_batch_rm();
 
-        // In rm_strict mode, never call get_input_batch() if RM activations exist (it would require RM->Vec conversion).
-        let input_batch: Vec<Vec<Vec<C>>> = if use_rm { vec![] } else { input.get_input_batch() };
+        // LayerInput can carry an RM cache even for Vec inputs. Only treat it as an error when
+        // Vec input is absent but RM input is present.
+        if !has_vec_input && has_rm_input {
+            panic!("ComplexToLinearLayer (Vec) received RM-only input; use ComplexToLinearLayerRm");
+        }
 
-        // Store whichever representation was provided so backward can avoid reshaping.
-        if !input_batch.is_empty() {
-            self.input_batch = Some(input_batch.clone());
-        } else {
+        if !has_vec_input {
+            let mut layer_output = LayerOutput::new_default();
+            layer_output.set_output_batch(vec![]);
+            layer_output.set_output_batch_rm(vec![]);
             self.input_batch = None;
+            return layer_output;
         }
-        if let Some(rm) = input_batch_rm_ref {
-            if !rm.is_empty() {
-                self.input_batch_rm = Some(rm.to_vec());
-            } else {
-                self.input_batch_rm = None;
-            }
-        } else {
-            self.input_batch_rm = None;
-        }
+
+        let input_batch: Vec<Vec<Vec<C>>> = input
+            .get_input_batch_ref()
+            .expect("ComplexToLinearLayer (Vec): expected Vec input")
+            .to_vec();
+        self.input_batch = Some(input_batch.clone());
 
         let in_f = self.weights_1.len();
         let out_f = self.weights_1[0].len();
 
-        let output_batch_rm: Vec<RowMajorMatrix<C>> = if let Some(input_batch_rm) = input_batch_rm_ref {
-            if !input_batch_rm.is_empty() {
-                input_batch_rm
-                    .par_iter()
-                    .map(|input_rm| {
-                        assert_eq!(input_rm.cols, in_f);
-                        let time = input_rm.rows;
-                        let mut out = RowMajorMatrix::from_data(time, out_f, vec![C::new(ZERO, ZERO); time * out_f]);
-
-                        for t in 0..time {
-                            let in_row = input_rm.row_range(t);
-                            for f in 0..out_f {
-                                let mut sum_real: Real = ZERO;
-                                for k in 0..in_f {
-                                    let x = input_rm.data[in_row.start + k];
-                                    sum_real += x.re * self.weights_1[k][f].re + x.im * self.weights_2[k][f].re;
-                                }
-                                let out_i = out.idx(t, f);
-                                out.data[out_i] = C::new(sum_real, ZERO);
-                            }
-                        }
-
-                        out
-                    })
-                    .collect()
-            } else {
-                vec![]
-            }
-        } else {
-            input_batch
-                .par_iter()
-                .map(|input_rows| {
-                    let input_rm = RowMajorMatrix::from_rows(input_rows);
-                    assert_eq!(input_rm.cols, in_f);
-                    let time = input_rm.rows;
-                    let mut out = RowMajorMatrix::from_data(time, out_f, vec![C::new(ZERO, ZERO); time * out_f]);
-
-                    for t in 0..time {
-                        let in_row = input_rm.row_range(t);
+        let output_batch: Vec<Vec<Vec<C>>> = input_batch
+            .par_iter()
+            .map(|input_rows| {
+                input_rows
+                    .iter()
+                    .map(|input_row| {
+                        let mut out_row = vec![C::new(ZERO, ZERO); out_f];
                         for f in 0..out_f {
                             let mut sum_real: Real = ZERO;
                             for k in 0..in_f {
-                                let x = input_rm.data[in_row.start + k];
+                                let x = input_row[k];
                                 sum_real += x.re * self.weights_1[k][f].re + x.im * self.weights_2[k][f].re;
                             }
-                            let out_i = out.idx(t, f);
-                            out.data[out_i] = C::new(sum_real, ZERO);
+                            out_row[f] = C::new(sum_real, ZERO);
                         }
-                    }
+                        out_row
+                    })
+                    .collect()
+            })
+            .collect();
 
-                    out
-                })
-                .collect()
-        };
-
-        // Preserve legacy output when the legacy input representation is used.
-        // If the caller provides only row-major inputs, we avoid allocating a nested Vec<Vec<...>> output.
-        let need_legacy_output = !input_batch.is_empty();
         let mut layer_output = LayerOutput::new_default();
-        if need_legacy_output {
-            let output_batch: Vec<Vec<Vec<C>>> = output_batch_rm.iter().map(|m| m.to_rows()).collect();
-            layer_output.set_output_batch(output_batch);
-        }
-        layer_output.set_output_batch_rm(output_batch_rm);
+        layer_output.set_output_batch(output_batch);
+        layer_output.set_output_batch_rm(vec![]);
         layer_output
     }
 
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
         let total_valid_tokens = previous_gradient.get_total_valid_tokens();
         let input_batch_vec = self.input_batch.as_ref().filter(|b| !b.is_empty());
-        let input_batch_rm = self.input_batch_rm.as_ref().filter(|b| !b.is_empty());
-        if input_batch_vec.is_none() && input_batch_rm.is_none() {
+        if input_batch_vec.is_none() {
             let mut gradient = Gradient::new_default();
+            gradient.set_gradient_input_batch(vec![]);
             gradient.set_gradient_input_batch_rm(vec![]);
             gradient.set_gradient_weight_batch(vec![]);
             gradient.set_gradient_weight_2_batch(vec![]);
@@ -175,21 +133,40 @@ impl ComplexToLinearLayer {
             return gradient;
         }
 
-        let previous_gradient_rm_ref = previous_gradient.get_gradient_input_batch_rm_ref().filter(|rm| !rm.is_empty());
-        let previous_gradient_input_batch: Vec<Vec<Vec<C>>> = previous_gradient.get_gradient_input_batch();
+        let has_prev_vec_grad = previous_gradient
+            .get_gradient_input_batch_ref()
+            .is_some_and(|b| !b.is_empty());
+        let has_prev_rm_grad = previous_gradient
+            .get_gradient_input_batch_rm_ref()
+            .is_some_and(|b| !b.is_empty());
 
-        // Prefer non-empty row-major inputs; fall back to legacy Vec.
-        let batch_len = if let Some(b) = input_batch_rm { b.len() } else { input_batch_vec.expect("vec batch").len() };
+        // Gradients may also carry RM caches; only error when Vec gradients are absent.
+        if !has_prev_vec_grad && has_prev_rm_grad {
+            panic!("ComplexToLinearLayer (Vec) received RM-only gradient; use ComplexToLinearLayerRm");
+        }
+
+        let previous_gradient_input_batch: Vec<Vec<Vec<C>>> = previous_gradient
+            .get_gradient_input_batch_ref()
+            .expect("ComplexToLinearLayer (Vec): expected Vec previous gradient")
+            .to_vec();
+
+        let batch_len = input_batch_vec.expect("vec batch").len();
 
         let in_f = self.weights_1.len();
         let out_f = self.weights_1[0].len();
 
         let mut grad_w1 = vec![vec![vec![C::new(ZERO, ZERO); out_f]; in_f]; batch_len];
         let mut grad_w2 = vec![vec![vec![C::new(ZERO, ZERO); out_f]; in_f]; batch_len];
-        let mut gradient_input_batch_rm: Vec<RowMajorMatrix<C>> = Vec::with_capacity(batch_len);
+        let mut gradient_input_batch: Vec<Vec<Vec<C>>> = vec![vec![vec![C::new(ZERO, ZERO); in_f]; 0]; 0];
+
+        if batch_len > 0 {
+            let time = input_batch_vec.expect("vec batch")[0].len();
+            gradient_input_batch = vec![vec![vec![C::new(ZERO, ZERO); in_f]; time]; batch_len];
+        }
 
         if batch_len == 0 {
             let mut gradient = Gradient::new_default();
+            gradient.set_gradient_input_batch(vec![]);
             gradient.set_gradient_input_batch_rm(vec![]);
             gradient.set_gradient_weight_batch(vec![]);
             gradient.set_gradient_weight_2_batch(vec![]);
@@ -198,8 +175,9 @@ impl ComplexToLinearLayer {
             return gradient;
         }
 
-        if previous_gradient_rm_ref.is_none() && previous_gradient_input_batch.is_empty() {
+        if previous_gradient_input_batch.is_empty() {
             let mut gradient = Gradient::new_default();
+            gradient.set_gradient_input_batch(vec![]);
             gradient.set_gradient_input_batch_rm(vec![]);
             gradient.set_gradient_weight_batch(vec![]);
             gradient.set_gradient_weight_2_batch(vec![]);
@@ -209,64 +187,25 @@ impl ComplexToLinearLayer {
         }
 
         for batch_ind in 0..batch_len {
-            let input_rm: RowMajorMatrix<C> = if let Some(rm_batch) = input_batch_rm {
-                if let Some(rm) = rm_batch.get(batch_ind) {
-                    rm.clone()
-                } else if let Some(vec_batch) = input_batch_vec {
-                    RowMajorMatrix::from_rows(&vec_batch[batch_ind])
-                } else {
-                    let mut gradient = Gradient::new_default();
-                    gradient.set_gradient_input_batch_rm(vec![]);
-                    gradient.set_gradient_weight_batch(vec![]);
-                    gradient.set_gradient_weight_2_batch(vec![]);
-                    gradient.set_total_valid_tokens(total_valid_tokens);
-                    self.gradient = Some(gradient.clone());
-                    return gradient;
-                }
-            } else {
-                let input_sample = &input_batch_vec.expect("vec batch")[batch_ind];
-                RowMajorMatrix::from_rows(input_sample)
-            };
+            let input_sample = &input_batch_vec.expect("vec batch")[batch_ind];
+            let grad_sample = &previous_gradient_input_batch[batch_ind];
 
-            let grad_rm: RowMajorMatrix<C> = if let Some(grads_rm) = previous_gradient_rm_ref {
-                if let Some(rm) = grads_rm.get(batch_ind) {
-                    rm.clone()
-                } else if !previous_gradient_input_batch.is_empty() {
-                    RowMajorMatrix::from_rows(&previous_gradient_input_batch[batch_ind])
-                } else {
-                    let mut gradient = Gradient::new_default();
-                    gradient.set_gradient_input_batch_rm(vec![]);
-                    gradient.set_gradient_weight_batch(vec![]);
-                    gradient.set_gradient_weight_2_batch(vec![]);
-                    gradient.set_total_valid_tokens(total_valid_tokens);
-                    self.gradient = Some(gradient.clone());
-                    return gradient;
-                }
-            } else {
-                RowMajorMatrix::from_rows(&previous_gradient_input_batch[batch_ind])
-            };
+            assert_eq!(input_sample[0].len(), in_f);
+            assert_eq!(grad_sample[0].len(), out_f);
+            assert_eq!(input_sample.len(), grad_sample.len());
 
-            assert_eq!(input_rm.cols, in_f);
-            assert_eq!(grad_rm.cols, out_f);
-            assert_eq!(input_rm.rows, grad_rm.rows);
-
-            let time = input_rm.rows;
-            let mut gx_rm = RowMajorMatrix::from_data(time, in_f, vec![C::new(ZERO, ZERO); time * in_f]);
-
+            let time = input_sample.len();
             for t in 0..time {
-                let in_row = input_rm.row_range(t);
-                let g_row = grad_rm.row_range(t);
+                let input_row = &input_sample[t];
+                let g_row = &grad_sample[t];
                 for f in 0..out_f {
-                    let g = grad_rm.data[g_row.start + f].re;
+                    let g = g_row[f].re;
                     for k in 0..in_f {
-                        let x = input_rm.data[in_row.start + k];
+                        let x = input_row[k];
 
                         // input gradients
-                        let gi = gx_rm.idx(t, k);
-                        let mut cur = gx_rm.data[gi];
-                        cur.re += g * self.weights_1[k][f].re;
-                        cur.im += g * self.weights_2[k][f].re;
-                        gx_rm.data[gi] = cur;
+                        gradient_input_batch[batch_ind][t][k].re += g * self.weights_1[k][f].re;
+                        gradient_input_batch[batch_ind][t][k].im += g * self.weights_2[k][f].re;
 
                         // weight gradients
                         grad_w1[batch_ind][k][f].re += x.re * g;
@@ -274,17 +213,11 @@ impl ComplexToLinearLayer {
                     }
                 }
             }
-
-            gradient_input_batch_rm.push(gx_rm);
         }
 
         let mut gradient = Gradient::new_default();
-        let legacy_mode = self.input_batch.is_some();
-        if legacy_mode {
-            let gradient_input_batch: Vec<Vec<Vec<C>>> = gradient_input_batch_rm.iter().map(|m| m.to_rows()).collect();
-            gradient.set_gradient_input_batch(gradient_input_batch);
-        }
-        gradient.set_gradient_input_batch_rm(gradient_input_batch_rm);
+        gradient.set_gradient_input_batch(gradient_input_batch);
+        gradient.set_gradient_input_batch_rm(vec![]);
         gradient.set_gradient_weight_batch(grad_w1);
         gradient.set_gradient_weight_2_batch(grad_w2);
         gradient.set_total_valid_tokens(total_valid_tokens);
