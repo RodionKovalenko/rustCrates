@@ -17,7 +17,6 @@ use crate::neural_networks::network_components::layer_input_struct::LayerInput;
 use crate::neural_networks::network_layers::wavelet_network::{DECOMPOSITION_LEVELS, decompose_in_wavelet_2d_default};
 use crate::neural_networks::utils::dtype::{c_from_f64, c_to_f64, r, C, ONE, Real, ZERO};
 use crate::neural_networks::utils::matrix::{clip_all_gradients_by_global_norm_3d, is_nan_or_inf};
-use crate::neural_networks::utils::matrix::RowMajorMatrix;
 
 use std::sync::RwLock;
 
@@ -229,65 +228,6 @@ impl EmbeddingLayer {
 
         (token_ids_output, _padding_mask)
     }
-
-    /// Row-major version of `forward` that avoids nested Vec allocations.
-    pub fn forward_rm(&mut self, layer_input: &LayerInput) -> (Vec<RowMajorMatrix<C>>, Vec<Vec<u32>>) {
-        let token_input_ids: Vec<Vec<u32>> = layer_input.get_batch_ids();
-        let target_batch_ids = layer_input.get_target_batch_ids();
-        let db: &Db = get_db_embedding();
-        self.time_step = layer_input.get_time_step();
-        self.batch_size = token_input_ids.len();
-
-        let (token_input_batch_padded, padding_mask) = EmbeddingLayer::apply_padding_to_batch(&token_input_ids, &target_batch_ids);
-        let embedding_dim = self.embedding_dim;
-
-        let cache_ref = &self.cache;
-
-        let batch_rm: Vec<RowMajorMatrix<C>> = token_input_batch_padded
-            .par_iter()
-            .map(|token_ids| {
-                let seq_len = token_ids.len();
-            let mut data: Vec<C> = Vec::with_capacity(seq_len * embedding_dim);
-
-                for &id in token_ids {
-                    if let Ok(cache) = cache_ref.read() {
-                        if let Some(embedding) = cache.get(&id) {
-                            data.extend_from_slice(embedding);
-                            continue;
-                        }
-                    }
-
-                    let token_embedding = if id == 1 {
-                        vec![C::new(ZERO, ZERO); embedding_dim]
-                    } else {
-                        let mut token_embedding = Self::get_embedding(&db, id).unwrap_or_else(|err| {
-                            panic!("Error retrieving embedding for token {}: {}", id, err);
-                        });
-
-                        if token_embedding.len() != self.embedding_dim {
-                            let mut rng = rand::rngs::ThreadRng::default();
-                            let base_2: i32 = 2;
-                            token_embedding = Self::create_embedding(&db, embedding_dim * base_2.pow(DECOMPOSITION_LEVELS) as usize, &mut rng, id);
-                        }
-
-                        assert_eq!(token_embedding.len(), self.embedding_dim);
-
-                        if let Ok(mut cache) = cache_ref.write() {
-                            cache.insert(id, token_embedding.clone());
-                        }
-
-                        token_embedding
-                    };
-
-                    data.extend_from_slice(&token_embedding);
-                }
-
-                RowMajorMatrix::from_data(seq_len, embedding_dim, data)
-            })
-            .collect();
-
-        (batch_rm, padding_mask)
-    }
     // Update embeddings using gradients
     pub fn backward(&mut self, previous_gradients: &Vec<Vec<Vec<C>>>) -> Gradient {
         let mut gradient = Gradient::new_default();
@@ -298,48 +238,30 @@ impl EmbeddingLayer {
         gradient
     }
 
-    pub fn backward_rm(&mut self, previous_gradients_rm: &[RowMajorMatrix<C>]) -> Gradient {
-        let mut gradient = Gradient::new_default();
-        gradient.set_gradient_input_batch_rm(previous_gradients_rm.to_vec());
-
-        self.gradient = Some(gradient.clone());
-
-        gradient
-    }
-
     pub fn update_parameters(&mut self, token_id_batches: &[Vec<u32>], learning_rate: f64) {
         let db: &Db = get_db_embedding();
         let gradient: &Gradient = self.gradient.as_ref().expect("Output batch is missing in dense layer");
 
-        // Prefer RM gradients when present to avoid conversions.
-        let previous_gradients_rm_ref = gradient.get_gradient_input_batch_rm_ref();
-        let has_rm = previous_gradients_rm_ref.is_some_and(|g| !g.is_empty());
+        // Vec-only layer: RM-only gradients must be handled by EmbeddingLayerRm.
+        let previous_gradients_rm_ref = gradient.get_gradient_input_batch_rm_ref().filter(|g| !g.is_empty());
+        let previous_gradients: Vec<Vec<Vec<C>>> = gradient.get_gradient_input_batch();
+        if previous_gradients.is_empty() && previous_gradients_rm_ref.is_some() {
+            panic!("EmbeddingLayer received RM-only gradients; use EmbeddingLayerRm");
+        }
 
         let mut batch_size: Real = if self.batch_size > 0 {
             r(self.batch_size as f64)
-        } else if has_rm {
-            r(previous_gradients_rm_ref.unwrap().len() as f64)
         } else {
-            r(gradient.get_gradient_input_batch().len() as f64)
+            r(previous_gradients.len() as f64)
         };
 
         if batch_size <= ZERO {
             batch_size = ONE;
         }
 
-        let mut previous_gradients: Vec<Vec<Vec<C>>> = Vec::new();
-        if !has_rm {
-            previous_gradients = gradient.get_gradient_input_batch();
-            let mut dummy_bias: Vec<C> = Vec::new();
-            clip_all_gradients_by_global_norm_3d(&mut previous_gradients, &mut dummy_bias, self.global_norm, self.max_norm);
-        }
-
-        // Mirror clip_all_gradients_by_global_norm_3d behavior for RM gradients (scale by 1/total_norm).
-        let clip_scale_rm: Real = if has_rm && self.global_norm > self.max_norm {
-            r(1.0 / self.global_norm)
-        } else {
-            ONE
-        };
+        let mut previous_gradients = previous_gradients;
+        let mut dummy_bias: Vec<C> = Vec::new();
+        clip_all_gradients_by_global_norm_3d(&mut previous_gradients, &mut dummy_bias, self.global_norm, self.max_norm);
 
         // let max = previous_gradients.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
         // println!("max in backward embedding layer gradient batch: {:?}", max);
@@ -353,13 +275,7 @@ impl EmbeddingLayer {
 
                 // SGD update
                 for j in 0..self.embedding_dim {
-                    let grad_val: C = if has_rm {
-                        let gr_rm = previous_gradients_rm_ref.unwrap();
-                        let row = gr_rm[batch_idx].row_range(i);
-                        gr_rm[batch_idx].data[row.start + j] * clip_scale_rm
-                    } else {
-                        previous_gradients[batch_idx][i][j]
-                    };
+                    let grad_val: C = previous_gradients[batch_idx][i][j];
 
                     if is_nan_or_inf(&grad_val) {
                         panic!("gradient in embedding is invalid, contains NaN or infinity values: {:?}", &grad_val);

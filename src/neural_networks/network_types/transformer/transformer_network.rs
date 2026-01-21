@@ -537,7 +537,8 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
 
                 // Prefer RM embeddings when the downstream path supports RM.
                 if next_supports_rm {
-                    let (embeddings_rm, padding_m) = embedding_layer.forward_rm(&layer_input);
+                    let (embeddings, padding_m) = embedding_layer.forward(&layer_input);
+                    let embeddings_rm = embeddings.iter().map(|m| RowMajorMatrix::from_rows(m)).collect();
                     output_rm = Some(embeddings_rm);
                     output = None;
                     padding_mask = Some(padding_m.clone());
@@ -552,6 +553,25 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
 
                 //println!("time elapsed in seconds in embedding: {:?}", (now.elapsed() - seconds_elapsed).as_secs_f64());
                 // println!("padding mask: {:?}", &padding_mask);
+            }
+            LayerEnum::EmbeddingRm(embedding_layer) => {
+                layer_input.set_batch_ids(batch_ids.clone());
+
+                let (embeddings_rm, padding_m) = embedding_layer.forward(&layer_input);
+                padding_mask = Some(padding_m.clone());
+                layer_input.set_padding_mask_batch(padding_m);
+
+                if next_supports_rm {
+                    output_rm = Some(embeddings_rm);
+                    output = None;
+                } else {
+                    if layer_input.get_rm_strict() {
+                        panic!("RM strict mode violation: EmbeddingRm would need RM->Vec conversion for downstream Vec layer");
+                    }
+                    let embeddings = embeddings_rm.iter().map(|m| m.to_rows()).collect();
+                    output = Some(embeddings);
+                    output_rm = None;
+                }
             }
             LayerEnum::PositionalEncoding(positional_encoding_layer) => {
                 if VERBOSE {
@@ -1602,13 +1622,30 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                 if let Some(previous_gradient) = gradient {
                     // println!("backward embedding start");
                     let start = Instant::now();
-                    let gradient_batch: Gradient = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
-                        embedding_layer.backward_rm(gr_rm)
+                    let grad_vec: Vec<Vec<Vec<C>>> = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref().filter(|g| !g.is_empty()) {
+                        gr_rm.iter().map(|m| m.to_rows()).collect()
                     } else {
-                        embedding_layer.backward(&previous_gradient.get_gradient_input_batch())
+                        previous_gradient.get_gradient_input_batch()
                     };
+                    let gradient_batch: Gradient = embedding_layer.backward(&grad_vec);
                     if VERBOSE {
                         println!("time elapsed in seconds in embedding layer backward: {}", start.elapsed().as_secs_f64());
+                    }
+                    gradient = Some(gradient_batch);
+                } else {
+                    println!("No previous gradient in Token Embedding Layer");
+                }
+            }
+            LayerEnum::EmbeddingRm(embedding_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    let start = Instant::now();
+                    let gr_rm = previous_gradient
+                        .get_gradient_input_batch_rm_ref()
+                        .filter(|g| !g.is_empty())
+                        .expect("EmbeddingRm expects RM gradients");
+                    let gradient_batch: Gradient = embedding_layer.backward(gr_rm);
+                    if VERBOSE {
+                        println!("time elapsed in seconds in embedding_rm layer backward: {}", start.elapsed().as_secs_f64());
                     }
                     gradient = Some(gradient_batch);
                 } else {
