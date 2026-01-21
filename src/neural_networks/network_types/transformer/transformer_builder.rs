@@ -2,10 +2,15 @@ use crate::neural_networks::{
     network_layers::{
         complex_to_linear_layer::ComplexToLinearLayer,
         embedding_layer::EmbeddingLayer,
-        feedforward_layer_rm::FeedForwardLayerRm,
         layer::LayerEnum,
-        norm_layer_rm::NormalNormLayerRm,
-        positional_encoding_layer_rm::PositionalEncodingLayerRm, softmax_output_layer_rm::SoftmaxLayerRm, sparse_linear_layer_rm::SparseLinearLayerRm, wavelet_network::DECOMPOSITION_LEVELS,
+        network_layers_rm::{
+            feedforward_layer_rm::FeedForwardLayerRm,
+            norm_layer_rm::NormalNormLayerRm,
+            positional_encoding_layer_rm::PositionalEncodingLayerRm,
+            softmax_output_layer_rm::SoftmaxLayerRm,
+            sparse_linear_layer_rm::SparseLinearLayerRm,
+        },
+        wavelet_network::DECOMPOSITION_LEVELS,
     },
     network_types::{
         neural_network_generic::{create, NeuralNetwork, OperationMode},

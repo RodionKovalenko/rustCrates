@@ -755,10 +755,12 @@ pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
                 println!("linear_rm layer weights: {}x{}", linear_layer.weights.rows, linear_layer.weights.cols);
             }
             LayerEnum::SparseLinear(sparse_linear_layer) => {
-                println!("sparse linear layer weigths: {} {}", sparse_linear_layer.weights.len(), sparse_linear_layer.weights[0].len());
+                let (r, c) = sparse_linear_layer.weights.dims();
+                println!("sparse linear layer weigths: {}x{}", r, c);
             }
             LayerEnum::SparseLinearRm(sparse_linear_layer) => {
-                println!("sparse linear_rm layer weigths: {} {}", sparse_linear_layer.weights.len(), sparse_linear_layer.weights[0].len());
+                let (r, c) = sparse_linear_layer.weights.dims();
+                println!("sparse linear_rm layer weigths: {}x{}", r, c);
             }
             LayerEnum::MultiLinear(multilinear_layer) => {
                 println!("multilinear layers: {} ", multilinear_layer.layers.len());

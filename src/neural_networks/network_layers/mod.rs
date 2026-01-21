@@ -15,11 +15,6 @@ pub mod performer;
 pub mod performer_complex;
 pub mod complex_to_linear_layer;
 pub mod sparse_linear_layer;
+pub mod tied_sparse_embeddings;
 
 pub mod network_layers_rm;
-
-// Re-export RM layers at the old module paths for compatibility.
-pub use network_layers_rm::{
-	embedding_layer_rm, feedforward_layer_rm, layer_rm, linear_layer_rm, norm_layer_rm, positional_encoding_layer_rm, softmax_output_layer_rm, sparse_linear_layer_rm,
-	complex_to_linear_layer_rm, wavelet_complex_layer_rm, wavelet_discrete_layer_rm,
-};

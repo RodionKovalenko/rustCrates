@@ -3,7 +3,11 @@ mod test_softmax_layer {
     use crate::{
         neural_networks::{
             network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
-            network_layers::{linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer, softmax_output_layer_rm::SoftmaxLayerRm},
+            network_layers::{
+                linear_layer::LinearLayer,
+                softmax_output_layer::SoftmaxLayer,
+                network_layers_rm::softmax_output_layer_rm::SoftmaxLayerRm,
+            },
             network_types::{
                 neural_network_generic::OperationMode,
                 transformer::{
@@ -54,10 +58,7 @@ mod test_softmax_layer {
         assert_eq!(gr_rm.len(), 1);
         assert_eq!(gr_rm[0].rows, seq_len);
         assert_eq!(gr_rm[0].cols, vocab_dim);
-        assert!(
-            grad.get_gradient_input_batch_ref().is_none(),
-            "RM forward should not populate Vec gradient storage in this smoke test"
-        );
+        assert!(grad.get_gradient_input_batch_ref().is_none(), "RM forward should not populate Vec gradient storage in this smoke test");
     }
 
     #[test]

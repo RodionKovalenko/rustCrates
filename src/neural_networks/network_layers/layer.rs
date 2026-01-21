@@ -3,19 +3,21 @@ use crate::neural_networks::{
     network_layers::{
         adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer,
         complex_to_linear_layer::ComplexToLinearLayer,
-        complex_to_linear_layer_rm::ComplexToLinearLayerRm,
         feedforward_layer::FeedForwardLayer,
-        feedforward_layer_rm::FeedForwardLayerRm,
-        embedding_layer_rm::EmbeddingLayerRm,
-        layer_rm::LayerRm,
-        linear_layer_rm::LinearLayerRm,
+        network_layers_rm::{
+            complex_to_linear_layer_rm::ComplexToLinearLayerRm,
+            embedding_layer_rm::EmbeddingLayerRm,
+            feedforward_layer_rm::FeedForwardLayerRm,
+            layer_rm::LayerRm,
+            linear_layer_rm::LinearLayerRm,
+            sparse_linear_layer_rm::SparseLinearLayerRm,
+            wavelet_complex_layer_rm::ComplexWaveletLayerRm,
+            wavelet_discrete_layer_rm::DiscreteWaveletLayerRm,
+        },
         multi_linear_layer::MultiLinearLayer,
         sparse_linear_layer::SparseLinearLayer,
-        sparse_linear_layer_rm::SparseLinearLayerRm,
         wavelet_complex_layer::ComplexWaveletLayer,
-        wavelet_complex_layer_rm::ComplexWaveletLayerRm,
         wavelet_discrete_layer::DiscreteWaveletLayer,
-        wavelet_discrete_layer_rm::DiscreteWaveletLayerRm,
     },
     network_types::transformer::{
         self_attention_layer::SelfAttentionLayer,
@@ -42,9 +44,13 @@ use serde::{Deserialize, Serialize};
 use crate::neural_networks::utils::dtype::{r, Real, C, ONE, ZERO};
 
 use super::{
-    add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, linear_layer::LinearLayer, norm_layer::NormalNormLayer, norm_layer_rm::NormalNormLayerRm,
-    positional_encoding_layer::PositionalEncodingLayer, positional_encoding_layer_rm::PositionalEncodingLayerRm, softmax_output_layer::SoftmaxLayer,
-    softmax_output_layer_rm::SoftmaxLayerRm,
+    add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, linear_layer::LinearLayer, norm_layer::NormalNormLayer,
+    network_layers_rm::{
+        norm_layer_rm::NormalNormLayerRm,
+        positional_encoding_layer_rm::PositionalEncodingLayerRm,
+        softmax_output_layer_rm::SoftmaxLayerRm,
+    },
+    positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer,
 };
 
 impl Default for ActivationType {

@@ -2,8 +2,7 @@ use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     network_layers::{
         layer::{LayerEnum, LayerType},
-        layer_rm::LayerRm,
-        norm_layer_rm::NormalNormLayerRm,
+        network_layers_rm::{layer_rm::LayerRm, norm_layer_rm::NormalNormLayerRm},
     },
     network_types::transformer::transformer_updater::calculate_alpha,
     utils::{

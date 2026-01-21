@@ -7,7 +7,7 @@ mod test_wavelet_layer {
                 linear_layer::LinearLayer,
                 softmax_output_layer::SoftmaxLayer,
                 wavelet_complex_layer::ComplexWaveletLayer,
-                wavelet_complex_layer_rm::ComplexWaveletLayerRm,
+                network_layers_rm::wavelet_complex_layer_rm::ComplexWaveletLayerRm,
             },
             network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch},
             utils::{

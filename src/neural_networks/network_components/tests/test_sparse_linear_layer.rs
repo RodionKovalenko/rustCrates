@@ -65,11 +65,11 @@ mod test_sparse_linear_layer {
         let (grouped_linear_gradient, analytical_gradient_bias) = (gradient_sparse_linear.get_gradient_weights(), gradient_sparse_linear.get_gradient_bias());
         let gradient_input_batch = gradient_sparse_linear.get_gradient_input_batch();
 
-        let linear_weights = sparse_linear_layer.weights.clone();
+        let linear_weights = sparse_linear_layer.weights.to_vec();
 
         // Define the loss function
         let mut loss_fn = |_input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<f32>>| -> Complex<f64> {
-            sparse_linear_layer.weights = weights.clone();
+            *sparse_linear_layer.weights.write() = weights.clone();
             layer_input.set_input_batch(_input.clone());
 
             let complex_to_linear_output = complex_to_linear_layer.forward(&layer_input);
@@ -113,7 +113,7 @@ mod test_sparse_linear_layer {
 
         // TEST BIAS
         let linear_bias = sparse_linear_layer.bias.clone();
-        sparse_linear_layer.weights = linear_weights;
+        *sparse_linear_layer.weights.write() = linear_weights.clone();
 
         // Define the loss function
         let mut loss_fn = |_input: &Vec<Vec<Vec<Complex<f64>>>>, bias: &Vec<f32>| -> Complex<f64> {

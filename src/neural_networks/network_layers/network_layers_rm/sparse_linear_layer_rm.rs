@@ -1,6 +1,8 @@
 use core::fmt::Debug;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 use crate::neural_networks::{
     network_components::{
@@ -14,13 +16,14 @@ use crate::neural_networks::{
         adam_w::{calculate_adam_w_bias_f32_sparse, calculate_adam_w_f32_sparse},
         dtype::{r, C, Real, ZERO},
         matrix::{average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, RowMajorMatrix},
+        shared_f32_matrix::SharedF32Matrix,
         weights_initializer::initialize_weights_f32,
     },
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SparseLinearLayerRm {
-    pub weights: Vec<Vec<f32>>,
+    pub weights: SharedF32Matrix,
     pub previous_weights: Vec<Vec<f32>>,
     pub learning_rate: f64,
     pub bias: Vec<f32>,
@@ -52,6 +55,10 @@ pub struct SparseLinearLayerRm {
     pub batch_size: usize,
     #[serde(skip)]
     pub output_indices: Option<Vec<Vec<Vec<usize>>>>,
+
+    /// When set, this layer will also apply gradients accumulated by a tied embedding layer.
+    #[serde(skip)]
+    pub tied_embedding_grad_by_token: Option<Arc<RwLock<HashMap<usize, Vec<C>>>>>,
 }
 
 pub const TOP_K_SELECTION: usize = 300;
@@ -68,6 +75,7 @@ impl SparseLinearLayerRm {
 
         let (centroids, assignments, cluster_to_tokens) = kmeans(&mut weights, n_clusters, 100, threshold);
         let previous_weights: Vec<Vec<f32>> = weights.clone();
+        let weights = SharedF32Matrix::new(weights);
 
         Self {
             weights,
@@ -91,14 +99,23 @@ impl SparseLinearLayerRm {
             max_norm: 0.0,
             last_cluster_update_step: 0,
             output_indices: None,
+            tied_embedding_grad_by_token: None,
         }
+    }
+
+    /// Enable weight tying with an embedding layer.
+    pub fn enable_weight_tying(&mut self) -> Arc<RwLock<HashMap<usize, Vec<C>>>> {
+        let acc = Arc::new(RwLock::new(HashMap::new()));
+        self.tied_embedding_grad_by_token = Some(acc.clone());
+        acc
     }
 
     pub fn update_centroids(&mut self, epoch: usize) {
         let tau = self.tau_schedule(epoch);
         let max_gap = self.max_update_gap(epoch);
 
-        let drifted = self.needs_cluster_update(&self.weights, &self.previous_weights, tau);
+        let weights_guard = self.weights.read();
+        let drifted = self.needs_cluster_update(&weights_guard, &self.previous_weights, tau);
         let time_forced = epoch > 5 && epoch.saturating_sub(self.last_cluster_update_step) >= max_gap;
 
         if drifted || time_forced {
@@ -108,13 +125,15 @@ impl SparseLinearLayerRm {
             );
 
             let threshold = 0.001;
-            let (centroids, assignments, cluster_to_tokens) = kmeans(&mut self.weights, self.n_clusters, 100, threshold);
+            drop(weights_guard);
+            let mut w = self.weights.write();
+            let (centroids, assignments, cluster_to_tokens) = kmeans(&mut *w, self.n_clusters, 100, threshold);
 
             self.centroids = centroids;
             self.assignments = assignments;
             self.cluster_to_tokens = cluster_to_tokens;
 
-            self.previous_weights = self.weights.clone();
+            self.previous_weights = self.weights.read().clone();
             self.last_cluster_update_step = epoch;
         }
     }
@@ -173,7 +192,7 @@ impl SparseLinearLayerRm {
 
         let mut layer_output = LayerOutput::new_default();
 
-        let (output_batch_rm, output_indices) = self.mutliply_hightest_k_per_row_rm(input_batch_rm_ref, input);
+        let (output_batch_rm, output_indices) = self.mutliply_hightest_k_per_row_rm(input_batch_rm_ref, input, self.weights.clone());
 
         if VERBOSE {
             println!(
@@ -238,7 +257,9 @@ impl SparseLinearLayerRm {
             return gradient;
         }
 
-        let mut weight_gradients: Vec<Vec<Vec<C>>> = vec![vec![vec![C::new(ZERO, ZERO); self.weights[0].len()]; self.weights.len()]; batch_len];
+        let weights_guard = self.weights.read();
+
+        let mut weight_gradients: Vec<Vec<Vec<C>>> = vec![vec![vec![C::new(ZERO, ZERO); weights_guard[0].len()]; weights_guard.len()]; batch_len];
         let mut bias_gradients: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); self.bias.len()]; batch_len];
         let mut gradient_input_batch_rm: Vec<RowMajorMatrix<C>> =
             vec![RowMajorMatrix::from_data(seq_len, embedding_d, vec![C::new(ZERO, ZERO); seq_len * embedding_d]); batch_len];
@@ -264,7 +285,7 @@ impl SparseLinearLayerRm {
                 for k_idx in 0..grad_row.len().min(idx_row.len()).min(k) {
                     let grad_val = grad_row[k_idx];
                     let vocab_idx = idx_row[k_idx];
-                    if vocab_idx >= self.weights.len() {
+                    if vocab_idx >= weights_guard.len() {
                         continue;
                     }
 
@@ -274,7 +295,7 @@ impl SparseLinearLayerRm {
                     bias_gradients[batch_idx][vocab_idx] += grad_val;
 
                     let out_in_row = gradient_input_batch_rm[batch_idx].row_range(seq_idx);
-                    for (emb_idx, &w) in self.weights[vocab_idx].iter().enumerate() {
+                    for (emb_idx, &w) in weights_guard[vocab_idx].iter().enumerate() {
                         gradient_input_batch_rm[batch_idx].data[out_in_row.start + emb_idx] += C::new(r(w as f64), ZERO) * grad_val;
                     }
                 }
@@ -357,7 +378,12 @@ impl SparseLinearLayerRm {
         }
     }
 
-    pub fn mutliply_hightest_k_per_row_rm(&mut self, input_batch_rm: &[RowMajorMatrix<C>], layer_input: &LayerInput) -> (Vec<RowMajorMatrix<C>>, Vec<Vec<Vec<usize>>>) {
+    pub fn mutliply_hightest_k_per_row_rm(
+        &mut self,
+        input_batch_rm: &[RowMajorMatrix<C>],
+        layer_input: &LayerInput,
+        weights: SharedF32Matrix,
+    ) -> (Vec<RowMajorMatrix<C>>, Vec<Vec<Vec<usize>>>) {
         let target_batch = &layer_input.get_target_batch_ids();
         let k = layer_input.get_top_k_size();
         let padding_mask_batch = layer_input.get_padding_mask_batch();
@@ -367,6 +393,7 @@ impl SparseLinearLayerRm {
             .par_iter()
             .enumerate()
             .map(|(batch_idx, input_sample)| {
+                let weights_guard = weights.read();
                 let offset = Self::calculate_target_offset(batch_idx, target_batch, &padding_mask_batch);
                 let seq_len = input_sample.rows;
                 let embedding_d = input_sample.cols;
@@ -394,7 +421,7 @@ impl SparseLinearLayerRm {
                     let mut top_k = Vec::with_capacity(k + 1);
                     let mut target_pos = None;
                     for &col_idx in &selected_indices {
-                        let sum = Self::compute_output(input_row, &self.weights[col_idx], self.bias[col_idx]);
+                        let sum = Self::compute_output(input_row, &weights_guard[col_idx], self.bias[col_idx]);
                         let is_target = target_id == Some(col_idx);
                         Self::update_topk(&mut top_k, sum.re, sum, col_idx, is_target, &mut target_pos, k);
                     }
@@ -421,11 +448,30 @@ impl SparseLinearLayerRm {
     }
 
     pub fn update_parameters(&mut self) {
-        let used_indices = self.collect_used_indices();
+        let mut used_indices = self.collect_used_indices();
 
         let gradient: &mut Gradient = self.gradient.as_mut().expect("No Gradient found in sparse linear layer");
         let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
         let total_valid_tokens = gradient.get_total_valid_tokens();
+
+        // Merge in embedding-side gradients when weights are tied.
+        if let Some(acc) = &self.tied_embedding_grad_by_token {
+            let mut acc_lock = acc.write().expect("tied grad accumulator poisoned");
+            for (token_idx, grad_vec) in acc_lock.drain() {
+                if token_idx >= weight_gradients.len() {
+                    continue;
+                }
+                used_indices.push(token_idx);
+                let row = &mut weight_gradients[token_idx];
+                let n = row.len().min(grad_vec.len());
+                for j in 0..n {
+                    row[j] += grad_vec[j];
+                }
+            }
+        }
+
+        used_indices.sort_unstable();
+        used_indices.dedup();
 
         let total_valid_tokens: Real = r(total_valid_tokens.max(1) as f64);
         weight_gradients = average_matrix_by_scalar(&weight_gradients, total_valid_tokens);
@@ -446,12 +492,13 @@ impl SparseLinearLayerRm {
                     previous_gradient.get_prev_v_bias_hat(),
                 )
             } else {
+                let (rows, cols) = self.weights.dims();
                 (
                     vec![C::new(ZERO, ZERO); self.bias.len()],
                     vec![C::new(ZERO, ZERO); self.bias.len()],
-                    vec![vec![C::new(ZERO, ZERO); self.weights[0].len()]; self.weights.len()],
-                    vec![vec![C::new(ZERO, ZERO); self.weights[0].len()]; self.weights.len()],
-                    vec![vec![C::new(ZERO, ZERO); self.weights[0].len()]; self.weights.len()],
+                    vec![vec![C::new(ZERO, ZERO); cols]; rows],
+                    vec![vec![C::new(ZERO, ZERO); cols]; rows],
+                    vec![vec![C::new(ZERO, ZERO); cols]; rows],
                     vec![C::new(ZERO, ZERO); self.bias.len()],
                 )
             };
@@ -466,8 +513,9 @@ impl SparseLinearLayerRm {
             time_step,
             &used_indices,
         );
+        let mut w = self.weights.write();
         calculate_adam_w_f32_sparse(
-            &mut self.weights,
+            &mut *w,
             &weight_gradients,
             &mut prev_m_weights,
             &mut prev_v_weights,

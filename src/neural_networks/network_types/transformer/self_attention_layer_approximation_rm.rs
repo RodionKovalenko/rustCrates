@@ -7,7 +7,7 @@ use crate::neural_networks::{
     network_layers::{
         add_rms_norm_layer::RMSNormLayer,
         layer::{LayerEnum, LayerType},
-        norm_layer_rm::NormalNormLayerRm,
+        network_layers_rm::norm_layer_rm::NormalNormLayerRm,
     },
     network_types::transformer::masked_attention_head_approximation::MaskedAttentionHeadApproximation,
     utils::matrix::RowMajorMatrix,

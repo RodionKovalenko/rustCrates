@@ -1,6 +1,6 @@
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
-    network_layers::norm_layer_rm::NormalNormLayerRm,
+    network_layers::{network_layers_rm::norm_layer_rm::NormalNormLayerRm},
     utils::{
         dtype::{r, C, Real, ZERO},
         matrix::RowMajorMatrix,

@@ -6,9 +6,7 @@ use crate::{
     neural_networks::network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     neural_networks::utils::dtype::{c_from_f64, c_to_f64, real_from_f64, C},
     wavelet_transform::{
-        cwt_complex::{
-            cwt_2d, cwt_2d_full, get_wavelet_derivative, get_wavelet_derivative_full, wavefun_complex, CWTComplex,
-        },
+        cwt_complex::{cwt_2d, cwt_2d_full, get_wavelet_derivative, get_wavelet_derivative_full, wavefun_complex, CWTComplex},
         cwt_types::ContinuousWaletetType,
     },
 };

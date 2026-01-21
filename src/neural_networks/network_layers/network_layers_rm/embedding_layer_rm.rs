@@ -16,6 +16,7 @@ use crate::neural_networks::network_components::{gradient_struct::Gradient, laye
 use crate::neural_networks::network_layers::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
 use crate::neural_networks::utils::dtype::{c_from_f64, c_to_f64, r, C, ONE, Real, ZERO};
 use crate::neural_networks::utils::matrix::{is_nan_or_inf, RowMajorMatrix};
+use crate::neural_networks::utils::shared_f32_matrix::SharedF32Matrix;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingLayerRm {
@@ -35,6 +36,10 @@ pub struct EmbeddingLayerRm {
     #[serde(skip)]
     pub cache: Arc<RwLock<HashMap<u32, Vec<C>>>>,
     #[serde(skip)]
+    pub tied_weights: Option<SharedF32Matrix>,
+    #[serde(skip)]
+    pub tied_grad_by_token: Option<Arc<RwLock<HashMap<usize, Vec<C>>>>>,
+    #[serde(skip)]
     pub batch_size: usize,
 }
 
@@ -42,6 +47,15 @@ pub const EMBEDDING_PATH: &str = "embedding";
 pub const FILE_NAME: &str = "embedding_layer.json";
 
 impl EmbeddingLayerRm {
+    pub fn set_tied_weights(&mut self, weights: SharedF32Matrix, grad_by_token: Arc<RwLock<HashMap<usize, Vec<C>>>>) {
+        self.tied_weights = Some(weights);
+        self.tied_grad_by_token = Some(grad_by_token);
+    }
+
+    pub fn is_tied(&self) -> bool {
+        self.tied_weights.is_some() && self.tied_grad_by_token.is_some()
+    }
+
     pub fn new(vocab_size: usize, embedding_dim: usize) -> Self {
         let mut rng: rand::prelude::ThreadRng = rand::rng();
         let db: &Db = get_db_embedding();
@@ -64,6 +78,8 @@ impl EmbeddingLayerRm {
             smoothing: 0.99,
             ema: 0.0,
             cache: Arc::new(RwLock::new(HashMap::new())),
+            tied_weights: None,
+            tied_grad_by_token: None,
             global_norm: 0.0,
             max_norm: 0.0,
         }
@@ -83,6 +99,8 @@ impl EmbeddingLayerRm {
             global_norm: 0.0,
             max_norm: 0.0,
             cache: Arc::new(RwLock::new(HashMap::new())),
+            tied_weights: None,
+            tied_grad_by_token: None,
         }
     }
 
@@ -130,12 +148,47 @@ impl EmbeddingLayerRm {
     pub fn forward(&mut self, layer_input: &LayerInput) -> (Vec<RowMajorMatrix<C>>, Vec<Vec<u32>>) {
         let token_input_ids: Vec<Vec<u32>> = layer_input.get_batch_ids();
         let target_batch_ids = layer_input.get_target_batch_ids();
-        let db: &Db = get_db_embedding();
         self.time_step = layer_input.get_time_step();
         self.batch_size = token_input_ids.len();
 
         let (token_input_batch_padded, padding_mask) = Self::apply_padding_to_batch(&token_input_ids, &target_batch_ids);
         let embedding_dim = self.embedding_dim;
+
+        if let Some(tied_weights) = &self.tied_weights {
+            let weights = tied_weights.clone();
+            let batch_rm: Vec<RowMajorMatrix<C>> = token_input_batch_padded
+                .par_iter()
+                .map(|token_ids| {
+                    let weights_guard = weights.read();
+                    let seq_len = token_ids.len();
+                    let mut data: Vec<C> = Vec::with_capacity(seq_len * embedding_dim);
+
+                    for &id in token_ids {
+                        if id == 1 {
+                            data.extend((0..embedding_dim).map(|_| C::new(ZERO, ZERO)));
+                            continue;
+                        }
+
+                        let token_idx = id as usize;
+                        if token_idx >= weights_guard.len() {
+                            panic!("token id out of range for tied weights: {}", token_idx);
+                        }
+                        let row = &weights_guard[token_idx];
+                        if row.len() < embedding_dim {
+                            panic!("tied weights row too small for embedding_dim: row={} emb_dim={}", row.len(), embedding_dim);
+                        }
+
+                        data.extend(row.iter().take(embedding_dim).map(|&v| C::new(r(v as f64), ZERO)));
+                    }
+
+                    RowMajorMatrix::from_data(seq_len, embedding_dim, data)
+                })
+                .collect();
+
+            return (batch_rm, padding_mask);
+        }
+
+        let db: &Db = get_db_embedding();
 
         let cache_ref = &self.cache;
 
@@ -193,13 +246,42 @@ impl EmbeddingLayerRm {
     }
 
     pub fn update_parameters(&mut self, token_id_batches: &[Vec<u32>], learning_rate: f64) {
-        let db: &Db = get_db_embedding();
         let gradient: &Gradient = self.gradient.as_ref().expect("EmbeddingLayerRm missing gradients");
 
         let grads_rm = gradient
             .get_gradient_input_batch_rm_ref()
             .filter(|g| !g.is_empty())
             .expect("EmbeddingLayerRm::update_parameters expects RM gradients");
+
+        if self.is_tied() {
+            let acc = self
+                .tied_grad_by_token
+                .as_ref()
+                .expect("tied accumulator missing")
+                .clone();
+
+            let mut acc_lock = acc.write().expect("tied grad accumulator poisoned");
+            for (batch_idx, token_ids) in token_id_batches.iter().enumerate() {
+                for (i, &token_id) in token_ids.iter().enumerate() {
+                    if token_id == 1 {
+                        continue;
+                    }
+
+                    let token_idx = token_id as usize;
+                    let row = grads_rm[batch_idx].row_range(i);
+
+                    let entry = acc_lock.entry(token_idx).or_insert_with(|| vec![C::new(ZERO, ZERO); self.embedding_dim]);
+                    for j in 0..self.embedding_dim {
+                        entry[j] += grads_rm[batch_idx].data[row.start + j];
+                    }
+                }
+            }
+
+            self.gradient = None;
+            return;
+        }
+
+        let db: &Db = get_db_embedding();
 
         let mut batch_size: Real = if self.batch_size > 0 {
             r(self.batch_size as f64)

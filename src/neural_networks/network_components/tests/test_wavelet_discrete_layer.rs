@@ -2,8 +2,13 @@
 mod test_wavelet_discrete_layer {
     use crate::neural_networks::{
         network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
-        network_layers::{feedforward_layer::FeedForwardLayer, linear_layer::LinearLayer, softmax_output_layer::SoftmaxLayer, wavelet_discrete_layer::DiscreteWaveletLayer},
-        network_layers::wavelet_discrete_layer_rm::DiscreteWaveletLayerRm,
+        network_layers::{
+            feedforward_layer::FeedForwardLayer,
+            linear_layer::LinearLayer,
+            network_layers_rm::wavelet_discrete_layer_rm::DiscreteWaveletLayerRm,
+            softmax_output_layer::SoftmaxLayer,
+            wavelet_discrete_layer::DiscreteWaveletLayer,
+        },
         network_types::{
             neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch,
         },

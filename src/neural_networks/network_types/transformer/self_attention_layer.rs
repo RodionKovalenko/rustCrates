@@ -8,7 +8,7 @@ use crate::neural_networks::{
     network_layers::{
         add_rms_norm_layer::RMSNormLayer,
         layer::{LayerEnum, LayerType},
-        norm_layer_rm::NormalNormLayerRm,
+        network_layers_rm::norm_layer_rm::NormalNormLayerRm,
     },
     network_types::transformer::transformer_updater::calculate_alpha,
     utils::matrix::{RowMajorMatrix, add_matrix_3d, scale_matrix_3d_by_scalar},
