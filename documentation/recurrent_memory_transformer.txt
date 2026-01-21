@@ -1,0 +1,29 @@
+Step-by-step backprop through segments
+
+Let’s denote:
+
+Segment 1:
+Input1  = [M0 | X1]
+Output1 = [M1 | Y1]
+
+Segment 2:
+Input2  = [M1 | X2]
+Output2 = [M2 | Y2]
+
+
+Compute loss on Y1 and Y2 (or maybe only on Y2, depending on task).
+
+Backpropagation flows normally inside each segment, so:
+
+∂Loss/∂M1 = gradient coming from Segment 2
+∂Loss/∂X2 = gradient coming from predictions
+
+
+Gradients propagate backward through memory across segments:
+
+Loss w.r.t M1 affects segment 1’s transformer weights
+
+
+Memory acts like an inter-segment hidden state.
+
+Gradient signal flows from segment 2 → segment 1 → … → segment 0.

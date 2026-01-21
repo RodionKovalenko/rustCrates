@@ -5,10 +5,7 @@ use crate::neural_networks::{
     utils::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         dtype::{r, C, ONE, ZERO},
-        matrix::{
-            add_vector_rm, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose_rm, multiply_complex_rm,
-            RowMajorMatrix,
-        },
+        matrix::{add_vector_rm, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose_rm, multiply_complex_rm, RowMajorMatrix},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -62,11 +59,7 @@ impl LinearLayerRm {
             panic!("LinearLayerRm received Vec input; use LinearLayer (Vec)");
         }
 
-        let input_rm = input
-            .get_input_batch_rm_ref()
-            .filter(|b| !b.is_empty())
-            .expect("LinearLayerRm::forward expects RM input")
-            .to_vec();
+        let input_rm = input.get_input_batch_rm_ref().filter(|b| !b.is_empty()).expect("LinearLayerRm::forward expects RM input").to_vec();
 
         self.time_step = input.get_time_step();
         self.batch_size = input.get_batch_size();
@@ -88,11 +81,7 @@ impl LinearLayerRm {
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
         let total_valid_tokens = previous_gradient.get_total_valid_tokens();
 
-        let input_batch_rm = self
-            .input_batch_rm
-            .as_ref()
-            .filter(|b| !b.is_empty())
-            .expect("LinearLayerRm::backward missing input_batch_rm");
+        let input_batch_rm = self.input_batch_rm.as_ref().filter(|b| !b.is_empty()).expect("LinearLayerRm::backward missing input_batch_rm");
 
         let grads_rm = previous_gradient
             .get_gradient_input_batch_rm_ref()
@@ -116,10 +105,7 @@ impl LinearLayerRm {
 
         let weights_h_rm = conjugate_transpose_rm(&self.weights);
 
-        let mut weight_gradients: Vec<Vec<Vec<C>>> = vec![
-            vec![vec![C::new(ZERO, ZERO); self.weights.cols]; self.weights.rows];
-            batch_len
-        ];
+        let mut weight_gradients: Vec<Vec<Vec<C>>> = vec![vec![vec![C::new(ZERO, ZERO); self.weights.cols]; self.weights.rows]; batch_len];
         let mut bias_gradients: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); self.bias.len()]; batch_len];
         let mut input_grad_rm: Vec<RowMajorMatrix<C>> = Vec::with_capacity(batch_len);
 
