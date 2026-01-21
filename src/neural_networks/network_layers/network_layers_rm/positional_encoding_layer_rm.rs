@@ -6,7 +6,7 @@ use crate::neural_networks::utils::matrix::RowMajorMatrix;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use super::positional_encoding_layer::{INITIAL_BASE, SCALING_FAKTOR};
+use crate::neural_networks::network_layers::positional_encoding_layer::{INITIAL_BASE, SCALING_FAKTOR};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PositionalEncodingLayerRm {
