@@ -18,7 +18,7 @@ mod test_serialization {
         let vocab_size = 50254;
         let embedding_dim = 16;
 
-        let embedding_layer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim, false);
+        let embedding_layer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim);
         let layer_enum: LayerEnum = LayerEnum::Embedding(Box::new(embedding_layer));
 
         println!("starting serialization");

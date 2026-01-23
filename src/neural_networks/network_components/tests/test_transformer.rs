@@ -157,7 +157,7 @@ mod test_transformer {
         let embedding_dim_compressed = (embedding_dim_original as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize;
         let vocab_size: usize = 50254;
 
-        let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
+        let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original);
         let positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
 
         let rows: usize = 16;
@@ -283,7 +283,7 @@ mod test_transformer {
         let vocab_size: usize = 50;
         let rows: usize = 16;
 
-        let mut embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original, false);
+        let mut embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original);
         let mut positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
         let mut discrete_wavelet_layer = DiscreteWaveletLayer::new();
         let mut complex_wavelet_layer = ComplexWaveletLayer::new();
