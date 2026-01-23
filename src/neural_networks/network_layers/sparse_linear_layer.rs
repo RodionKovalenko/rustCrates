@@ -188,18 +188,6 @@ impl SparseLinearLayer {
         self.time_step = input.get_time_step();
         self.batch_size = input.get_batch_size();
 
-        if !input.has_non_empty_input_batch() {
-            if input.has_non_empty_input_batch_rm() {
-                panic!("SparseLinearLayer (Vec) received RM-only input; use SparseLinearLayerRm");
-            }
-
-            let mut layer_output = LayerOutput::new_default();
-            layer_output.set_output_batch(vec![]);
-            layer_output.set_output_indices(vec![]);
-            self.input_batch = None;
-            self.output_indices = Some(vec![]);
-            return layer_output;
-        }
 
         let input_batch: Vec<Vec<Vec<C>>> = input.get_input_batch();
         self.input_batch = Some(input_batch.clone());
@@ -223,34 +211,11 @@ impl SparseLinearLayer {
 
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
         let input_batch_vec = self.input_batch.as_ref();
-        if input_batch_vec.is_none() {
-            let total_valid_tokens = previous_gradient.get_total_valid_tokens();
-            let mut gradient = Gradient::new_default();
-            gradient.set_gradient_input_batch(vec![]);
-            gradient.set_gradient_input_batch_rm(vec![]);
-            gradient.set_gradient_weight_batch(vec![]);
-            gradient.set_gradient_bias_batch(vec![]);
-            gradient.set_total_valid_tokens(total_valid_tokens);
-            self.gradient = Some(gradient.clone());
-            return gradient;
-        }
 
         let total_valid_tokens = previous_gradient.get_total_valid_tokens();
         let previous_gradient_input_batch: Vec<Vec<Vec<C>>> = previous_gradient.get_gradient_input_batch();
 
         let batch_len = input_batch_vec.expect("vec batch").len();
-
-        if batch_len == 0 {
-            let mut gradient = Gradient::new_default();
-            gradient.set_gradient_input_batch(vec![]);
-            gradient.set_gradient_input_batch_rm(vec![]);
-            gradient.set_gradient_weight_batch(vec![]);
-            gradient.set_gradient_bias_batch(vec![]);
-            gradient.set_total_valid_tokens(total_valid_tokens);
-            self.gradient = Some(gradient.clone());
-            return gradient;
-        }
-
         let output_indices_batch: &Vec<Vec<Vec<usize>>> = self.output_indices.as_ref().expect("Output indices missing in sparse linear layer backward pass");
 
         let first_input_rows = input_batch_vec.expect("vec batch").get(0).cloned().unwrap_or_default();
@@ -261,17 +226,6 @@ impl SparseLinearLayer {
             .get(0)
             .map(|rows| RowMajorMatrix::from_rows(rows).cols)
             .unwrap_or(0);
-
-        if k == 0 {
-            let mut gradient = Gradient::new_default();
-            gradient.set_gradient_input_batch(vec![]);
-            gradient.set_gradient_input_batch_rm(vec![]);
-            gradient.set_gradient_weight_batch(vec![]);
-            gradient.set_gradient_bias_batch(vec![]);
-            gradient.set_total_valid_tokens(total_valid_tokens);
-            self.gradient = Some(gradient.clone());
-            return gradient;
-        }
 
         let weights_guard = self.weights.read();
 
@@ -321,9 +275,7 @@ impl SparseLinearLayer {
         }
 
         let mut gradient = Gradient::new_default();
-        let gradient_input_batch: Vec<Vec<Vec<C>>> = gradient_input_batch_rm.iter().map(|m| m.to_rows()).collect();
         gradient.set_gradient_input_batch(gradient_input_batch);
-        gradient.set_gradient_input_batch_rm(vec![]);
         gradient.set_gradient_weight_batch(weight_gradients);
         gradient.set_gradient_bias_batch(bias_gradients);
         gradient.set_total_valid_tokens(total_valid_tokens);
