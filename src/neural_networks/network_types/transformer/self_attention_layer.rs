@@ -1,17 +1,13 @@
 use super::masked_attention_head::MaskedAttentionHead;
 use crate::neural_networks::{
-    network_components::{
-        gradient_struct::Gradient,
-        layer_input_struct::LayerInput,
-        layer_output_struct::LayerOutput,
-    },
+    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     network_layers::{
         add_rms_norm_layer::RMSNormLayer,
         layer::{LayerEnum, LayerType},
-        network_layers_rm::norm_layer_rm::NormalNormLayerRm,
+        norm_layer::NormalNormLayer,
     },
     network_types::transformer::transformer_updater::calculate_alpha,
-    utils::matrix::{RowMajorMatrix, add_matrix_3d, scale_matrix_3d_by_scalar},
+    utils::matrix::{add_matrix_3d, scale_matrix_3d_by_scalar, RowMajorMatrix},
 };
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
@@ -54,7 +50,7 @@ impl SelfAttentionLayer {
 
         let epsilon: f64 = 0.000000000001;
         let _norm_layer_rms = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(cols, epsilon, learning_rate))));
-        let _norm_layer = Some(LayerEnum::NormRm(Box::new(NormalNormLayerRm::new(cols, epsilon, learning_rate))));
+        let _norm_layer = Some(LayerEnum::Norm(Box::new(NormalNormLayer::new(cols, epsilon, learning_rate))));
 
         let alpha = calculate_alpha();
         let beta = r(1.0) / alpha;

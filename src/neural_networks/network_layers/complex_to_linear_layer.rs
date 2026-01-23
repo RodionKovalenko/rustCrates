@@ -66,27 +66,7 @@ impl ComplexToLinearLayer {
         self.time_step = input.get_time_step();
         self.batch_size = input.get_batch_size();
 
-        let has_vec_input = input.has_non_empty_input_batch();
-        let has_rm_input = input.has_non_empty_input_batch_rm();
-
-        // LayerInput can carry an RM cache even for Vec inputs. Only treat it as an error when
-        // Vec input is absent but RM input is present.
-        if !has_vec_input && has_rm_input {
-            panic!("ComplexToLinearLayer (Vec) received RM-only input; use ComplexToLinearLayerRm");
-        }
-
-        if !has_vec_input {
-            let mut layer_output = LayerOutput::new_default();
-            layer_output.set_output_batch(vec![]);
-            layer_output.set_output_batch_rm(vec![]);
-            self.input_batch = None;
-            return layer_output;
-        }
-
-        let input_batch: Vec<Vec<Vec<C>>> = input
-            .get_input_batch_ref()
-            .expect("ComplexToLinearLayer (Vec): expected Vec input")
-            .to_vec();
+        let input_batch: Vec<Vec<Vec<C>>> = input.get_input_batch_ref().expect("ComplexToLinearLayer (Vec): expected Vec input").to_vec();
         self.input_batch = Some(input_batch.clone());
 
         let in_f = self.weights_1.len();
@@ -115,34 +95,15 @@ impl ComplexToLinearLayer {
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(output_batch);
-        layer_output.set_output_batch_rm(vec![]);
         layer_output
     }
 
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
         let total_valid_tokens = previous_gradient.get_total_valid_tokens();
-        let input_batch_vec = self.input_batch.as_ref().filter(|b| !b.is_empty());
+        let input_batch_vec = self.input_batch.as_ref();
+
         if input_batch_vec.is_none() {
-            let mut gradient = Gradient::new_default();
-            gradient.set_gradient_input_batch(vec![]);
-            gradient.set_gradient_input_batch_rm(vec![]);
-            gradient.set_gradient_weight_batch(vec![]);
-            gradient.set_gradient_weight_2_batch(vec![]);
-            gradient.set_total_valid_tokens(total_valid_tokens);
-            self.gradient = Some(gradient.clone());
-            return gradient;
-        }
-
-        let has_prev_vec_grad = previous_gradient
-            .get_gradient_input_batch_ref()
-            .is_some_and(|b| !b.is_empty());
-        let has_prev_rm_grad = previous_gradient
-            .get_gradient_input_batch_rm_ref()
-            .is_some_and(|b| !b.is_empty());
-
-        // Gradients may also carry RM caches; only error when Vec gradients are absent.
-        if !has_prev_vec_grad && has_prev_rm_grad {
-            panic!("ComplexToLinearLayer (Vec) received RM-only gradient; use ComplexToLinearLayerRm");
+            panic!("ComplexToLinearLayer (Vec) has no input batch stored for backward pass");
         }
 
         let previous_gradient_input_batch: Vec<Vec<Vec<C>>> = previous_gradient
@@ -159,35 +120,8 @@ impl ComplexToLinearLayer {
         let mut grad_w2 = vec![vec![vec![C::new(ZERO, ZERO); out_f]; in_f]; batch_len];
         let mut gradient_input_batch: Vec<Vec<Vec<C>>> = vec![vec![vec![C::new(ZERO, ZERO); in_f]; 0]; 0];
 
-        if batch_len > 0 {
-            let time = input_batch_vec.expect("vec batch")[0].len();
-            gradient_input_batch = vec![vec![vec![C::new(ZERO, ZERO); in_f]; time]; batch_len];
-        }
-
-        if batch_len == 0 {
-            let mut gradient = Gradient::new_default();
-            gradient.set_gradient_input_batch(vec![]);
-            gradient.set_gradient_input_batch_rm(vec![]);
-            gradient.set_gradient_weight_batch(vec![]);
-            gradient.set_gradient_weight_2_batch(vec![]);
-            gradient.set_total_valid_tokens(total_valid_tokens);
-            self.gradient = Some(gradient.clone());
-            return gradient;
-        }
-
-        if previous_gradient_input_batch.is_empty() {
-            let mut gradient = Gradient::new_default();
-            gradient.set_gradient_input_batch(vec![]);
-            gradient.set_gradient_input_batch_rm(vec![]);
-            gradient.set_gradient_weight_batch(vec![]);
-            gradient.set_gradient_weight_2_batch(vec![]);
-            gradient.set_total_valid_tokens(total_valid_tokens);
-            self.gradient = Some(gradient.clone());
-            return gradient;
-        }
-
         for batch_ind in 0..batch_len {
-            let input_sample = &input_batch_vec.expect("vec batch")[batch_ind];
+            let input_sample = &input_batch_vec.expect(" is empty vec batch in ComplexToLinearLayer (Vec) backward")[batch_ind];
             let grad_sample = &previous_gradient_input_batch[batch_ind];
 
             assert_eq!(input_sample[0].len(), in_f);
@@ -217,7 +151,6 @@ impl ComplexToLinearLayer {
 
         let mut gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(gradient_input_batch);
-        gradient.set_gradient_input_batch_rm(vec![]);
         gradient.set_gradient_weight_batch(grad_w1);
         gradient.set_gradient_weight_2_batch(grad_w2);
         gradient.set_total_valid_tokens(total_valid_tokens);

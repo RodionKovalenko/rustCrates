@@ -78,36 +78,6 @@ impl LayerInput {
         self.rm_strict
     }
     pub fn set_input_batch(&mut self, input_batch: Vec<Vec<Vec<C>>>) {
-        // Only build RM cache for rectangular inputs. Training can legitimately produce
-        // variable-length (ragged) rows (e.g. top-k / sparse representations), in which case
-        // RM conversion is not possible.
-        if input_batch.is_empty() {
-            self.input_batch_rm = None;
-        } else {
-            let mut input_rm = Vec::with_capacity(input_batch.len());
-            let mut ok = true;
-            for m in &input_batch {
-                match RowMajorMatrix::try_from_rows(m) {
-                    Some(rm) => input_rm.push(rm),
-                    None => {
-                        ok = false;
-                        break;
-                    }
-                }
-            }
-
-            if ok {
-                self.input_batch_rm = Some(input_rm);
-            } else {
-                if self.rm_strict {
-                    panic!(
-                        "LayerInput::set_input_batch: cannot build RowMajorMatrix from ragged rows while rm_strict=true"
-                    );
-                }
-                self.input_batch_rm = None;
-            }
-        }
-
         self.input_batch = Some(input_batch);
     }
 

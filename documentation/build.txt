@@ -25,3 +25,7 @@ cargo test --no-default-features
 // test for f64
 cargo test --features dtype-f64 -- --nocapture
 cargo test --features dtype-f64
+
+
+// test in prod build 
+.\target\release\wav-transformer.exe test  

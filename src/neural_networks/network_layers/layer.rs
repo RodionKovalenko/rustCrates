@@ -230,16 +230,6 @@ impl Layer {
     }
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<C>>>) -> Gradient {
-        if self.input_batch.is_none() {
-            let mut gradient = Gradient::new_default();
-            gradient.set_gradient_input_batch(vec![]);
-            gradient.set_gradient_input_batch_rm(vec![]);
-            gradient.set_gradient_weight_batch(vec![]);
-            gradient.set_gradient_bias_batch(vec![]);
-            self.gradient = Some(gradient.clone());
-            return gradient;
-        }
-
         let input_batch = self.input_batch.as_ref().expect("Input batch is missing in dense layer");
         let raw_output_batch = self.inactivated_input_batch.as_ref().expect("Raw output batch is missing in dense layer");
         let output_batch = self.output_batch.as_ref().expect("Output batch is missing in dense layer");
@@ -247,9 +237,18 @@ impl Layer {
         let mut gradient = Gradient::new_default();
 
         // Initialize gradients for weights and biases
-        let mut weight_gradients: Vec<Vec<Vec<C>>> = vec![vec![vec![C::new(ZERO, ZERO); self.weights[0].len()]; self.weights.len()]; input_batch.len()];
+        let mut weight_gradients: Vec<Vec<Vec<C>>> =
+            vec![vec![vec![C::new(ZERO, ZERO); self.weights[0].len()]; self.weights.len()]; input_batch.len()];
         let mut bias_gradients: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); self.bias.len()]; input_batch.len()];
-        let mut input_gradient_batch = vec![vec![vec![C::new(ZERO, ZERO); previous_gradient_batch[0][0].len()]; previous_gradient_batch[0].len()]; input_batch.len()];
+
+        // Gradient w.r.t input has the input feature dimension (weights rows).
+        let in_features = self.weights.len();
+        let mut input_gradient_batch: Vec<Vec<Vec<C>>> = (0..input_batch.len())
+            .map(|b| {
+                let seq_len = input_batch[b].len();
+                vec![vec![C::new(ZERO, ZERO); in_features]; seq_len]
+            })
+            .collect();
 
         let previous_gradient_batch_padded: Vec<Vec<Vec<C>>> = previous_gradient_batch.clone();
 

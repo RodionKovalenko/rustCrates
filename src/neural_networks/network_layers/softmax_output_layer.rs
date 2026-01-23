@@ -7,7 +7,7 @@ use crate::neural_networks::{
     network_types::neural_network_generic::OperationMode,
     utils::{
         activation::{softmax_backward_real_with_gradient, softmax_last_row},
-        dtype::{Real, C},
+        dtype::C,
     },
 };
 
@@ -17,7 +17,7 @@ pub struct SoftmaxLayer {
     pub learning_rate: f64,
     pub operation_mode: OperationMode,
     #[serde(skip)]
-    pub softmax_output_batch: Option<Vec<Vec<Vec<Real>>>>,
+    pub softmax_output_batch: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
     pub cross_entropy_loss_batch: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
@@ -46,7 +46,7 @@ impl SoftmaxLayer {
             batch_size: 1,
         }
     }
-    pub fn forward(&mut self, layer_input: &LayerInput, padding_mask_option: Option<Vec<Vec<u32>>>, target_token_ids: Option<Vec<Vec<u32>>>) -> Vec<Vec<Vec<Real>>> {
+    pub fn forward(&mut self, layer_input: &LayerInput, padding_mask_option: Option<Vec<Vec<u32>>>, target_token_ids: Option<Vec<Vec<u32>>>) -> Vec<Vec<Vec<C>>> {
         self.time_step = layer_input.get_time_step();
         self.batch_size = layer_input.get_batch_size();
 
@@ -81,7 +81,7 @@ impl SoftmaxLayer {
 
         let (layer_output_batch, losses, input_gradient_batch) = match self.operation_mode {
             OperationMode::PRODUCTION => {
-                let output: Vec<Vec<Vec<Real>>> = input_batch
+                let output: Vec<Vec<Vec<C>>> = input_batch
                     .par_iter()
                     .map(|input| softmax_last_row(input)) // Apply `softmax_last_row` to each input
                     .collect(); // Collect results into a Vec

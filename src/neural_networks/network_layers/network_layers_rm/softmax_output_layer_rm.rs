@@ -5,11 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
     network_types::neural_network_generic::OperationMode,
-    utils::{
-        activation::softmax_backward_real_with_gradient_rm,
-        dtype::{Real, C},
-        matrix::RowMajorMatrix,
-    },
+    utils::{activation::softmax_backward_real_with_gradient_rm, dtype::C, matrix::RowMajorMatrix},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,7 +14,7 @@ pub struct SoftmaxLayerRm {
     pub operation_mode: OperationMode,
 
     #[serde(skip)]
-    pub softmax_output_batch: Option<Vec<Vec<Vec<Real>>>>,
+    pub softmax_output_batch: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
     pub cross_entropy_loss_batch: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
@@ -45,13 +41,11 @@ impl SoftmaxLayerRm {
         }
     }
 
-    pub fn forward(&mut self, layer_input: &LayerInput, padding_mask_option: Option<Vec<Vec<u32>>>, target_token_ids: Option<Vec<Vec<u32>>>) -> Vec<Vec<Vec<Real>>> {
+    pub fn forward(&mut self, layer_input: &LayerInput, padding_mask_option: Option<Vec<Vec<u32>>>, target_token_ids: Option<Vec<Vec<u32>>>) -> Vec<Vec<Vec<C>>> {
         self.time_step = layer_input.get_time_step();
         self.batch_size = layer_input.get_batch_size();
 
-        let input_batch_rm_ref = layer_input
-            .get_input_batch_rm_ref()
-            .expect("SoftmaxLayerRm::forward expects input_batch_rm");
+        let input_batch_rm_ref = layer_input.get_input_batch_rm_ref().expect("SoftmaxLayerRm::forward expects input_batch_rm");
 
         if input_batch_rm_ref.is_empty() {
             self.padding_mask_batch = Some(vec![]);
@@ -75,7 +69,7 @@ impl SoftmaxLayerRm {
 
         let mut total_valid_tokens: usize = 0;
 
-        let (layer_output_batch, losses, input_gradient_batch_rm): (Vec<Vec<Vec<Real>>>, Vec<Vec<Vec<C>>>, Vec<RowMajorMatrix<C>>) = match self.operation_mode {
+        let (layer_output_batch, losses, input_gradient_batch_rm): (Vec<Vec<Vec<C>>>, Vec<Vec<Vec<C>>>, Vec<RowMajorMatrix<C>>) = match self.operation_mode {
             OperationMode::PRODUCTION => {
                 // Keep behavior consistent with Vec path (softmax only last row). We return an empty batch here
                 // because transformer inference path already bypasses this function.
@@ -90,22 +84,14 @@ impl SoftmaxLayerRm {
                         let valid_seq_len = mask.iter().filter(|&&m| m != 0).count();
                         let offset = valid_seq_len.saturating_sub(target_len);
 
-                        targets
-                            .iter()
-                            .enumerate()
-                            .filter(|(i, &target_id)| target_id != 1 && mask[offset + i] != 0)
-                            .count()
+                        targets.iter().enumerate().filter(|(i, &target_id)| target_id != 1 && mask[offset + i] != 0).count()
                     })
                     .sum();
 
                 let per_batch: Vec<(Vec<Vec<C>>, RowMajorMatrix<C>)> = (0..batch_size)
                     .into_par_iter()
                     .map(|batch_ind| {
-                        let output_indices = if !output_indices_batch.is_empty() {
-                            &output_indices_batch[batch_ind]
-                        } else {
-                            &vec![]
-                        };
+                        let output_indices = if !output_indices_batch.is_empty() { &output_indices_batch[batch_ind] } else { &vec![] };
 
                         softmax_backward_real_with_gradient_rm(
                             &input_batch_rm_ref[batch_ind],

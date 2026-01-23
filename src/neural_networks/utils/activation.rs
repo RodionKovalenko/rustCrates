@@ -714,14 +714,14 @@ pub fn softmax_row_f64(input: &Vec<f64>) -> Vec<f64> {
     exps.iter().map(|&x| x / sum).collect()
 }
 
-pub fn softmax_last_row(input: &Vec<Vec<C>>) -> Vec<Vec<Real>> {
+pub fn softmax_last_row(input: &Vec<Vec<C>>) -> Vec<Vec<C>> {
     // Softmax function to scale attention scores to probability values
-    let mut result: Vec<Vec<Real>> = vec![vec![ZERO; input[0].len()]; input.len()];
+    let mut result: Vec<Vec<C>> = vec![vec![C::ZERO; input[0].len()]; input.len()];
 
     // Get the last row from the input
     let last_row = &input[input.len() - 1];
 
-    result[input.len() - 1] = softmax_row_real(last_row);
+    result[input.len() - 1] = softmax_row_complex(last_row);
 
     result
 }

@@ -47,6 +47,25 @@ pub const EMBEDDING_PATH: &str = "embedding";
 pub const FILE_NAME: &str = "embedding_layer.json";
 
 impl EmbeddingLayerRm {
+    fn embedding_fallback(embedding_dim: usize) -> Vec<C> {
+        vec![C::new(ZERO, ZERO); embedding_dim]
+    }
+
+    fn get_embedding_or_fallback(db: &Db, token_id: u32, embedding_dim: usize, init_if_missing: bool) -> Vec<C> {
+        match Self::get_embedding(db, token_id) {
+            Ok(v) => v,
+            Err(_) => {
+                if init_if_missing {
+                    let mut rng = rand::rngs::ThreadRng::default();
+                    let base_2: i32 = 2;
+                    Self::create_embedding(db, embedding_dim * base_2.pow(DECOMPOSITION_LEVELS) as usize, &mut rng, token_id)
+                } else {
+                    Self::embedding_fallback(embedding_dim)
+                }
+            }
+        }
+    }
+
     pub fn set_tied_weights(&mut self, weights: SharedF32Matrix, grad_by_token: Arc<RwLock<HashMap<usize, Vec<C>>>>) {
         self.tied_weights = Some(weights);
         self.tied_grad_by_token = Some(grad_by_token);
@@ -189,6 +208,7 @@ impl EmbeddingLayerRm {
         }
 
         let db: &Db = get_db_embedding();
+        let init_if_missing = !layer_input.get_forward_only() && layer_input.get_calculate_gradient();
 
         let cache_ref = &self.cache;
 
@@ -209,9 +229,7 @@ impl EmbeddingLayerRm {
                     let token_embedding = if id == 1 {
                         vec![C::new(ZERO, ZERO); embedding_dim]
                     } else {
-                        let mut token_embedding = Self::get_embedding(&db, id).unwrap_or_else(|err| {
-                            panic!("Error retrieving embedding for token {}: {}", id, err);
-                        });
+                        let mut token_embedding = Self::get_embedding_or_fallback(&db, id, embedding_dim, init_if_missing);
 
                         if token_embedding.len() != self.embedding_dim {
                             let mut rng = rand::rngs::ThreadRng::default();
@@ -296,7 +314,7 @@ impl EmbeddingLayerRm {
 
         for (batch_idx, token_ids) in token_id_batches.iter().enumerate() {
             for (i, &token_id) in token_ids.iter().enumerate() {
-                let mut token_embedding: Vec<C> = Self::get_embedding(&db, token_id).unwrap();
+                let mut token_embedding: Vec<C> = Self::get_embedding_or_fallback(&db, token_id, self.embedding_dim, true);
 
                 for j in 0..self.embedding_dim {
                     let row = grads_rm[batch_idx].row_range(i);

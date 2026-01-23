@@ -2,7 +2,7 @@ use crate::neural_networks::{
     network_components::gradient_struct::Gradient, network_layers::layer::LayerEnum, network_types::{neural_network_generic::NeuralNetwork, transformer::transformer_builder::NUM_SELF_ATT_LAYERS}, utils::{dtype::{C, Real, r}, matrix::{normalize_bias, normalize_gradients, normalize_gradients_batch}}
 };
 
-pub const VERBOSE: bool = false;
+pub const VERBOSE: bool = true;
 pub const SHOW_MAX_PARAMS: bool = false;
 
 fn update_by_norm(transformer: &mut NeuralNetwork) {

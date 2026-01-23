@@ -19,6 +19,7 @@ mod test_adaptive_pooling_complex {
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch},
         utils::{
             derivative::{global_relative_error_l2, numerical_gradient_input_batch, test_gradient_batch_error},
+            dtype::C,
             random_arrays::generate_random_u32_batch,
         },
     };
@@ -196,7 +197,7 @@ mod test_adaptive_pooling_complex {
 
         println!("compressed dim: {} {} {}", compressed.len(), compressed[0].len(), compressed[0][0].len());
         layer_input.set_input_batch(compressed.clone());
-        let _softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+        let _softmax_batch_output: Vec<Vec<Vec<C>>> = softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         let mut gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
         gradient_softmax.set_pooling_metadata(metadata);
@@ -210,7 +211,7 @@ mod test_adaptive_pooling_complex {
             let (compressed, _metadata) = (pooling_output.get_output_batch(), pooling_output.get_pooling_metadata().unwrap());
 
             layer_input.set_input_batch(compressed);
-            let _softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            let _softmax_batch_output: Vec<Vec<Vec<C>>> = softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -284,7 +285,7 @@ mod test_adaptive_pooling_complex {
         let pooling_output_decompression: Vec<Vec<Vec<Complex<f64>>>> = pool.decompress(&linear_output.get_output_batch());
 
         layer_input.set_input_batch(pooling_output_decompression);
-        let _softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+        let _softmax_batch_output: Vec<Vec<Vec<C>>> = softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         println!("original input dim: {} {} {}", input_batch.len(), input_batch[0].len(), input_batch[0][0].len());
         println!("compressed dim: {} {} {}", compressed.len(), compressed[0].len(), compressed[0][0].len());
@@ -306,7 +307,7 @@ mod test_adaptive_pooling_complex {
             let pooling_output_decompression: Vec<Vec<Vec<Complex<f64>>>> = pool.decompress(&linear_output.get_output_batch());
 
             layer_input.set_input_batch(pooling_output_decompression);
-            let _softmax_batch_output: Vec<Vec<Vec<f64>>> = softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            let _softmax_batch_output: Vec<Vec<Vec<C>>> = softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);

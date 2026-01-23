@@ -46,3 +46,5 @@ pub mod test_complex_to_linear_layer;
 pub mod test_sparse_linear_layer;
 #[cfg(feature = "dtype-f64")]
 pub mod test_layer_input_ragged;
+#[cfg(feature = "dtype-f64")]
+pub mod test_embedding_missing_token;
