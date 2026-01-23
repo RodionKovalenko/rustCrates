@@ -50,25 +50,6 @@ pub const EMBEDDING_PATH: &str = "embedding";
 pub const FILE_NAME: &str = "embedding_layer.json";
 
 impl EmbeddingLayer {
-    fn embedding_fallback(embedding_dim: usize) -> Vec<C> {
-        vec![C::new(ZERO, ZERO); embedding_dim]
-    }
-
-    fn get_embedding_or_fallback(db: &Db, token_id: u32, embedding_dim: usize, init_if_missing: bool) -> Vec<C> {
-        match Self::get_embedding(db, token_id) {
-            Ok(v) => v,
-            Err(_) => {
-                if init_if_missing {
-                    let mut rng = rand::rngs::ThreadRng::default();
-                    let base_2: i32 = 2;
-                    Self::create_embedding(db, embedding_dim * base_2.pow(DECOMPOSITION_LEVELS) as usize, &mut rng, token_id)
-                } else {
-                    Self::embedding_fallback(embedding_dim)
-                }
-            }
-        }
-    }
-
     pub fn set_tied_weights(&mut self, weights: SharedF32Matrix, grad_by_token: Arc<RwLock<HashMap<usize, Vec<C>>>>) {
         self.tied_weights = Some(weights);
         self.tied_grad_by_token = Some(grad_by_token);
@@ -143,31 +124,11 @@ impl EmbeddingLayer {
         }
     }
 
-    pub fn get_or_create(vocab_size: usize, embedding_dim: usize, force_create: bool) -> Self {
+    pub fn get_or_create(vocab_size: usize, embedding_dim: usize) -> Self {
         let mut embedding_path: PathBuf = get_storage_path_embedding_db(EMBEDDING_PATH);
         embedding_path.push(FILE_NAME);
 
-        let base_2: i32 = 2;
-        let embedding_dim_compressed = (embedding_dim as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize;
-
-        let embedding_file_path: &Path = Path::new(&embedding_path);
-
-        if !embedding_file_path.exists() || force_create {
-            println!("Embedding Layer does not exist. Creating Embedding Layer File");
-            let embedding_layer = Self::new(vocab_size, embedding_dim);
-
-            Self::serialize(&embedding_layer, &embedding_file_path);
-
-            embedding_layer
-        } else {
-            println!("File exists. Deserializing the file");
-            let mut embedding_layer = Self::deserialize(embedding_file_path);
-            embedding_layer.embedding_dim = embedding_dim_compressed;
-
-            Self::serialize(&embedding_layer, &embedding_file_path);
-
-            embedding_layer
-        }
+       Self::load(vocab_size, embedding_dim)
     }
 
     pub fn apply_padding_to_batch(token_input_ids_batch: &Vec<Vec<u32>>, _target_batch_ids: &Vec<Vec<u32>>) -> (Vec<Vec<u32>>, Vec<Vec<u32>>) {
@@ -253,54 +214,9 @@ impl EmbeddingLayer {
                 .collect::<Vec<Vec<Vec<C>>>>();
 
             return (token_ids_output, _padding_mask);
+        } else {
+            panic!("Tied weights missing in EmbeddingLayer");
         }
-
-        let db: &Db = get_db_embedding();
-        let init_if_missing = !layer_input.get_forward_only() && layer_input.get_calculate_gradient();
-
-        // Get a reference to the cache
-        let cache_ref = &self.cache;
-
-        // Parallelize the processing of the token_ids
-        let token_ids_output: Vec<Vec<Vec<C>>> = token_input_batch_padded
-            .par_iter()
-            .map(|token_ids| {
-                token_ids
-                    .iter()
-                    .map(|&id| {
-                        if let Ok(cache) = cache_ref.read() {
-                            if let Some(embedding) = cache.get(&id) {
-                                return embedding.clone();
-                            }
-                        }
-                        // Embedding retrieval if it's not in the cache
-                        let token_embedding = if id == 1 {
-                            vec![C::new(ZERO, ZERO); embedding_dim]
-                        } else {
-                            let mut token_embedding = Self::get_embedding_or_fallback(&db, id, embedding_dim, init_if_missing);
-
-                            if token_embedding.len() != self.embedding_dim {
-                                let mut rng = rand::rngs::ThreadRng::default();
-                                let base_2: i32 = 2;
-                                token_embedding = Self::create_embedding(&db, embedding_dim * base_2.pow(DECOMPOSITION_LEVELS) as usize, &mut rng, id);
-                            }
-
-                            assert_eq!(token_embedding.len(), self.embedding_dim);
-
-                            if let Ok(mut cache) = cache_ref.write() {
-                                cache.insert(id, token_embedding.clone());
-                            }
-                            token_embedding
-                        };
-
-                        // Return the embedding for this token
-                        token_embedding
-                    })
-                    .collect::<Vec<Vec<C>>>() // Collect the result for each token
-            })
-            .collect::<Vec<Vec<Vec<C>>>>(); // Collect the result for the entire batch
-
-        (token_ids_output, _padding_mask)
     }
     // Update embeddings using gradients
     pub fn backward(&mut self, previous_gradients: &Vec<Vec<Vec<C>>>) -> Gradient {
@@ -343,64 +259,8 @@ impl EmbeddingLayer {
 
             self.gradient = None;
             return;
-        }
-
-        let db: &Db = get_db_embedding();
-
-        let mut batch_size: Real = if self.batch_size > 0 { r(self.batch_size as f64) } else { r(previous_gradients.len() as f64) };
-
-        if batch_size <= ZERO {
-            batch_size = ONE;
-        }
-
-        let mut previous_gradients = previous_gradients;
-        let mut dummy_bias: Vec<C> = Vec::new();
-        clip_all_gradients_by_global_norm_3d(&mut previous_gradients, &mut dummy_bias, self.global_norm, self.max_norm);
-
-        // let max = previous_gradients.iter().flat_map(|v| v.iter().flat_map(|w| w.iter())).max_by(|a, b| a.norm().partial_cmp(&b.norm()).unwrap_or(Ordering::Less));
-        // println!("max in backward embedding layer gradient batch: {:?}", max);
-        // println!("min in backward embedding layer gradient batch: {:?}", min);
-
-        let max_embedding_norm: Real = ONE;
-
-        for (batch_idx, token_ids) in token_id_batches.iter().enumerate() {
-            for (i, &token_id) in token_ids.iter().enumerate() {
-                let mut token_embedding: Vec<C> = Self::get_embedding_or_fallback(&db, token_id, self.embedding_dim, true);
-
-                // SGD update
-                for j in 0..self.embedding_dim {
-                    let grad_val: C = previous_gradients[batch_idx][i][j];
-
-                    if is_nan_or_inf(&grad_val) {
-                        panic!("gradient in embedding is invalid, contains NaN or infinity values: {:?}", &grad_val);
-                    }
-
-                    token_embedding[j] -= r(learning_rate) * (grad_val / batch_size);
-
-                    if is_nan_or_inf(&token_embedding[j]) {
-                        panic!("embedding is invalid, contains NaN or infinity values: {:?}", &token_embedding[j]);
-                    }
-                }
-
-                // ---- 🔒 Embedding norm clipping (NOT normalization) ----
-                let norm: Real = token_embedding.iter().map(|z| z.norm_sqr()).sum::<Real>().sqrt();
-
-                if norm > max_embedding_norm {
-                    let scale = max_embedding_norm / norm;
-                    for z in &mut token_embedding {
-                        *z *= scale;
-                    }
-                }
-                // -------------------------------------------------------
-
-                if let Ok(mut cache) = self.cache.write() {
-                    cache.insert(token_id, token_embedding.clone());
-                } else {
-                    panic!("embedding was not updated in cache");
-                }
-
-                Self::update_embedding(db, &token_id, &token_embedding);
-            }
+        } else {
+            panic!("Tied weights missing in EmbeddingLayer during update_parameters");
         }
     }
     /// Update an embedding for a given token ID
