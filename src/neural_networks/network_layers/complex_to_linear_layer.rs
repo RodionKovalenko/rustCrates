@@ -63,33 +63,26 @@ impl ComplexToLinearLayer {
         }
     }
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
+        let input_batch = input.get_input_batch(); // batch × time × features_in
         self.time_step = input.get_time_step();
         self.batch_size = input.get_batch_size();
-
-        let input_batch: Vec<Vec<Vec<C>>> = input.get_input_batch_ref().expect("ComplexToLinearLayer (Vec): expected Vec input").to_vec();
         self.input_batch = Some(input_batch.clone());
 
-        let in_f = self.weights_1.len();
-        let out_f = self.weights_1[0].len();
-
         let output_batch: Vec<Vec<Vec<C>>> = input_batch
-            .par_iter()
-            .map(|input_rows| {
-                input_rows
-                    .iter()
-                    .map(|input_row| {
-                        let mut out_row = vec![C::new(ZERO, ZERO); out_f];
-                        for f in 0..out_f {
-                            let mut sum_real: Real = ZERO;
-                            for k in 0..in_f {
-                                let x = input_row[k];
-                                sum_real += x.re * self.weights_1[k][f].re + x.im * self.weights_2[k][f].re;
-                            }
-                            out_row[f] = C::new(sum_real, ZERO);
+            .par_iter() // over batch
+            .map(|input| {
+                // perform matrix multiplication for each time step
+                let mut output = vec![vec![C::new(0.0, 0.0); self.weights_1[0].len()]; input.len()];
+                for t in 0..input.len() {
+                    for f in 0..self.weights_1[0].len() {
+                        let mut sum_real = C::new(0.0, 0.0);
+                        for k in 0..self.weights_1.len() {
+                            sum_real += input[t][k].re * self.weights_1[k][f].re + input[t][k].im * self.weights_2[k][f].re;
                         }
-                        out_row
-                    })
-                    .collect()
+                        output[t][f] = C::new(sum_real.re, 0.0);
+                    }
+                }
+                output
             })
             .collect();
 
@@ -99,61 +92,46 @@ impl ComplexToLinearLayer {
     }
 
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
-        let total_valid_tokens = previous_gradient.get_total_valid_tokens();
-        let input_batch_vec = self.input_batch.as_ref();
+        let input_batch = self.input_batch.as_ref().unwrap();
+        let prev_grad_batch = previous_gradient.get_gradient_input_batch();
 
-        if input_batch_vec.is_none() {
-            panic!("ComplexToLinearLayer (Vec) has no input batch stored for backward pass");
-        }
-
-        let previous_gradient_input_batch: Vec<Vec<Vec<C>>> = previous_gradient
-            .get_gradient_input_batch_ref()
-            .expect("ComplexToLinearLayer (Vec): expected Vec previous gradient")
-            .to_vec();
-
-        let batch_len = input_batch_vec.expect("vec batch").len();
-
+        let batch = input_batch.len();
+        let time = input_batch[0].len();
         let in_f = self.weights_1.len();
         let out_f = self.weights_1[0].len();
 
-        let mut grad_w1 = vec![vec![vec![C::new(ZERO, ZERO); out_f]; in_f]; batch_len];
-        let mut grad_w2 = vec![vec![vec![C::new(ZERO, ZERO); out_f]; in_f]; batch_len];
-        let mut gradient_input_batch: Vec<Vec<Vec<C>>> = vec![vec![vec![C::new(ZERO, ZERO); in_f]; 0]; 0];
+        let mut grad_input = vec![vec![vec![C::new(0.0, 0.0); in_f]; time]; batch];
+        let mut grad_w1 = vec![vec![vec![C::new(0.0, 0.0); out_f]; in_f]; batch];
+        let mut grad_w2 = vec![vec![vec![C::new(0.0, 0.0); out_f]; in_f]; batch];
 
-        for batch_ind in 0..batch_len {
-            let input_sample = &input_batch_vec.expect(" is empty vec batch in ComplexToLinearLayer (Vec) backward")[batch_ind];
-            let grad_sample = &previous_gradient_input_batch[batch_ind];
-
-            assert_eq!(input_sample[0].len(), in_f);
-            assert_eq!(grad_sample[0].len(), out_f);
-            assert_eq!(input_sample.len(), grad_sample.len());
-
-            let time = input_sample.len();
+        for b in 0..batch {
             for t in 0..time {
-                let input_row = &input_sample[t];
-                let g_row = &grad_sample[t];
                 for f in 0..out_f {
-                    let g = g_row[f].re;
-                    for k in 0..in_f {
-                        let x = input_row[k];
+                    let g = prev_grad_batch[b][t][f].re;
 
+                    for k in 0..in_f {
                         // input gradients
-                        gradient_input_batch[batch_ind][t][k].re += g * self.weights_1[k][f].re;
-                        gradient_input_batch[batch_ind][t][k].im += g * self.weights_2[k][f].re;
+                        grad_input[b][t][k].re += g * self.weights_1[k][f].re;
+                        grad_input[b][t][k].im += g * self.weights_2[k][f].re;
 
                         // weight gradients
-                        grad_w1[batch_ind][k][f].re += x.re * g;
-                        grad_w2[batch_ind][k][f].re += x.im * g;
+                        grad_w1[b][k][f].re += input_batch[b][t][k].re * g;
+                        grad_w2[b][k][f].re += input_batch[b][t][k].im * g;
                     }
                 }
             }
         }
 
+        // // Combine with previous stored gradients if needed
+        // if let Some(prev_grad) = &self.gradient {
+        //     grad_w1 = add_matrix_3d(&grad_w1, &prev_grad.get_gradient_weight_batch());
+        //     grad_w2 = add_matrix_3d(&grad_w2, &prev_grad.get_gradient_weight_2_batch());
+        // }
+
         let mut gradient = Gradient::new_default();
-        gradient.set_gradient_input_batch(gradient_input_batch);
+        gradient.set_gradient_input_batch(grad_input.clone());
         gradient.set_gradient_weight_batch(grad_w1);
         gradient.set_gradient_weight_2_batch(grad_w2);
-        gradient.set_total_valid_tokens(total_valid_tokens);
 
         self.gradient = Some(gradient.clone());
         gradient
