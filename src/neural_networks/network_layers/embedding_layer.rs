@@ -2,21 +2,19 @@ use bincode;
 use core::fmt::Debug;
 use num::Complex;
 use rand::Rng;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sled::Db;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
-use crate::database::sled_db::{get_db_embedding, get_storage_path_embedding_db};
+use crate::database::sled_db::get_db_embedding;
 use crate::neural_networks::network_components::gradient_struct::Gradient;
 use crate::neural_networks::network_components::layer_input_struct::LayerInput;
 use crate::neural_networks::network_layers::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
-use crate::neural_networks::utils::dtype::{c_from_f64, c_to_f64, r, Real, C, ONE, ZERO};
-use crate::neural_networks::utils::matrix::{clip_all_gradients_by_global_norm_3d, is_nan_or_inf};
+use crate::neural_networks::utils::dtype::{c_from_f64, c_to_f64, r, C, ZERO};
 use crate::neural_networks::utils::shared_f32_matrix::SharedF32Matrix;
 
 use std::sync::RwLock;
@@ -106,9 +104,12 @@ impl EmbeddingLayer {
 
     /// Load an existing embedding layer (metadata only, embeddings are stored in Sled)
     pub fn load(vocab_size: usize, embedding_dim: usize) -> Self {
+        let base_2: i32 = 2;
+        let embedding_dim_compressed = (embedding_dim as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize;
+
         Self {
             vocab_size,
-            embedding_dim,
+            embedding_dim: embedding_dim_compressed,
             gradient: None,
             previous_gradient: None,
             learning_rate: 0.001,
@@ -125,10 +126,7 @@ impl EmbeddingLayer {
     }
 
     pub fn get_or_create(vocab_size: usize, embedding_dim: usize) -> Self {
-        let mut embedding_path: PathBuf = get_storage_path_embedding_db(EMBEDDING_PATH);
-        embedding_path.push(FILE_NAME);
-
-       Self::load(vocab_size, embedding_dim)
+        Self::load(vocab_size, embedding_dim)
     }
 
     pub fn apply_padding_to_batch(token_input_ids_batch: &Vec<Vec<u32>>, _target_batch_ids: &Vec<Vec<u32>>) -> (Vec<Vec<u32>>, Vec<Vec<u32>>) {
@@ -228,7 +226,7 @@ impl EmbeddingLayer {
         gradient
     }
 
-    pub fn update_parameters(&mut self, token_id_batches: &[Vec<u32>], learning_rate: f64) {
+    pub fn update_parameters(&mut self, token_id_batches: &[Vec<u32>]) {
         let gradient: &Gradient = self.gradient.as_ref().expect("Output batch is missing in dense layer");
 
         // Vec-only layer: RM-only gradients must be handled by EmbeddingLayerRm.

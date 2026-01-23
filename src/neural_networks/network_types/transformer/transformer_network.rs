@@ -73,22 +73,20 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
             let (_tokens, input_ids) = tokenize_batch(&input_batch_extended, false).unwrap();
             let (_tokens, target_ids) = tokenize_batch(&target_batch_extended, false).unwrap();
 
-            let valid_target_tokens_batch: usize = target_ids.iter().map(|seq| seq.iter().filter(|&&id| id != 1).count()).sum();
-            total_valid_target_tokens_epoch += valid_target_tokens_batch;
-
             let batch_ids: Vec<Vec<u32>> = concat_batches(&input_ids, &target_ids);
 
-            //NOTE: no-op for now.
-            // Kept intentionally for future changes to target shifting logic
+            // Option A training: treat `<sep>` as GIVEN in the input stream.
+            // Therefore we DO NOT supervise predicting `<sep>`; we start targets after it.
+            // (target sequence is like: <sep> answer... <eos>)
             let mut target_ids: Vec<Vec<u32>> = target_ids
                 .iter()
                 .map(|seq| {
-                    if seq.is_empty() {
+                    if seq.len() <= 1 {
                         return vec![];
                     }
 
-                    let mut shifted = Vec::with_capacity(seq.len());
-                    shifted.extend_from_slice(&seq[0..seq.len()]);
+                    let mut shifted = Vec::with_capacity(seq.len().saturating_sub(1));
+                    shifted.extend_from_slice(&seq[1..]);
                     shifted
                 })
                 .collect();
@@ -105,6 +103,10 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
                     shifted
                 })
                 .collect();
+
+            // Count valid target tokens AFTER shifting.
+            let valid_target_tokens_batch: usize = target_ids.iter().map(|seq| seq.iter().filter(|&&id| id != 1).count()).sum();
+            total_valid_target_tokens_epoch += valid_target_tokens_batch;
 
             if VERBOSE {
                 print!("\n batch ids: {:?}\n", &batch_ids);
@@ -280,6 +282,14 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
 
 pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String>) -> Vec<String> {
     let mut current_input_batch: Vec<String> = extend_input_with_bos(input_batch);
+
+    // Option A inference: ensure `<sep>` is present at the end of the prompt.
+    // Training conditions the model to start generating AFTER `<sep>`.
+    for s in &mut current_input_batch {
+        if !s.trim_end().ends_with("<sep>") {
+            s.push_str(" <sep>");
+        }
+    }
     let mut count_tokens_prediction = 0;
 
     let now = Instant::now();

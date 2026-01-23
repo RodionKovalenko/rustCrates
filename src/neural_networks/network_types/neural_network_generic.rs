@@ -5,6 +5,7 @@ use crate::{
     database::sled_db::get_storage_path_transformer_db,
     neural_networks::{
         network_layers::layer::LayerEnum,
+        network_layers::tied_sparse_embeddings::TiedSparseEmbeddings,
         utils::file::{derialize_bin, serialize_bin},
     },
 };
@@ -33,6 +34,11 @@ pub struct NeuralNetwork {
     pub ema: f64,
     pub global_norm: f64,
     pub max_norm: f64,
+
+    /// Runtime-only shared parameter bundle used for weight tying.
+    /// Not persisted because pointer identity is not stable across serde/bincode.
+    #[serde(skip)]
+    pub tied_sparse_embeddings: Option<TiedSparseEmbeddings>,
 }
 
 // Provide more flexible methods for getting properties of the network
@@ -79,6 +85,51 @@ impl NeuralNetwork {
         update_learning_rate(self, self.learning_rate);
         println!("Manual decay applied. New LR: {:?}", self.learning_rate);
     }
+
+    /// Restore runtime-only links (e.g. weight tying) after creating/loading a model.
+    pub fn post_load_init(&mut self) {
+        self.tie_embedding_and_sparse_linear();
+    }
+
+    /// Tie `EmbeddingLayer` and `SparseLinearLayer` to a single shared weight table.
+    pub fn tie_embedding_and_sparse_linear(&mut self) {
+        let mut embedding_idx: Option<usize> = None;
+        let mut sparse_linear_idx: Option<usize> = None;
+
+        for (idx, layer) in self.layers.iter().enumerate() {
+            match layer {
+                LayerEnum::Embedding(_) => embedding_idx = Some(idx),
+                LayerEnum::SparseLinear(_) => sparse_linear_idx = Some(idx),
+                _ => {}
+            }
+        }
+
+        let (Some(emb_i), Some(sl_i)) = (embedding_idx, sparse_linear_idx) else {
+            return;
+        };
+        if emb_i == sl_i {
+            return;
+        }
+
+        let (low, high) = if emb_i < sl_i { (emb_i, sl_i) } else { (sl_i, emb_i) };
+        let (left, right) = self.layers.split_at_mut(high);
+        let a = &mut left[low];
+        let b = &mut right[0];
+
+        match (a, b) {
+            (LayerEnum::Embedding(embedding_layer), LayerEnum::SparseLinear(sparse_linear_layer))
+            | (LayerEnum::SparseLinear(sparse_linear_layer), LayerEnum::Embedding(embedding_layer)) => {
+                let tied = TiedSparseEmbeddings::new(sparse_linear_layer.weights.clone());
+
+                // SparseLinear owns the optimizer update; it needs access to embedding-side accumulated grads.
+                sparse_linear_layer.tied_embedding_grad_by_token = Some(tied.grad_by_token.clone());
+                embedding_layer.set_tied_weights(tied.weights.clone(), tied.grad_by_token.clone());
+
+                self.tied_sparse_embeddings = Some(tied);
+            }
+            _ => {}
+        }
+    }
 }
 
 pub fn create(number_inputs: usize, number_outputs: usize, number_of_hidden_layers: usize, number_of_hidden_neurons: usize, minibatch_size: usize, learning_rate: f64) -> NeuralNetwork {
@@ -95,6 +146,7 @@ pub fn create(number_inputs: usize, number_outputs: usize, number_of_hidden_laye
         ema: 0.0,
         global_norm: 0.0,
         max_norm: 0.0,
+        tied_sparse_embeddings: None,
     };
 
     feed_net
@@ -116,12 +168,16 @@ pub fn get_from_db(filename: &str) -> Result<NeuralNetwork, String> {
 
     if !Path::new(filepath).exists() {
         println!("Transfomer model file does not exist, creating new model ....");
-        return Ok(create_transformer(OperationMode::TRAINING));
+        let mut network = create_transformer(OperationMode::TRAINING);
+        network.post_load_init();
+        return Ok(network);
     }
 
     println!("✅ Transfomer model is loading from file: {:?}", &filepath);
     let transformer_result: Result<NeuralNetwork, std::io::Error> = derialize_bin::<NeuralNetwork>(filepath);
-    let transformer = transformer_result.unwrap();
+    let mut transformer = transformer_result.unwrap();
+
+    transformer.post_load_init();
 
     Ok(transformer)
 }

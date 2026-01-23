@@ -69,5 +69,8 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
 
     transformer_network.layers = layers;
 
+    // Restore runtime-only links (e.g. weight tying).
+    transformer_network.post_load_init();
+
     transformer_network
 }

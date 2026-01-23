@@ -930,15 +930,27 @@ fn update_by_norm(transformer: &mut NeuralNetwork) {
 pub fn update_transformer(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<Vec<u32>>) {
     update_by_norm(transformer_network);
 
+    // IMPORTANT for weight tying:
+    // Embedding layers accumulate per-token gradients into a shared accumulator that is consumed
+    // by SparseLinearLayer::update_parameters(). Therefore accumulation must happen BEFORE the
+    // SparseLinear optimizer step.
+    for layer in transformer_network.layers.iter_mut() {
+        match layer {
+            LayerEnum::Embedding(embedding_layer) => {
+                embedding_layer.update_parameters(target_batch_ids);
+            }
+            LayerEnum::EmbeddingRm(embedding_layer) => {
+                embedding_layer.update_parameters(target_batch_ids);
+            }
+            _ => {}
+        }
+    }
+
     for layer in transformer_network.layers.iter_mut().rev() {
         match layer {
             LayerEnum::AdaptiveAvgPool1d(_adaptive_pooling) => {}
-            LayerEnum::Embedding(embedding_layer) => {
-                embedding_layer.update_parameters(&target_batch_ids, transformer_network.learning_rate);
-            }
-            LayerEnum::EmbeddingRm(embedding_layer) => {
-                embedding_layer.update_parameters(&target_batch_ids, transformer_network.learning_rate);
-            }
+            LayerEnum::Embedding(_embedding_layer) => {}
+            LayerEnum::EmbeddingRm(_embedding_layer) => {}
             LayerEnum::PositionalEncoding(_positional_encoding_layer) => {}
             LayerEnum::PositionalEncodingRm(_positional_encoding_layer) => {}
             LayerEnum::Norm(_norm_layer) => {

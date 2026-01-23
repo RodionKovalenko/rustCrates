@@ -263,7 +263,7 @@ impl EmbeddingLayerRm {
         gradient
     }
 
-    pub fn update_parameters(&mut self, token_id_batches: &[Vec<u32>], learning_rate: f64) {
+    pub fn update_parameters(&mut self, token_id_batches: &[Vec<u32>]) {
         let gradient: &Gradient = self.gradient.as_ref().expect("EmbeddingLayerRm missing gradients");
 
         let grads_rm = gradient
@@ -324,7 +324,7 @@ impl EmbeddingLayerRm {
                         panic!("gradient in embedding is invalid: {:?}", &grad_val);
                     }
 
-                    token_embedding[j] -= r(learning_rate) * (grad_val / batch_size);
+                    token_embedding[j] -= r(self.learning_rate) * (grad_val / batch_size);
 
                     if is_nan_or_inf(&token_embedding[j]) {
                         panic!("embedding is invalid after update: {:?}", &token_embedding[j]);
