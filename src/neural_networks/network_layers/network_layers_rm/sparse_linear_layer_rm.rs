@@ -133,7 +133,8 @@ impl SparseLinearLayerRm {
             self.assignments = assignments;
             self.cluster_to_tokens = cluster_to_tokens;
 
-            self.previous_weights = self.weights.read().clone();
+            // IMPORTANT: avoid deadlock by not acquiring a read-lock while holding the write-lock.
+            self.previous_weights = (*w).clone();
             self.last_cluster_update_step = epoch;
         }
     }
