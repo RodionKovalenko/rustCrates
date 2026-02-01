@@ -57,7 +57,7 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
         layers.push(LayerEnum::FeedForward(Box::new(ffn_layer)));
     }
     // Transformer block end
-    let compressed_hidden = 16;
+    let compressed_hidden = embedding_dim_compressed;
     let _ctl_layer = ComplexToLinearLayer::new(rows, compressed_hidden, learning_rate);
     layers.push(LayerEnum::ComplexToLinear(Box::new(_ctl_layer)));
 

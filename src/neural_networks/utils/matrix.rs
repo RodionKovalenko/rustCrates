@@ -1075,6 +1075,26 @@ pub fn add_matrix_3d<T: Debug + Clone + Add<Output = T>>(matrix_a: &Vec<Vec<Vec<
     matrix_result
 }
 
+pub fn add_matrix_3d_in_place<T: Debug + Clone + Add<Output = T>>(matrix_a: &mut Vec<Vec<Vec<T>>>, matrix_b: &Vec<Vec<Vec<T>>>) {
+    assert!(
+        matrix_a.len() == matrix_b.len() && matrix_a[0].len() == matrix_b[0].len() && matrix_a[0][0].len() == matrix_b[0][0].len(),
+        "Input matrices must not be empty, a: {} x {} x {} and b: {} x {} x {} must have the same dimensions",
+        matrix_a.len(),
+        matrix_a[0].len(),
+        matrix_a[0][0].len(),
+        matrix_b.len(),
+        matrix_b[0].len(),
+        matrix_b[0][0].len(),
+    );
+    for i in 0..matrix_a.len() {
+        for j in 0..matrix_a[i].len() {
+            for k in 0..matrix_a[i][j].len() {
+                matrix_a[i][j][k] = matrix_a[i][j][k].clone() + matrix_b[i % matrix_b.len()][j % matrix_b[0].len()][k % matrix_b[0][0].len()].clone();
+            }
+        }
+    }
+}
+
 pub fn add_matrix_1d_c(matrix_a: &Vec<Complex<f64>>, matrix_b: &Vec<Complex<f64>>) -> Vec<Complex<f64>> {
     let mut matrix_result: Vec<Complex<f64>> = matrix_a.clone();
 
@@ -1153,6 +1173,17 @@ where
     T: PolarConvertible + Debug + Clone + Div<Real, Output = T>,
 {
     matrix_a.iter().map(|val| average_matrix_by_scalar(val, scalar)).collect()
+}
+
+
+pub fn scale_matrix_3d_by_scalar_in_place<T: Debug + Clone + Mul<Real, Output = T>>(matrix_a: &mut Vec<Vec<Vec<T>>>, scalar: Real) {
+    for i in 0..matrix_a.len() {
+        for j in 0..matrix_a[i].len() {
+            for k in 0..matrix_a[i][j].len() {
+                matrix_a[i][j][k] = matrix_a[i][j][k].clone() * scalar;
+            }
+        }
+    }
 }
 
 pub fn scale_matrix_3d_by_scalar<T>(matrix_a: &Vec<Vec<Vec<T>>>, scalar: Real) -> Vec<Vec<Vec<T>>>

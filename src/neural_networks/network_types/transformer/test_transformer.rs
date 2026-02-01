@@ -105,7 +105,7 @@ pub fn test_train_transformer() {
     let dataset = Dataset::new(input, target);
     let num_epochs: usize = 5000;
 
-    train(&mut transformer, dataset, num_epochs, 5);
+    train(&mut transformer, dataset, num_epochs, 3);
     let seconds_elapsed_end = now.elapsed();
 
     println!("time elapsed in seconds: {:?}", seconds_elapsed_end - seconds_elapsed);

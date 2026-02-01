@@ -62,7 +62,7 @@ pub struct SparseLinearLayer {
     pub tied_embedding_grad_by_token: Option<Arc<RwLock<HashMap<usize, Vec<C>>>>>,
 }
 
-pub const TOP_K_SELECTION: usize = 300;
+pub const TOP_K_SELECTION: usize = 25;
 
 impl SparseLinearLayer {
     pub fn new(learning_rate: f64, embedding_d: usize, vocab_size: usize) -> Self {
@@ -202,7 +202,7 @@ impl SparseLinearLayer {
         let (output_batch, output_indices) = self.mutliply_hightest_k_per_row(&input_batch, input, &*weights_guard);
 
         if VERBOSE {
-            println!("Linear layer complex matmul time for batch size {}: {}", self.batch_size, start.elapsed().as_secs_f64());
+            println!("Sparse Linear layer complex matmul time for batch size {}: {}", self.batch_size, start.elapsed().as_secs_f64());
         }
         // println!("Output batch size in linear layer after dwt inverse:  {} {} {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());
 

@@ -15,6 +15,7 @@ use crate::neural_networks::network_components::gradient_struct::Gradient;
 use crate::neural_networks::network_components::layer_input_struct::LayerInput;
 use crate::neural_networks::network_layers::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
 use crate::neural_networks::utils::dtype::{c_from_f64, c_to_f64, r, C, ZERO};
+use crate::neural_networks::utils::matrix::normalize_gradients_batch;
 use crate::neural_networks::utils::shared_f32_matrix::SharedF32Matrix;
 
 use std::sync::RwLock;
@@ -231,10 +232,12 @@ impl EmbeddingLayer {
 
         // Vec-only layer: RM-only gradients must be handled by EmbeddingLayerRm.
         let previous_gradients_rm_ref = gradient.get_gradient_input_batch_rm_ref().filter(|g| !g.is_empty());
-        let previous_gradients: Vec<Vec<Vec<C>>> = gradient.get_gradient_input_batch();
+        let mut previous_gradients: Vec<Vec<Vec<C>>> = gradient.get_gradient_input_batch();
         if previous_gradients.is_empty() && previous_gradients_rm_ref.is_some() {
             panic!("EmbeddingLayer received RM-only gradients; use EmbeddingLayerRm");
         }
+
+        normalize_gradients_batch(&mut previous_gradients);
 
         if self.is_tied() {
             let acc = self.tied_grad_by_token.as_ref().expect("tied accumulator missing").clone();
@@ -245,12 +248,13 @@ impl EmbeddingLayer {
                     if token_id == 1 {
                         continue;
                     }
+
                     let token_idx = token_id as usize;
                     let grads = &previous_gradients[batch_idx][i];
                     let entry = acc_lock.entry(token_idx).or_insert_with(|| vec![C::new(ZERO, ZERO); self.embedding_dim]);
                     let n = entry.len().min(grads.len());
                     for j in 0..n {
-                        entry[j] += grads[j];
+                        entry[j] += grads[j] * r(self.learning_rate);
                     }
                 }
             }

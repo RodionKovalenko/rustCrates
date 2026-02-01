@@ -169,7 +169,7 @@ mod test_sparse_self_attention_layer {
             }
         }
 
-        //test_gradient_error_2d(&num_gradient_input_batch_aggregated, &gradient_input_batch_att_l, 1e-2);
+        test_gradient_error_2d(&num_gradient_input_batch_aggregated, &gradient_input_batch_att_l, 1e-2);
 
         // Test weights q
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {

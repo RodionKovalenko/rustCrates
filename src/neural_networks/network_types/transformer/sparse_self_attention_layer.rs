@@ -6,7 +6,7 @@ use crate::neural_networks::{
         norm_layer::NormalNormLayer,
     },
     network_types::transformer::{sparse_masked_attention_head::SparseMaskedAttentionHead, transformer_updater::calculate_alpha},
-    utils::matrix::{add_matrix_3d, scale_matrix_3d_by_scalar},
+    utils::matrix::{add_matrix_3d_in_place, scale_matrix_3d_by_scalar_in_place},
 };
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
@@ -66,13 +66,6 @@ impl SparseSelfAttentionLayer {
 }
 impl SparseSelfAttentionLayer {
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        let input_batch_rm_ref = layer_input.get_input_batch_rm_ref();
-        let input_batch_ref = layer_input.get_input_batch_ref();
-        let rm_only = input_batch_ref.is_none() && input_batch_rm_ref.is_some_and(|rm| !rm.is_empty());
-        if rm_only {
-            panic!("SparseSelfAttentionLayer is Vec-only; use SparseSelfAttentionLayerRm for RM inputs");
-        }
-
         let mut batch_output = layer_input.get_input_batch();
         let input_batch = layer_input.get_input_batch();
         let padding_mask_batch = layer_input.get_padding_mask_batch();
@@ -131,7 +124,7 @@ impl SparseSelfAttentionLayer {
         layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
         // Residual connection
-        let batch_output_scaled = scale_matrix_3d_by_scalar(&batch_output, self.beta);
+        scale_matrix_3d_by_scalar_in_place(&mut batch_output, self.beta);
 
         if layer_input.get_forward_only() {
             let input_batch_aligned = input_batch
@@ -146,9 +139,9 @@ impl SparseSelfAttentionLayer {
                 })
                 .collect();
 
-            batch_output = add_matrix_3d(&batch_output_scaled, &input_batch_aligned);
+            add_matrix_3d_in_place(&mut batch_output, &input_batch_aligned);
         } else {
-            batch_output = add_matrix_3d(&batch_output_scaled, &input_batch);
+            add_matrix_3d_in_place(&mut batch_output, &input_batch);
         }
 
         self.input_batch = Some(input_batch.clone());
@@ -164,7 +157,7 @@ impl SparseSelfAttentionLayer {
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<C>>>) -> Gradient {
         let mut gradient_input_batch: Vec<Vec<Vec<C>>> = previous_gradient_batch.clone();
-        gradient_input_batch = scale_matrix_3d_by_scalar(&gradient_input_batch, self.beta);
+        scale_matrix_3d_by_scalar_in_place(&mut gradient_input_batch, self.beta);
 
         let mut gradient: Gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(previous_gradient_batch.clone());
@@ -180,8 +173,7 @@ impl SparseSelfAttentionLayer {
             .enumerate()
             .map(|(head_ind, attention_head)| {
                 // It's better to borrow if possible, not clone — clone only if needed
-                let previous_head_gradient_batch = &previous_gradient_head_splitted[head_ind];
-                let gradient = attention_head.backward(previous_head_gradient_batch);
+                let gradient = attention_head.backward(&previous_gradient_head_splitted[head_ind]);
                 gradient.get_gradient_input_batch()
             })
             .collect();
@@ -199,27 +191,23 @@ impl SparseSelfAttentionLayer {
             }
         }
 
-        gradient.set_gradient_input_batch(combined_gradient_input_batch.clone());
-        gradient_input_batch = combined_gradient_input_batch.clone();
-
         // Process the dense layers
         if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
             match norm_layer_enum {
                 LayerEnum::RMSNorm(rms_norm_layer) => {
-                    let norm_gradient = rms_norm_layer.backward(&gradient_input_batch);
-                    gradient_input_batch = norm_gradient.get_gradient_input_batch();
-                    gradient.set_gradient_input_batch(gradient_input_batch.clone());
+                    let norm_gradient = rms_norm_layer.backward(&combined_gradient_input_batch);
+                    combined_gradient_input_batch = norm_gradient.get_gradient_input_batch();
                 }
                 LayerEnum::Norm(norm_layer) => {
+                    gradient.set_gradient_input_batch(combined_gradient_input_batch);
                     let norm_gradient = norm_layer.backward(&gradient);
-                    gradient_input_batch = norm_gradient.get_gradient_input_batch();
-                    gradient.set_gradient_input_batch(gradient_input_batch.clone());
+                    combined_gradient_input_batch = norm_gradient.get_gradient_input_batch();
                 }
                 _ => {}
             }
         }
 
-        combined_gradient_input_batch = add_matrix_3d(&previous_gradient_batch, &gradient_input_batch);
+        add_matrix_3d_in_place(&mut combined_gradient_input_batch, previous_gradient_batch);
 
         // Return the final gradient
         gradient.set_gradient_input_batch(combined_gradient_input_batch);
