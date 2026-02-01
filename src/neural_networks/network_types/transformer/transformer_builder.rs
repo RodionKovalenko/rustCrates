@@ -1,7 +1,7 @@
 use crate::neural_networks::{
     network_layers::{
         complex_to_linear_layer::ComplexToLinearLayer, embedding_layer::EmbeddingLayer, feedforward_layer::FeedForwardLayer, layer::LayerEnum, norm_layer::NormalNormLayer,
-        positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer, sparse_linear_layer::SparseLinearLayer, wavelet_network::DECOMPOSITION_LEVELS,
+        softmax_output_layer::SoftmaxLayer, sparse_linear_layer::SparseLinearLayer, wavelet_network::DECOMPOSITION_LEVELS,
     },
     network_types::{
         neural_network_generic::{create, NeuralNetwork, OperationMode},
@@ -32,12 +32,12 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let vocab_size: usize = 50280;
     let epsilon: f64 = 1e-8;
     let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original);
-    let positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
+    // let positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
 
     layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
     layers.push(LayerEnum::Norm(Box::new(NormalNormLayer::new(embedding_dim_compressed, epsilon, learning_rate))));
     //layers.push(LayerEnum::Wavelet(Box::new(ComplexWaveletLayer::new())));
-    layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
+    // layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
 
     let rows: usize = embedding_dim_compressed;
     // Transformer block start

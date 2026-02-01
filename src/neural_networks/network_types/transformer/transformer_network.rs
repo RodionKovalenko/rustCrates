@@ -34,9 +34,7 @@ pub const TOP_K_SIZE: usize = 24;
 
 #[inline]
 fn complex_batch_to_real_batch(data: &[Vec<Vec<C>>]) -> Vec<Vec<Vec<Real>>> {
-    data.iter()
-        .map(|seq| seq.iter().map(|row| row.iter().map(|z| z.re).collect()).collect())
-        .collect()
+    data.iter().map(|seq| seq.iter().map(|row| row.iter().map(|z| z.re).collect()).collect()).collect()
 }
 
 pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<String, String>, num_epochs: usize, batch_size: usize) {
@@ -1180,11 +1178,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             LayerEnum::SelfAttention(attention_layer) => {
                 if let Some(previous_gradient) = gradient {
                     let start = Instant::now();
-                    let gradient_batch: Gradient = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
-                        attention_layer.backward_rm(gr_rm)
-                    } else {
-                        attention_layer.backward(&previous_gradient.get_gradient_input_batch())
-                    };
+                    let gradient_batch: Gradient = attention_layer.backward(&previous_gradient.get_gradient_input_batch());
 
                     if VERBOSE {
                         println!("time elapsed in seconds in self attention layer backward: {:?}", start.elapsed().as_secs_f64());

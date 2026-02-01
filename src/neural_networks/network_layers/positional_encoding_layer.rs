@@ -1,6 +1,6 @@
 use crate::neural_networks::network_components::gradient_struct::Gradient;
 use crate::neural_networks::network_components::layer_input_struct::LayerInput;
-use crate::neural_networks::utils::dtype::{r, C, Real, ZERO};
+use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -33,99 +33,86 @@ impl PositionalEncodingLayer {
     }
 
     pub fn forward(&mut self, layer_input: &LayerInput) -> Vec<Vec<Vec<C>>> {
-        let input_batch = layer_input
-            .get_input_batch_ref()
-            .expect("PositionalEncodingLayer: input batch missing");
+        let input_batch = layer_input.get_input_batch_ref().expect("PositionalEncodingLayer: input batch missing");
+        self.input_batch = Some(input_batch.to_vec());
 
-        let scaling_factor = SCALING_FAKTOR;
+        input_batch.par_iter().map(|sequence| self.apply_robe_to_sequence(sequence, layer_input)).collect()
+    }
+
+    pub fn apply_robe_to_sequence(&self, sequence: &Vec<Vec<C>>, layer_input: &LayerInput) -> Vec<Vec<C>> {
         let forward_only = layer_input.get_forward_only();
 
-        if layer_input.get_calculate_gradient() {
-            self.input_batch = Some(input_batch.to_vec());
-        } else {
-            self.input_batch = None;
-        }
-
-        input_batch
-            .par_iter()
-            .map(|sequence| {
-                sequence
-                    .iter()
-                    .enumerate()
-                    .map(|(position, token_embeddings)| {
-                        assert_eq!(token_embeddings.len(), self.embedding_dim, "All token embeddings must match the specified dimension.");
-                        let time_step = if forward_only && layer_input.get_time_step() > 0 {
-                            layer_input.get_time_step()
-                        } else {
-                            position
-                        };
-                        self.apply_rotary_positional_encoding(token_embeddings, time_step, scaling_factor)
-                    })
-                    .collect::<Vec<Vec<C>>>()
+        sequence
+            .iter()
+            .enumerate()
+            .map(|(position, token_embeddings)| {
+                assert_eq!(token_embeddings.len(), self.embedding_dim, "All token embeddings must match the specified dimension.");
+                let time_step = if forward_only && layer_input.get_time_step() > 0 { layer_input.get_time_step() } else { position };
+                self.apply_rotary_positional_encoding(token_embeddings, time_step, SCALING_FAKTOR)
             })
-            .collect()
+            .collect::<Vec<Vec<C>>>()
     }
 
     pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<C>>>) -> Gradient {
-        if self.input_batch.is_none() {
-            let mut gradient = Gradient::new_default();
-            gradient.set_gradient_input_batch(vec![]);
-            self.gradient = Some(gradient.clone());
-            return gradient;
-        }
+        let input_batch = self.input_batch.as_ref().expect("Input batch is missing in positional encoding layer");
 
-        let input_batch = self
-            .input_batch
-            .as_ref()
-            .expect("Input batch is missing in positional encoding layer");
         assert_eq!(input_batch.len(), previous_gradient_batch.len(), "Batch size mismatch");
-
         assert_eq!(self.embedding_dim % 2, 0, "Embedding dimension must be even for RoPE.");
-        let half_dim = self.embedding_dim / 2;
 
         let input_gradient_batch: Vec<Vec<Vec<C>>> = input_batch
             .par_iter()
             .zip(previous_gradient_batch.par_iter())
             .map(|(input_sequence, grad_sequence)| {
                 assert_eq!(input_sequence.len(), grad_sequence.len(), "Sequence length mismatch");
-
-                grad_sequence
-                    .iter()
-                    .enumerate()
-                    .map(|(position, grad_embedding)| {
-                        assert_eq!(grad_embedding.len(), self.embedding_dim);
-                        let mut rotated_grad = vec![C::new(ZERO, ZERO); self.embedding_dim];
-
-                        for i in 0..half_dim {
-                            let even_idx = 2 * i;
-                            let odd_idx = even_idx + 1;
-
-                            let mut theta = position as f64
-                                / ((self.base * SCALING_FAKTOR).powf(2.0 * i as f64 / self.embedding_dim as f64));
-                            theta = theta.clamp(-1.0, 1.0);
-                            let (sin_theta_f64, cos_theta_f64) = theta.sin_cos();
-                            let sin_theta: Real = r(sin_theta_f64);
-                            let cos_theta: Real = r(cos_theta_f64);
-
-                            let grad_even = grad_embedding[even_idx];
-                            let grad_odd = grad_embedding[odd_idx];
-
-                            rotated_grad[even_idx] =
-                                C::new(grad_even.re * cos_theta + grad_odd.re * sin_theta, grad_even.im * cos_theta + grad_odd.im * sin_theta);
-                            rotated_grad[odd_idx] =
-                                C::new(-grad_even.re * sin_theta + grad_odd.re * cos_theta, -grad_even.im * sin_theta + grad_odd.im * cos_theta);
-                        }
-
-                        rotated_grad
-                    })
-                    .collect()
+                self.backward_sequence(grad_sequence)
             })
             .collect();
 
         let mut gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(input_gradient_batch);
         self.gradient = Some(gradient.clone());
+
         gradient
+    }
+
+    pub fn backward_sequences(&mut self, previous_gradient_batch: &Vec<Vec<Vec<C>>>) -> Vec<Vec<Vec<C>>> {
+        assert_eq!(self.embedding_dim % 2, 0, "Embedding dimension must be even for RoPE.");
+
+        let input_gradient_batch: Vec<Vec<Vec<C>>> = previous_gradient_batch.par_iter().map(|grad_sequence| self.backward_sequence(grad_sequence)).collect();
+
+        input_gradient_batch
+    }
+
+    pub fn backward_sequence(&self, grad_sequence: &Vec<Vec<C>>) -> Vec<Vec<C>> {
+        let half_dim = self.embedding_dim / 2;
+
+        grad_sequence
+            .iter()
+            .enumerate()
+            .map(|(position, grad_embedding)| {
+                assert_eq!(grad_embedding.len(), self.embedding_dim);
+                let mut rotated_grad = vec![C::new(ZERO, ZERO); self.embedding_dim];
+
+                for i in 0..half_dim {
+                    let even_idx = 2 * i;
+                    let odd_idx = even_idx + 1;
+
+                    let mut theta = position as f64 / ((self.base * SCALING_FAKTOR).powf(2.0 * i as f64 / self.embedding_dim as f64));
+                    theta = theta.clamp(-1.0, 1.0);
+                    let (sin_theta_f64, cos_theta_f64) = theta.sin_cos();
+                    let sin_theta: Real = r(sin_theta_f64);
+                    let cos_theta: Real = r(cos_theta_f64);
+
+                    let grad_even = grad_embedding[even_idx];
+                    let grad_odd = grad_embedding[odd_idx];
+
+                    rotated_grad[even_idx] = C::new(grad_even.re * cos_theta + grad_odd.re * sin_theta, grad_even.im * cos_theta + grad_odd.im * sin_theta);
+                    rotated_grad[odd_idx] = C::new(-grad_even.re * sin_theta + grad_odd.re * cos_theta, -grad_even.im * sin_theta + grad_odd.im * cos_theta);
+                }
+
+                rotated_grad
+            })
+            .collect()
     }
 
     pub fn pad_or_trim_wavelet_output(&self, real: &[f64], imag: &[f64]) -> Vec<C> {
@@ -140,9 +127,7 @@ impl PositionalEncodingLayer {
 
     pub fn add_positional_encoding(&self, token_embeddings: &[C], positional_encoding: &[C]) -> Vec<C> {
         assert_eq!(token_embeddings.len(), positional_encoding.len());
-        (0..token_embeddings.len())
-            .map(|i| token_embeddings[i] + positional_encoding[i])
-            .collect()
+        (0..token_embeddings.len()).map(|i| token_embeddings[i] + positional_encoding[i]).collect()
     }
 
     pub fn apply_rotary_positional_encoding(&self, embedding: &[C], position: usize, scaling_factor: f64) -> Vec<C> {
@@ -153,8 +138,7 @@ impl PositionalEncodingLayer {
         let half_dim = self.embedding_dim / 2;
 
         for i in 0..half_dim {
-            let mut theta = position as f64
-                / ((self.base * scaling_factor).powf(2.0 * i as f64 / self.embedding_dim as f64));
+            let mut theta = position as f64 / ((self.base * scaling_factor).powf(2.0 * i as f64 / self.embedding_dim as f64));
             theta = theta.clamp(-1.0, 1.0);
 
             let (sin_theta_f64, cos_theta_f64) = theta.sin_cos();
