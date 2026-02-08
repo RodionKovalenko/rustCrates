@@ -53,20 +53,6 @@ impl AdaptiveAvgPool1dLayer {
         let input = input_layer.get_input_batch();
         let mut layer_output = LayerOutput::new_default();
 
-        let output = Vec::new();
-        let metadata = CompressionMetadata {
-            original_length: 0,
-            compressed_length: 0,
-            window_mappings: Vec::new(),
-            compression_type: CompressionType::Adaptive,
-        };
-
-        if input.is_empty() {
-            layer_output.set_output_batch(output);
-            layer_output.set_pooling_metadata(metadata);
-            return layer_output;
-        }
-
         let seq_len = input[0].len();
         for (i, seq) in input.iter().enumerate() {
             if seq.len() != seq_len {

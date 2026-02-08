@@ -168,6 +168,8 @@ impl SelfAttentionLayer {
             })
             .collect();
 
+        
+        println!("Gradient input batches from attention heads: {} {} {} {}", &gradient_input_batches.len(), &gradient_input_batches[0].len(), &gradient_input_batches[0][0].len(), &gradient_input_batches[0][0][0].len());
         let mut combined_gradient_input_batch: Vec<Vec<Vec<C>>> =
             vec![vec![vec![C::new(ZERO, ZERO); gradient_input_batches[0][0][0].len()]; gradient_input_batches[0][0].len()]; gradient_input_batches[0].len()];
 
@@ -188,6 +190,7 @@ impl SelfAttentionLayer {
                     combined_gradient_input_batch = norm_gradient.get_gradient_input_batch();
                 }
                 LayerEnum::Norm(norm_layer) => {
+                    println!("Combined gradient input batch before norm layer backward: {:?}, {:?}, {:?}", &combined_gradient_input_batch.len(), &combined_gradient_input_batch[0].len(), &combined_gradient_input_batch[0][0].len());
                     gradient.set_gradient_input_batch(combined_gradient_input_batch);
                     let norm_gradient = norm_layer.backward(&gradient);
                     combined_gradient_input_batch = norm_gradient.get_gradient_input_batch();

@@ -1,0 +1,138 @@
+Derivative of masked attention head:
+
+A = Q*KT/sqtr(dk)
+S = sigma(A)
+O = S * V
+
+
+# Gradiet of Wq
+dl/dWq = dl/dO * dO/dS * dS/dA * dA/dQ * dQ/dWq
+
+dl/dO = Gt
+dO/dS = VT
+dS/dA = gradient sigma(A)
+dA/dQ = KT/sqtr(dk)
+dQ/dWq = XT
+
+Example with dimensions: 
+Gt (2, 4)
+X (2, 5)
+W (5, 4)
+Q = 2,5 * 5,4 = 2,4
+K = 2,5 * 5,4 = 2,4
+V = 2,5 * 5,4 = 2,4
+
+dl/dWq = dl/dO * dO/dS * dS/dA * dA/dQ * dQ/dWq
+dl/dWq = XT * (Gt * VT * ds/dA * KT/sqtr(dk))
+
+dl/dWq = 2,5 * (2,4 * 4,2 * 2,2 * 4,2) = 2,5
+
+The order of matrix multiplication can be explained:
+
+dl/dWq = (((dl/dO * dO/dS) * dS/dA) * dA/dQ) * dQ/dWq
+
+Multiplication is FROM RIGHT TO LEFT:
+dl/dWq = dQ/dWq * (dA/dQ * ( dS/dA * (dl/dO * dO/dS)))
+
+=> dl/dWq = XT * (KT/sqtr(dk) * (ds/dA * (Gt * VT)))
+=> dl/dWq = 4 * (3 * (2 * (1)))
+
+1. (Gt * VT) = 2,4 * 4, 2 = 2,2
+2. ds/dA * 1 = 2,2 * 2,2 = 2,2
+3. KT/sqtr(dk) * 2 = 4,2 2,2 = 4,2
+4. 4 * 3 = XT * 3 = 5,2 * 4,2 = 5,2 * 2, 4 = 5,4
+
+#Gradient of Wk
+A = Q*KT/sqtr(dk)
+S = sigma(A)
+O = S * V
+
+dl/dWk = dl/dO * dO/dS * dS/dA * dA/dKT * dKT/dWk
+
+dl/dO = Gt
+dO/dS = VT
+dS/dA = gradient sigma(A)
+dA/dKT = Q/sqtr(dk)
+dKT/dWk = XT
+
+Example with dimensions: 
+Gt (2, 4)
+X (2, 5)
+W (5, 4)
+Q = 2,5 * 5,4 = 2,4
+K = 2,5 * 5,4 = 2,4
+V = 2,5 * 5,4 = 2,4
+
+dl/dWk = dl/dO * dO/dS * dS/dA * dA/dKT * dKT/dWk
+
+dl/dWk = (((dl/dO * dO/dS) * dS/dA) * dA/dKT) * dKT/dWk
+
+Multiplication is FROM RIGHT TO LEFT:
+dl/dWk = dKT/dWk * (dA/dKT * (dS/dA * (dl/dO * dO/dS)))
+
+=> dl/dWk = XT * (QT/sqtr(dk) * (ds/dA * (Gt * VT)))
+=> dl/dWq = 4 * (3 * (2 * (1)))
+
+1. (Gt * VT) = 2,4 * 4, 2 = 2,2
+2. ds/dA * 1 = 2,2 * 2,2 = 2,2
+3. QT/sqtr(dk) * 2 = 4,2 * 2,2 = 4,2
+4. 4 * 3 = XT * 3 = 5,2 * 4,2 = 5,2 * 2, 4 = 5,4
+
+
+#Gradient of Wv
+A = Q*KT/sqtr(dk)
+S = sigma(A)
+O = S * V
+
+dl/dWv = dl/dO * dO/dV * dV/dWv
+
+dl/dO = Gt
+dO/dS = VT
+dV/dWv = XT
+
+Example with dimensions: 
+Gt (2, 4)
+X (2, 5)
+W (5, 4)
+Q = 2,5 * 5,4 = 2,4
+K = 2,5 * 5,4 = 2,4
+V = 2,5 * 5,4 = 2,4
+
+dl/dWv = dl/dO * dO/dV * dV/dWv
+
+dl/dWv = (dl/dO * dO/dV) * dV/dWv
+
+Multiplication is FROM RIGHT TO LEFT:
+dl/dWv = dV/dWv * (dl/dO * dO/dV)
+
+=> dl/dWv = XT * (Gt * ST)
+=> dl/dWv = 5,2 * (2,4 * 2, 2) = 5, 2 * 4,2 = 5, 4
+
+
+
+Optimized version of masked attention head
+
+e.g. X [258][16] -> [16][16]
+
+Q = X * Wq
+Qpool = Pool(Q)
+Qpos = Rope(Qpool)
+Qnorm = Norm(Qpos) (64x16)
+
+K = X * Wk
+Kpool = Pool(K)
+Kpos = Rope(Kpool)
+Knorm = Norm(Kpos) (64x16)
+
+V = X * Wv
+Vpool = Pool(V)
+Vnorm = Norm(Vpool) (64x16)
+
+// Attention
+A = Q*KT/sqtr(dk) -> 64x64
+S = sigma(A) -> 64x64
+O = S * V -> 64x64 * 64*16 = 64x16
+
+O_upsampled = Upsample(O)
+
+

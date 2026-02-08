@@ -476,54 +476,6 @@ impl SparseMaskedAttentionHead {
         indices
     }
 
-    pub fn softmax_attention_backward_full(&self, softmax_vals: &Vec<Vec<Real>>, softmax_idx: &Vec<Vec<usize>>, dl_do: &Vec<Vec<C>>, do_ds: &Vec<Vec<C>>, padding_mask: &Vec<u32>) -> Vec<Vec<C>> {
-        let n = dl_do.len();
-        let d = dl_do[0].len();
-
-        let mut dl_dz = vec![vec![Complex::new(r(0.0), r(0.0)); n]; n];
-
-        // Pre-transpose V
-        let mut v_t = vec![vec![Complex::new(r(0.0), r(0.0)); n]; d];
-        for i in 0..n {
-            for j in 0..d {
-                v_t[j][i] = do_ds[i][j];
-            }
-        }
-
-        for i in 0..n {
-            if padding_mask[i] == 0 {
-                continue;
-            }
-
-            let cols = &softmax_idx[i]; // indices in this row that exist
-            let values = &softmax_vals[i]; // sparse softmax row
-
-            // Compute dot = Σ s[k] * u_k only over sparse entries
-            let mut dot: Real = r(0.0);
-
-            for (p, &col) in cols.iter().enumerate() {
-                let mut u_k: Real = r(0.0);
-                for j in 0..d {
-                    u_k += dl_do[i][j].re * v_t[j][col].re;
-                }
-                dot += values[p] * u_k;
-            }
-
-            // Now compute dl/dz for sparse positions
-            for (p, &col) in cols.iter().enumerate() {
-                let mut u_j: Real = r(0.0);
-                for j in 0..d {
-                    u_j += dl_do[i][j].re * v_t[j][col].re;
-                }
-
-                let s = values[p];
-                dl_dz[i][col] = Complex::new(s * (u_j - dot), r(0.0));
-            }
-        }
-
-        dl_dz
-    }
-
     pub fn softmax_backward_sparse_compressed(
         &self,
         softmax_vals: &Vec<Vec<C>>,    // sparse softmax values per row
