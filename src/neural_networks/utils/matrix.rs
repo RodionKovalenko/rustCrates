@@ -1048,6 +1048,14 @@ pub fn subtract<T: Debug + Clone + Sub<Output = T>>(matrix_a: &Vec<Vec<T>>, matr
 }
 
 pub fn add_matrix<T: std::ops::Add<Output = T> + Copy>(a: &[Vec<T>], b: &[Vec<T>]) -> Vec<Vec<T>> {
+    assert!(
+        a.len() == b.len() && a[0].len() == b[0].len(),
+        "Input matrices must not be empty, a: {} x {} and b: {} x {} must have the same dimensions",
+        a.len(),
+        a[0].len(),
+        b.len(),
+        b[0].len(),
+    );
     a.iter().zip(b.iter()).map(|(row_a, row_b)| row_a.iter().zip(row_b.iter()).map(|(&x, &y)| x + y).collect()).collect()
 }
 
