@@ -32,12 +32,10 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let vocab_size: usize = 50280;
     let epsilon: f64 = 1e-8;
     let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original);
-    // let positional_encoding_layer = PositionalEncodingLayer::new(embedding_layer.embedding_dim);
 
     layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
     layers.push(LayerEnum::Norm(Box::new(NormalNormLayer::new(embedding_dim_compressed, epsilon, learning_rate))));
     //layers.push(LayerEnum::Wavelet(Box::new(ComplexWaveletLayer::new())));
-    // layers.push(LayerEnum::PositionalEncoding(Box::new(positional_encoding_layer)));
 
     let rows: usize = embedding_dim_compressed;
     // Transformer block start

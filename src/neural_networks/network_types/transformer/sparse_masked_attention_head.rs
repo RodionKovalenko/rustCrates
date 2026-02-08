@@ -171,7 +171,7 @@ impl SparseMaskedAttentionHead {
             .par_iter()
             .map(|input| {
                 let q = multiply_complex(input, &self.weights_q);
-                self.positional_encoding_layer.apply_robe_to_sequence(&q, layer_input)
+                self.positional_encoding_layer.apply_rope_to_sequence(&q, layer_input)
             })
             .collect();
 
@@ -179,7 +179,7 @@ impl SparseMaskedAttentionHead {
             .par_iter()
             .map(|input| {
                 let k = multiply_complex(input, &self.weights_k);
-                self.positional_encoding_layer.apply_robe_to_sequence(&k, layer_input)
+                self.positional_encoding_layer.apply_rope_to_sequence(&k, layer_input)
             })
             .collect();
 

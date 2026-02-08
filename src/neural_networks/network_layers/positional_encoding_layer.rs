@@ -36,10 +36,10 @@ impl PositionalEncodingLayer {
         let input_batch = layer_input.get_input_batch_ref().expect("PositionalEncodingLayer: input batch missing");
         self.input_batch = Some(input_batch.to_vec());
 
-        input_batch.par_iter().map(|sequence| self.apply_robe_to_sequence(sequence, layer_input)).collect()
+        input_batch.par_iter().map(|sequence| self.apply_rope_to_sequence(sequence, layer_input)).collect()
     }
 
-    pub fn apply_robe_to_sequence(&self, sequence: &Vec<Vec<C>>, layer_input: &LayerInput) -> Vec<Vec<C>> {
+    pub fn apply_rope_to_sequence(&self, sequence: &Vec<Vec<C>>, layer_input: &LayerInput) -> Vec<Vec<C>> {
         let forward_only = layer_input.get_forward_only();
 
         sequence
