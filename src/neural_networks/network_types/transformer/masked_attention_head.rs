@@ -384,7 +384,7 @@ impl MaskedAttentionHead {
             // Gradient input
             let dl_dqx = multiply_complex(dl_dq, &conjugate_transpose(&self.weights_q));
             let dl_dkx = multiply_complex(dl_dk, &conjugate_transpose(&self.weights_k));
-            let dl_dvx = multiply_complex(&conjugate_transpose(&grad_wv_batch[batch_ind]), &conjugate_transpose(&self.weights_v));
+            let dl_dvx = multiply_complex(&transpose(&grad_wv_batch[batch_ind]), &conjugate_transpose(&self.weights_v));
 
             gradient_input_batch[batch_ind] = add_matrix(&dl_dqx, &dl_dkx);
             gradient_input_batch[batch_ind] = add_matrix(&gradient_input_batch[batch_ind], &dl_dvx);

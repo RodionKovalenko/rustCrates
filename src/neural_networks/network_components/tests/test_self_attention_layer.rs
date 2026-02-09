@@ -64,7 +64,7 @@ mod test_self_attention_layer {
     fn test_attention_head_backward() {
         let batch_size = 2;
         let input_dim = 5;
-        let output_dim = 5;
+        let output_dim = 16;
         let epsilon: f64 = 1e-6;
 
         let learning_rate = 0.0001;
@@ -287,8 +287,13 @@ mod test_self_attention_layer {
 
         let attention_head = attention_layer.attention_heads.get(0).unwrap().clone();
         let weight_q = attention_head.weights_q.clone();
+        let weight_k = attention_head.weights_k.clone();
+        let weight_v = attention_head.weights_v.clone();
+
         let gradient = attention_head.gradient.as_ref().unwrap();
         let analytical_weight_q_gradient = gradient.get_gradient_weights_q();
+        let analytical_weight_k_gradient = gradient.get_gradient_weights_k();
+        let analytical_weight_v_gradient = gradient.get_gradient_weights_v();
 
         //println!("input batch: {:?}", &input_batch);
         println!("padding mask batch in test transformer: {:?}", &padding_mask_batch);
@@ -359,6 +364,135 @@ mod test_self_attention_layer {
 
         let mut attention_head = attention_layer.attention_heads.get_mut(0).unwrap().clone();
         attention_head.weights_q = weight_q.clone();
+
+        // Test weights K
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
+            let seconds_elapsed = now.elapsed();
+            let attention_head = attention_layer.attention_heads.get_mut(0).unwrap();
+            attention_head.weights_k = weights.clone();
+
+            layer_input.set_calculate_gradient(false);
+            layer_input.set_input_batch(input.clone());
+            layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+
+            let attention_layer_output = attention_layer.forward(&layer_input);
+            layer_input.set_input_batch(attention_layer_output.get_output_batch());
+
+            let ffn_batch_output = ffn_layer.forward(&layer_input);
+            layer_input.set_input_batch(ffn_batch_output.get_output_batch());
+
+            let wavelet_output = wavelet_layer.forward(&layer_input);
+            layer_input.set_input_batch(wavelet_output.get_output_batch());
+
+            let linear_output = linear_layer.forward(&layer_input);
+
+            layer_input.set_input_batch(linear_output.get_output_batch());
+            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+
+            let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
+            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
+
+            let seconds_elapsed_end = now.elapsed();
+            let duration = seconds_elapsed_end - seconds_elapsed;
+            let _seconds = duration.as_secs_f64();
+            //println!("time elapsed for forward pass for weight q gradient in seconds: {:?}", _seconds);
+
+            loss
+        };
+
+        let num_gradient_weights_k: Vec<Vec<Complex<f64>>> = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &weight_k.clone(), epsilon);
+
+        // Check if gradient batch dimensions match expected shapes
+        println!("\n analytical grad weight_k_gradient: {:?}", analytical_weight_k_gradient);
+        println!(
+            "\n analytical_weight_k_gradient gradient dim: {} {}",
+            analytical_weight_k_gradient.len(),
+            analytical_weight_k_gradient[0].len()
+        );
+
+        println!("\n numerical grad: {:?}", num_gradient_weights_k);
+        println!("\n  num_gradient_weights_k dim: {} {}", num_gradient_weights_k.len(), num_gradient_weights_k[0].len());
+
+        let global_error = global_relative_error_2d_l2(&num_gradient_weights_k, &analytical_weight_k_gradient);
+        println!("global relative gradient error weights: {:?}", &global_error);
+
+        for (i, numeric_gradient) in num_gradient_weights_k.iter().enumerate() {
+            let row_sum_numeric: Complex<f64> = numeric_gradient.iter().sum();
+            let row_sum_analytic: Complex<f64> = analytical_weight_k_gradient[i].iter().sum();
+
+            println!("row_sum numerical: {:?}, {:?}", row_sum_numeric.re, row_sum_numeric.im);
+            println!("row sum analytical: {:?}, {:?}", row_sum_analytic.re, row_sum_analytic.im);
+        }
+
+        test_gradient_error_2d(&analytical_weight_k_gradient, &num_gradient_weights_k, 1e-2);
+
+        let mut attention_head = attention_layer.attention_heads.get_mut(0).unwrap().clone();
+        attention_head.weights_k = weight_k.clone();
+
+
+         // Test weights V
+        let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>, weights: &Vec<Vec<Complex<f64>>>| -> Complex<f64> {
+            let seconds_elapsed = now.elapsed();
+            let attention_head = attention_layer.attention_heads.get_mut(0).unwrap();
+            attention_head.weights_v = weights.clone();
+
+            layer_input.set_calculate_gradient(false);
+            layer_input.set_input_batch(input.clone());
+            layer_input.set_padding_mask_batch(padding_mask_batch.clone());
+
+            let attention_layer_output = attention_layer.forward(&layer_input);
+            layer_input.set_input_batch(attention_layer_output.get_output_batch());
+
+            let ffn_batch_output = ffn_layer.forward(&layer_input);
+            layer_input.set_input_batch(ffn_batch_output.get_output_batch());
+
+            let wavelet_output = wavelet_layer.forward(&layer_input);
+            layer_input.set_input_batch(wavelet_output.get_output_batch());
+
+            let linear_output = linear_layer.forward(&layer_input);
+
+            layer_input.set_input_batch(linear_output.get_output_batch());
+            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+
+            let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
+            let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
+
+            let seconds_elapsed_end = now.elapsed();
+            let duration = seconds_elapsed_end - seconds_elapsed;
+            let _seconds = duration.as_secs_f64();
+            //println!("time elapsed for forward pass for weight q gradient in seconds: {:?}", _seconds);
+
+            loss
+        };
+
+        let num_gradient_weights_v: Vec<Vec<Complex<f64>>> = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &weight_v.clone(), epsilon);
+
+        // Check if gradient batch dimensions match expected shapes
+        println!("\n analytical grad weight_v_gradient: {:?}", analytical_weight_v_gradient);
+        println!(
+            "\n analytical_weight_v_gradient gradient dim: {} {}",
+            analytical_weight_v_gradient.len(),
+            analytical_weight_v_gradient[0].len()
+        );
+
+        println!("\n numerical grad: {:?}", num_gradient_weights_v);
+        println!("\n  num_gradient_weights_v dim: {} {}", num_gradient_weights_v.len(), num_gradient_weights_v[0].len());
+
+        let global_error = global_relative_error_2d_l2(&num_gradient_weights_v, &analytical_weight_v_gradient);
+        println!("global relative gradient error weights: {:?}", &global_error);
+
+        for (i, numeric_gradient) in num_gradient_weights_v.iter().enumerate() {
+            let row_sum_numeric: Complex<f64> = numeric_gradient.iter().sum();
+            let row_sum_analytic: Complex<f64> = analytical_weight_v_gradient[i].iter().sum();
+
+            println!("row_sum numerical: {:?}, {:?}", row_sum_numeric.re, row_sum_numeric.im);
+            println!("row sum analytical: {:?}, {:?}", row_sum_analytic.re, row_sum_analytic.im);
+        }
+
+        test_gradient_error_2d(&analytical_weight_v_gradient, &num_gradient_weights_v, 1e-2);
+
+        let mut attention_head = attention_layer.attention_heads.get_mut(0).unwrap().clone();
+        attention_head.weights_v = weight_v.clone();
 
         // TEST INPUT GRADIENT
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
