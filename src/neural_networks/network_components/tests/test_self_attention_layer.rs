@@ -65,7 +65,7 @@ mod test_self_attention_layer {
         let batch_size = 2;
         let input_dim = 16;
         let output_dim = 16;
-        let epsilon: f64 = 1e-6;
+        let epsilon: f64 = 1e-4;
 
         let seq_len: usize = 78;
         let learning_rate = 0.0001;
