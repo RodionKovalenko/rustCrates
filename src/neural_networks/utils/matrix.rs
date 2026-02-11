@@ -449,7 +449,7 @@ fn multiply_complex_cpu(matrix_a: &[Vec<Complex<Real>>], matrix_b: &[Vec<Complex
     let n = matrix_b[0].len();
 
     assert!(m > 0 && n > 0 && k > 0, "Matrices must not be empty");
-    assert!(matrix_b.len() == k, "A's columns must match B's rows");
+    assert!(matrix_b.len() == k, "A's columns must match B's rows A {} {}, B {} {}", m, k, matrix_b.len(), n);
     for row in matrix_a {
         assert_eq!(row.len(), k, "All rows of A must have the same length");
     }

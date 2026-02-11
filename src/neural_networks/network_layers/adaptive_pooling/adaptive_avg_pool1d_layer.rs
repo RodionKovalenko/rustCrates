@@ -36,6 +36,7 @@ pub enum CompressionType {
 pub struct AdaptiveAvgPool1dLayer {
     pub output_size: usize,
     pub metadata: CompressionMetadata,
+    pub hidden_dim: usize,
 }
 
 impl AdaptiveAvgPool1dLayer {
@@ -43,6 +44,7 @@ impl AdaptiveAvgPool1dLayer {
         Self {
             output_size,
             metadata: CompressionMetadata::new(),
+            hidden_dim: 0,
         }
     }
 
@@ -63,6 +65,7 @@ impl AdaptiveAvgPool1dLayer {
             }
         }
         let hidden_dim = if seq_len > 0 && !input[0].is_empty() { input[0][0].len() } else { 0 };
+        self.hidden_dim = hidden_dim;
 
         if seq_len <= self.output_size {
             let clone_input = input.to_vec();
@@ -145,7 +148,11 @@ impl AdaptiveAvgPool1dLayer {
             return Gradient::new_default();
         }
 
-        let hidden_dim = if !grad_in[0].is_empty() { grad_in[0][0].len() } else { 0 };
+        let hidden_dim = self.hidden_dim;
+
+        if original_length <= compressed_len {
+           return  gradient.clone();
+        }
 
         // gradient for *original* sequence length
         let mut grad_out = vec![vec![vec![C::new(ZERO, ZERO); hidden_dim]; original_length]; batch_size];
