@@ -112,27 +112,28 @@ dl/dWv = dV/dWv * (dl/dO * dO/dV)
 
 Optimized version of masked attention head
 
-e.g. X [258][16] -> [16][16]
+e.g. X [258][16] -> [64][16]
 
 Q = X * Wq
-Qpool = Pool(Q)
-Qpos = Rope(Qpool)
-Qnorm = Norm(Qpos) (64x16)
+Qctl = CTL(Qnorm) (258x16)
 
 K = X * Wk
-Kpool = Pool(K)
-Kpos = Rope(Kpool)
-Knorm = Norm(Kpos) (64x16)
+Kpos = Rope(K)
+Kpool = Pool(Kpos) (64x16)
+Knorm = Norm(Kpool) (64x16)
+Kctl = CTL(Knorm) (64x16)
 
 V = X * Wv
 Vpool = Pool(V)
 Vnorm = Norm(Vpool) (64x16)
 
 // Attention
-A = Q*KT/sqtr(dk) -> 64x64
-S = sigma(A) -> 64x64
-O = S * V -> 64x64 * 64*16 = 64x16
+A_raw = Qct * Kctl^T / sqrt(d_k) (258x16 * 16x64) = 258x64
+A_masked = Mask(A_raw)
+S = softmax(A) (258x64)
+O = S * V -> 258x64 * 64*16 = 258x16
 
-O_upsampled = Upsample(O)
+
+
 
 

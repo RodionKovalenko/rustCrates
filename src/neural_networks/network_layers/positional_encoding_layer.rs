@@ -39,6 +39,10 @@ impl PositionalEncodingLayer {
         input_batch.par_iter().map(|sequence| self.apply_rope_to_sequence(sequence, layer_input)).collect()
     }
 
+    pub fn forward_sequences(&self, batch_input: &Vec<Vec<Vec<C>>>, layer_input: &LayerInput) -> Vec<Vec<Vec<C>>> {
+        batch_input.iter().map(|sequence| self.apply_rope_to_sequence(sequence, layer_input)).collect::<Vec<Vec<Vec<C>>>>()
+    }
+
     pub fn apply_rope_to_sequence(&self, sequence: &Vec<Vec<C>>, layer_input: &LayerInput) -> Vec<Vec<C>> {
         let forward_only = layer_input.get_forward_only();
 
@@ -77,10 +81,7 @@ impl PositionalEncodingLayer {
 
     pub fn backward_sequences(&mut self, previous_gradient_batch: &Vec<Vec<Vec<C>>>) -> Vec<Vec<Vec<C>>> {
         assert_eq!(self.embedding_dim % 2, 0, "Embedding dimension must be even for RoPE.");
-
-        let input_gradient_batch: Vec<Vec<Vec<C>>> = previous_gradient_batch.par_iter().map(|grad_sequence| self.backward_sequence(grad_sequence)).collect();
-
-        input_gradient_batch
+        previous_gradient_batch.par_iter().map(|grad_sequence| self.backward_sequence(grad_sequence)).collect()
     }
 
     pub fn backward_sequence(&self, grad_sequence: &Vec<Vec<C>>) -> Vec<Vec<C>> {

@@ -1,0 +1,222 @@
+
+1. X₀ = EmbeddingLayer -> X₀ ∈ ℝ^{N × d} -> fully parallel over tokens.
+
+2. H₀ = LayerNorm(X₀) -> fully parallel over tokens.
+
+3. Sparse Attention Block (sequential)
+
+For each attention head calculate Q_h, K_h, V_h ∈ ℝ^{N × d_h}.
+
+
+for step = 1 … k:
+    j = argmax(sim(residual, K_h[allowed_indices]))
+    selected.append(j)
+
+    residual -= proj(residual, K_h[j])
+
+where sim -> similarity score like dot product or cosine similarity
+
+allowed_indices are e.g. non_padding_tokens
+
+proj(residual, k_j) =  (residual · k_j) / (k_j · k_j) * k_j
+
+where · ist a dot product
+
+Each step depends on the updated residual.
+
+
+O = concat(O₁, O₂, …, O_H) @ Wo
+
+4. Residual connection (parallel)
+X₁ = X₀ + O
+
+5. Post-attention norm (parallel)
+H₁ = LayerNorm(X₁)
+
+6. MLP block (parallel, NOT sequential)
+M = W₂ · activation(W₁ · H₁)
+
+
+7. Second residual (parallel)
+
+X₂ = X₁ + M
+
+8. Stack blocks
+
+Repeat steps 2–7 for L layers.
+
+9. Output head (parallel until sampling)
+
+Final:
+
+logits = X_L @ W_vocab
+
+
+
+---------------------------------------------------------------------------------------------
+
+Residual Block explained: 
+
+Step 3.1 For each head h:
+Qh​=H0​WhQ​, Kh​=H0​WhK​,Vh​=H0​WhV​
+
+Step 3.2: Initialize residual
+
+Often the residual is the query for the current position:
+
+𝑟 = 𝑞i 
+Or more generally, for the head, initialize residual to 𝑄ℎ for each “slot” in output.
+
+Step 3.3: Sequential selection (sparse attention)
+
+This is where sequential and sparse differs from normal softmax attention:
+
+For k steps:
+Instead of a fixed number, you can adapt k based on sequence length N or other heuristics:
+
+Simple rule: 
+    𝑘 = sqrt(N)
+
+    1. Compute similarity of current residual with candidate keys:
+        sim(r, Kh[j]) for all allowed k_j
+
+        allowed_indices = e.g., non-padding tokens
+
+    2. Pick the most similar key:
+        j∗=argjmax​sim(r,Kh​[j])
+
+        Sequential part: each choice depends on updated residual, unlike normal attention where all scores are computed in parallel.
+     3. Add this index to selected set:
+     selected←j∗
+     4. Subtract the projection of residual onto the selected key:
+     proj(residual, k_j) =  (residual · k_j) / (k_j · k_j) * k_j
+
+     This ensures the residual is “orthogonalized” against already selected keys.
+     This is why it’s sequential: the next step’s choice depends on the updated residual.
+
+     Repeat this k times, selecting the top-k keys sequentially.
+
+
+Step 3.4: Aggregate values
+Once the k keys {j1, j2, j3..jk} are selected:
+
+        Oh​=m=1∑k​proj(Vh​[jm​])
+
+Or equivalently, concat the corresponding values and project with Wo
+
+​After all heads: O=concat(O1​,...,OH​)WO
+
+pseudocode in rust:
+
+// Inputs:
+// X: [N x d]  -> input embeddings
+// Wq, Wk, Wv: [d x d_h] -> projection matrices
+// k: number of keys to select per query
+// allowed_indices: indices of tokens that can be attended to (e.g., non-padding)
+// N: sequence length
+// d_h: head dimension
+
+fn sparse_sequential_attention(
+    X: &Vec<Vec<f32>>, 
+    Wq: &Vec<Vec<f32>>, 
+    Wk: &Vec<Vec<f32>>, 
+    Wv: &Vec<Vec<f32>>, 
+    k: usize, 
+    allowed_indices: &Vec<usize>
+) -> Vec<Vec<f32>> {
+
+    let N = X.len();
+    let d_h = Wq[0].len();
+
+    // Step 1: Linear projections
+    let Q: Vec<Vec<f32>> = matmul(X, Wq); // N x d_h
+    let K: Vec<Vec<f32>> = matmul(X, Wk); // N x d_h
+    let V: Vec<Vec<f32>> = matmul(X, Wv); // N x d_h
+
+    // Step 2: Initialize output
+    let mut O: Vec<Vec<f32>> = vec![vec![0.0; d_h]; N];
+
+    // Step 3: For each query token
+    for i in 0..N {
+        let mut residual = Q[i].clone();   // r = q_i
+        let mut selected: Vec<usize> = vec![];
+
+        // 𝑘 = sqrt(N)
+        for step in 0..k {
+            // Find allowed key with max similarity
+            let mut max_sim = f32::MIN;
+            let mut j_max = allowed_indices[0];
+
+            for &j in allowed_indices.iter() {
+                if selected.contains(&j) { continue; } // skip already selected
+                let sim = dot(&residual, &K[j]);
+                if sim > max_sim {
+                    max_sim = sim;
+                    j_max = j;
+                }
+            }
+
+            selected.push(j_max);
+
+            // Subtract projection from residual
+            let proj_scale = dot(&residual, &K[j_max]) / dot(&K[j_max], &K[j_max]);
+            for d in 0..d_h {
+                residual[d] -= proj_scale * K[j_max][d];
+            }
+
+            // Accumulate value vectors
+            for d in 0..d_h {
+                O[i][d] += V[j_max][d];
+            }
+        }
+    }
+
+    O
+}
+
+// Simple dot product
+fn dot(a: &Vec<f32>, b: &Vec<f32>) -> f32 {
+    a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
+}
+
+// Placeholder matmul
+fn matmul(X: &Vec<Vec<f32>>, W: &Vec<Vec<f32>>) -> Vec<Vec<f32>> {
+    let n = X.len();
+    let m = W[0].len();
+    let mut out = vec![vec![0.0; m]; n];
+
+    for i in 0..n {
+        for j in 0..m {
+            for d in 0..W.len() {
+                out[i][j] += X[i][d] * W[d][j];
+            }
+        }
+    }
+
+    out
+}
+
+
+---------------------------------------------------------------------------------------------------
+
+
+Residuals in code correct.
+
+X0 = LayerNorm(X)
+
+X1 = Attention(X0)
+
+Add Residual connection
+
+X2 = X1 + X
+
+MLP 
+
+X3 = Layernorm (X2)
+
+X4 = MLP(X3)
+
+Add Residual connection
+x5 = X4 + X2
+
+-------------------------------------------------------------------------------------------------

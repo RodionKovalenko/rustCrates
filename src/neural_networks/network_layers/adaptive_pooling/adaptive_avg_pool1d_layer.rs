@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
-use crate::neural_networks::utils::dtype::{r, C, Real, ZERO};
+use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
 
 // Compression metadata for decompression
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,7 +40,10 @@ pub struct AdaptiveAvgPool1dLayer {
 
 impl AdaptiveAvgPool1dLayer {
     pub fn new(output_size: usize) -> Self {
-        Self { output_size, metadata: CompressionMetadata::new() }
+        Self {
+            output_size,
+            metadata: CompressionMetadata::new(),
+        }
     }
 
     // Forward: compress input sequences
@@ -78,7 +81,7 @@ impl AdaptiveAvgPool1dLayer {
             return layer_output;
         }
 
-        let windows = self.calculate_pooling_windows(seq_len);
+        let windows = self.calculate_causal_pooling_windows(seq_len);
         let mut output = Vec::with_capacity(input.len());
 
         for seq in input.iter() {
@@ -309,7 +312,7 @@ impl AdaptiveAvgPool1dLayer {
     //Calculated windows: [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10, 11], [12, 13, 14], [15, 16, 17], [18, 19],
     //                     [20, 21], [22, 23], [24, 25], [26, 27], [28, 29], [30, 31], [32, 33], [34, 35]]
     // Calculates pooling windows for adaptive average pooling
-    fn calculate_pooling_windows(&self, seq_len: usize) -> Vec<Vec<usize>> {
+    pub fn calculate_pooling_windows(&self, seq_len: usize) -> Vec<Vec<usize>> {
         let mut windows = Vec::with_capacity(self.output_size);
         let base_size = seq_len / self.output_size;
         let remainder = seq_len % self.output_size;
@@ -328,6 +331,37 @@ impl AdaptiveAvgPool1dLayer {
         }
 
         // println!("Calculated windows: {:?}", windows);
+        windows
+    }
+
+    pub fn calculate_causal_pooling_windows(&self, seq_len: usize) -> Vec<Vec<usize>> {
+        let mut windows: Vec<Vec<usize>> = Vec::with_capacity(self.output_size);
+        let base_size = seq_len / self.output_size;
+        let remainder = seq_len % self.output_size;
+        let mut current_pos = 0;
+
+        for i in 0..self.output_size {
+            let window_size = if i < remainder { base_size + 1 } else { base_size };
+            let mut window = Vec::with_capacity(window_size);
+
+            for j in 0..window_size {
+                let pos = current_pos + j;
+                if pos < seq_len {
+                    window.push(pos);
+                }
+            }
+
+            // 🔒 CAUSALITY ASSERTION
+            if i > 0 {
+                let prev_max = *windows[i - 1].last().unwrap();
+                let curr_min = *window.first().unwrap();
+                assert!(prev_max < curr_min, "Causal pooling violated: window {} overlaps or looks ahead", i);
+            }
+
+            windows.push(window);
+            current_pos += window_size;
+        }
+
         windows
     }
 }

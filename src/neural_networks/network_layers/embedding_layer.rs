@@ -36,8 +36,6 @@ pub struct EmbeddingLayer {
     #[serde(skip)]
     pub time_step: usize,
     #[serde(skip)]
-    pub cache: Arc<RwLock<HashMap<u32, Vec<C>>>>,
-    #[serde(skip)]
     pub tied_weights: Option<SharedF32Matrix>,
     #[serde(skip)]
     pub tied_grad_by_token: Option<Arc<RwLock<HashMap<usize, Vec<C>>>>>,
@@ -80,7 +78,6 @@ impl EmbeddingLayer {
             batch_size: 0,
             smoothing: 0.99,
             ema: 0.0,
-            cache: Arc::new(RwLock::new(HashMap::new())),
             tied_weights: None,
             tied_grad_by_token: None,
             global_norm: 0.0,
@@ -120,7 +117,6 @@ impl EmbeddingLayer {
             ema: 0.0,
             global_norm: 0.0,
             max_norm: 0.0,
-            cache: Arc::new(RwLock::new(HashMap::new())),
             tied_weights: None,
             tied_grad_by_token: None,
         }
@@ -229,13 +225,7 @@ impl EmbeddingLayer {
 
     pub fn update_parameters(&mut self, token_id_batches: &[Vec<u32>]) {
         let gradient: &Gradient = self.gradient.as_ref().expect("Output batch is missing in dense layer");
-
-        // Vec-only layer: RM-only gradients must be handled by EmbeddingLayerRm.
-        let previous_gradients_rm_ref = gradient.get_gradient_input_batch_rm_ref().filter(|g| !g.is_empty());
         let mut previous_gradients: Vec<Vec<Vec<C>>> = gradient.get_gradient_input_batch();
-        if previous_gradients.is_empty() && previous_gradients_rm_ref.is_some() {
-            panic!("EmbeddingLayer received RM-only gradients; use EmbeddingLayerRm");
-        }
 
         normalize_gradients_batch(&mut previous_gradients);
 
@@ -288,7 +278,6 @@ impl EmbeddingLayer {
             ema: 0.0,
             global_norm: 0.0,
             max_norm: 0.0,
-            cache: Arc::new(RwLock::new(HashMap::new())),
             tied_weights: None,
             tied_grad_by_token: None,
         };
