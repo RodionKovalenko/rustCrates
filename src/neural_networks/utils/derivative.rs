@@ -733,11 +733,7 @@ pub fn global_relative_error_l2(numerical_grad: &Vec<Vec<Vec<Complex<f64>>>>, an
     }
 
     let diff_norm = diff_norm_sq.sqrt();
-    let total_norm = numerical_norm_sq.sqrt() + analytical_norm_sq.sqrt();
-
-    if total_norm == 0.0 {
-        return 0.0; // or f64::INFINITY depending on your use case
-    }
+    let total_norm = numerical_norm_sq.sqrt() + analytical_norm_sq.sqrt() + 1e-12;
 
     let global_rel_error = diff_norm / total_norm;
 
@@ -1292,13 +1288,13 @@ pub fn test_gradient_batch_error(numerical_grad_batch: &Vec<Vec<Vec<Complex<f64>
         for (seq_n, seq_a) in batch_n.iter().zip(batch_a.iter()) {
             for (val_n, val_a) in seq_n.iter().zip(seq_a.iter()) {
                 let abs_diff = (*val_n - *val_a).norm();
-                let denom = (val_n.norm() + val_a.norm()).max(eps_floor);
+                let denom = val_n.norm() + val_a.norm();
                 if denom < rel_denom_floor {
                     if abs_diff > max_pointwise_abs_error_small {
                         max_pointwise_abs_error_small = abs_diff;
                     }
                 } else {
-                    let rel = abs_diff / denom;
+                    let rel = abs_diff /  (denom + eps_floor);
                     if rel > max_pointwise_rel_error {
                         max_pointwise_rel_error = rel;
                     }
