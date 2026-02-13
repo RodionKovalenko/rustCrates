@@ -5,13 +5,12 @@ use serde::{Deserialize, Serialize};
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     network_layers::{
-        adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, complex_to_linear_layer::ComplexToLinearLayer, layer::LayerType, norm_layer::NormalNormLayer,
-        positional_encoding_layer::PositionalEncodingLayer,
+        adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, complex_to_linear_layer::ComplexToLinearLayer, layer::LayerType, linear_layer::LinearLayer, norm_layer::NormalNormLayer, positional_encoding_layer::PositionalEncodingLayer
     },
     utils::{
         activation::softmax_complex_padding_complex,
         adam_w::calculate_adam_w,
-        dtype::{r, Real, C, ONE, ZERO},
+        dtype::{C, ONE, Real, ZERO, r},
         matrix::{add_matrix, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, transpose},
         weights_initializer::initialize_weights_complex,
     },
@@ -46,6 +45,7 @@ pub struct MaskedAttentionHead {
     pub positional_encoding_layer: PositionalEncodingLayer,
     pub norm_layer_v: NormalNormLayer,
     pub norm_layer_k: NormalNormLayer,
+    pub linear_v: LinearLayer,
 
     pub pool_k_layer: AdaptiveAvgPool1dLayer,
     pub pool_v_layer: AdaptiveAvgPool1dLayer,
@@ -93,6 +93,7 @@ impl MaskedAttentionHead {
 
         let ctl_q = ComplexToLinearLayer::new(cols, cols, learning_rate);
         let ctl_k = ComplexToLinearLayer::new(cols, cols, learning_rate);
+        let linear_v = LinearLayer::new(learning_rate, cols, cols, true);
 
         let bias_q: Vec<C> = vec![C::new(ONE, ZERO); cols];
         let bias_k: Vec<C> = vec![C::new(ONE, ZERO); cols];
@@ -130,6 +131,7 @@ impl MaskedAttentionHead {
 
             pool_k_layer,
             pool_v_layer,
+            linear_v,
 
             previous_gradient: None,
             input_batch: None,
@@ -338,14 +340,16 @@ impl MaskedAttentionHead {
            V = X * Wv
            Vpool = Pool(V)
            Vnorm = Norm(Vpool) (64x16)
+           Vlinear = Linear(Vnorm) (64x16)
            backward = V
         */
 
         let mut gradient_v = Gradient::new_default();
         
         gradient_v.set_gradient_input_batch(grad_wv_batch_pool.clone());
-        // let gradient_v_norm = self.norm_layer_v.backward(&gradient_v);
-        let gradient_v_pool = self.pool_v_layer.backward(&gradient_v);
+        let gradient_v_linear = self.linear_v.backward(&gradient_v);
+        let gradient_v_norm = self.norm_layer_v.backward(&gradient_v_linear);
+        let gradient_v_pool = self.pool_v_layer.backward(&gradient_v_norm);
         let v_pool_gradient_batch = gradient_v_pool.get_gradient_input_batch();
 
         for (batch_ind, previous_gradient) in previous_gradient_batch.iter().enumerate() {
@@ -467,6 +471,7 @@ impl MaskedAttentionHead {
            V = X * Wv
            Vpool = Pool(V)
            Vnorm = Norm(Vpool) (64x16)
+           Vlinear = Linear(Vnorm) (64x16)
         */
         let mut layer_input = layer_input.clone();
         layer_input.set_input_batch(v_cache.clone());
@@ -474,10 +479,13 @@ impl MaskedAttentionHead {
         let v_pool = self.pool_v_layer.forward(&layer_input);
         layer_input.set_input_batch(v_pool.get_output_batch());
 
-        // let v_norm = self.norm_layer_v.forward(&layer_input);
-        // v_norm.get_output_batch()
+        let v_norm = self.norm_layer_v.forward(&layer_input);
+        layer_input.set_input_batch(v_norm.get_output_batch());
 
-        v_pool.get_output_batch()
+        let v_linear = self.linear_v.forward(&layer_input);
+        v_linear.get_output_batch()
+
+        // v_pool.get_output_batch()
     }
 
     pub fn softmax_attention_backward_full(&self, softmax_vals: &Vec<Vec<C>>, dl_do: &Vec<Vec<C>>, do_ds: &Vec<Vec<C>>, padding_mask: &Vec<u32>) -> Vec<Vec<C>> {

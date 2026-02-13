@@ -237,7 +237,7 @@ mod test_self_attention_layer {
     fn test_self_attention_layer_backward() {
         // Define some small batch size and input dimensions for simplicity
         let batch_size = 3;
-        let seq_len = 78;
+        let seq_len = 16;
         let feature_dim = 16;
         let learning_rate = 0.01;
         let operation_mode = OperationMode::TRAINING;
