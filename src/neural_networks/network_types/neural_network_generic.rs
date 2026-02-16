@@ -160,9 +160,6 @@ impl NeuralNetwork {
 
                 let shared = crate::neural_networks::utils::shared_f32_matrix::SharedF32Matrix::new(table);
                 let tied = TiedSparseEmbeddings::new(shared.clone());
-
-                linear_layer.tied_weights = Some(tied.weights.clone());
-                linear_layer.tied_embedding_grad_by_token = Some(tied.grad_by_token.clone());
                 embedding_layer.set_tied_weights(tied.weights.clone(), tied.grad_by_token.clone());
 
                 self.tied_sparse_embeddings = Some(tied);
@@ -241,8 +238,6 @@ impl NeuralNetwork {
                 let tied = TiedSparseEmbeddings::new(shared.clone());
 
                 // Linear owns the optimizer update; it needs access to embedding-side accumulated grads.
-                linear_layer.tied_weights = Some(tied.weights.clone());
-                linear_layer.tied_embedding_grad_by_token = Some(tied.grad_by_token.clone());
                 embedding_layer.set_tied_weights(tied.weights.clone(), tied.grad_by_token.clone());
 
                 self.tied_sparse_embeddings = Some(tied);
