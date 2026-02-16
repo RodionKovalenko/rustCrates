@@ -32,6 +32,11 @@ pub struct SparseLinearLayer {
     pub max_norm: f64,
     pub previous_gradient: Option<Gradient>,
 
+    #[serde(skip)]
+    pub drift_ema: f32,
+    #[serde(skip)]
+    pub drift_ema_beta: f32,
+
     // K-means clustering components
     // clusters of centroids; each centroid is a vector of f32 with embedding dimension size
     pub centroids: Vec<Vec<f32>>,
@@ -103,6 +108,8 @@ impl SparseLinearLayer {
             global_norm: 0.0,
             max_norm: 0.0,
             last_cluster_update_step: 0,
+            drift_ema: 0.0,
+            drift_ema_beta: 0.95,
             output_indices: None,
             tied_embedding_grad_by_token: None,
         }
@@ -111,19 +118,25 @@ impl SparseLinearLayer {
     pub fn update_centroids(&mut self, epoch: usize) {
         let tau = self.tau_schedule(epoch);
         let max_gap = self.max_update_gap(epoch);
+        let min_gap = self.min_update_gap(epoch);
 
         let weights_guard = self.weights.read();
 
-        // Compute drift
-        let drifted = self.needs_cluster_update(&weights_guard, &self.previous_weights, tau);
+        // Compute drift, but smooth it to avoid triggering updates on noisy steps.
+        let drift = self.compute_drift(&weights_guard, &self.previous_weights);
+        self.drift_ema = self.drift_ema_beta * self.drift_ema + (1.0 - self.drift_ema_beta) * drift;
+
+        // Cooldown: don't allow drift-driven updates too frequently.
+        let cooldown_ok = epoch.saturating_sub(self.last_cluster_update_step) >= min_gap;
+        let drifted = cooldown_ok && self.drift_ema > tau;
 
         // Forced update only after first few epochs
         let time_forced = epoch > 5 && epoch.saturating_sub(self.last_cluster_update_step) >= max_gap;
 
         if drifted || time_forced {
             println!(
-                "Updating centroids (epoch={}, drift={}, forced={}, last_update={})",
-                epoch, drifted, time_forced, self.last_cluster_update_step
+                "Updating centroids (epoch={}, drifted={}, forced={}, last_update={}, drift={:.6}, drift_ema={:.6}, tau={:.6})",
+                epoch, drifted, time_forced, self.last_cluster_update_step, drift, self.drift_ema, tau
             );
 
             let threshold = 0.001;
@@ -161,10 +174,19 @@ impl SparseLinearLayer {
         }
     }
 
-    // Compute drift as before
-    pub fn needs_cluster_update(&self, w: &Vec<Vec<f32>>, w_prev: &Vec<Vec<f32>>, tau: f32) -> bool {
-        let mut num_sq = 0.0;
-        let mut denom_sq = 0.0;
+    // Minimum gap between drift-driven updates: prevents k-means from running every epoch early on.
+    fn min_update_gap(&self, epoch: usize) -> usize {
+        match epoch {
+            0..=4 => 3,    // very early: allow a few steps before re-clustering
+            5..=19 => 5,   // early: moderate cooldown
+            20..=49 => 10, // mid: longer cooldown
+            _ => 25,       // late: rarely re-cluster unless forced
+        }
+    }
+
+    fn compute_drift(&self, w: &Vec<Vec<f32>>, w_prev: &Vec<Vec<f32>>) -> f32 {
+        let mut num_sq: f32 = 0.0;
+        let mut denom_sq: f32 = 0.0;
 
         for (row, row_prev) in w.iter().zip(w_prev.iter()) {
             for (&x, &x_prev) in row.iter().zip(row_prev.iter()) {
@@ -174,10 +196,13 @@ impl SparseLinearLayer {
             }
         }
 
-        let eps = 1e-8;
-        let drift = num_sq.sqrt() / (denom_sq.sqrt() + eps);
+        let eps: f32 = 1e-8;
+        num_sq.sqrt() / (denom_sq.sqrt() + eps)
+    }
 
-        drift > tau
+    // Compute drift as before
+    pub fn needs_cluster_update(&self, w: &Vec<Vec<f32>>, w_prev: &Vec<Vec<f32>>, tau: f32) -> bool {
+        self.compute_drift(w, w_prev) > tau
     }
 
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
@@ -264,12 +289,6 @@ impl SparseLinearLayer {
                 }
             }
         }
-
-        // if self.gradient.is_some() {
-        //     let previous_gradient = self.gradient.as_ref().expect("");
-        //     weight_gradients = add_matrix_3d(&weight_gradients, &previous_gradient.get_gradient_weight_batch());
-        //     bias_gradients = add_matrix_2d_c(&bias_gradients, &previous_gradient.get_gradient_bias_batch());
-        // }
 
         gradient.set_gradient_input_batch(gradient_input_batch.clone());
         gradient.set_gradient_weight_batch(weight_gradients);
