@@ -108,16 +108,6 @@ impl SparseLinearLayer {
         }
     }
 
-    /// Enable weight tying with an embedding layer.
-    ///
-    /// The returned accumulator should be stored by the embedding layer, which will
-    /// accumulate per-token gradients into it during backward.
-    pub fn enable_weight_tying(&mut self) -> Arc<RwLock<HashMap<usize, Vec<C>>>> {
-        let acc = Arc::new(RwLock::new(HashMap::new()));
-        self.tied_embedding_grad_by_token = Some(acc.clone());
-        acc
-    }
-
     pub fn update_centroids(&mut self, epoch: usize) {
         let tau = self.tau_schedule(epoch);
         let max_gap = self.max_update_gap(epoch);
