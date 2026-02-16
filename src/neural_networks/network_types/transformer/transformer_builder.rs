@@ -1,11 +1,10 @@
 use crate::neural_networks::{
     network_layers::{
-        complex_to_linear_layer::ComplexToLinearLayer, embedding_layer::EmbeddingLayer, feedforward_layer::FeedForwardLayer, layer::LayerEnum, norm_layer::NormalNormLayer,
-        softmax_output_layer::SoftmaxLayer, sparse_linear_layer::SparseLinearLayer, wavelet_network::DECOMPOSITION_LEVELS,
+        complex_to_linear_layer::ComplexToLinearLayer, embedding_layer::EmbeddingLayer, feedforward_layer::FeedForwardLayer, layer::LayerEnum, linear_layer::LinearLayer, norm_layer::NormalNormLayer, softmax_output_layer::SoftmaxLayer, sparse_linear_layer::SparseLinearLayer, wavelet_network::DECOMPOSITION_LEVELS
     },
     network_types::{
-        neural_network_generic::{create, NeuralNetwork, OperationMode},
-        transformer::sparse_self_attention_layer::SparseSelfAttentionLayer,
+        neural_network_generic::{NeuralNetwork, OperationMode, create},
+        transformer::{self_attention_layer::SelfAttentionLayer, sparse_self_attention_layer::SparseSelfAttentionLayer},
     },
 };
 
@@ -49,7 +48,10 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
         let cols: usize = embedding_dim_compressed;
 
         let _attention_layer: SparseSelfAttentionLayer = SparseSelfAttentionLayer::new(num_attention_heads, rows, cols, SPARSE_WINDOW_SIZE, learning_rate);
-        layers.push(LayerEnum::SparseSelfAttention(Box::new(_attention_layer)));
+        //layers.push(LayerEnum::SparseSelfAttention(Box::new(_attention_layer)));
+
+        let _attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
+        layers.push(LayerEnum::SelfAttention(Box::new(_attention_layer)));
 
         let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
         layers.push(LayerEnum::FeedForward(Box::new(ffn_layer)));
@@ -60,7 +62,10 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     layers.push(LayerEnum::ComplexToLinear(Box::new(_ctl_layer)));
 
     let mut _sparse_linear_layer: SparseLinearLayer = SparseLinearLayer::new(learning_rate, compressed_hidden, vocab_size);
-    layers.push(LayerEnum::SparseLinear(Box::new(_sparse_linear_layer)));
+    //layers.push(LayerEnum::SparseLinear(Box::new(_sparse_linear_layer)));
+
+    let mut _linear_layer: LinearLayer = LinearLayer::new(learning_rate, compressed_hidden, vocab_size, true);
+    layers.push(LayerEnum::Linear(Box::new(_linear_layer)));
 
     let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode, vocab_size);
     layers.push(LayerEnum::Softmax(Box::new(softmax_layer)));

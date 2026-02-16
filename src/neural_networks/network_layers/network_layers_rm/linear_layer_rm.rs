@@ -5,7 +5,10 @@ use crate::neural_networks::{
     utils::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         dtype::{r, C, ONE, ZERO},
-        matrix::{add_vector_rm, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose_rm, multiply_complex_rm, RowMajorMatrix},
+        matrix::{
+            add_vector_rm, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose_rm, multiply_complex_rm, normalize_bias, normalize_gradients,
+            RowMajorMatrix,
+        },
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -149,6 +152,9 @@ impl LinearLayerRm {
 
         clip_all_gradients_by_global_norm_2d(&mut weight_gradients, &mut bias_gradients, self.global_norm, self.max_norm);
 
+        normalize_gradients(&mut weight_gradients);
+        normalize_bias(&mut bias_gradients);
+
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
 
@@ -174,7 +180,7 @@ impl LinearLayerRm {
 
         calculate_adam_w_bias(
             &mut self.bias,
-            &gradient.get_gradient_bias(),
+            &bias_gradients,
             &mut prev_m_bias,
             &mut prev_v_bias,
             &mut prev_v_bias_hat,
@@ -185,7 +191,7 @@ impl LinearLayerRm {
         let mut w = self.weights.to_rows();
         calculate_adam_w(
             &mut w,
-            &gradient.get_gradient_weights(),
+            &weight_gradients,
             &mut prev_m_weights,
             &mut prev_v_weights,
             &mut prev_v_weights_hat,

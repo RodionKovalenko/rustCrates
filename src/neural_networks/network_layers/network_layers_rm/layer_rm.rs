@@ -1,18 +1,13 @@
 use crate::neural_networks::{
-    network_components::{
-        gradient_struct::Gradient,
-        layer_input_struct::LayerInput,
-        layer_output_struct::LayerOutput,
-    },
+    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     network_layers::layer::{ActivationType, LayerType},
     utils::{
         activation::activate_output_complex,
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
-        dtype::{r, C, ONE, Real, ZERO},
+        dtype::{r, Real, C, ONE, ZERO},
         matrix::{
-            add_vector_rm, average_matrix_by_scalar, average_vector_by_scalar,
-            clip_all_gradients_by_global_norm_2d, conjugate_transpose_rm,
-            multiply_complex_rm, RowMajorMatrix,
+            add_vector_rm, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose_rm, multiply_complex_rm, normalize_bias, normalize_gradients,
+            RowMajorMatrix,
         },
         weights_initializer::initialize_weights_complex,
     },
@@ -77,30 +72,18 @@ impl LayerRm {
     }
 
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
-        let input_rm = input
-            .get_input_batch_rm_ref()
-            .expect("LayerRm::forward expects input_batch_rm")
-            .to_vec();
+        let input_rm = input.get_input_batch_rm_ref().expect("LayerRm::forward expects input_batch_rm").to_vec();
 
         let calculate_gradient = input.get_calculate_gradient();
 
         let activation_supported_rm = matches!(
             self.activation_type,
-            ActivationType::LINEAR
-                | ActivationType::TANH
-                | ActivationType::RELU
-                | ActivationType::LEAKYRELU
-                | ActivationType::SIGMOID
-                | ActivationType::GELU
-                | ActivationType::SWiGLU
+            ActivationType::LINEAR | ActivationType::TANH | ActivationType::RELU | ActivationType::LEAKYRELU | ActivationType::SIGMOID | ActivationType::GELU | ActivationType::SWiGLU
         );
 
         if !activation_supported_rm {
             if input.get_rm_strict() {
-                panic!(
-                    "RM strict mode violation: Dense RM layer activation {:?} lacks RM support",
-                    self.activation_type
-                );
+                panic!("RM strict mode violation: Dense RM layer activation {:?} lacks RM support", self.activation_type);
             }
         }
 
@@ -136,11 +119,7 @@ impl LayerRm {
         self.batch_size = input.get_batch_size();
         self.time_step = input.get_time_step();
         self.input_batch_rm = if calculate_gradient { Some(input_rm) } else { None };
-        self.inactivated_input_batch_rm = if calculate_gradient && needs_raw_pre_activation_rm {
-            Some(raw_output_batch_rm)
-        } else {
-            None
-        };
+        self.inactivated_input_batch_rm = if calculate_gradient && needs_raw_pre_activation_rm { Some(raw_output_batch_rm) } else { None };
         self.output_batch_rm = if calculate_gradient { Some(output_batch_rm.clone()) } else { None };
         self.padding_mask_batch = Some(input.get_padding_mask_batch());
 
@@ -150,10 +129,7 @@ impl LayerRm {
     }
 
     pub fn backward_rm(&mut self, previous_gradient_batch_rm: &[RowMajorMatrix<C>]) -> Gradient {
-        let input_batch_rm = self
-            .input_batch_rm
-            .as_ref()
-            .expect("Input RM batch is missing in dense RM layer");
+        let input_batch_rm = self.input_batch_rm.as_ref().expect("Input RM batch is missing in dense RM layer");
 
         let batch_len = input_batch_rm.len();
         if batch_len == 0 {
@@ -165,11 +141,7 @@ impl LayerRm {
             return gradient;
         }
 
-        let (out_rows, out_cols) = if let Some(out_rm) = self
-            .output_batch_rm
-            .as_ref()
-            .and_then(|v| v.first())
-        {
+        let (out_rows, out_cols) = if let Some(out_rm) = self.output_batch_rm.as_ref().and_then(|v| v.first()) {
             (out_rm.rows, out_rm.cols)
         } else {
             (input_batch_rm[0].rows, self.weights.cols)
@@ -180,11 +152,7 @@ impl LayerRm {
             if let Some(g) = previous_gradient_batch_rm.get(b) {
                 prev_grads.push(g.clone());
             } else {
-                prev_grads.push(RowMajorMatrix::from_data(
-                    out_rows,
-                    out_cols,
-                    vec![C::new(ZERO, ZERO); out_rows * out_cols],
-                ));
+                prev_grads.push(RowMajorMatrix::from_data(out_rows, out_cols, vec![C::new(ZERO, ZERO); out_rows * out_cols]));
             }
         }
 
@@ -192,19 +160,13 @@ impl LayerRm {
 
         let mut gradient = Gradient::new_default();
 
-        let mut weight_gradients: Vec<Vec<Vec<C>>> = vec![
-            vec![vec![C::new(ZERO, ZERO); self.weights.cols]; self.weights.rows];
-            batch_len
-        ];
+        let mut weight_gradients: Vec<Vec<Vec<C>>> = vec![vec![vec![C::new(ZERO, ZERO); self.weights.cols]; self.weights.rows]; batch_len];
         let mut bias_gradients: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); self.bias.len()]; batch_len];
         let mut input_gradient_batch_rm: Vec<RowMajorMatrix<C>> = Vec::with_capacity(batch_len);
 
         match &self.activation_type {
             ActivationType::SWiGLU => {
-                let raw_output_batch_rm = self
-                    .inactivated_input_batch_rm
-                    .as_ref()
-                    .expect("Raw output RM batch is missing in dense SWiGLU RM layer");
+                let raw_output_batch_rm = self.inactivated_input_batch_rm.as_ref().expect("Raw output RM batch is missing in dense SWiGLU RM layer");
 
                 let cols = self.weights.cols;
                 assert!(cols % 2 == 0, "SWiGLU expects even column count");
@@ -254,17 +216,10 @@ impl LayerRm {
                 }
             }
             _ => {
-                let output_batch_rm = self
-                    .output_batch_rm
-                    .as_ref()
-                    .expect("Output RM batch is missing in dense RM layer");
+                let output_batch_rm = self.output_batch_rm.as_ref().expect("Output RM batch is missing in dense RM layer");
 
                 let raw_output_batch_rm = if self.activation_type == ActivationType::GELU {
-                    Some(
-                        self.inactivated_input_batch_rm
-                            .as_ref()
-                            .expect("Raw output RM batch is missing in dense GELU RM layer"),
-                    )
+                    Some(self.inactivated_input_batch_rm.as_ref().expect("Raw output RM batch is missing in dense GELU RM layer"))
                 } else {
                     None
                 };
@@ -303,17 +258,12 @@ impl LayerRm {
     }
 
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
-        let prev_rm_ref = previous_gradient
-            .get_gradient_input_batch_rm_ref()
-            .expect("LayerRm::backward expects RM gradients");
+        let prev_rm_ref = previous_gradient.get_gradient_input_batch_rm_ref().expect("LayerRm::backward expects RM gradients");
         self.backward_rm(prev_rm_ref)
     }
 
     pub fn update_parameters(&mut self) {
-        let gradient: &mut Gradient = self
-            .gradient
-            .as_mut()
-            .expect("No Gradient found in dense RM layer");
+        let gradient: &mut Gradient = self.gradient.as_mut().expect("No Gradient found in dense RM layer");
 
         let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
 
@@ -324,33 +274,35 @@ impl LayerRm {
         weight_gradients = average_matrix_by_scalar(&weight_gradients, total_valid_tokens);
         bias_gradients = average_vector_by_scalar(&bias_gradients, total_valid_tokens);
 
+        normalize_gradients(&mut weight_gradients);
+        normalize_bias(&mut bias_gradients);
+
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
 
-        let (mut prev_m_bias, mut prev_v_bias, mut prev_m_weights, mut prev_v_weights, mut prev_v_weights_hat, mut prev_v_bias_hat) =
-            if let Some(previous_gradient) = &mut self.previous_gradient {
-                (
-                    previous_gradient.get_prev_m_bias(),
-                    previous_gradient.get_prev_v_bias(),
-                    previous_gradient.get_prev_m_weights(),
-                    previous_gradient.get_prev_v_weights(),
-                    previous_gradient.get_prev_v_weights_hat(),
-                    previous_gradient.get_prev_v_bias_hat(),
-                )
-            } else {
-                (
-                    vec![C::new(ZERO, ZERO); self.bias.len()],
-                    vec![C::new(ZERO, ZERO); self.bias.len()],
-                    vec![vec![C::new(ZERO, ZERO); self.weights.cols]; self.weights.rows],
-                    vec![vec![C::new(ZERO, ZERO); self.weights.cols]; self.weights.rows],
-                    vec![vec![C::new(ZERO, ZERO); self.weights.cols]; self.weights.rows],
-                    vec![C::new(ZERO, ZERO); self.bias.len()],
-                )
-            };
+        let (mut prev_m_bias, mut prev_v_bias, mut prev_m_weights, mut prev_v_weights, mut prev_v_weights_hat, mut prev_v_bias_hat) = if let Some(previous_gradient) = &mut self.previous_gradient {
+            (
+                previous_gradient.get_prev_m_bias(),
+                previous_gradient.get_prev_v_bias(),
+                previous_gradient.get_prev_m_weights(),
+                previous_gradient.get_prev_v_weights(),
+                previous_gradient.get_prev_v_weights_hat(),
+                previous_gradient.get_prev_v_bias_hat(),
+            )
+        } else {
+            (
+                vec![C::new(ZERO, ZERO); self.bias.len()],
+                vec![C::new(ZERO, ZERO); self.bias.len()],
+                vec![vec![C::new(ZERO, ZERO); self.weights.cols]; self.weights.rows],
+                vec![vec![C::new(ZERO, ZERO); self.weights.cols]; self.weights.rows],
+                vec![vec![C::new(ZERO, ZERO); self.weights.cols]; self.weights.rows],
+                vec![C::new(ZERO, ZERO); self.bias.len()],
+            )
+        };
 
         calculate_adam_w_bias(
             &mut self.bias,
-            &gradient.get_gradient_bias(),
+            &bias_gradients,
             &mut prev_m_bias,
             &mut prev_v_bias,
             &mut prev_v_bias_hat,
@@ -362,7 +314,7 @@ impl LayerRm {
         let mut weights_vec = self.weights.to_rows();
         calculate_adam_w(
             &mut weights_vec,
-            &gradient.get_gradient_weights(),
+            &weight_gradients,
             &mut prev_m_weights,
             &mut prev_v_weights,
             &mut prev_v_weights_hat,
@@ -439,11 +391,7 @@ fn activate_output_complex_rm(mut data: RowMajorMatrix<C>, activation: &Activati
 }
 
 fn activation_derivative_rm(activated: &RowMajorMatrix<C>, activation: &ActivationType) -> RowMajorMatrix<C> {
-    let mut out = RowMajorMatrix::from_data(
-        activated.rows,
-        activated.cols,
-        vec![C::new(ZERO, ZERO); activated.rows * activated.cols],
-    );
+    let mut out = RowMajorMatrix::from_data(activated.rows, activated.cols, vec![C::new(ZERO, ZERO); activated.rows * activated.cols]);
     match activation {
         ActivationType::LINEAR => {
             for v in out.data.iter_mut() {

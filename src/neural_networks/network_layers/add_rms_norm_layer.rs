@@ -5,7 +5,7 @@ use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     utils::{
         adam_w::calculate_adam_w_bias,
-        matrix::{add_matrix, add_matrix_2d_c, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d},
+        matrix::{add_matrix, add_matrix_2d_c, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, normalize_bias},
     },
 };
 
@@ -299,6 +299,8 @@ impl RMSNormLayer {
 
         clip_all_gradients_by_global_norm_2d(&mut vec![], &mut gradient_gamma, self.global_norm, self.max_norm);
 
+        normalize_bias(&mut gradient_gamma);
+
         let learning_rate = self.learning_rate;
 
         let (mut prev_m_gamma, mut prev_v_gamma, mut prev_v_gamma_hat) = if let Some(previous_gradient) = &mut self.previous_gradient {
@@ -314,7 +316,7 @@ impl RMSNormLayer {
 
         calculate_adam_w_bias(
             &mut self.gamma,
-            &gradient.get_gradient_gamma(),
+            &gradient_gamma,
             &mut prev_m_gamma,
             &mut prev_v_gamma,
             &mut prev_v_gamma_hat,

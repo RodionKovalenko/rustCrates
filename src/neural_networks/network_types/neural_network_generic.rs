@@ -91,27 +91,115 @@ impl NeuralNetwork {
         self.tie_embedding_and_sparse_linear();
     }
 
+    /// Tie `EmbeddingLayer` and `LinearLayer` to a single shared weight table.
+    ///
+    /// This is useful when you want to use a dense output projection (Linear) with the same
+    /// parameters as the token embedding table.
+    ///
+    /// Notes:
+    /// - The shared table is stored as (vocab x embedding_dim) `SharedF32Matrix`.
+    /// - `LinearLayer` must be in real mode (`is_complex=false`).
+    /// - If a `SparseLinearLayer` is also present, its tied gradient accumulator is cleared to
+    ///   prevent updating a now-detached table.
+    pub fn tie_embedding_and_linear(&mut self) {
+        let mut embedding_idx: Option<usize> = None;
+        let mut linear_idx: Option<usize> = None;
+
+        for (idx, layer) in self.layers.iter().enumerate() {
+            match layer {
+                LayerEnum::Embedding(_) => embedding_idx = Some(idx),
+                LayerEnum::Linear(_) => linear_idx = Some(idx),
+                _ => {}
+            }
+        }
+
+        let (Some(emb_i), Some(lin_i)) = (embedding_idx, linear_idx) else {
+            return;
+        };
+        if emb_i == lin_i {
+            return;
+        }
+
+        // If a SparseLinear exists, detach its accumulator to avoid updating an old shared table.
+        for layer in self.layers.iter_mut() {
+            if let LayerEnum::SparseLinear(sl) = layer {
+                sl.tied_embedding_grad_by_token = None;
+            }
+        }
+
+        let (low, high) = if emb_i < lin_i { (emb_i, lin_i) } else { (lin_i, emb_i) };
+        let (left, right) = self.layers.split_at_mut(high);
+        let a = &mut left[low];
+        let b = &mut right[0];
+
+        match (a, b) {
+            (LayerEnum::Embedding(embedding_layer), LayerEnum::Linear(linear_layer))
+            | (LayerEnum::Linear(linear_layer), LayerEnum::Embedding(embedding_layer)) => {
+                if linear_layer.is_complex {
+                    return;
+                }
+                if linear_layer.weights.is_empty() || linear_layer.weights[0].is_empty() {
+                    return;
+                }
+
+                // Linear weights: (in_dim x out_dim=vocab). Shared table: (vocab x in_dim).
+                let in_dim = linear_layer.weights.len();
+                let vocab = linear_layer.weights[0].len();
+                for i in 0..in_dim {
+                    if linear_layer.weights[i].len() != vocab {
+                        return;
+                    }
+                }
+
+                let mut table: Vec<Vec<f32>> = vec![vec![0.0; in_dim]; vocab];
+                for i in 0..in_dim {
+                    for v in 0..vocab {
+                        table[v][i] = linear_layer.weights[i][v].re as f32;
+                    }
+                }
+
+                let shared = crate::neural_networks::utils::shared_f32_matrix::SharedF32Matrix::new(table);
+                let tied = TiedSparseEmbeddings::new(shared.clone());
+
+                linear_layer.tied_weights = Some(tied.weights.clone());
+                linear_layer.tied_embedding_grad_by_token = Some(tied.grad_by_token.clone());
+                embedding_layer.set_tied_weights(tied.weights.clone(), tied.grad_by_token.clone());
+
+                self.tied_sparse_embeddings = Some(tied);
+            }
+            _ => {}
+        }
+    }
+
     /// Tie `EmbeddingLayer` and `SparseLinearLayer` to a single shared weight table.
     pub fn tie_embedding_and_sparse_linear(&mut self) {
         let mut embedding_idx: Option<usize> = None;
         let mut sparse_linear_idx: Option<usize> = None;
+        let mut linear_idx: Option<usize> = None;
 
         for (idx, layer) in self.layers.iter().enumerate() {
             match layer {
                 LayerEnum::Embedding(_) => embedding_idx = Some(idx),
                 LayerEnum::SparseLinear(_) => sparse_linear_idx = Some(idx),
+                LayerEnum::Linear(_) => linear_idx = Some(idx),
                 _ => {}
             }
         }
 
-        let (Some(emb_i), Some(sl_i)) = (embedding_idx, sparse_linear_idx) else {
+        let Some(emb_i) = embedding_idx else {
             return;
         };
-        if emb_i == sl_i {
+
+        // Prefer SparseLinear tying when present (existing behavior).
+        let output_i = sparse_linear_idx.or(linear_idx);
+        let Some(out_i) = output_i else {
+            return;
+        };
+        if emb_i == out_i {
             return;
         }
 
-        let (low, high) = if emb_i < sl_i { (emb_i, sl_i) } else { (sl_i, emb_i) };
+        let (low, high) = if emb_i < out_i { (emb_i, out_i) } else { (out_i, emb_i) };
         let (left, right) = self.layers.split_at_mut(high);
         let a = &mut left[low];
         let b = &mut right[0];
@@ -123,6 +211,38 @@ impl NeuralNetwork {
 
                 // SparseLinear owns the optimizer update; it needs access to embedding-side accumulated grads.
                 sparse_linear_layer.tied_embedding_grad_by_token = Some(tied.grad_by_token.clone());
+                embedding_layer.set_tied_weights(tied.weights.clone(), tied.grad_by_token.clone());
+
+                self.tied_sparse_embeddings = Some(tied);
+            }
+            (LayerEnum::Embedding(embedding_layer), LayerEnum::Linear(linear_layer))
+            | (LayerEnum::Linear(linear_layer), LayerEnum::Embedding(embedding_layer)) => {
+                // Linear weights are stored as (in_dim x out_dim). For LM projection, out_dim is vocab.
+                // Build a shared table in (vocab x in_dim) layout, matching Embedding/SparseLinear.
+                if linear_layer.weights.is_empty() || linear_layer.weights[0].is_empty() {
+                    return;
+                }
+
+                let in_dim = linear_layer.weights.len();
+                let vocab = linear_layer.weights[0].len();
+
+                // Transpose into vocab x in_dim f32 matrix (real part only).
+                let mut table: Vec<Vec<f32>> = vec![vec![0.0; in_dim]; vocab];
+                for i in 0..in_dim {
+                    if linear_layer.weights[i].len() != vocab {
+                        return;
+                    }
+                    for v in 0..vocab {
+                        table[v][i] = linear_layer.weights[i][v].re as f32;
+                    }
+                }
+
+                let shared = crate::neural_networks::utils::shared_f32_matrix::SharedF32Matrix::new(table);
+                let tied = TiedSparseEmbeddings::new(shared.clone());
+
+                // Linear owns the optimizer update; it needs access to embedding-side accumulated grads.
+                linear_layer.tied_weights = Some(tied.weights.clone());
+                linear_layer.tied_embedding_grad_by_token = Some(tied.grad_by_token.clone());
                 embedding_layer.set_tied_weights(tied.weights.clone(), tied.grad_by_token.clone());
 
                 self.tied_sparse_embeddings = Some(tied);

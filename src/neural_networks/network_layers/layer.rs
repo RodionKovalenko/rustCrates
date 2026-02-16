@@ -4,35 +4,26 @@ use crate::neural_networks::{
         adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer,
         complex_to_linear_layer::ComplexToLinearLayer,
         feedforward_layer::FeedForwardLayer,
-        network_layers_rm::{
-            complex_to_linear_layer_rm::ComplexToLinearLayerRm,
-            embedding_layer_rm::EmbeddingLayerRm,
-            feedforward_layer_rm::FeedForwardLayerRm,
-            layer_rm::LayerRm,
-            linear_layer_rm::LinearLayerRm,
-            sparse_linear_layer_rm::SparseLinearLayerRm,
-            wavelet_complex_layer_rm::ComplexWaveletLayerRm,
-            wavelet_discrete_layer_rm::DiscreteWaveletLayerRm,
-        },
         multi_linear_layer::MultiLinearLayer,
+        network_layers_rm::{
+            complex_to_linear_layer_rm::ComplexToLinearLayerRm, embedding_layer_rm::EmbeddingLayerRm, feedforward_layer_rm::FeedForwardLayerRm, layer_rm::LayerRm, linear_layer_rm::LinearLayerRm,
+            sparse_linear_layer_rm::SparseLinearLayerRm, wavelet_complex_layer_rm::ComplexWaveletLayerRm, wavelet_discrete_layer_rm::DiscreteWaveletLayerRm,
+        },
         sparse_linear_layer::SparseLinearLayer,
         wavelet_complex_layer::ComplexWaveletLayer,
         wavelet_discrete_layer::DiscreteWaveletLayer,
     },
     network_types::transformer::{
-        self_attention_layer::SelfAttentionLayer,
-        self_attention_layer_approximation::SelfAttentionLayerApproximation,
-        self_attention_layer_approximation_rm::SelfAttentionLayerApproximationRm,
-        sparse_self_attention_layer::SparseSelfAttentionLayer,
-        sparse_self_attention_layer_rm::SparseSelfAttentionLayerRm,
+        self_attention_layer::SelfAttentionLayer, self_attention_layer_approximation::SelfAttentionLayerApproximation, self_attention_layer_approximation_rm::SelfAttentionLayerApproximationRm,
+        sparse_self_attention_layer::SparseSelfAttentionLayer, sparse_self_attention_layer_rm::SparseSelfAttentionLayerRm,
     },
     utils::{
         activation::{activate_output_complex, swish},
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         derivative::{get_gradient_complex, get_gradient_swish},
         matrix::{
-            add_matrix, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate, conjugate_transpose,
-            hadamard_product_2d_c, multiply_complex, split_data_by_columns,
+            add_matrix, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate, conjugate_transpose, hadamard_product_2d_c, multiply_complex,
+            normalize_bias, normalize_gradients, split_data_by_columns,
         },
         weights_initializer::initialize_weights_complex,
     },
@@ -44,13 +35,13 @@ use serde::{Deserialize, Serialize};
 use crate::neural_networks::utils::dtype::{r, Real, C, ONE, ZERO};
 
 use super::{
-    add_rms_norm_layer::RMSNormLayer, embedding_layer::EmbeddingLayer, linear_layer::LinearLayer, norm_layer::NormalNormLayer,
-    network_layers_rm::{
-        norm_layer_rm::NormalNormLayerRm,
-        positional_encoding_layer_rm::PositionalEncodingLayerRm,
-        softmax_output_layer_rm::SoftmaxLayerRm,
-    },
-    positional_encoding_layer::PositionalEncodingLayer, softmax_output_layer::SoftmaxLayer,
+    add_rms_norm_layer::RMSNormLayer,
+    embedding_layer::EmbeddingLayer,
+    linear_layer::LinearLayer,
+    network_layers_rm::{norm_layer_rm::NormalNormLayerRm, positional_encoding_layer_rm::PositionalEncodingLayerRm, softmax_output_layer_rm::SoftmaxLayerRm},
+    norm_layer::NormalNormLayer,
+    positional_encoding_layer::PositionalEncodingLayer,
+    softmax_output_layer::SoftmaxLayer,
 };
 
 impl Default for ActivationType {
@@ -237,8 +228,7 @@ impl Layer {
         let mut gradient = Gradient::new_default();
 
         // Initialize gradients for weights and biases
-        let mut weight_gradients: Vec<Vec<Vec<C>>> =
-            vec![vec![vec![C::new(ZERO, ZERO); self.weights[0].len()]; self.weights.len()]; input_batch.len()];
+        let mut weight_gradients: Vec<Vec<Vec<C>>> = vec![vec![vec![C::new(ZERO, ZERO); self.weights[0].len()]; self.weights.len()]; input_batch.len()];
         let mut bias_gradients: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); self.bias.len()]; input_batch.len()];
 
         // Gradient w.r.t input has the input feature dimension (weights rows).
@@ -355,6 +345,9 @@ impl Layer {
         weight_gradients = average_matrix_by_scalar(&weight_gradients, total_valid_tokens);
         bias_gradients = average_vector_by_scalar(&bias_gradients, total_valid_tokens);
 
+        normalize_gradients(&mut weight_gradients);
+        normalize_bias(&mut bias_gradients);
+
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
 
@@ -381,7 +374,7 @@ impl Layer {
 
         calculate_adam_w_bias(
             &mut self.bias,
-            &gradient.get_gradient_bias(),
+            &bias_gradients,
             &mut prev_m_bias,
             &mut prev_v_bias,
             &mut prev_v_bias_hat,
@@ -390,7 +383,7 @@ impl Layer {
         );
         calculate_adam_w(
             &mut self.weights,
-            &gradient.get_gradient_weights(),
+            &weight_gradients,
             &mut prev_m_weights,
             &mut prev_v_weights,
             &mut prev_v_weights_hat,

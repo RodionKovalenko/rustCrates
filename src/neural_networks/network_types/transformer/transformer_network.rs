@@ -30,7 +30,7 @@ use crate::{
 pub const MAX_CONTEXT_WINDOW_SIZE: usize = 50280;
 pub const CONTEXT_OVERLAPPING: usize = 16;
 pub const EMA_SCALER: f64 = 1.1;
-pub const TOP_K_SIZE: usize = 70;
+pub const TOP_K_SIZE: usize = 5000;
 
 #[inline]
 fn complex_batch_to_real_batch(data: &[Vec<Vec<C>>]) -> Vec<Vec<Vec<Real>>> {
@@ -343,8 +343,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         if time_step > 0 && layer_input.get_forward_only() {
             // let last_tokens: Vec<Vec<u32>> = batch_ids.iter().map(|seq| vec![*seq.last().unwrap()]).collect();
             // window_size * 2
-            let last_n = SPARSE_WINDOW_SIZE * 2;
-            // let last_n = 1;
+            let last_n = if SPARSE_WINDOW_SIZE != 0 { SPARSE_WINDOW_SIZE * 2 } else { 1 };
 
             let last_tokens_batch: Vec<Vec<u32>> = batch_ids
                 .iter()

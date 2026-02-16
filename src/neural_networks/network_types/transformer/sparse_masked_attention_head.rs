@@ -9,6 +9,7 @@ use crate::neural_networks::network_layers::layer::LayerType;
 use crate::neural_networks::network_layers::positional_encoding_layer::PositionalEncodingLayer;
 use crate::neural_networks::utils::dtype::{r, Real, C};
 
+use crate::neural_networks::utils::matrix::normalize_gradients;
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     utils::{
@@ -659,6 +660,19 @@ impl SparseMaskedAttentionHead {
         clip_all_gradients_by_global_norm_2d(&mut grad_w_q, &mut vec![], self.global_norm, self.max_norm);
         clip_all_gradients_by_global_norm_2d(&mut grad_w_v, &mut vec![], self.global_norm, self.max_norm);
         clip_all_gradients_by_global_norm_2d(&mut grad_w_k, &mut vec![], self.global_norm, self.max_norm);
+
+        normalize_gradients(&mut grad_w_q);
+        normalize_gradients(&mut grad_w_v);
+        normalize_gradients(&mut grad_w_k);
+
+        if self.ctl_q.is_some() {
+            let ctl_q = self.ctl_q.as_mut().expect("CTL Q is missing in attention head layer");
+            ctl_q.update_parameters();
+        }
+        if self.ctl_k.is_some() {
+            let ctl_k = self.ctl_k.as_mut().expect("CTL K is missing in attention head layer");
+            ctl_k.update_parameters();
+        }
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;

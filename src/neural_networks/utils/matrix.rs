@@ -25,7 +25,7 @@ use super::gpu_matmul::GpuMatmul;
 use once_cell::sync::Lazy;
 
 #[cfg(feature = "cuda")]
-static GPU_MATMUL: Lazy<Mutex<Option<GpuMatmul>>> = Lazy::new(|| {
+pub static GPU_MATMUL: Lazy<Mutex<Option<GpuMatmul>>> = Lazy::new(|| {
     // Try to initialize GPU, but don't panic if it fails
     match GpuMatmul::new(1024, 1024, 1024) {
         Ok(gpu) => Mutex::new(Some(gpu)),

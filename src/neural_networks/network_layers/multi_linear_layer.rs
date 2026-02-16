@@ -265,6 +265,9 @@ impl MultiLinearLayer {
         // Clip gradients
         clip_all_gradients_by_global_norm_2d(&mut weight_gradients, &mut bias_gradients, self.global_norm, self.max_norm);
 
+        normalize_gradients(&mut weight_gradients);
+        normalize_bias(&mut bias_gradients);
+
         // Get previous optimizer states
         let (mut prev_m_bias, mut prev_v_bias, mut prev_m_weights, mut prev_v_weights, mut prev_v_weights_hat, mut prev_v_bias_hat) = if let Some(previous_gradient) = &mut self.previous_gradient {
             (

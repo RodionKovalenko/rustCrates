@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+use crate::neural_networks::utils::matrix::{normalize_bias, normalize_gradients};
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     network_layers::layer::LayerEnum,
@@ -459,6 +460,9 @@ impl SparseLinearLayer {
         bias_gradients = average_vector_by_scalar(&bias_gradients, total_valid_tokens);
 
         clip_all_gradients_by_global_norm_2d(&mut weight_gradients, &mut bias_gradients, self.global_norm, self.max_norm);
+
+        normalize_gradients(&mut weight_gradients);
+        normalize_bias(&mut bias_gradients);
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;

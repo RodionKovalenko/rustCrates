@@ -11,7 +11,7 @@ use crate::neural_networks::{
         activation::softmax_complex_padding_complex,
         adam_w::calculate_adam_w,
         dtype::{C, ONE, Real, ZERO, r},
-        matrix::{add_matrix, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, transpose},
+        matrix::{add_matrix, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, normalize_gradients, transpose},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -102,8 +102,8 @@ impl MaskedAttentionHead {
         let positional_encoding_layer = PositionalEncodingLayer::new(cols);
         let norm_layer_q = NormalNormLayer::new(cols, 1e-8, learning_rate);
         let norm_layer_k = NormalNormLayer::new(cols, 1e-8, learning_rate);
-        let pool_k_layer = AdaptiveAvgPool1dLayer::new(64);
-        let pool_v_layer = AdaptiveAvgPool1dLayer::new(64);
+        let pool_k_layer = AdaptiveAvgPool1dLayer::new(128);
+        let pool_v_layer = AdaptiveAvgPool1dLayer::new(128);
 
         MaskedAttentionHead {
             weights_q,
@@ -562,6 +562,23 @@ impl MaskedAttentionHead {
         clip_all_gradients_by_global_norm_2d(&mut grad_w_q, &mut vec![], self.global_norm, self.max_norm);
         clip_all_gradients_by_global_norm_2d(&mut grad_w_v, &mut vec![], self.global_norm, self.max_norm);
         clip_all_gradients_by_global_norm_2d(&mut grad_w_k, &mut vec![], self.global_norm, self.max_norm);
+
+        normalize_gradients(&mut grad_w_q);
+        normalize_gradients(&mut grad_w_v);
+        normalize_gradients(&mut grad_w_k);
+
+        if self.ctl_q.is_some() {
+            let ctl_q = self.ctl_q.as_mut().expect("CTL Q is missing in attention head layer");
+            ctl_q.update_parameters();
+        }
+        if self.ctl_k.is_some() {
+            let ctl_k = self.ctl_k.as_mut().expect("CTL K is missing in attention head layer");
+            ctl_k.update_parameters();
+        }
+
+        self.norm_layer_v.update_parameters();
+        self.norm_layer_k.update_parameters();
+        self.linear_v.update_parameters();
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+use crate::neural_networks::utils::matrix::{normalize_bias, normalize_gradients};
 use crate::neural_networks::{
     network_components::{
         gradient_struct::Gradient,
@@ -14,7 +15,7 @@ use crate::neural_networks::{
     optimization::k_means_clustering::{kmeans, query_candidates},
     utils::{
         adam_w::{calculate_adam_w_bias_f32_sparse, calculate_adam_w_f32_sparse},
-        dtype::{r, C, Real, ZERO},
+        dtype::{r, Real, C, ZERO},
         matrix::{average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, RowMajorMatrix},
         shared_f32_matrix::SharedF32Matrix,
         weights_initializer::initialize_weights_f32,
@@ -183,9 +184,7 @@ impl SparseLinearLayerRm {
             panic!("SparseLinearLayerRm expects RowMajor input");
         }
 
-        let input_batch_rm_ref = input
-            .get_input_batch_rm_ref()
-            .expect("SparseLinearLayerRm::forward expects input_batch_rm");
+        let input_batch_rm_ref = input.get_input_batch_rm_ref().expect("SparseLinearLayerRm::forward expects input_batch_rm");
 
         self.input_batch_rm = Some(input_batch_rm_ref.to_vec());
 
@@ -196,11 +195,7 @@ impl SparseLinearLayerRm {
         let (output_batch_rm, output_indices) = self.mutliply_hightest_k_per_row_rm(input_batch_rm_ref, input, self.weights.clone());
 
         if VERBOSE {
-            println!(
-                "SparseLinearRm matmul time for batch size {}: {}",
-                self.batch_size,
-                start.elapsed().as_secs_f64()
-            );
+            println!("SparseLinearRm matmul time for batch size {}: {}", self.batch_size, start.elapsed().as_secs_f64());
         }
 
         layer_output.set_output_batch_rm(output_batch_rm);
@@ -224,9 +219,7 @@ impl SparseLinearLayerRm {
         }
 
         let total_valid_tokens = previous_gradient.get_total_valid_tokens();
-        let previous_gradient_rm_ref = previous_gradient
-            .get_gradient_input_batch_rm_ref()
-            .expect("SparseLinearLayerRm::backward expects RM gradients");
+        let previous_gradient_rm_ref = previous_gradient.get_gradient_input_batch_rm_ref().expect("SparseLinearLayerRm::backward expects RM gradients");
 
         let batch_len = input_batch_rm.as_ref().unwrap().len();
         if batch_len == 0 {
@@ -239,10 +232,7 @@ impl SparseLinearLayerRm {
             return gradient;
         }
 
-        let output_indices_batch: &Vec<Vec<Vec<usize>>> = self
-            .output_indices
-            .as_ref()
-            .expect("Output indices missing in sparse linear layer backward pass");
+        let output_indices_batch: &Vec<Vec<Vec<usize>>> = self.output_indices.as_ref().expect("Output indices missing in sparse linear layer backward pass");
 
         let first_input_rm = &input_batch_rm.as_ref().unwrap()[0];
         let (seq_len, embedding_d) = (first_input_rm.rows, first_input_rm.cols);
@@ -262,8 +252,7 @@ impl SparseLinearLayerRm {
 
         let mut weight_gradients: Vec<Vec<Vec<C>>> = vec![vec![vec![C::new(ZERO, ZERO); weights_guard[0].len()]; weights_guard.len()]; batch_len];
         let mut bias_gradients: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); self.bias.len()]; batch_len];
-        let mut gradient_input_batch_rm: Vec<RowMajorMatrix<C>> =
-            vec![RowMajorMatrix::from_data(seq_len, embedding_d, vec![C::new(ZERO, ZERO); seq_len * embedding_d]); batch_len];
+        let mut gradient_input_batch_rm: Vec<RowMajorMatrix<C>> = vec![RowMajorMatrix::from_data(seq_len, embedding_d, vec![C::new(ZERO, ZERO); seq_len * embedding_d]); batch_len];
 
         for batch_idx in 0..batch_len {
             let input_rm: &RowMajorMatrix<C> = &input_batch_rm.as_ref().unwrap()[batch_idx];
@@ -368,10 +357,7 @@ impl SparseLinearLayerRm {
             top_k[min_idx] = (real_value, sum, col_idx);
             *target_pos = Some(min_idx);
         } else {
-            if let Some(min_idx) = (0..top_k.len())
-                .filter(|&i| Some(i) != *target_pos)
-                .min_by(|&a, &b| top_k[a].0.partial_cmp(&top_k[b].0).unwrap())
-            {
+            if let Some(min_idx) = (0..top_k.len()).filter(|&i| Some(i) != *target_pos).min_by(|&a, &b| top_k[a].0.partial_cmp(&top_k[b].0).unwrap()) {
                 if real_value > top_k[min_idx].0 {
                     top_k[min_idx] = (real_value, sum, col_idx);
                 }
@@ -379,12 +365,7 @@ impl SparseLinearLayerRm {
         }
     }
 
-    pub fn mutliply_hightest_k_per_row_rm(
-        &mut self,
-        input_batch_rm: &[RowMajorMatrix<C>],
-        layer_input: &LayerInput,
-        weights: SharedF32Matrix,
-    ) -> (Vec<RowMajorMatrix<C>>, Vec<Vec<Vec<usize>>>) {
+    pub fn mutliply_hightest_k_per_row_rm(&mut self, input_batch_rm: &[RowMajorMatrix<C>], layer_input: &LayerInput, weights: SharedF32Matrix) -> (Vec<RowMajorMatrix<C>>, Vec<Vec<Vec<usize>>>) {
         let target_batch = &layer_input.get_target_batch_ids();
         let k = layer_input.get_top_k_size();
         let padding_mask_batch = layer_input.get_padding_mask_batch();
@@ -480,29 +461,31 @@ impl SparseLinearLayerRm {
 
         clip_all_gradients_by_global_norm_2d(&mut weight_gradients, &mut bias_gradients, self.global_norm, self.max_norm);
 
+        normalize_gradients(&mut weight_gradients);
+        normalize_bias(&mut bias_gradients);
+
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
-        let (mut prev_m_bias, mut prev_v_bias, mut prev_m_weights, mut prev_v_weights, mut prev_v_weights_hat, mut prev_v_bias_hat) =
-            if let Some(previous_gradient) = &mut self.previous_gradient {
-                (
-                    previous_gradient.get_prev_m_bias(),
-                    previous_gradient.get_prev_v_bias(),
-                    previous_gradient.get_prev_m_weights(),
-                    previous_gradient.get_prev_v_weights(),
-                    previous_gradient.get_prev_v_weights_hat(),
-                    previous_gradient.get_prev_v_bias_hat(),
-                )
-            } else {
-                let (rows, cols) = self.weights.dims();
-                (
-                    vec![C::new(ZERO, ZERO); self.bias.len()],
-                    vec![C::new(ZERO, ZERO); self.bias.len()],
-                    vec![vec![C::new(ZERO, ZERO); cols]; rows],
-                    vec![vec![C::new(ZERO, ZERO); cols]; rows],
-                    vec![vec![C::new(ZERO, ZERO); cols]; rows],
-                    vec![C::new(ZERO, ZERO); self.bias.len()],
-                )
-            };
+        let (mut prev_m_bias, mut prev_v_bias, mut prev_m_weights, mut prev_v_weights, mut prev_v_weights_hat, mut prev_v_bias_hat) = if let Some(previous_gradient) = &mut self.previous_gradient {
+            (
+                previous_gradient.get_prev_m_bias(),
+                previous_gradient.get_prev_v_bias(),
+                previous_gradient.get_prev_m_weights(),
+                previous_gradient.get_prev_v_weights(),
+                previous_gradient.get_prev_v_weights_hat(),
+                previous_gradient.get_prev_v_bias_hat(),
+            )
+        } else {
+            let (rows, cols) = self.weights.dims();
+            (
+                vec![C::new(ZERO, ZERO); self.bias.len()],
+                vec![C::new(ZERO, ZERO); self.bias.len()],
+                vec![vec![C::new(ZERO, ZERO); cols]; rows],
+                vec![vec![C::new(ZERO, ZERO); cols]; rows],
+                vec![vec![C::new(ZERO, ZERO); cols]; rows],
+                vec![C::new(ZERO, ZERO); self.bias.len()],
+            )
+        };
 
         calculate_adam_w_bias_f32_sparse(
             &mut self.bias,

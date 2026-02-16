@@ -7,7 +7,7 @@ use crate::neural_networks::{
     utils::{
         adam_w::calculate_adam_w,
         dtype::{r, Real, C, ZERO},
-        matrix::average_matrix_by_scalar,
+        matrix::{average_matrix_by_scalar, normalize_gradients},
         weights_initializer::initialize_weights_complex_only_real,
     },
 };
@@ -149,6 +149,9 @@ impl ComplexToLinearLayer {
 
         weight_gradients_1 = average_matrix_by_scalar(&weight_gradients_1, total_valid_tokens);
         weight_gradients_2 = average_matrix_by_scalar(&weight_gradients_2, total_valid_tokens);
+
+        normalize_gradients(&mut weight_gradients_1);
+        normalize_gradients(&mut weight_gradients_2);
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;

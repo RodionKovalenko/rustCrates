@@ -9,7 +9,7 @@ use crate::neural_networks::{
     utils::{
         adam_w::calculate_adam_w,
         dtype::{r, Real, C, ONE, ZERO},
-        matrix::{average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, RowMajorMatrix},
+        matrix::{average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, normalize_gradients, RowMajorMatrix},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -665,6 +665,10 @@ impl MaskedAttentionHeadApproximation {
         grad_w_k = average_matrix_by_scalar(&grad_w_k, total_valid_tokens);
 
         clip_all_gradients_by_global_norm_2d(&mut grad_w_q, &mut vec![], self.global_norm, self.max_norm);
+
+        normalize_gradients(&mut grad_w_q);
+        normalize_gradients(&mut grad_w_v);
+        normalize_gradients(&mut grad_w_k);
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;

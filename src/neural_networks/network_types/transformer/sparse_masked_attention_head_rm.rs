@@ -6,10 +6,8 @@ use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     utils::{
         adam_w::calculate_adam_w,
-        dtype::{r, C, Real, ZERO},
-        matrix::{
-            add_matrix, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose_rm, multiply_complex_rm, RowMajorMatrix,
-        },
+        dtype::{r, Real, C, ZERO},
+        matrix::{add_matrix, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose_rm, multiply_complex_rm, normalize_gradients, RowMajorMatrix},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -75,8 +73,7 @@ impl ComplexToLinearLayerRm {
                         for k in 0..in_f {
                             let x = input_rm.data[in_row.start + k];
                             // Use only real parts of weights (consistent with existing ComplexToLinearLayer).
-                            sum_real += x.re * self.weights_1_rm.data[self.weights_1_rm.idx(k, f)].re
-                                + x.im * self.weights_2_rm.data[self.weights_2_rm.idx(k, f)].re;
+                            sum_real += x.re * self.weights_1_rm.data[self.weights_1_rm.idx(k, f)].re + x.im * self.weights_2_rm.data[self.weights_2_rm.idx(k, f)].re;
                         }
                         let out_i = out.idx(t, f);
                         out.data[out_i] = C::new(sum_real, ZERO);
@@ -90,10 +87,7 @@ impl ComplexToLinearLayerRm {
 
     pub fn backward_rm(&mut self, previous_gradient_batch_rm: &[RowMajorMatrix<C>]) -> Gradient {
         let total_valid_tokens = 1usize;
-        let input_batch_rm = self
-            .input_batch_rm
-            .as_ref()
-            .expect("ComplexToLinearLayerRm missing input_batch_rm");
+        let input_batch_rm = self.input_batch_rm.as_ref().expect("ComplexToLinearLayerRm missing input_batch_rm");
         let batch_len = input_batch_rm.len();
         let in_f = self.weights_1_rm.rows;
         let out_f = self.weights_1_rm.cols;
@@ -149,6 +143,9 @@ impl ComplexToLinearLayerRm {
         let total_valid_tokens = r(gradient.get_total_valid_tokens().max(1) as f64);
         grad_w1 = average_matrix_by_scalar(&grad_w1, total_valid_tokens);
         grad_w2 = average_matrix_by_scalar(&grad_w2, total_valid_tokens);
+
+        normalize_gradients(&mut grad_w1);
+        normalize_gradients(&mut grad_w2);
 
         // Update via existing adam util working on Vec weights.
         let mut w1 = self.weights_1_rm.to_rows();
@@ -279,9 +276,7 @@ impl SparseMaskedAttentionHeadRm {
     }
 
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        let input_batch_rm = layer_input
-            .get_input_batch_rm_ref()
-            .expect("SparseMaskedAttentionHeadRm requires RM input");
+        let input_batch_rm = layer_input.get_input_batch_rm_ref().expect("SparseMaskedAttentionHeadRm requires RM input");
         if input_batch_rm.is_empty() {
             let mut out = LayerOutput::new_default();
             out.set_output_batch_rm(vec![]);
@@ -297,10 +292,7 @@ impl SparseMaskedAttentionHeadRm {
         let cache_limit = 2 * self.window_size;
 
         // Q for entire sequence
-        let q_batch_rm: Vec<_> = input_batch_rm
-            .par_iter()
-            .map(|input| multiply_complex_rm(input, &self.weights_q_rm))
-            .collect();
+        let q_batch_rm: Vec<_> = input_batch_rm.par_iter().map(|input| multiply_complex_rm(input, &self.weights_q_rm)).collect();
 
         // Trim Q/mask to align with KV cache
         let mut q_batch_trimmed_rm: Vec<RowMajorMatrix<C>> = if layer_input.get_calculate_k_v_cache() {
@@ -331,14 +323,8 @@ impl SparseMaskedAttentionHeadRm {
             let v_new: Vec<_> = input_batch_rm.par_iter().map(|input| multiply_complex_rm(input, &self.weights_v_rm)).collect();
             (k_new, v_new)
         } else {
-            let k_new: Vec<_> = input_batch_rm
-                .par_iter()
-                .map(|input| multiply_complex_rm(&Self::last_row_rm(input), &self.weights_k_rm))
-                .collect();
-            let v_new: Vec<_> = input_batch_rm
-                .par_iter()
-                .map(|input| multiply_complex_rm(&Self::last_row_rm(input), &self.weights_v_rm))
-                .collect();
+            let k_new: Vec<_> = input_batch_rm.par_iter().map(|input| multiply_complex_rm(&Self::last_row_rm(input), &self.weights_k_rm)).collect();
+            let v_new: Vec<_> = input_batch_rm.par_iter().map(|input| multiply_complex_rm(&Self::last_row_rm(input), &self.weights_v_rm)).collect();
             (k_new, v_new)
         };
 
@@ -389,18 +375,9 @@ impl SparseMaskedAttentionHeadRm {
     }
 
     pub fn backward_rm(&mut self, previous_gradient_batch_rm: &[RowMajorMatrix<C>]) -> Gradient {
-        let input_batch_rm = self
-            .input_batch_rm
-            .as_ref()
-            .expect("Input batch RM is missing in SparseMaskedAttentionHeadRm");
-        let padding_mask_batch = self
-            .padding_mask_batch
-            .as_ref()
-            .expect("Padding mask batch is missing in SparseMaskedAttentionHeadRm");
-        let attention_weights_batch_rm = self
-            .attention_weights_batch_rm
-            .as_ref()
-            .expect("Attention weights RM batch is missing in SparseMaskedAttentionHeadRm");
+        let input_batch_rm = self.input_batch_rm.as_ref().expect("Input batch RM is missing in SparseMaskedAttentionHeadRm");
+        let padding_mask_batch = self.padding_mask_batch.as_ref().expect("Padding mask batch is missing in SparseMaskedAttentionHeadRm");
+        let attention_weights_batch_rm = self.attention_weights_batch_rm.as_ref().expect("Attention weights RM batch is missing in SparseMaskedAttentionHeadRm");
 
         let batch_size = previous_gradient_batch_rm.len();
         assert_eq!(input_batch_rm.len(), batch_size);
@@ -587,6 +564,13 @@ impl SparseMaskedAttentionHeadRm {
         clip_all_gradients_by_global_norm_2d(&mut grad_w_v, &mut vec![], self.global_norm, self.max_norm);
         clip_all_gradients_by_global_norm_2d(&mut grad_w_k, &mut vec![], self.global_norm, self.max_norm);
 
+        normalize_gradients(&mut grad_w_q);
+        normalize_gradients(&mut grad_w_v);
+        normalize_gradients(&mut grad_w_k);
+
+        self.ctl_q.update_parameters();
+        self.ctl_k.update_parameters();
+
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
 
@@ -688,13 +672,7 @@ impl SparseMaskedAttentionHeadRm {
         batch_output_rm
     }
 
-    fn calculate_local_attention_logits_rm_fixed_window(
-        &self,
-        q: &RowMajorMatrix<C>,
-        k: &RowMajorMatrix<C>,
-        window_width: usize,
-        scale_by_dk: bool,
-    ) -> RowMajorMatrix<C> {
+    fn calculate_local_attention_logits_rm_fixed_window(&self, q: &RowMajorMatrix<C>, k: &RowMajorMatrix<C>, window_width: usize, scale_by_dk: bool) -> RowMajorMatrix<C> {
         assert_eq!(q.cols, k.cols);
         assert_eq!(q.rows, k.rows);
 

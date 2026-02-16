@@ -5,6 +5,7 @@ use crate::neural_networks::network_components::gradient_struct::Gradient;
 use crate::neural_networks::network_components::layer_input_struct::LayerInput;
 use crate::neural_networks::network_components::layer_output_struct::LayerOutput;
 use crate::neural_networks::utils::dtype::{r, Real, C, ONE, ZERO};
+use crate::neural_networks::utils::matrix::normalize_bias;
 use crate::neural_networks::utils::{
     adam_w::calculate_adam_w_bias,
     matrix::{add_vectors, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_1d, RowMajorMatrix},
@@ -272,6 +273,9 @@ impl NormalNormLayerRm {
         clip_all_gradients_by_global_norm_2d(&mut vec![], &mut gradient_gamma, self.global_norm, self.max_norm);
         clip_all_gradients_by_global_norm_2d(&mut vec![], &mut gradient_beta, self.global_norm, self.max_norm);
 
+        normalize_bias(&mut gradient_beta);
+        normalize_bias(&mut gradient_gamma);
+
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
 
@@ -297,7 +301,7 @@ impl NormalNormLayerRm {
 
         calculate_adam_w_bias(
             &mut self.gamma,
-            &gradient.get_gradient_gamma(),
+            &gradient_gamma,
             &mut prev_m_gamma,
             &mut prev_v_gamma,
             &mut prev_v_gamma_hat,
@@ -306,7 +310,7 @@ impl NormalNormLayerRm {
         );
         calculate_adam_w_bias(
             &mut self.beta,
-            &gradient.get_gradient_beta(),
+            &gradient_beta,
             &mut prev_m_beta,
             &mut prev_v_beta,
             &mut prev_v_beta_hat,
