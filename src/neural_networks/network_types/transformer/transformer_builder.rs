@@ -9,7 +9,7 @@ use crate::neural_networks::{
 };
 
 pub const NUM_SELF_ATT_LAYERS: usize = 7;
-pub const SPARSE_WINDOW_SIZE: usize = 0;
+pub const SPARSE_WINDOW_SIZE: usize = 2;
 
 pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let number_inputs: usize = 32;
@@ -48,10 +48,10 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
         let cols: usize = embedding_dim_compressed;
 
         let _attention_layer: SparseSelfAttentionLayer = SparseSelfAttentionLayer::new(num_attention_heads, rows, cols, SPARSE_WINDOW_SIZE, learning_rate);
-        //layers.push(LayerEnum::SparseSelfAttention(Box::new(_attention_layer)));
+        layers.push(LayerEnum::SparseSelfAttention(Box::new(_attention_layer)));
 
         let _attention_layer: SelfAttentionLayer = SelfAttentionLayer::new(num_attention_heads, rows, cols, learning_rate);
-        layers.push(LayerEnum::SelfAttention(Box::new(_attention_layer)));
+        //layers.push(LayerEnum::SelfAttention(Box::new(_attention_layer)));
 
         let ffn_layer: FeedForwardLayer = FeedForwardLayer::new(rows, hidden_dim, learning_rate);
         layers.push(LayerEnum::FeedForward(Box::new(ffn_layer)));
