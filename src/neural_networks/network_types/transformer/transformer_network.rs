@@ -30,7 +30,7 @@ use crate::{
 pub const MAX_CONTEXT_WINDOW_SIZE: usize = 50280;
 pub const CONTEXT_OVERLAPPING: usize = 16;
 pub const EMA_SCALER: f64 = 1.1;
-pub const TOP_K_SIZE: usize = 5000;
+pub const TOP_K_SIZE: usize = 1500;
 
 #[inline]
 fn complex_batch_to_real_batch(data: &[Vec<Vec<C>>]) -> Vec<Vec<Vec<Real>>> {
@@ -42,7 +42,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
     dataset.setup_splits(None);
 
     let mut total_loss: C;
-    let loss_threshold: Real = r(0.01);
+    let loss_threshold: Real = r(0.001);
     let now = Instant::now();
     let mut previous_last_losses: Vec<Real> = Vec::new();
     let mut total_loss_exp_ma: Real = ZERO;

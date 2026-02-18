@@ -62,10 +62,10 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     layers.push(LayerEnum::ComplexToLinear(Box::new(_ctl_layer)));
 
     let mut _sparse_linear_layer: SparseLinearLayer = SparseLinearLayer::new(learning_rate, compressed_hidden, vocab_size);
-    //layers.push(LayerEnum::SparseLinear(Box::new(_sparse_linear_layer)));
+    layers.push(LayerEnum::SparseLinear(Box::new(_sparse_linear_layer)));
 
     let mut _linear_layer: LinearLayer = LinearLayer::new(learning_rate, compressed_hidden, vocab_size, false);
-    layers.push(LayerEnum::Linear(Box::new(_linear_layer)));
+    //layers.push(LayerEnum::Linear(Box::new(_linear_layer)));
 
     let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode, vocab_size);
     layers.push(LayerEnum::Softmax(Box::new(softmax_layer)));

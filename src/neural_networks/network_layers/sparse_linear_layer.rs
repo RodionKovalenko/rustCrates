@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+use crate::neural_networks::network_types::transformer::transformer_network::TOP_K_SIZE;
 use crate::neural_networks::utils::matrix::{normalize_bias, normalize_gradients};
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
@@ -68,7 +69,6 @@ pub struct SparseLinearLayer {
     pub tied_embedding_grad_by_token: Option<Arc<RwLock<HashMap<usize, Vec<C>>>>>,
 }
 
-pub const TOP_K_SELECTION: usize = 25;
 
 impl SparseLinearLayer {
     pub fn new(learning_rate: f64, embedding_d: usize, vocab_size: usize) -> Self {
@@ -401,7 +401,7 @@ impl SparseLinearLayer {
                         &mut input_re_buf,
                         &self.centroids,
                         &self.cluster_to_tokens,
-                        TOP_K_SELECTION, // top 8 clusters - high coverage to naturally include targets
+                        TOP_K_SIZE, // top 8 clusters - high coverage to naturally include targets
                     );
 
                     // During TRAINING: Force target inclusion for gradient computation
@@ -421,6 +421,14 @@ impl SparseLinearLayer {
                         let is_target = target_id == Some(col_idx);
 
                         Self::update_topk(&mut top_k, sum.re, sum, col_idx, is_target, &mut target_pos, k);
+                    }
+
+                    top_k.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(core::cmp::Ordering::Equal));
+                    if top_k.len() > k {
+                        top_k.truncate(k);
+                    }
+                    while top_k.len() < k {
+                        top_k.push((Real::NEG_INFINITY, C::new(ZERO, ZERO), 0));
                     }
 
                     let values: Vec<C> = top_k.iter().map(|(_, val, _)| *val).collect();
