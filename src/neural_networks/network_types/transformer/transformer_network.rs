@@ -281,6 +281,8 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
 pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String>) -> Vec<String> {
     let mut current_input_batch: Vec<String> = extend_input_with_bos(input_batch);
 
+    clear_network_caches(transformer_network);
+
     // Option A inference: ensure `<sep>` is present at the end of the prompt.
     // Training conditions the model to start generating AFTER `<sep>`.
     for s in &mut current_input_batch {

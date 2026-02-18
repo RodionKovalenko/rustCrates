@@ -349,8 +349,8 @@ impl MaskedAttentionHead {
         gradient_v.set_gradient_input_batch(grad_wv_batch_pool.clone());
         let gradient_v_linear = self.linear_v.backward(&gradient_v);
         let gradient_v_norm = self.norm_layer_v.backward(&gradient_v_linear);
-        let gradient_v_pool = self.pool_v_layer.backward(&gradient_v_norm);
-        let v_pool_gradient_batch = gradient_v_pool.get_gradient_input_batch();
+        // let gradient_v_pool = self.pool_v_layer.backward(&gradient_v_norm);
+        let v_pool_gradient_batch = gradient_v_norm.get_gradient_input_batch();
 
         for (batch_ind, previous_gradient) in previous_gradient_batch.iter().enumerate() {
             let v_norm: Vec<Vec<C>> = self.v_norm.as_ref().expect("V norm output is missing in attention head layer")[batch_ind].clone();
@@ -405,8 +405,8 @@ impl MaskedAttentionHead {
         let mut gradient_k = Gradient::new_default();
         gradient_k.set_gradient_input_batch(gradient_ctl_k_batch.clone());
         let gradient_k_norm = self.norm_layer_k.backward(&gradient_k);
-        let gradient_k_pool = self.pool_k_layer.backward(&gradient_k_norm);
-        gradient_ctl_k_batch = self.positional_encoding_layer.backward_sequences(&gradient_k_pool.get_gradient_input_batch());
+        // let gradient_k_pool = self.pool_k_layer.backward(&gradient_k_norm);
+        gradient_ctl_k_batch = self.positional_encoding_layer.backward_sequences(&gradient_k_norm.get_gradient_input_batch());
 
         for batch_ind in 0..previous_gradient_batch.len() {
             // Gradient Wq
@@ -450,8 +450,8 @@ impl MaskedAttentionHead {
         let mut layer_input = layer_input.clone();
         layer_input.set_input_batch(k_pos);
 
-        let k_pool = self.pool_k_layer.forward(&layer_input);
-        layer_input.set_input_batch(k_pool.get_output_batch());
+        // let k_pool = self.pool_k_layer.forward(&layer_input);
+        // layer_input.set_input_batch(k_pool.get_output_batch());
 
         let k_norm = self.norm_layer_k.forward(&layer_input);
         layer_input.set_input_batch(k_norm.get_output_batch());
@@ -476,16 +476,14 @@ impl MaskedAttentionHead {
         let mut layer_input = layer_input.clone();
         layer_input.set_input_batch(v_cache.clone());
 
-        let v_pool = self.pool_v_layer.forward(&layer_input);
-        layer_input.set_input_batch(v_pool.get_output_batch());
+        // let v_pool = self.pool_v_layer.forward(&layer_input);
+        // layer_input.set_input_batch(v_pool.get_output_batch());
 
         let v_norm = self.norm_layer_v.forward(&layer_input);
         layer_input.set_input_batch(v_norm.get_output_batch());
 
         let v_linear = self.linear_v.forward(&layer_input);
         v_linear.get_output_batch()
-
-        // v_pool.get_output_batch()
     }
 
     pub fn softmax_attention_backward_full(&self, softmax_vals: &Vec<Vec<C>>, dl_do: &Vec<Vec<C>>, do_ds: &Vec<Vec<C>>, padding_mask: &Vec<u32>) -> Vec<Vec<C>> {

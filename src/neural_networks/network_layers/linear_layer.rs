@@ -1,6 +1,8 @@
 use core::fmt::Debug;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
@@ -9,6 +11,7 @@ use crate::neural_networks::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         dtype::{r, C, ONE, ZERO},
         matrix::{add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, normalize_bias, normalize_gradients},
+        shared_f32_matrix::SharedF32Matrix,
         weights_initializer::{initialize_weights_complex, initialize_weights_complex_only_real},
     },
 };
@@ -28,6 +31,11 @@ pub struct LinearLayer {
     pub is_complex: bool,
 
     #[serde(skip)]
+    pub tied_weights: Option<SharedF32Matrix>,
+    #[serde(skip)]
+    pub tied_embedding_grad_by_token: Option<Arc<RwLock<HashMap<usize, Vec<C>>>>>,
+
+    #[serde(skip)]
     pub gradients: Vec<Vec<C>>,
     #[serde(skip)]
     pub gradients_bias: Vec<Vec<C>>,
@@ -44,6 +52,69 @@ pub struct LinearLayer {
 }
 
 impl LinearLayer {
+    pub fn set_tied_weights(&mut self, weights: SharedF32Matrix, grad_by_token: Arc<RwLock<HashMap<usize, Vec<C>>>>) {
+        self.tied_weights = Some(weights);
+        self.tied_embedding_grad_by_token = Some(grad_by_token);
+        self.sync_from_tied_weights();
+    }
+
+    pub fn is_tied(&self) -> bool {
+        self.tied_weights.is_some() && self.tied_embedding_grad_by_token.is_some()
+    }
+
+    fn sync_from_tied_weights(&mut self) {
+        let Some(tied) = &self.tied_weights else {
+            return;
+        };
+
+        let table = tied.read(); // vocab x in_dim (real)
+        if table.is_empty() || table[0].is_empty() {
+            return;
+        }
+
+        let vocab = table.len();
+        let in_dim = table[0].len();
+        let mut transposed: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); vocab]; in_dim];
+
+        for v in 0..vocab {
+            if table[v].len() != in_dim {
+                return;
+            }
+            for i in 0..in_dim {
+                transposed[i][v] = C::new(r(table[v][i] as f64), ZERO);
+            }
+        }
+
+        self.weights = transposed;
+    }
+
+    fn write_back_to_tied_weights(&mut self) {
+        let Some(tied) = &self.tied_weights else {
+            return;
+        };
+
+        if self.weights.is_empty() || self.weights[0].is_empty() {
+            return;
+        }
+
+        let in_dim = self.weights.len();
+        let vocab = self.weights[0].len();
+        let mut table = tied.write();
+
+        if table.len() != vocab || table.first().map_or(true, |r| r.len() != in_dim) {
+            *table = vec![vec![0.0; in_dim]; vocab];
+        }
+
+        for i in 0..in_dim {
+            if self.weights[i].len() != vocab {
+                return;
+            }
+            for v in 0..vocab {
+                table[v][i] = self.weights[i][v].re as f32;
+            }
+        }
+    }
+
     pub fn new(learning_rate: f64, rows: usize, cols: usize, is_complex: bool) -> Self {
         let mut weights: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); cols]; rows];
         let bias: Vec<C> = vec![C::new(ONE, ZERO); cols];
@@ -71,11 +142,17 @@ impl LinearLayer {
             global_norm: 0.0,
             max_norm: 0.0,
             is_complex,
+            tied_weights: None,
+            tied_embedding_grad_by_token: None,
             output_indices: None,
         }
     }
 
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
+        if self.tied_weights.is_some() {
+            self.sync_from_tied_weights();
+        }
+
         let input_batch: Vec<Vec<Vec<C>>> = input.get_input_batch();
         if input_batch.is_empty() && input.get_input_batch_rm_ref().is_some_and(|rm| !rm.is_empty()) {
             panic!("LinearLayer received RM input; use LinearLayerRm");
@@ -162,6 +239,24 @@ impl LinearLayer {
         normalize_gradients(&mut weight_gradients);
         normalize_bias(&mut bias_gradients);
 
+        // Merge embedding-side token gradients when tied.
+        // Accumulator layout: token(vocab) -> [embedding_dim], while linear weights are [embedding_dim][vocab].
+        if let Some(acc) = &self.tied_embedding_grad_by_token {
+            let mut acc_lock = acc.write().expect("tied grad accumulator poisoned");
+            let in_dim = weight_gradients.len();
+            let vocab = weight_gradients.first().map(|r| r.len()).unwrap_or(0);
+
+            for (token_idx, grad_vec) in acc_lock.drain() {
+                if token_idx >= vocab {
+                    continue;
+                }
+                let n = in_dim.min(grad_vec.len());
+                for i in 0..n {
+                    weight_gradients[i][token_idx] += grad_vec[i];
+                }
+            }
+        }
+
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
         let (mut prev_m_bias, mut prev_v_bias, mut prev_m_weights, mut prev_v_weights, mut prev_v_weights_hat, mut prev_v_bias_hat) = if let Some(previous_gradient) = &mut self.previous_gradient {
@@ -207,5 +302,9 @@ impl LinearLayer {
         self.previous_gradient = Some(gradient.clone());
 
         self.gradient = None;
+
+        if self.tied_weights.is_some() {
+            self.write_back_to_tied_weights();
+        }
     }
 }
