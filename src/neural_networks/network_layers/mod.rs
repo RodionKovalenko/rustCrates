@@ -14,7 +14,7 @@ pub mod softmax_output_layer;
 pub mod performer;
 pub mod performer_complex;
 pub mod complex_to_linear_layer;
-pub mod sparse_linear_layer;
+pub mod clustering_linear_layer;
 pub mod tied_sparse_embeddings;
 
 pub mod network_layers_rm;

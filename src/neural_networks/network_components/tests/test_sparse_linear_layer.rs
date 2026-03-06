@@ -3,7 +3,7 @@ mod test_sparse_linear_layer {
 
     use crate::neural_networks::{
         network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
-        network_layers::{complex_to_linear_layer::ComplexToLinearLayer, softmax_output_layer::SoftmaxLayer, sparse_linear_layer::SparseLinearLayer},
+        network_layers::{complex_to_linear_layer::ComplexToLinearLayer, softmax_output_layer::SoftmaxLayer, clustering_linear_layer::ClusteringLinearLayer},
         network_types::{neural_network_generic::OperationMode, transformer::transformer_network::cross_entropy_sum_batch},
         utils::{
             derivative::{
@@ -31,7 +31,7 @@ mod test_sparse_linear_layer {
         let embedding_dim = 16;
         let vocab_size = 32;
         let mut complex_to_linear_layer: ComplexToLinearLayer = ComplexToLinearLayer::new(cols, embedding_dim, learning_rate);
-        let mut sparse_linear_layer: SparseLinearLayer = SparseLinearLayer::new(learning_rate, embedding_dim, vocab_size);
+        let mut sparse_linear_layer: ClusteringLinearLayer = ClusteringLinearLayer::new(learning_rate, embedding_dim, vocab_size);
         let mut softmax_layer: SoftmaxLayer = SoftmaxLayer::new(learning_rate, operation_mode, cols);
 
         let input_batch: Vec<Vec<Vec<Complex<f64>>>> = generate_random_complex_3d(batch_size, rows, cols);

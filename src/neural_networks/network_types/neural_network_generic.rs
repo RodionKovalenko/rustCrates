@@ -100,7 +100,7 @@ impl NeuralNetwork {
         for (idx, layer) in self.layers.iter().enumerate() {
             match layer {
                 LayerEnum::Embedding(_) => embedding_idx = Some(idx),
-                LayerEnum::SparseLinear(_) => sparse_linear_idx = Some(idx),
+                LayerEnum::ClusteringLinear(_) => sparse_linear_idx = Some(idx),
                 LayerEnum::Linear(_) => linear_idx = Some(idx),
                 _ => {}
             }
@@ -125,8 +125,8 @@ impl NeuralNetwork {
         let b = &mut right[0];
 
         match (a, b) {
-            (LayerEnum::Embedding(embedding_layer), LayerEnum::SparseLinear(sparse_linear_layer))
-            | (LayerEnum::SparseLinear(sparse_linear_layer), LayerEnum::Embedding(embedding_layer)) => {
+            (LayerEnum::Embedding(embedding_layer), LayerEnum::ClusteringLinear(sparse_linear_layer))
+            | (LayerEnum::ClusteringLinear(sparse_linear_layer), LayerEnum::Embedding(embedding_layer)) => {
                 let tied = TiedSparseEmbeddings::new(sparse_linear_layer.weights.clone());
 
                 // SparseLinear owns the optimizer update; it needs access to embedding-side accumulated grads.
@@ -397,7 +397,7 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
             LayerEnum::LinearRm(linear_layer) => {
                 linear_layer.learning_rate = learning_rate;
             }
-            LayerEnum::SparseLinear(sparse_linear_layer) => {
+            LayerEnum::ClusteringLinear(sparse_linear_layer) => {
                 sparse_linear_layer.learning_rate = learning_rate;
             }
             LayerEnum::SparseLinearRm(sparse_linear_layer) => {
@@ -641,7 +641,7 @@ pub fn reset_previous_gradient(transformer: &mut NeuralNetwork) {
                 linear_layer.gradient = None;
                 linear_layer.batch_size = 0;
             }
-            LayerEnum::SparseLinear(sparse_linear_layer) => {
+            LayerEnum::ClusteringLinear(sparse_linear_layer) => {
                 // sparse_linear_layer.previous_gradient = None;
                 sparse_linear_layer.gradient = None;
                 sparse_linear_layer.batch_size = 0;
@@ -849,7 +849,7 @@ pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
             LayerEnum::LinearRm(linear_layer) => {
                 println!("linear_rm layer weights: {}x{}", linear_layer.weights.rows, linear_layer.weights.cols);
             }
-            LayerEnum::SparseLinear(sparse_linear_layer) => {
+            LayerEnum::ClusteringLinear(sparse_linear_layer) => {
                 let (r, c) = sparse_linear_layer.weights.dims();
                 println!("sparse linear layer weigths: {}x{}", r, c);
             }

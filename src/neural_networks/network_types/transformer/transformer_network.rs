@@ -798,28 +798,28 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     println!("time elapsed in seconds in linear layer: {:?}", start.elapsed().as_secs_f64());
                 }
             }
-            LayerEnum::SparseLinear(sparse_linear_layer) => {
+            LayerEnum::ClusteringLinear(clustering_linear_layer) => {
                 if VERBOSE {
-                    println!("forward sparse linear start");
+                    println!("forward clustering linear start");
                 }
 
                 let previous_output = match output_batch.take() {
                     Some(v) => v,
                     None => {
-                        println!("No previous output for SparseLinear(Vec) layer");
+                        println!("No previous output for ClusteringLinear(Vec) layer");
                         continue;
                     }
                 };
                 layer_input.set_input_batch(previous_output);
 
                 let start = Instant::now();
-                let mut output_linear = sparse_linear_layer.forward(&layer_input);
+                let mut output_linear = clustering_linear_layer.forward(&layer_input);
 
                 linear_output_indices = output_linear.get_output_indices();
                 output_batch = output_linear.take_output_batch();
 
                 if VERBOSE {
-                    println!("time elapsed in seconds in sparse linear layer: {:?}", start.elapsed().as_secs_f64());
+                    println!("time elapsed in seconds in clustering linear layer: {:?}", start.elapsed().as_secs_f64());
                 }
             }
             LayerEnum::SparseLinearRm(sparse_linear_layer) => {
@@ -1319,7 +1319,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     println!("No previous gradient in Linear Layer");
                 }
             }
-            LayerEnum::SparseLinear(sparse_linear_layer) => {
+            LayerEnum::ClusteringLinear(sparse_linear_layer) => {
                 if let Some(previous_gradient) = gradient {
                     let start = Instant::now();
                     let gradient_batch: Gradient = sparse_linear_layer.backward(&previous_gradient);

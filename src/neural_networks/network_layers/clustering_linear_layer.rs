@@ -21,7 +21,7 @@ use crate::neural_networks::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SparseLinearLayer {
+pub struct ClusteringLinearLayer {
     pub weights: SharedF32Matrix,
     pub previous_weights: Vec<Vec<f32>>,
     pub learning_rate: f64,
@@ -70,7 +70,7 @@ pub struct SparseLinearLayer {
 }
 
 
-impl SparseLinearLayer {
+impl ClusteringLinearLayer {
     pub fn new(learning_rate: f64, embedding_d: usize, vocab_size: usize) -> Self {
         // Weights are used not as weights matrix, but as embedding matrix N x D
         // whre N is vocab size, D is embedding size

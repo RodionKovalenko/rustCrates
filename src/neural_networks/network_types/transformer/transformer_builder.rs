@@ -1,6 +1,6 @@
 use crate::neural_networks::{
     network_layers::{
-        complex_to_linear_layer::ComplexToLinearLayer, embedding_layer::EmbeddingLayer, feedforward_layer::FeedForwardLayer, layer::LayerEnum, linear_layer::LinearLayer, norm_layer::NormalNormLayer, softmax_output_layer::SoftmaxLayer, sparse_linear_layer::SparseLinearLayer, wavelet_network::DECOMPOSITION_LEVELS
+        complex_to_linear_layer::ComplexToLinearLayer, embedding_layer::EmbeddingLayer, feedforward_layer::FeedForwardLayer, layer::LayerEnum, linear_layer::LinearLayer, norm_layer::NormalNormLayer, softmax_output_layer::SoftmaxLayer, clustering_linear_layer::ClusteringLinearLayer, wavelet_network::DECOMPOSITION_LEVELS
     },
     network_types::{
         neural_network_generic::{NeuralNetwork, OperationMode, create},
@@ -61,8 +61,8 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let _ctl_layer = ComplexToLinearLayer::new(rows, compressed_hidden, learning_rate);
     layers.push(LayerEnum::ComplexToLinear(Box::new(_ctl_layer)));
 
-    let mut _sparse_linear_layer: SparseLinearLayer = SparseLinearLayer::new(learning_rate, compressed_hidden, vocab_size);
-    layers.push(LayerEnum::SparseLinear(Box::new(_sparse_linear_layer)));
+    let mut _sparse_linear_layer: ClusteringLinearLayer = ClusteringLinearLayer::new(learning_rate, compressed_hidden, vocab_size);
+    layers.push(LayerEnum::ClusteringLinear(Box::new(_sparse_linear_layer)));
 
     let mut _linear_layer: LinearLayer = LinearLayer::new(learning_rate, compressed_hidden, vocab_size, false);
     //layers.push(LayerEnum::Linear(Box::new(_linear_layer)));
