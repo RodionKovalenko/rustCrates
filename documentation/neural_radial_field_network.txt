@@ -1,0 +1,178 @@
+Neural Radiance Fields (NeRF) Architecture, Mathematics, Forward and
+Backward Pass =====================================================
+
+1) What NeRF Actually Learns
+
+NeRF models a continuous volumetric scene as a function:
+
+F_theta : (x, d) -> (sigma, c)
+
+Where: - x = (x, y, z) is a 3D position - d is the viewing direction
+(unit vector) - sigma is the volume density (opacity) - c = (r, g, b) is
+the emitted color
+
+Instead of voxels or meshes, the entire scene is represented as a
+continuous neural function.
+
+------------------------------------------------------------------------
+
+2) Network Structure (Original NeRF)
+
+NeRF is a fully connected multilayer perceptron (MLP).
+
+Step 1 – Positional Encoding
+
+Before feeding coordinates into the network, they are mapped using
+Fourier features:
+
+gamma(p) = [ sin(2^0 * pi * p), cos(2^0 * pi * p), … sin(2^(L-1) * pi *
+p), cos(2^(L-1) * pi * p) ]
+
+This is applied separately to each coordinate. It enables the network to
+represent high-frequency detail.
+
+------------------------------------------------------------------------
+
+Step 2 – MLP Architecture
+
+Original structure: - 8 fully connected layers - 256 hidden units per
+layer - ReLU activations - Skip connection at layer 4
+
+Processing flow:
+
+x_encoded -> MLP -> sigma + feature vector (feature + direction_encoded)
+-> smaller MLP -> RGB
+
+More precisely: 1. Input: gamma(x) 2. MLP produces hidden feature h 3.
+From h: - Linear head -> sigma - Concatenate with gamma(d) 4. Final
+layers -> RGB
+
+Important: - Density sigma depends only on position - Color depends on
+position and direction
+
+------------------------------------------------------------------------
+
+3) Forward Pass – Volume Rendering
+
+Step 1 – Ray Parameterization
+
+A camera ray is defined as:
+
+r(t) = o + t d
+
+Where: - o = camera origin - d = ray direction - t in [t_n, t_f]
+
+------------------------------------------------------------------------
+
+Step 2 – Sample Points Along the Ray
+
+Sample N points:
+
+t1, t2, …, tN
+
+Each point: x_i = o + t_i d
+
+Network evaluation: (sigma_i, c_i) = F_theta(x_i, d)
+
+------------------------------------------------------------------------
+
+Step 3 – Volume Rendering Integral
+
+Continuous form:
+
+C(r) = Integral from t_n to t_f of T(t) * sigma(r(t)) * c(r(t), d) dt
+
+Where transmittance is:
+
+T(t) = exp( - Integral from t_n to t of sigma(r(s)) ds )
+
+This represents the probability that the ray has not been absorbed
+before reaching t.
+
+------------------------------------------------------------------------
+
+Step 4 – Discrete Approximation
+
+NeRF approximates the integral as:
+
+C_hat(r) = Sum over i of T_i * alpha_i * c_i
+
+Where:
+
+alpha_i = 1 - exp(-sigma_i * delta_i)
+
+T_i = product over j < i of (1 - alpha_j)
+
+delta_i = t_{i+1} - t_i
+
+Interpretation: - alpha_i is probability of termination at sample i -
+T_i is probability of reaching sample i
+
+------------------------------------------------------------------------
+
+4) Loss Function
+
+NeRF uses pixel-wise mean squared error:
+
+L = Sum over rays of | C_hat(r) - C_gt(r) |^2
+
+------------------------------------------------------------------------
+
+5) Backward Pass – Gradient Flow
+
+Everything is differentiable: - MLP - alpha computation - transmittance
+product - weighted sum
+
+Predicted color:
+
+C_hat = Sum_i w_i c_i
+
+Where: w_i = T_i * alpha_i
+
+Loss: L = | C_hat - C_gt |^2
+
+Gradient with respect to weights:
+
+dL/dw_i = 2 (C_hat - C_gt) · c_i
+
+Gradient with respect to color:
+
+dL/dc_i = 2 (C_hat - C_gt) * w_i
+
+Gradient with respect to density:
+
+w_i = T_i (1 - exp(-sigma_i * delta_i))
+
+Since T_i depends on all previous alpha_j, sigma_i influences: - its own
+alpha_i - its own weight - all later transmittances
+
+Thus density creates non-local gradients along the ray.
+
+Autodiff handles this automatically in practice.
+
+------------------------------------------------------------------------
+
+6) Computational Complexity
+
+Main cost:
+
+#rays × #samples per ray × MLP evaluations
+
+Original NeRF uses: - 64 coarse samples - 128 fine samples
+
+Approximately 200 MLP evaluations per ray.
+
+------------------------------------------------------------------------
+
+7) Full Pipeline Summary
+
+Forward pass: 1. Sample ray 2. Sample points along ray 3. Positional
+encoding 4. MLP -> (sigma, RGB) 5. Compute alpha 6. Compute
+transmittance 7. Weighted color sum 8. Compute MSE loss
+
+Backward pass:
+
+Loss -> pixel color -> rendering weights -> densities and colors -> MLP
+parameters
+
+Everything is fully differentiable.

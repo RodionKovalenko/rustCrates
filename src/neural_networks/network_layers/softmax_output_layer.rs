@@ -104,6 +104,9 @@ impl SoftmaxLayer {
                             .iter()
                             .enumerate()
                             .filter(|(i, &target_id)| {
+                                if (target_id == 1) || (i + offset >= mask.len()) {
+                                    panic !("Invalid target token ID {} at position {} with offset {}, valid sequence length {}, and mask length {}", target_id, i, offset, valid_seq_len, mask.len());
+                                }
                                 target_id != 1 && // not padding token
                                 mask[offset + i] != 0 // mask is valid at this position
                             })
