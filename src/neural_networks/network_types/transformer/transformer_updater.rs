@@ -67,6 +67,9 @@ pub fn update_transformer(transformer_network: &mut NeuralNetwork, target_batch_
             LayerEnum::ClusteringLinear(sparse_linear_layer) => {
                 sparse_linear_layer.update_parameters();
             }
+            LayerEnum::AdaptiveLinear(adaptive_linear_layer) => {
+                adaptive_linear_layer.update_parameters();
+            }
             LayerEnum::SparseLinearRm(sparse_linear_layer) => {
                 sparse_linear_layer.update_parameters();
             }
@@ -95,6 +98,8 @@ pub fn update_transformer(transformer_network: &mut NeuralNetwork, target_batch_
             }
         }
     }
+
+    transformer_network.tie_embedding_and_sparse_linear();
 }
 
 pub fn update_k_mean_clusters(transformer_network: &mut NeuralNetwork, epoch: usize) {

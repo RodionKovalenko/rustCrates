@@ -888,6 +888,15 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                 let start = Instant::now();
                 let mut output_linear = adaptive_linear_layer.forward(&layer_input);
                 linear_output_indices = output_linear.get_output_indices();
+                if !forward_only {
+                    let adaptive_loss_batch = output_linear.get_cross_entropy_loss_batch();
+                    if !adaptive_loss_batch.is_empty() {
+                        layer_output.set_cross_entropy_loss_batch(adaptive_loss_batch);
+                    }
+                } else {
+                    let adaptive_logits = output_linear.get_output_batch();
+                    output_batch_real = Some(complex_batch_to_real_batch(&adaptive_logits));
+                }
                 output_batch = output_linear.take_output_batch();
 
                 if VERBOSE {
@@ -1050,6 +1059,13 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
             LayerEnum::Softmax(softmax_layer) => {
                 let start = Instant::now();
 
+                if !forward_only && !layer_output.get_cross_entropy_loss_batch().is_empty() {
+                    if VERBOSE {
+                        println!("skipping standalone softmax because adaptive output layer already produced CE loss");
+                    }
+                    continue;
+                }
+
                 let previous_output = match output_batch.take() {
                     Some(v) => v,
                     None => {
@@ -1078,6 +1094,13 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
             }
             LayerEnum::SoftmaxRm(softmax_layer) => {
                 let start = Instant::now();
+
+                if !forward_only && !layer_output.get_cross_entropy_loss_batch().is_empty() {
+                    if VERBOSE {
+                        println!("skipping standalone softmax_rm because adaptive output layer already produced CE loss");
+                    }
+                    continue;
+                }
 
                 let logits_rm = match output_batch_rm.take() {
                     Some(v) => v,
@@ -1413,6 +1436,8 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     if VERBOSE {
                         println!("time elapsed in seconds in adaptive linear layer backward: {:?}", start.elapsed().as_secs_f64());
                     }
+                } else if let Some(stored_gradient) = adaptive_linear_layer.gradient.as_ref() {
+                    gradient = Some(stored_gradient.clone());
                 } else {
                     println!("No previous gradient in Adaptive Linear Layer");
                 }

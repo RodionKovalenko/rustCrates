@@ -1,6 +1,6 @@
 use crate::neural_networks::{
     network_layers::{
-        complex_to_linear_layer::ComplexToLinearLayer, embedding_layer::EmbeddingLayer, feedforward_layer::FeedForwardLayer, layer::LayerEnum, linear_layer::LinearLayer, norm_layer::NormalNormLayer, softmax_output_layer::SoftmaxLayer, clustering_linear_layer::ClusteringLinearLayer, wavelet_network::DECOMPOSITION_LEVELS
+        adaptive_linear_layer::AdaptiveLinearLayer, complex_to_linear_layer::ComplexToLinearLayer, embedding_layer::EmbeddingLayer, feedforward_layer::FeedForwardLayer, layer::LayerEnum, linear_layer::LinearLayer, norm_layer::NormalNormLayer, softmax_output_layer::SoftmaxLayer, wavelet_network::DECOMPOSITION_LEVELS
     },
     network_types::{
         neural_network_generic::{NeuralNetwork, OperationMode, create},
@@ -11,7 +11,7 @@ use crate::neural_networks::{
 pub const NUM_SELF_ATT_LAYERS: usize = 7;
 pub const SPARSE_WINDOW_SIZE: usize = 2;
 
-pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
+pub fn create_transformer(_operation_mode: OperationMode) -> NeuralNetwork {
     let number_inputs: usize = 32;
     let number_outputs = 32;
     let number_of_hidden_layers: usize = 1;
@@ -61,14 +61,14 @@ pub fn create_transformer(operation_mode: OperationMode) -> NeuralNetwork {
     let _ctl_layer = ComplexToLinearLayer::new(rows, compressed_hidden, learning_rate);
     layers.push(LayerEnum::ComplexToLinear(Box::new(_ctl_layer)));
 
-    let mut _sparse_linear_layer: ClusteringLinearLayer = ClusteringLinearLayer::new(learning_rate, compressed_hidden, vocab_size);
-    layers.push(LayerEnum::ClusteringLinear(Box::new(_sparse_linear_layer)));
+    let mut _adaptive_linear_layer: AdaptiveLinearLayer = AdaptiveLinearLayer::new(learning_rate, compressed_hidden, vocab_size);
+    layers.push(LayerEnum::AdaptiveLinear(Box::new(_adaptive_linear_layer)));
 
     let mut _linear_layer: LinearLayer = LinearLayer::new(learning_rate, compressed_hidden, vocab_size, false);
     //layers.push(LayerEnum::Linear(Box::new(_linear_layer)));
 
-    let softmax_layer = SoftmaxLayer::new(learning_rate, operation_mode, vocab_size);
-    layers.push(LayerEnum::Softmax(Box::new(softmax_layer)));
+    let _softmax_layer = SoftmaxLayer::new(learning_rate, _operation_mode, vocab_size);
+    //layers.push(LayerEnum::Softmax(Box::new(_softmax_layer)));
 
     transformer_network.layers = layers;
 
