@@ -47,3 +47,39 @@ pub fn load_data_xquad_de() -> Result<XQuADDataset, Box<dyn std::error::Error>> 
 
     Ok(dataset)
 }
+
+pub fn load_data_xquad_en() -> Result<XQuADDataset, Box<dyn std::error::Error>> {
+    let file_path = "datasets/xquad.en.json";
+    let mut file = File::open(file_path)?;
+
+    if !Path::new(file_path).exists() {
+        return Err(format!("Dataset file not found at path: {}", file_path).into());
+    }
+
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+
+    let dataset: XQuADDataset = serde_json::from_str(&content)?;
+
+    println!("Valid question-answer pairs: {}", dataset.data.len());
+
+    Ok(dataset)
+}
+
+pub fn load_data_xquad_ru() -> Result<XQuADDataset, Box<dyn std::error::Error>> {
+    let file_path = "datasets/xquad.ru.json";
+    let mut file = File::open(file_path)?;
+
+    if !Path::new(file_path).exists() {
+        return Err(format!("Dataset file not found at path: {}", file_path).into());
+    }
+
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+
+    let dataset: XQuADDataset = serde_json::from_str(&content)?;
+
+    println!("Valid question-answer pairs: {}", dataset.data.len());
+
+    Ok(dataset)
+}

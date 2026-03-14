@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::neural_networks::training::xquad_structs::{load_data_xquad_de, XQuADDataset};
+use crate::neural_networks::training::xquad_structs::{load_data_xquad_de, load_data_xquad_en, load_data_xquad_ru, XQuADDataset};
 use rand::rng;
 use rand::seq::SliceRandom;
 
@@ -236,6 +236,57 @@ impl<T: Debug + Clone, O: Debug + Clone> DataTrait<T, O> for Dataset<T, O> {
 pub fn load_data_xquad_de_as_dataset() -> Result<Dataset<String, String>, Box<dyn std::error::Error>> {
     println!("Dataset is being loaded...");
     let dataset: XQuADDataset = load_data_xquad_de()?; // Returns nested structure
+
+    let mut inputs = Vec::new();
+    let mut targets = Vec::new();
+
+    // Traverse nested structure to extract context, question, and answers
+    for article in dataset.data {
+        for paragraph in article.paragraphs {
+            let context = paragraph.context;
+            for qa in paragraph.qas {
+                let input = format!("Context: {} \n <sep> Question: {}", context, qa.question);
+                let target = qa.answers.get(0).map(|a| a.text.clone()).unwrap_or_else(|| "N/A".to_string());
+
+                inputs.push(input);
+                targets.push(target);
+            }
+        }
+    }
+
+    println!("Dataset is loaded: {} instances", inputs.len());
+
+    Ok(Dataset::new(inputs, targets))
+}
+pub fn load_data_xquad_en_as_dataset() -> Result<Dataset<String, String>, Box<dyn std::error::Error>> {
+    println!("Dataset is being loaded...");
+    let dataset: XQuADDataset = load_data_xquad_en()?; // Returns nested structure
+
+    let mut inputs = Vec::new();
+    let mut targets = Vec::new();
+
+    // Traverse nested structure to extract context, question, and answers
+    for article in dataset.data {
+        for paragraph in article.paragraphs {
+            let context = paragraph.context;
+            for qa in paragraph.qas {
+                let input = format!("Context: {} \n <sep> Question: {}", context, qa.question);
+                let target = qa.answers.get(0).map(|a| a.text.clone()).unwrap_or_else(|| "N/A".to_string());
+
+                inputs.push(input);
+                targets.push(target);
+            }
+        }
+    }
+
+    println!("Dataset is loaded: {} instances", inputs.len());
+
+    Ok(Dataset::new(inputs, targets))
+}
+
+pub fn load_data_xquad_ru_as_dataset() -> Result<Dataset<String, String>, Box<dyn std::error::Error>> {
+    println!("Dataset is being loaded...");
+    let dataset: XQuADDataset = load_data_xquad_ru()?; // Returns nested structure
 
     let mut inputs = Vec::new();
     let mut targets = Vec::new();

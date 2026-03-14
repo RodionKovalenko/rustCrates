@@ -133,7 +133,6 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
             transformer_network.time_step = timestep;
 
             let network_output = predict(transformer_network, &layer_input);
-            let _padding_mask_batch = network_output.get_padding_mask_batch();
 
             // If there are no valid targets in this batch, skip loss/backward so we don't
             // early-stop on a meaningless 0.0 loss.
@@ -822,6 +821,29 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     println!("time elapsed in seconds in clustering linear layer: {:?}", start.elapsed().as_secs_f64());
                 }
             }
+            LayerEnum::AdaptiveLinear(adaptive_linear_layer) => {
+                if VERBOSE {
+                    println!("forward adaptive linear start");
+                }
+
+                let previous_output = match output_batch.take() {
+                    Some(v) => v,
+                    None => {
+                        println!("No previous output for AdaptiveLinear layer");
+                        continue;
+                    }
+                };
+                layer_input.set_input_batch(previous_output);
+
+                let start = Instant::now();
+                let mut output_linear = adaptive_linear_layer.forward(&layer_input);
+                linear_output_indices = output_linear.get_output_indices();
+                output_batch = output_linear.take_output_batch();
+
+                if VERBOSE {
+                    println!("time elapsed in seconds in adaptive linear layer: {:?}", start.elapsed().as_secs_f64());
+                }
+            }
             LayerEnum::SparseLinearRm(sparse_linear_layer) => {
                 if VERBOSE {
                     println!("forward sparse linear_rm start");
@@ -1330,6 +1352,19 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     }
                 } else {
                     println!("No previous gradient in Linear Layer");
+                }
+            }
+            LayerEnum::AdaptiveLinear(adaptive_linear_layer) => {
+                if let Some(previous_gradient) = gradient {
+                    let start = Instant::now();
+                    let gradient_batch: Gradient = adaptive_linear_layer.backward(&previous_gradient);
+                    gradient = Some(gradient_batch);
+
+                    if VERBOSE {
+                        println!("time elapsed in seconds in adaptive linear layer backward: {:?}", start.elapsed().as_secs_f64());
+                    }
+                } else {
+                    println!("No previous gradient in Adaptive Linear Layer");
                 }
             }
             LayerEnum::SparseLinearRm(sparse_linear_layer) => {

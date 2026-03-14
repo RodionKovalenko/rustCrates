@@ -16,5 +16,6 @@ pub mod performer_complex;
 pub mod complex_to_linear_layer;
 pub mod clustering_linear_layer;
 pub mod tied_sparse_embeddings;
+pub mod adaptive_linear_layer;
 
 pub mod network_layers_rm;

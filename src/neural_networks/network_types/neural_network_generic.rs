@@ -400,6 +400,9 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
             LayerEnum::ClusteringLinear(sparse_linear_layer) => {
                 sparse_linear_layer.learning_rate = learning_rate;
             }
+            LayerEnum::AdaptiveLinear(adaptive_linear_layer) => {
+                adaptive_linear_layer.learning_rate = learning_rate;
+            }
             LayerEnum::SparseLinearRm(sparse_linear_layer) => {
                 sparse_linear_layer.learning_rate = learning_rate;
             }
@@ -646,6 +649,11 @@ pub fn reset_previous_gradient(transformer: &mut NeuralNetwork) {
                 sparse_linear_layer.gradient = None;
                 sparse_linear_layer.batch_size = 0;
             }
+            LayerEnum::AdaptiveLinear(adaptive_linear_layer) => {
+                // adaptive_linear_layer.previous_gradient = None;
+                adaptive_linear_layer.gradient = None;
+                adaptive_linear_layer.batch_size = 0;
+            }
             LayerEnum::SparseLinearRm(sparse_linear_layer) => {
                 sparse_linear_layer.gradient = None;
                 sparse_linear_layer.batch_size = 0;
@@ -852,6 +860,10 @@ pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
             LayerEnum::ClusteringLinear(sparse_linear_layer) => {
                 let (r, c) = sparse_linear_layer.weights.dims();
                 println!("sparse linear layer weigths: {}x{}", r, c);
+            }
+            LayerEnum::AdaptiveLinear(adaptive_linear_layer) => {
+                let (r, c) = (adaptive_linear_layer.weights.len(), adaptive_linear_layer.weights[0].len());
+                println!("adaptive linear layer weigths: {}x{}", r, c);
             }
             LayerEnum::SparseLinearRm(sparse_linear_layer) => {
                 let (r, c) = sparse_linear_layer.weights.dims();

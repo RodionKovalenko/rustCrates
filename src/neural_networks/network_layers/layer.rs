@@ -1,17 +1,10 @@
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     network_layers::{
-        adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer,
-        complex_to_linear_layer::ComplexToLinearLayer,
-        feedforward_layer::FeedForwardLayer,
-        multi_linear_layer::MultiLinearLayer,
-        network_layers_rm::{
+        adaptive_linear_layer::AdaptiveLinearLayer, adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, clustering_linear_layer::ClusteringLinearLayer, complex_to_linear_layer::ComplexToLinearLayer, feedforward_layer::FeedForwardLayer, multi_linear_layer::MultiLinearLayer, network_layers_rm::{
             complex_to_linear_layer_rm::ComplexToLinearLayerRm, embedding_layer_rm::EmbeddingLayerRm, feedforward_layer_rm::FeedForwardLayerRm, layer_rm::LayerRm, linear_layer_rm::LinearLayerRm,
             sparse_linear_layer_rm::SparseLinearLayerRm, wavelet_complex_layer_rm::ComplexWaveletLayerRm, wavelet_discrete_layer_rm::DiscreteWaveletLayerRm,
-        },
-        clustering_linear_layer::ClusteringLinearLayer,
-        wavelet_complex_layer::ComplexWaveletLayer,
-        wavelet_discrete_layer::DiscreteWaveletLayer,
+        }, wavelet_complex_layer::ComplexWaveletLayer, wavelet_discrete_layer::DiscreteWaveletLayer
     },
     network_types::transformer::{
         self_attention_layer::SelfAttentionLayer, self_attention_layer_approximation::SelfAttentionLayerApproximation, self_attention_layer_approximation_rm::SelfAttentionLayerApproximationRm,
@@ -121,6 +114,7 @@ pub enum LayerEnum {
     Linear(Box<LinearLayer>),
     LinearRm(Box<LinearLayerRm>),
     ClusteringLinear(Box<ClusteringLinearLayer>),
+    AdaptiveLinear(Box<AdaptiveLinearLayer>),
     SparseLinearRm(Box<SparseLinearLayerRm>),
     MultiLinear(Box<MultiLinearLayer>),
     DiscreteWavelet(Box<DiscreteWaveletLayer>),
