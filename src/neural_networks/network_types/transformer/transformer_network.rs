@@ -20,10 +20,7 @@ use crate::{
                 transformer_updater::{update_k_mean_clusters, update_transformer, VERBOSE},
             },
         },
-        utils::{
-            array_splitting::sliding_window_chunks_matrix,
-            tokenizer::{detokenize, tokenize_batch},
-        },
+        utils::tokenizer::{detokenize, tokenize_batch},
     },
 };
 
@@ -35,6 +32,82 @@ pub const TOP_K_SIZE: usize = 500;
 #[inline]
 fn complex_batch_to_real_batch(data: &[Vec<Vec<C>>]) -> Vec<Vec<Vec<Real>>> {
     data.iter().map(|seq| seq.iter().map(|row| row.iter().map(|z| z.re).collect()).collect()).collect()
+}
+
+fn shift_targets_for_next_token_prediction(target_ids: &[Vec<u32>]) -> Vec<Vec<u32>> {
+    target_ids.to_vec()
+}
+
+fn shift_inputs_for_next_token_prediction(batch_ids: &[Vec<u32>]) -> Vec<Vec<u32>> {
+    batch_ids
+        .iter()
+        .map(|seq| {
+            if seq.is_empty() {
+                Vec::new()
+            } else {
+                seq[..seq.len() - 1].to_vec()
+            }
+        })
+        .collect()
+}
+
+fn sliding_window_start_positions(len: usize, window_size: usize, stride: usize) -> Vec<usize> {
+    if len <= window_size {
+        return vec![0];
+    }
+
+    let step = stride.max(1);
+    let mut starts = Vec::new();
+    let mut start = 0;
+
+    while start + window_size <= len {
+        starts.push(start);
+        start += step;
+    }
+
+    let last_start = len - window_size;
+    if starts.last().copied() != Some(last_start) {
+        starts.push(last_start);
+    }
+
+    starts
+}
+
+fn split_shifted_batch_with_targets(
+    batch_ids: &[Vec<u32>],
+    target_ids: &[Vec<u32>],
+    window_size: usize,
+    stride: usize,
+) -> (Vec<Vec<u32>>, Vec<Vec<u32>>) {
+    let mut input_chunks = Vec::new();
+    let mut target_chunks = Vec::new();
+
+    for (seq, targets) in batch_ids.iter().zip(target_ids.iter()) {
+        if seq.is_empty() {
+            input_chunks.push(Vec::new());
+            target_chunks.push(Vec::new());
+            continue;
+        }
+
+        let target_start_in_seq = seq.len().saturating_sub(targets.len());
+
+        for start in sliding_window_start_positions(seq.len(), window_size, stride) {
+            let end = usize::min(start + window_size, seq.len());
+            input_chunks.push(seq[start..end].to_vec());
+
+            let supervised_start = target_start_in_seq.max(start);
+            let target_start = supervised_start.saturating_sub(target_start_in_seq);
+            let target_end = end.saturating_sub(target_start_in_seq).min(targets.len());
+
+            if target_start < target_end {
+                target_chunks.push(targets[target_start..target_end].to_vec());
+            } else {
+                target_chunks.push(Vec::new());
+            }
+        }
+    }
+
+    (input_chunks, target_chunks)
 }
 
 pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<String, String>, num_epochs: usize, batch_size: usize) {
@@ -73,34 +146,10 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
 
             let batch_ids: Vec<Vec<u32>> = concat_batches(&input_ids, &target_ids);
 
-            // Option A training: treat `<sep>` as GIVEN in the input stream.
-            // Therefore we DO NOT supervise predicting `<sep>`; we start targets after it.
-            // (target sequence is like: <sep> answer... <eos>)
-            let mut target_ids: Vec<Vec<u32>> = target_ids
-                .iter()
-                .map(|seq| {
-                    if seq.len() <= 1 {
-                        return vec![];
-                    }
-
-                    let mut shifted = Vec::with_capacity(seq.len().saturating_sub(1));
-                    shifted.extend_from_slice(&seq[1..]);
-                    shifted
-                })
-                .collect();
-
-            let mut batch_ids: Vec<Vec<u32>> = batch_ids
-                .iter()
-                .map(|seq| {
-                    if seq.is_empty() {
-                        return vec![];
-                    }
-
-                    let mut shifted = Vec::with_capacity(seq.len());
-                    shifted.extend_from_slice(&seq[..seq.len() - 1]);
-                    shifted
-                })
-                .collect();
+            // Causal next-token training over the target span:
+            // the last prompt token predicts `<sep>`, then `<sep>` predicts the first answer token, etc.
+            let mut target_ids: Vec<Vec<u32>> = shift_targets_for_next_token_prediction(&target_ids);
+            let mut batch_ids: Vec<Vec<u32>> = shift_inputs_for_next_token_prediction(&batch_ids);
 
             // Count valid target tokens AFTER shifting.
             let valid_target_tokens_batch: usize = target_ids.iter().map(|seq| seq.iter().filter(|&&id| id != 1).count()).sum();
@@ -115,7 +164,8 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
             let actual_batch_size = batch_ids.len();
 
             if max_seq_len > MAX_CONTEXT_WINDOW_SIZE {
-                let (input_batch_ids, target_batch_ids) = sliding_window_chunks_matrix(&batch_ids, MAX_CONTEXT_WINDOW_SIZE, CONTEXT_OVERLAPPING);
+                let (input_batch_ids, target_batch_ids) =
+                    split_shifted_batch_with_targets(&batch_ids, &target_ids, MAX_CONTEXT_WINDOW_SIZE, CONTEXT_OVERLAPPING);
                 batch_ids = input_batch_ids;
                 target_ids = target_batch_ids;
             }
@@ -1669,34 +1719,14 @@ fn evaluate_validation(transformer_network: &mut NeuralNetwork, dataset: &Datase
 
         let batch_ids: Vec<Vec<u32>> = concat_batches(&input_ids, &target_ids);
 
-        let mut target_ids: Vec<Vec<u32>> = target_ids
-            .iter()
-            .map(|seq| {
-                if seq.is_empty() {
-                    return vec![];
-                }
-                let mut shifted = Vec::with_capacity(seq.len());
-                shifted.extend_from_slice(&seq[0..seq.len()]);
-                shifted
-            })
-            .collect();
-
-        let mut batch_ids: Vec<Vec<u32>> = batch_ids
-            .iter()
-            .map(|seq| {
-                if seq.is_empty() {
-                    return vec![];
-                }
-                let mut shifted = Vec::with_capacity(seq.len());
-                shifted.extend_from_slice(&seq[..seq.len() - 1]);
-                shifted
-            })
-            .collect();
+        let mut target_ids: Vec<Vec<u32>> = shift_targets_for_next_token_prediction(&target_ids);
+        let mut batch_ids: Vec<Vec<u32>> = shift_inputs_for_next_token_prediction(&batch_ids);
 
         let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap_or(0);
 
         if max_seq_len > MAX_CONTEXT_WINDOW_SIZE {
-            let (input_batch_ids, target_batch_ids) = sliding_window_chunks_matrix(&batch_ids, MAX_CONTEXT_WINDOW_SIZE, CONTEXT_OVERLAPPING);
+            let (input_batch_ids, target_batch_ids) =
+                split_shifted_batch_with_targets(&batch_ids, &target_ids, MAX_CONTEXT_WINDOW_SIZE, CONTEXT_OVERLAPPING);
             batch_ids = input_batch_ids;
             target_ids = target_batch_ids;
         }
@@ -1767,34 +1797,14 @@ pub fn evaluate_test(transformer_network: &mut NeuralNetwork, dataset: &Dataset<
 
         let batch_ids: Vec<Vec<u32>> = concat_batches(&input_ids, &target_ids);
 
-        let mut target_ids: Vec<Vec<u32>> = target_ids
-            .iter()
-            .map(|seq| {
-                if seq.is_empty() {
-                    return vec![];
-                }
-                let mut shifted = Vec::with_capacity(seq.len());
-                shifted.extend_from_slice(&seq[0..seq.len()]);
-                shifted
-            })
-            .collect();
-
-        let mut batch_ids: Vec<Vec<u32>> = batch_ids
-            .iter()
-            .map(|seq| {
-                if seq.is_empty() {
-                    return vec![];
-                }
-                let mut shifted = Vec::with_capacity(seq.len());
-                shifted.extend_from_slice(&seq[..seq.len() - 1]);
-                shifted
-            })
-            .collect();
+        let mut target_ids: Vec<Vec<u32>> = shift_targets_for_next_token_prediction(&target_ids);
+        let mut batch_ids: Vec<Vec<u32>> = shift_inputs_for_next_token_prediction(&batch_ids);
 
         let max_seq_len: usize = batch_ids.iter().map(|v| v.len()).max().unwrap_or(0);
 
         if max_seq_len > MAX_CONTEXT_WINDOW_SIZE {
-            let (input_batch_ids, target_batch_ids) = sliding_window_chunks_matrix(&batch_ids, MAX_CONTEXT_WINDOW_SIZE, CONTEXT_OVERLAPPING);
+            let (input_batch_ids, target_batch_ids) =
+                split_shifted_batch_with_targets(&batch_ids, &target_ids, MAX_CONTEXT_WINDOW_SIZE, CONTEXT_OVERLAPPING);
             batch_ids = input_batch_ids;
             target_ids = target_batch_ids;
         }
@@ -1825,4 +1835,27 @@ pub fn evaluate_test(transformer_network: &mut NeuralNetwork, dataset: &Dataset<
     println!("{}\n", "=".repeat(60).bright_cyan());
 
     avg_test_loss
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_shifted_batch_with_targets;
+
+    #[test]
+    fn sliding_window_keeps_targets_aligned_to_chunk_suffix() {
+        let batch_ids = vec![vec![10, 11, 12, 13, 14, 20, 21, 22, 23]];
+        let target_ids = vec![vec![19, 20, 21, 22, 23]];
+
+        let (input_chunks, target_chunks) = split_shifted_batch_with_targets(&batch_ids, &target_ids, 5, 3);
+
+        assert_eq!(
+            input_chunks,
+            vec![
+                vec![10, 11, 12, 13, 14],
+                vec![13, 14, 20, 21, 22],
+                vec![14, 20, 21, 22, 23],
+            ]
+        );
+        assert_eq!(target_chunks, vec![vec![19], vec![19, 20, 21, 22], vec![19, 20, 21, 22, 23]]);
+    }
 }
