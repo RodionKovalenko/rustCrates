@@ -230,7 +230,14 @@ impl AdaptiveLinearLayer {
                                     logit += input_row[d].re * r(w as f64);
                                 }
                             }
-                            if cluster > 0 {
+                            // Only add routing score during training: at inference the routing
+                            // selects which tail-cluster tokens to *include* as candidates, but
+                            // should not bias the final logit comparison between head and tail
+                            // tokens. During training the correct cluster is forced, so the
+                            // routing score is part of the supervised signal; at inference the
+                            // cluster is predicted and adding the score would unfairly boost
+                            // tail tokens over head-cluster answers.
+                            if cluster > 0 && is_training {
                                 let rc = cluster - 1;
                                 if let Some(rw) = routing_weights.get(rc) {
                                     let rb = r(routing_bias.get(rc).copied().unwrap_or(0.0) as f64);
