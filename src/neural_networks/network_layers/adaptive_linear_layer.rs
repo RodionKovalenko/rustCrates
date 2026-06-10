@@ -13,6 +13,7 @@ use crate::neural_networks::{
     },
     network_layers::layer::LayerEnum,
     utils::{
+        activation::softmax_backward_real_with_gradient,
         adam_w::{calculate_adam_w_bias_f32_sparse, calculate_adam_w_f32_sparse},
         dtype::{C, Real, ZERO, r},
         matrix::{average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, normalize_bias, normalize_gradients},
@@ -135,6 +136,10 @@ impl AdaptiveLinearLayer {
         }
     }
 
+    /// Forward pass.
+    ///
+    /// During training (`target_batch_ids` is set), also computes cross-entropy loss
+    /// and all gradients so that the backward pass can start from the stored `self.gradient`.
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
         let input_batch = input.get_input_batch();
         self.time_step = input.get_time_step();
@@ -144,10 +149,14 @@ impl AdaptiveLinearLayer {
         let target_tokens = input.get_target_batch_ids();
         let padding_mask_batch = input.get_padding_mask_batch();
         let top_k = input.get_top_k_size().max(1);
-        let is_training = !target_tokens.is_empty();
+        let total_valid_tokens = input.get_total_valid_tokens();
+        let is_training = !target_tokens.is_empty() && input.get_calculate_gradient();
 
         self.target_batch_ids = Some(target_tokens.clone());
         self.gradient = None;
+        self.cross_entropy_loss_batch = None;
+
+        // ── Stage 1: compute sparse logits for every batch item ──────────────────
 
         let cluster_word_weights = &self.cluster_word_weights;
         let cluster_word_bias = &self.cluster_word_bias;
@@ -157,39 +166,32 @@ impl AdaptiveLinearLayer {
         let token_index_in_cluster = &self.token_index_in_cluster;
         let frequency_clusters = &self.frequency_clusters;
 
-        let results: Vec<_> = input_batch
+        let sparse_results: Vec<(Vec<Vec<C>>, Vec<Vec<usize>>, Vec<Option<usize>>)> = input_batch
             .par_iter()
             .enumerate()
             .map(|(batch_idx, input_seq)| {
                 let offset = Self::calculate_target_offset(batch_idx, &target_tokens, &padding_mask_batch);
                 let mut sample_values: Vec<Vec<C>> = Vec::with_capacity(input_seq.len());
                 let mut sample_indices: Vec<Vec<usize>> = Vec::with_capacity(input_seq.len());
-                let mut sample_tail_clusters: Vec<Option<usize>> = Vec::with_capacity(input_seq.len());
+                let mut sample_tails: Vec<Option<usize>> = Vec::with_capacity(input_seq.len());
 
                 for (row_idx, input_row) in input_seq.iter().enumerate() {
                     let target_id = Self::get_target_id(row_idx, batch_idx, offset, &target_tokens, &padding_mask_batch);
 
-                    // Determine which tail cluster to expand
                     let selected_tail: Option<usize> = if is_training {
                         target_id
                             .filter(|&tid| tid < token_cluster_by_id.len())
                             .map(|tid| token_cluster_by_id[tid])
                             .filter(|&c| c > 0)
                     } else {
-                        // Inference: pick tail cluster with highest routing score
                         if !routing_weights.is_empty() {
                             routing_weights
                                 .iter()
                                 .enumerate()
                                 .map(|(c, rw)| {
                                     let rb = r(routing_bias.get(c).copied().unwrap_or(0.0) as f64);
-                                    let score: Real = rw
-                                        .iter()
-                                        .zip(input_row.iter())
-                                        .map(|(&w, x)| x.re * r(w as f64))
-                                        .sum::<Real>()
-                                        + rb;
-                                    (c + 1, score) // +1: cluster 0 is head
+                                    let score: Real = rw.iter().zip(input_row.iter()).map(|(&w, x)| x.re * r(w as f64)).sum::<Real>() + rb;
+                                    (c + 1, score)
                                 })
                                 .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
                                 .map(|(c, _)| c)
@@ -198,15 +200,13 @@ impl AdaptiveLinearLayer {
                         }
                     };
 
-                    // Candidates: all head tokens + all tokens in selected tail cluster
+                    // Candidates: head tokens + selected tail cluster tokens
                     let mut candidates: Vec<usize> = frequency_clusters[0].clone();
                     if let Some(tc) = selected_tail {
                         if tc < frequency_clusters.len() {
                             candidates.extend_from_slice(&frequency_clusters[tc]);
                         }
                     }
-
-                    // Guarantee target is present during training
                     if is_training {
                         if let Some(tid) = target_id {
                             if !candidates.contains(&tid) {
@@ -230,27 +230,17 @@ impl AdaptiveLinearLayer {
                                     logit += input_row[d].re * r(w as f64);
                                 }
                             }
-
-                            // Add routing score for tail tokens
                             if cluster > 0 {
                                 let rc = cluster - 1;
                                 if let Some(rw) = routing_weights.get(rc) {
                                     let rb = r(routing_bias.get(rc).copied().unwrap_or(0.0) as f64);
-                                    let route: Real = rw
-                                        .iter()
-                                        .zip(input_row.iter())
-                                        .map(|(&w, x)| x.re * r(w as f64))
-                                        .sum::<Real>()
-                                        + rb;
-                                    logit += route;
+                                    logit += rw.iter().zip(input_row.iter()).map(|(&w, x)| x.re * r(w as f64)).sum::<Real>() + rb;
                                 }
                             }
-
                             Some((logit, token_id))
                         })
                         .collect();
 
-                    // Sort descending; guarantee target stays in top-k
                     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
                     if is_training {
@@ -273,18 +263,18 @@ impl AdaptiveLinearLayer {
 
                     sample_values.push(values);
                     sample_indices.push(indices);
-                    sample_tail_clusters.push(selected_tail);
+                    sample_tails.push(selected_tail);
                 }
 
-                (sample_values, sample_indices, sample_tail_clusters)
+                (sample_values, sample_indices, sample_tails)
             })
             .collect();
 
-        let mut output_batch = Vec::with_capacity(input_batch.len());
-        let mut output_indices = Vec::with_capacity(input_batch.len());
-        let mut selected_tails = Vec::with_capacity(input_batch.len());
+        let mut output_batch: Vec<Vec<Vec<C>>> = Vec::with_capacity(input_batch.len());
+        let mut output_indices: Vec<Vec<Vec<usize>>> = Vec::with_capacity(input_batch.len());
+        let mut selected_tails: Vec<Vec<Option<usize>>> = Vec::with_capacity(input_batch.len());
 
-        for (vals, idxs, tails) in results {
+        for (vals, idxs, tails) in sparse_results {
             output_batch.push(vals);
             output_indices.push(idxs);
             selected_tails.push(tails);
@@ -294,11 +284,148 @@ impl AdaptiveLinearLayer {
         self.selected_tail_cluster_batch = selected_tails;
 
         let mut layer_output = LayerOutput::new_default();
-        layer_output.set_output_batch(output_batch);
-        layer_output.set_output_indices(output_indices);
+        layer_output.set_output_batch(output_batch.clone());
+        layer_output.set_output_indices(output_indices.clone());
+
+        // ── Stage 2 (training only): CE loss + full gradient computation ─────────
+
+        if is_training && !padding_mask_batch.is_empty() {
+            let batch_len = input_batch.len();
+            let seq_len = if batch_len > 0 { input_batch[0].len() } else { 0 };
+            let hidden_size = if batch_len > 0 && seq_len > 0 { input_batch[0][0].len() } else { 0 };
+            let routing_count = self.weights.len();
+
+            // (ce_losses_batch, sparse_grad_batch) via softmax_backward_real_with_gradient
+            let ce_and_grad: Vec<(Vec<Vec<C>>, Vec<Vec<C>>)> = (0..batch_len)
+                .into_par_iter()
+                .map(|batch_idx| {
+                    if batch_idx >= padding_mask_batch.len() || batch_idx >= target_tokens.len() {
+                        return (vec![], vec![]);
+                    }
+                    let logits = &output_batch[batch_idx]; // [seq_len][k]
+                    let targets = &target_tokens[batch_idx];
+                    let pmask = &padding_mask_batch[batch_idx];
+                    let logit_indices = &output_indices[batch_idx]; // [seq_len][k]
+
+                    // padding_mask must match seq_len
+                    if pmask.len() != logits.len() {
+                        return (vec![], vec![]);
+                    }
+
+                    softmax_backward_real_with_gradient(logits, targets, pmask, total_valid_tokens, logit_indices)
+                })
+                .collect();
+
+            // Separate into ce_losses and sparse_logit_grads
+            let mut ce_losses_batch: Vec<Vec<Vec<C>>> = Vec::with_capacity(batch_len);
+            let mut sparse_grad_batch: Vec<Vec<Vec<C>>> = Vec::with_capacity(batch_len);
+            for (losses, grads) in ce_and_grad {
+                ce_losses_batch.push(losses);
+                sparse_grad_batch.push(grads);
+            }
+
+            layer_output.set_cross_entropy_loss_batch(ce_losses_batch.clone());
+            self.cross_entropy_loss_batch = Some(ce_losses_batch);
+
+            // Propagate sparse gradient → gradient_input_batch + weight gradients
+            let zero_c = C::new(ZERO, ZERO);
+            let mut grad_input = vec![vec![vec![zero_c; hidden_size]; seq_len]; batch_len];
+            let mut routing_w_grads_batch = vec![vec![vec![zero_c; hidden_size]; routing_count]; batch_len];
+            let mut routing_b_grads_batch = vec![vec![zero_c; routing_count]; batch_len];
+            let mut word_w_grads = self.zero_cluster_word_weight_grads(hidden_size);
+            let mut word_b_grads = self.zero_cluster_word_bias_grads();
+
+            for batch_idx in 0..batch_len {
+                if batch_idx >= sparse_grad_batch.len() {
+                    continue;
+                }
+                let input_seq = &input_batch[batch_idx];
+                let grad_seq = &sparse_grad_batch[batch_idx];
+                let idx_seq = &output_indices[batch_idx];
+
+                for seq_idx in 0..grad_seq.len().min(idx_seq.len()) {
+                    if seq_idx >= input_seq.len() {
+                        continue;
+                    }
+                    let input_row = &input_seq[seq_idx];
+                    let grad_row = &grad_seq[seq_idx];
+                    let idx_row = &idx_seq[seq_idx];
+
+                    for k in 0..grad_row.len().min(idx_row.len()) {
+                        let grad_val = grad_row[k];
+                        let token_id = idx_row[k];
+
+                        let cluster = match self.token_cluster_by_id.get(token_id) {
+                            Some(&c) => c,
+                            None => continue,
+                        };
+                        let idx_in_cluster = match self.token_index_in_cluster.get(token_id) {
+                            Some(&i) => i,
+                            None => continue,
+                        };
+                        if cluster >= self.cluster_word_weights.len() {
+                            continue;
+                        }
+                        if idx_in_cluster >= self.cluster_word_weights[cluster].len() {
+                            continue;
+                        }
+
+                        let token_w = &self.cluster_word_weights[cluster][idx_in_cluster];
+
+                        // grad_x from token weights
+                        for (d, &w) in token_w.iter().enumerate() {
+                            if d < hidden_size {
+                                grad_input[batch_idx][seq_idx][d] += grad_val * C::new(r(w as f64), ZERO);
+                            }
+                        }
+
+                        // grad w.r.t. cluster word weights and bias
+                        if idx_in_cluster < word_w_grads[cluster].len() {
+                            for (d, &x_val) in input_row.iter().enumerate() {
+                                if d < word_w_grads[cluster][idx_in_cluster].len() {
+                                    word_w_grads[cluster][idx_in_cluster][d] += x_val * grad_val;
+                                }
+                            }
+                            word_b_grads[cluster][idx_in_cluster] += grad_val;
+                        }
+
+                        // grad w.r.t. routing weights for tail tokens
+                        if cluster > 0 {
+                            let rc = cluster - 1;
+                            if rc < routing_count {
+                                for (d, &x_val) in input_row.iter().enumerate() {
+                                    if d < hidden_size {
+                                        routing_w_grads_batch[batch_idx][rc][d] += x_val * grad_val;
+                                        // routing weight also contributes to grad_x
+                                        grad_input[batch_idx][seq_idx][d] +=
+                                            grad_val * C::new(r(self.weights[rc][d] as f64), ZERO);
+                                    }
+                                }
+                                routing_b_grads_batch[batch_idx][rc] += grad_val;
+                            }
+                        }
+                    }
+                }
+            }
+
+            self.cluster_word_weight_gradients = Some(word_w_grads);
+            self.cluster_word_bias_gradients = Some(word_b_grads);
+
+            let mut gradient = Gradient::new_default();
+            gradient.set_gradient_input_batch(grad_input);
+            gradient.set_gradient_weight_batch(routing_w_grads_batch);
+            gradient.set_gradient_bias_batch(routing_b_grads_batch);
+            gradient.set_total_valid_tokens(total_valid_tokens);
+            self.gradient = Some(gradient);
+        }
+
         layer_output
     }
 
+    /// Backward pass — called only when a gradient from a later layer is present.
+    /// In the standard architecture (AdaptiveLinear as the last layer), the gradient
+    /// computed in `forward()` is used directly; this method handles the rare case where
+    /// an additional layer is stacked after this one.
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
         let input_batch = self.input_batch.as_ref().expect("No input batch in adaptive linear layer backward");
         let prev_grad_batch = previous_gradient.get_gradient_input_batch();
@@ -317,14 +444,11 @@ impl AdaptiveLinearLayer {
         let mut word_b_grads = self.zero_cluster_word_bias_grads();
 
         for batch_idx in 0..batch_len {
+            if batch_idx >= prev_grad_batch.len() || batch_idx >= self.output_indices_batch.len() {
+                continue;
+            }
             let input_seq = &input_batch[batch_idx];
-            if batch_idx >= prev_grad_batch.len() {
-                continue;
-            }
             let grad_seq = &prev_grad_batch[batch_idx];
-            if batch_idx >= self.output_indices_batch.len() {
-                continue;
-            }
             let idx_seq = &self.output_indices_batch[batch_idx];
 
             for seq_idx in 0..grad_seq.len().min(idx_seq.len()) {
@@ -347,24 +471,18 @@ impl AdaptiveLinearLayer {
                         Some(&i) => i,
                         None => continue,
                     };
-                    if cluster >= self.cluster_word_weights.len() {
-                        continue;
-                    }
-                    if idx_in_cluster >= self.cluster_word_weights[cluster].len() {
+                    if cluster >= self.cluster_word_weights.len()
+                        || idx_in_cluster >= self.cluster_word_weights[cluster].len()
+                    {
                         continue;
                     }
 
                     let token_w = &self.cluster_word_weights[cluster][idx_in_cluster];
-
-                    // grad w.r.t. input from token weights
                     for (d, &w) in token_w.iter().enumerate() {
                         if d < hidden_size {
-                            gradient_input_batch[batch_idx][seq_idx][d] +=
-                                grad_val * C::new(r(w as f64), ZERO);
+                            gradient_input_batch[batch_idx][seq_idx][d] += grad_val * C::new(r(w as f64), ZERO);
                         }
                     }
-
-                    // grad w.r.t. word weights and bias
                     if idx_in_cluster < word_w_grads[cluster].len() {
                         for (d, &x_val) in input_row.iter().enumerate() {
                             if d < word_w_grads[cluster][idx_in_cluster].len() {
@@ -373,15 +491,12 @@ impl AdaptiveLinearLayer {
                         }
                         word_b_grads[cluster][idx_in_cluster] += grad_val;
                     }
-
-                    // grad w.r.t. routing weights and input for tail tokens
                     if cluster > 0 {
                         let rc = cluster - 1;
                         if rc < routing_count {
                             for (d, &x_val) in input_row.iter().enumerate() {
                                 if d < hidden_size {
                                     routing_w_grads_batch[batch_idx][rc][d] += x_val * grad_val;
-                                    // routing weight also contributes to grad_x
                                     gradient_input_batch[batch_idx][seq_idx][d] +=
                                         grad_val * C::new(r(self.weights[rc][d] as f64), ZERO);
                                 }
@@ -469,7 +584,7 @@ impl AdaptiveLinearLayer {
             &all_routing_indices,
         );
 
-        // Update cluster word weights (sparse SGD) for tokens that appeared in output
+        // Sparse SGD update for cluster word weights
         let word_w_grads = self.cluster_word_weight_gradients.take();
         let word_b_grads = self.cluster_word_bias_gradients.take();
 
@@ -478,7 +593,6 @@ impl AdaptiveLinearLayer {
             let lr = learning_rate as f32;
             let scale = 1.0 / total_valid_tokens.max(1) as f32;
 
-            // Collect update tuples first (immutable reads), then apply (mutable writes)
             let updates: Vec<(usize, usize, Vec<C>, C)> = used_tokens
                 .iter()
                 .filter_map(|&token_id| {
@@ -572,7 +686,10 @@ impl AdaptiveLinearLayer {
         target_batch: &[Vec<u32>],
         padding_mask_batch: &[Vec<u32>],
     ) -> Option<usize> {
-        if batch_idx >= target_batch.len() || target_batch[batch_idx].is_empty() || batch_idx >= padding_mask_batch.len() {
+        if batch_idx >= target_batch.len()
+            || target_batch[batch_idx].is_empty()
+            || batch_idx >= padding_mask_batch.len()
+        {
             return None;
         }
         let seq_len_unpadded = padding_mask_batch[batch_idx].iter().filter(|&&m| m != 0).count();

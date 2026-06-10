@@ -70,14 +70,10 @@ impl NeuralNetwork {
         }
     }
     pub fn update_step_lr_scheduler(&mut self, epoch: usize, step_size: usize, gamma: f64) {
-        let factor = (epoch / step_size) as f64;
-        let new_learning_rate = self.learning_rate * gamma.powf(factor);
-
-        update_learning_rate(self, new_learning_rate);
-
-        if epoch % step_size == 0 && epoch > 0 {
-            println!("initial learning rate is: {:?}", self.learning_rate);
-            println!("new learning rate is: {:?}", new_learning_rate);
+        if epoch > 0 && epoch % step_size == 0 {
+            let new_learning_rate = self.learning_rate * gamma;
+            update_learning_rate(self, new_learning_rate);
+            println!("Step LR decay at epoch {}: {} -> {}", epoch, self.learning_rate / gamma, new_learning_rate);
         }
     }
 
