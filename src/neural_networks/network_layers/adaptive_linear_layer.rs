@@ -591,7 +591,6 @@ impl AdaptiveLinearLayer {
         if let (Some(ww_grads), Some(wb_grads)) = (word_w_grads, word_b_grads) {
             let used_tokens = self.collect_used_token_indices();
             let lr = learning_rate as f32;
-            let scale = 1.0 / total_valid_tokens.max(1) as f32;
 
             let updates: Vec<(usize, usize, Vec<C>, C)> = used_tokens
                 .iter()
@@ -611,12 +610,12 @@ impl AdaptiveLinearLayer {
                     let w_row = &mut self.cluster_word_weights[cluster][idx];
                     for (d, w) in w_row.iter_mut().enumerate() {
                         if d < g_row.len() {
-                            *w -= lr * scale * g_row[d].re as f32;
+                            *w -= lr * g_row[d].re as f32;
                         }
                     }
                 }
                 if cluster < self.cluster_word_bias.len() && idx < self.cluster_word_bias[cluster].len() {
-                    self.cluster_word_bias[cluster][idx] -= lr * scale * g_bias.re as f32;
+                    self.cluster_word_bias[cluster][idx] -= lr * g_bias.re as f32;
                 }
             }
         }
