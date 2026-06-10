@@ -67,7 +67,7 @@ impl RMSNormLayer {
         let rms = self.rms(input);
 
         // Normalize the input and apply the learned gamma scaling
-        input.iter().zip(self.gamma.iter()).map(|(x, &g)| ((*x / rms) * g)).collect()
+        input.iter().zip(self.gamma.iter()).map(|(x, &g)| (*x / rms) * g).collect()
     }
 
     pub fn rms(&self, input: &Vec<C>) -> C {

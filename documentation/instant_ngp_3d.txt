@@ -1,0 +1,267 @@
+3D Instant NGP (Neural Graphics Primitives) — Full NeRF Case
+=============================================================
+
+Key difference from the 2D case
+---------------------------------
+2D: input is a pixel coordinate (x,y) → predict color (r,g,b) directly.
+3D: input is a 3D point sampled along a camera ray → predict density σ and color (r,g,b),
+    then integrate along the ray to produce a pixel color (volume rendering).
+    Color also depends on viewing direction, not just position.
+
+
+Data flow overview
+------------------
+
+Training images + camera poses (known)
+   ↓
+For each training pixel:
+    cast ray r(t) = o + t*d   (origin o, unit direction d)
+    sample N points along the ray: p_1, p_2, ..., p_N
+    for each sample point p_i = (x, y, z):
+        ↓ normalize 3D coordinates to [0,1]³
+        ↓ multi-resolution 3D hash encoding → enc(x,y,z) ∈ R^32
+        ↓ density MLP → σ_i  (scalar density) + h_i (15-dim geometric feature)
+        ↓ encode view direction d with spherical harmonics → SH(d) ∈ R^16
+        ↓ color MLP([h_i, SH(d)]) → c_i = (r_i, g_i, b_i)
+    ↓ volume rendering → predicted pixel color Ĉ(r)
+    ↓ loss vs ground truth pixel color C(r)
+    ↓ update:
+        - density MLP weights
+        - color MLP weights
+        - hash table entries (sparse)
+
+
+----------------------------------------------------------------
+Grid levels: same formula as 2D, now for 3D
+
+Nmin = 16
+Nmax = 2048
+L    = 16
+
+b = exp((ln(Nmax) - ln(Nmin)) / (L - 1))
+N_l = floor(N_{l-1} * b)
+
+N0  = 16
+N1  = floor(N0 * b)
+...
+N15 = floor(N14 * b)  ≈ 2048
+
+Each level l has a 3D grid of resolution N_l × N_l × N_l.
+(For large N_l the grid is not stored explicitly — only the hash table.)
+
+----------------------------------------------------------------
+Normalize 3D coordinates
+
+Scene occupies a known bounding box [x_min, x_max]³.
+Normalize each coordinate to [0,1]:
+
+x_n = (x - x_min) / (x_max - x_min)
+y_n = (y - y_min) / (y_max - y_min)
+z_n = (z - z_min) / (z_max - z_min)
+
+Example:
+sample point in world space: (1.2, 3.4, 2.1)
+bounding box: [0, 4]³
+
+x_n = 1.2 / 4 = 0.30
+y_n = 3.4 / 4 = 0.85
+z_n = 2.1 / 4 = 0.53
+
+----------------------------------------------------------------
+For each level: scale 3D coordinate
+
+For level l with resolution N_l:
+
+(x_l, y_l, z_l) = (x_n, y_n, z_n) * N_l
+
+Example at level 0 (N0 = 16):
+(0.30, 0.85, 0.53) * 16 = (4.80, 13.60, 8.48)
+
+----------------------------------------------------------------
+Split into integer + fractional parts (3D)
+
+x_l = 4.80  →  i = floor(4.80) = 4,   u = 0.80
+y_l = 13.60 →  j = floor(13.60) = 13,  v = 0.60
+z_l = 8.48  →  k = floor(8.48)  = 8,   w = 0.48
+
+Integer part  (i, j, k) = (4, 13, 8)
+Fractional part (u, v, w) = (0.80, 0.60, 0.48)
+
+----------------------------------------------------------------
+8 corners of the enclosing voxel
+
+In 2D we had 4 corners. In 3D we have 8:
+
+(i,   j,   k  ) = (4, 13, 8)   ← f000
+(i+1, j,   k  ) = (5, 13, 8)   ← f100
+(i,   j+1, k  ) = (4, 14, 8)   ← f010
+(i+1, j+1, k  ) = (5, 14, 8)   ← f110
+(i,   j,   k+1) = (4, 13, 9)   ← f001
+(i+1, j,   k+1) = (5, 13, 9)   ← f101
+(i,   j+1, k+1) = (4, 14, 9)   ← f011
+(i+1, j+1, k+1) = (5, 14, 9)   ← f111
+
+----------------------------------------------------------------
+Hash function (3D version)
+
+h(i, j, k) = ((i · π1) ⊕ (j · π2) ⊕ (k · π3)) mod T
+
+T  = 2^19 ≈ 524 288 slots
+⊕  = XOR
+π1 = 1
+π2 = 2654435761
+π3 = 805459861
+
+Each corner maps to a table index → lookup its feature vector of size F=2.
+
+Example:
+hash(4, 13, 8) → index 217043  →  table[217043] = [0.21, -0.38]
+hash(5, 13, 8) → index 489201  →  table[489201] = [0.55,  0.12]
+... (same for all 8 corners)
+
+These are NOT computed — they are learned during training.
+
+----------------------------------------------------------------
+Trilinear interpolation (inside the voxel)
+
+Derivation 1D
+(y1 - y0)/ (x1 -x0) = (y - y0)/ (x - x0)
+=> y = y0 + (y1 - y0) / (x1 - x0) * (x - x0)
+
+
+In 2D: bilinear weights over 4 corners.
+In 3D: trilinear weights over 8 corners.
+
+f_l(x,y,z) =
+    (1-u)(1-v)(1-w) · f000
+  +  u  (1-v)(1-w) · f100
+  + (1-u) v  (1-w) · f010
+  +  u    v  (1-w) · f110
+  + (1-u)(1-v) w   · f001
+  +  u  (1-v)  w   · f101
+  + (1-u) v    w   · f011
+  +  u    v    w   · f111
+
+Output: f_l(x,y,z) ∈ R^F   (one feature vector per level)
+
+Numerical weights for the example (u=0.80, v=0.60, w=0.48):
+
+f000: (1-0.80)(1-0.60)(1-0.48) = 0.20 * 0.40 * 0.52 = 0.042
+f100: 0.80 * 0.40 * 0.52       =                       0.166
+f010: 0.20 * 0.60 * 0.52       =                       0.062
+f110: 0.80 * 0.60 * 0.52       =                       0.250
+f001: 0.20 * 0.40 * 0.48       =                       0.038
+f101: 0.80 * 0.40 * 0.48       =                       0.154
+f011: 0.20 * 0.60 * 0.48       =                       0.058
+f111: 0.80 * 0.60 * 0.48       =                       0.230
+                                              sum  =    1.000  ✓
+
+----------------------------------------------------------------
+Concatenate all levels
+
+Repeat scale, voxel, hash, trilinear for all L=16 levels.
+
+enc(x,y,z) = [ f_0(x,y,z), f_1(x,y,z), ..., f_15(x,y,z) ]
+
+Each f_l ∈ R^2, so:  enc(x,y,z) ∈ R^32   (same size as 2D case)
+
+----------------------------------------------------------------
+Two-MLP architecture
+
+Unlike the 2D case, the 3D pipeline uses two separate MLPs.
+
+--- MLP 1: Density network (position only) ---
+
+Input:  enc(x,y,z) ∈ R^32
+Hidden: 64 → 64  (ReLU activations)
+Output: 16 values:
+    σ       = output[0]              (raw density, apply softplus: log(1 + e^σ))
+    h       = output[1..15]          (15-dim geometric feature passed to color MLP)
+
+Architecture: 32 → 64 → 64 → 16
+
+--- Spherical harmonics encoding of view direction ---
+
+View direction d = (dx, dy, dz) is a unit vector (||d|| = 1).
+
+We encode it using spherical harmonic basis functions Y_l^m.
+Using degree 3 (l = 0, 1, 2, 3):  (l+1)² = 16 coefficients total.
+
+Degree 0 (1 term):  Y_0^0 = 0.282
+Degree 1 (3 terms): proportional to (y, z, x)
+Degree 2 (5 terms): proportional to (xy, yz, 2z²-x²-y², xz, x²-y²)
+Degree 3 (7 terms): higher-order combinations of (x, y, z)
+
+Result: SH(d) ∈ R^16
+
+This captures view-dependent effects (specular highlights, reflections)
+without the MLP needing to learn the trigonometry of directions.
+
+--- MLP 2: Color network (position feature + direction) ---
+
+Input:  [h, SH(d)] ∈ R^31   (15 from density MLP + 16 from SH)
+Hidden: 64 → 64  (ReLU activations)
+Output: (r, g, b) ∈ [0,1]³   (Sigmoid activation on output)
+
+Architecture: 31 → 64 → 64 → 3
+
+----------------------------------------------------------------
+Volume rendering (integrate along the ray)
+
+After evaluating all N sample points on the ray, combine them:
+
+Ĉ(r) = Σ_{i=1}^{N}  T_i · α_i · c_i
+
+where:
+    δ_i = t_{i+1} - t_i                         (distance between samples)
+    α_i = 1 - exp(-σ_i · δ_i)                   (opacity at sample i)
+    T_i = Π_{j=1}^{i-1} (1 - α_j)               (accumulated transmittance before sample i)
+
+T_i represents "how much light survives from the camera to sample i".
+α_i represents "how opaque sample i is".
+c_i is the predicted color at sample i.
+
+Example with 3 samples (simplified):
+
+sample 1: σ=0.1, δ=1.0 → α1 = 1-exp(-0.1) ≈ 0.095,  T1 = 1.0
+sample 2: σ=2.0, δ=1.0 → α2 = 1-exp(-2.0) ≈ 0.865,  T2 = 1 - 0.095 = 0.905
+sample 3: σ=0.5, δ=1.0 → α3 = 1-exp(-0.5) ≈ 0.393,  T3 = 0.905 * (1-0.865) = 0.122
+
+Ĉ(r) = 1.0*0.095*c1 + 0.905*0.865*c2 + 0.122*0.393*c3
+      ≈ 0.095*c1 + 0.783*c2 + 0.048*c3
+
+→ sample 2 dominates (high density = a surface is there)
+
+----------------------------------------------------------------
+Loss function
+
+Compare predicted pixel color with ground truth:
+
+L = || Ĉ(r) - C(r) ||²
+
+C(r) = ground truth pixel color from the training image.
+
+----------------------------------------------------------------
+Update step
+
+Backprop through:
+    volume rendering → color MLP → density MLP → hash encoding
+
+Updates:
+    - color MLP weights
+    - density MLP weights
+    - hash table entries that were touched by the sampled points (sparse update)
+
+----------------------------------------------------------------
+Summary: 2D vs 3D comparison
+
+                        2D image fitting        3D NeRF
+                        ----------------        -------
+Input coords            (x, y)                  (x, y, z)
+Hash corners per cell   4 (bilinear)            8 (trilinear)
+Hash function dims      2D                      3D
+MLP count               1                       2  (density + color)
+View direction          not used                encoded with SH → color MLP
+Output                  (r, g, b) directly      σ + (r,g,b) per sample
+Integration             none                    volume rendering along ray
+Loss target             pixel color             pixel color (after rendering)

@@ -2,10 +2,36 @@ suppose we have pixel with value of 9533793
 		
      $pixel = 9533793
 
+     binary 00000000 10010001 01111001 01100001  -> lenght 32
+
+     with alpha 0:
+     00000000 10010001 01111001 01100001
+
      $alpha = ($pixel >> 24) &0xFF;
      $red = ($pixel >> 16) &0xFF;
      $green = ($pixel >> 8) &0xFF;
      $blue = ($pixel >> 0) &0xFF;
+
+
+     to get red => shift 16 bits to the right and take the original length -> 32
+     00000000 00000000 00000000 10010001 01111001 01100001
+          ↓ keep only 32 bits ↓
+     00000000 00000000 10010001
+     &0xFF in binary 1111 1111 -> value 255
+
+      perform AND operation for binary
+          01111001
+      AND 11111111
+      ----------
+          01111001
+
+     to get green => shift 8 bits to the right and take the original length -> 32
+     00000000 00000000 10010001 01111001 01100001
+          ↓ keep only 32 bits ↓
+     00000000 00000000 10010001 01111001
+                       128+16+1  64+32+16+8+1
+                       145      121
+      the last byte will be take -> 121
 
 
 In this way we get:

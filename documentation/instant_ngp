@@ -1,0 +1,243 @@
+pixel[x][y] = (r, g, b) 
+pixel coordinates (x,y) are input to instang NGP and (r,g,b) is target
+   ↓ normalize pixel coordinates (x,y)
+(x,y)
+   ↓
+for each level l:
+    scale by N_l
+    find cell
+    take 4 corners
+    hash each corner → table index
+    lookup feature vectors
+    bilinear interpolate → f_l(x,y)
+   ↓
+concatenate all f_l
+   ↓
+MLP
+   ↓
+RGB prediction
+   ↓
+loss vs ground truth
+   ↓
+update:
+    - MLP weights
+    - hash table entries (sparse)
+
+    --------------------------------------------------------------
+
+levels L:
+Nmin - number of cells
+Nmin = 16
+Nmax = 512
+L = 16
+
+
+b = exp((ln(Nmax) - ln(Nmin))/(L -1))
+N_l = floor(N_{l-1} * b)
+
+N0 = Nmin = 16
+N1 = N0 * b
+N2 = N1 * b
+N3 = N2 * b 
+N15 = N14 * b
+
+# floor all N1..N15.
+N1 = floor(N1) 
+N2 = floor(N2)
+N3 = floor(N3)
+----------------------------------------------------------------
+normalize by image height H and width W
+x -> rows along W
+y -> columns along H
+
+pixel[1500][3000] = (128, 64, 255)
+
+x = (x + 0.5) / W
+y = (y + 0.5) / H
+
+e.g.
+x= (1500+0.5) / 4096 = 0.366
+y= (3000+0.5) / 4096​ = 0.732
+-----------------------------------------------------------------
+
+Multi-resolution structure (L levels)
+
+We define L grid levels.
+
+Each level l has a resolution:
+Nl×Nl
+
+------------------------------------------------------------------
+For each level: scale coordinate
+
+For level l:
+
+xl ​= (x,y) * Nl
+
+Now the coordinate lives in grid space.
+Example:
+
+(0.37,0.73)* 16=(5.92,11.68)
+-------------------------------------------------------------------
+Split into integer + fractional parts:
+
+xl = 0.37 * 16=5.92
+yl = 0.73 * 16=11.68
+
+For x:
+i=floor(5.92) = 5
+u=5.92−5=0.92
+
+For y:
+j=floor(11.68)=11
+v=11.68−11=0.68
+
+Integer part
+(i,j)=(5,11)
+Fractional part
+(u,v)=(0.92,0.68)
+
+(5,11) -------- (6,11)
+   |                |
+   |                |
+   |       x        |
+   |                |
+   |                |
+(5,12) -------- (6,12)
+---------------------------------------------------------------------
+
+(i,j) ---- (i+1,j)
+  |          |
+  |    x     |
+  |          |
+(i,j+1)--(i+1,j+1)
+
+Each corner becomes a hashed lookup
+
+Now the key trick.
+
+A corner is a 2D integer coordinate:
+
+v=(i,j)
+
+But we do NOT store features for every possible (i,j), because that would be enormous.
+
+Instead: Hash function
+
+We map the coordinate into a table index:
+
+h(i,j)=((i⋅π1)⊕(j⋅π2))modT
+
+where:
+
+T = size of hash table (e.g. 2¹⁹ ≈ 524k slots)
+⊕ - XOR
+π1​,π2 are constants
+π1​=1
+π2​=2654435761
+Result:
+
+index∈[0,T−1]
+
+
+(23,46) → hash → 381921
+so table[k]∈RF, where F is dimension. in this case F = 2.
+table[381921] = [0.12, -0.44] (at beginn random values which are trained)
+
+This is NOT computed — it is learned.
+
+Do it for 4 corners: 
+
+corner (i,j)=(5,11)
+corner (i+1,j) = (6, 11)
+corner (i,j + 1) = (5, 12)
+corner(i+1, j+1) = (6, 12)
+
+f00 = learned feature vector of dimension f
+like f00 = [0.12, -0.44]
+
+f00	​=Table[hash(5,11)]
+f10	​=Table[hash(6,11)]
+
+v00 → f00
+v10 → f10
+v01 → f01
+v11 → f11
+
+
+Trainable weights: 
+table[381921] = [0.3,  0.7]
+table[74823]  = [0.5,  0.2]
+table[209134] = [0.1,  0.9]
+table[512001] = [0.8,  0.4]
+
+------------------------------------------------------------------------------
+
+Bilinear interpolation (inside the cell)
+
+Derivation 1D
+(y1 - y0)/ (x1 -x0) = (y - y0)/ (x - x0)
+=> y = y0 + (y1 - y0) / (x1 - x0) * (x - x0)
+
+
+We combine the 4 corner features:
+
+fl​(x,y)=(1−u)(1−v)f00+u(1−v)f10+(1−u)vf01+uvf11
+	​
+Output:
+
+fl(x,y)∈RF
+So each level produces a small feature vector.
+
+
+Bilinear interpolation:
+
+f_l = (1-0.92)(1-0.68) · [0.3, 0.7]   ← f00, weight = 0.08 * 0.32 = 0.026
+    +    0.92 (1-0.68) · [0.5, 0.2]   ← f10, weight = 0.92 * 0.32 = 0.294
+    +  (1-0.92) 0.68   · [0.1, 0.9]   ← f01, weight = 0.08 * 0.68 = 0.054
+    +    0.92 · 0.68   · [0.8, 0.4]   ← f11, weight = 0.92 * 0.68 = 0.626
+Computing each term:
+
+
+0.026 · [0.3, 0.7] = [0.008, 0.018]
+0.294 · [0.5, 0.2] = [0.147, 0.059]
+0.054 · [0.1, 0.9] = [0.005, 0.049]
+0.626 · [0.8, 0.4] = [0.501, 0.250]
+
+------------------------------------------------------------
+Concatenate all levels
+
+We repeat steps scale coordinate, Find the enclosing cell, Hash function, lookup table, Bilinear interpolation (inside the cell)
+ for all L levels.
+
+So we get:
+
+f1​(x,y),f2(x,y),...,fL(x,y)
+
+Each is size F.
+
+We concatenate:
+
+enc(x,y)∈RL⋅F
+
+Example:
+
+L=16
+F=2
+→ vector size = 32
+
+-------------------------------------------------------------
+
+Small MLP (decoder)
+32 → 64 → 64 → 3
+
+c^=(r^,g^​,b^)
+-------------------------------------------------------------
+Loss function
+
+Compare with ground truth color:
+
+c=(r,g,b)
+
+Loss:
+L=∥c^−c∥2

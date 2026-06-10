@@ -2,7 +2,8 @@
 mod tests {
     use crate::utils::array::convolve;
     use crate::utils::convolution_modes::ConvolutionMode;
-    use crate::utils::linalg::{gaussian_elimination_inverse, generate_random_matrix, get_determinant, is_identity_matrix, multiply_matrices};
+    use crate::utils::interpolation::interpolate_1d;
+use crate::utils::linalg::{gaussian_elimination_inverse, generate_random_matrix, get_determinant, is_identity_matrix, multiply_matrices};
     use std::time::Instant;
 
     #[test]
@@ -117,4 +118,10 @@ mod tests {
         println!("Time elapsed in your_method: {:?}", duration);
     }
     
+
+    #[test]
+    fn test_interpolate_1d() {
+        let result = interpolate_1d(4.0, 1.5, -1.5, 5.5, 3.0);
+        println!("{}", result); 
+    }
 }
