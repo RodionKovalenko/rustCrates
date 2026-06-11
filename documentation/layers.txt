@@ -1,0 +1,11 @@
+
+
+FeedForwardLayer	feedforward_layer.rs
+LinearLayer	linear_layer.rs
+NormalNormLayer	norm_layer.rs
+ComplexWaveletLayer	wavelet_complex_layer.rs
+DiscreteWaveletLayer	wavelet_discrete_layer.rs
+AdaptiveLinearLayer	adaptive_linear_layer.rs
+ComplexToLinearLayer	complex_to_linear_layer.rs
+MultiLinearLayer	multi_linear_layer.rs
+ClusteringLinearLayer	clustering_linear_layer.rs

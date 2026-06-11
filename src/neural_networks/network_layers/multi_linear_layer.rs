@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
-    network_layers::linear_layer::LinearLayer,
+    network_layers::{default_layer::LayerInterface, linear_layer::LinearLayer},
     utils::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         array_splitting::split_sizes,
@@ -355,5 +355,17 @@ impl MultiLinearLayer {
 
             col_offset += chunk_size;
         }
+    }
+}
+
+impl LayerInterface for MultiLinearLayer {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        MultiLinearLayer::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        MultiLinearLayer::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        MultiLinearLayer::update_parameters(self)
     }
 }

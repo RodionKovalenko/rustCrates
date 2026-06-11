@@ -3,7 +3,8 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
-    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
+    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+    network_layers::default_layer::LayerInterface,
     network_types::neural_network_generic::OperationMode,
     utils::{
         activation::{softmax_backward_real_with_gradient, softmax_last_row},
@@ -46,7 +47,7 @@ impl SoftmaxLayer {
             batch_size: 1,
         }
     }
-    pub fn forward(&mut self, layer_input: &LayerInput, padding_mask_option: Option<Vec<Vec<u32>>>, target_token_ids: Option<Vec<Vec<u32>>>) -> Vec<Vec<Vec<C>>> {
+    pub fn forward_inner(&mut self, layer_input: &LayerInput, padding_mask_option: Option<Vec<Vec<u32>>>, target_token_ids: Option<Vec<Vec<u32>>>) -> Vec<Vec<Vec<C>>> {
         self.time_step = layer_input.get_time_step();
         self.batch_size = layer_input.get_batch_size();
 
@@ -149,7 +150,7 @@ impl SoftmaxLayer {
 
     pub fn update_parameters(&mut self) {}
 
-    pub fn backward(&mut self, _target_token_ids: &Vec<Vec<u32>>) -> Gradient {
+    pub fn backward_inner(&mut self, _target_token_ids: &Vec<Vec<u32>>) -> Gradient {
         // let softmax_output_batch: &Vec<Vec<Vec<f64>>> = self.softmax_output_batch.as_ref().expect("Softmax output batch is missing in softmax layer");
         // let _input_batch: &Vec<Vec<Vec<Complex<f64>>>> = self.input_batch.as_ref().expect("Input batch is missing in softmax layer");
         // let padding_mask_batch = self.padding_mask_batch.as_ref().expect("Input batch is missing in softmax layer");
@@ -232,5 +233,37 @@ impl SoftmaxLayer {
 
         // gradient
         self.gradient.as_ref().unwrap().clone()
+    }
+}
+
+impl SoftmaxLayer {
+    pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        let padding_mask = layer_input.get_padding_mask_batch();
+        let target_ids = layer_input.get_target_batch_ids();
+        let softmax_output = SoftmaxLayer::forward_inner(
+            self,
+            layer_input,
+            if padding_mask.is_empty() { None } else { Some(padding_mask) },
+            if target_ids.is_empty() { None } else { Some(target_ids) },
+        );
+        let mut output = LayerOutput::new_default();
+        output.set_output_batch(softmax_output);
+        output
+    }
+
+    pub fn backward(&mut self, _previous_gradient: &Gradient) -> Gradient {
+        self.gradient.as_ref().expect("SoftmaxLayer: gradient not set; call forward first").clone()
+    }
+}
+
+impl LayerInterface for SoftmaxLayer {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        SoftmaxLayer::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        SoftmaxLayer::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        SoftmaxLayer::update_parameters(self)
     }
 }

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+    network_layers::default_layer::LayerInterface,
     utils::{
         adam_w::calculate_adam_w_bias,
         matrix::{add_matrix, add_matrix_2d_c, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, normalize_bias},
@@ -173,7 +174,8 @@ impl RMSNormLayer {
         layer_output
     }
 
-    pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<C>>>) -> Gradient {
+    pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        let previous_gradient_batch = previous_gradient.get_gradient_input_batch();
         let input_batch = self.input_batch.as_ref().expect("Input batch not found in RMSNorm layer");
         let mut gradient = Gradient::new_default();
 
@@ -206,8 +208,8 @@ impl RMSNormLayer {
         }
 
         if self.gradient.is_some() {
-            let previous_gradient = self.gradient.as_ref().expect("");
-            gradient_gamma_batch = add_matrix_2d_c(&gradient_gamma_batch, &previous_gradient.get_gradient_gamma_batch());
+            let stored_gradient = self.gradient.as_ref().expect("");
+            gradient_gamma_batch = add_matrix_2d_c(&gradient_gamma_batch, &stored_gradient.get_gradient_gamma_batch());
         }
 
         gradient.set_gradient_input_batch(input_batch_gradients);
@@ -331,5 +333,17 @@ impl RMSNormLayer {
         self.previous_gradient = Some(gradient.clone());
 
         self.gradient = None;
+    }
+}
+
+impl LayerInterface for RMSNormLayer {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        RMSNormLayer::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        RMSNormLayer::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        RMSNormLayer::update_parameters(self)
     }
 }

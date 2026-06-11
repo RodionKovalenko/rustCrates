@@ -1,7 +1,7 @@
 use crate::neural_networks::{
     network_layers::layer::LayerEnum,
     network_types::{neural_network_generic::NeuralNetwork, transformer::transformer_builder::NUM_SELF_ATT_LAYERS},
-    utils::dtype::{r, Real, C},
+    utils::dtype::{C, Real, r},
 };
 
 pub const VERBOSE: bool = false;
@@ -15,10 +15,10 @@ pub fn update_transformer(transformer_network: &mut NeuralNetwork, target_batch_
     for layer in transformer_network.layers.iter_mut() {
         match layer {
             LayerEnum::Embedding(embedding_layer) => {
-                embedding_layer.update_parameters(target_batch_ids);
+                embedding_layer.update_parameters_inner(target_batch_ids);
             }
             LayerEnum::EmbeddingRm(embedding_layer) => {
-                embedding_layer.update_parameters(target_batch_ids);
+                embedding_layer.update_parameters_inner(target_batch_ids);
             }
             _ => {}
         }

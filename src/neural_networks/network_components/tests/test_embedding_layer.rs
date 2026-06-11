@@ -22,7 +22,7 @@ mod test_embedding_layer {
         let mut layer_input = LayerInput::new_default();
         layer_input.set_batch_ids(vec![vec![3]]);
 
-        let (output, padding_mask) = embedding_layer.forward(&layer_input);
+        let (output, padding_mask) = embedding_layer.forward_inner(&layer_input);
 
         assert_eq!(padding_mask, vec![vec![1]]);
         assert_eq!(output.len(), 1);

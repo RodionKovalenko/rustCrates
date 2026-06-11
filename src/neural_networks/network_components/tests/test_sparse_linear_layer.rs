@@ -1,4 +1,4 @@
-#[cfg(test)]
+﻿#[cfg(test)]
 mod test_sparse_linear_layer {
 
     use crate::neural_networks::{
@@ -56,9 +56,9 @@ mod test_sparse_linear_layer {
         layer_input.set_input_batch(linear_output.get_output_batch());
         layer_input.set_output_indices(linear_output.get_output_indices());
 
-        softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+        softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
-        let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
+        let gradient_softmax: Gradient = softmax_layer.backward_inner(&target_token_id_batch);
         let gradient_sparse_linear: Gradient = sparse_linear_layer.backward(&gradient_softmax);
         let _gradient_complex_linear: Gradient = complex_to_linear_layer.backward(&gradient_sparse_linear);
 
@@ -79,7 +79,7 @@ mod test_sparse_linear_layer {
             layer_input.set_input_batch(linear_output.get_output_batch());
             layer_input.set_output_indices(linear_output.get_output_indices());
 
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
@@ -127,7 +127,7 @@ mod test_sparse_linear_layer {
             layer_input.set_input_batch(linear_output.get_output_batch());
             layer_input.set_output_indices(linear_output.get_output_indices());
 
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
@@ -153,7 +153,7 @@ mod test_sparse_linear_layer {
             layer_input.set_input_batch(linear_output.get_output_batch());
             layer_input.set_output_indices(linear_output.get_output_indices());
 
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
@@ -200,3 +200,4 @@ mod test_sparse_linear_layer {
         test_gradient_batch_error(&num_gradient_input_batch, &gradient_input_batch, 1e-3);
     }
 }
+

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::neural_networks::network_components::gradient_struct::Gradient;
 use crate::neural_networks::network_components::layer_input_struct::LayerInput;
 use crate::neural_networks::network_components::layer_output_struct::LayerOutput;
+use crate::neural_networks::network_layers::default_layer::LayerInterface;
 use crate::neural_networks::utils::dtype::{r, Real, C, ONE, ZERO};
 use crate::neural_networks::utils::matrix::normalize_bias;
 use crate::neural_networks::utils::{
@@ -329,5 +330,17 @@ impl NormalNormLayerRm {
         self.previous_gradient = Some(gradient.clone());
 
         self.gradient = None;
+    }
+}
+
+impl LayerInterface for NormalNormLayerRm {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        NormalNormLayerRm::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        NormalNormLayerRm::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        NormalNormLayerRm::update_parameters(self)
     }
 }

@@ -139,7 +139,8 @@ impl SelfAttentionLayerApproximation {
         if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
             match norm_layer_enum {
                 LayerEnum::RMSNorm(rms_norm_layer) => {
-                    let norm_gradient = rms_norm_layer.backward(&gradient_input_batch);
+                    gradient.set_gradient_input_batch(gradient_input_batch.clone());
+                    let norm_gradient = rms_norm_layer.backward(&gradient);
                     gradient_input_batch = norm_gradient.get_gradient_input_batch();
                     gradient.set_gradient_input_batch(gradient_input_batch.clone());
                     output_gradient_norm = gradient_input_batch.clone();

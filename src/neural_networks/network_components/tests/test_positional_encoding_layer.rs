@@ -1,4 +1,4 @@
-#[cfg(test)]
+﻿#[cfg(test)]
 mod test_positional_encoding_layer {
     use crate::neural_networks::{
         network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
@@ -33,15 +33,17 @@ mod test_positional_encoding_layer {
 
         let mut layer_input = LayerInput::new_default();
         layer_input.set_input_batch(input_batch.clone());
-        let _positonal_encoding_output = positonal_encoding_layer.forward(&layer_input);
-        let positonal_encoding_gradient = positonal_encoding_layer.backward(&previous_gradient_batch);
+        let _positonal_encoding_output = positonal_encoding_layer.forward(&layer_input).get_output_batch();
+        let mut prev_grad = Gradient::new_default();
+        prev_grad.set_gradient_input_batch(previous_gradient_batch.clone());
+        let positonal_encoding_gradient = positonal_encoding_layer.backward(&prev_grad);
 
         let (analytical_grad_batch, _analytical_grad) = (positonal_encoding_gradient.get_gradient_input_batch(), positonal_encoding_gradient.get_gradient_input());
 
         // Define the loss function
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Vec<Vec<Vec<Complex<f64>>>> {
             layer_input.set_input_batch(input.clone());
-            positonal_encoding_layer.forward(&layer_input)
+            positonal_encoding_layer.forward(&layer_input).get_output_batch()
         };
 
         let numerical_grad_batch: Vec<Vec<Vec<Complex<f64>>>> = numerical_gradient_input_batch_sum_without_loss(&mut loss_fn, input_batch.clone(), epsilon);
@@ -99,23 +101,25 @@ mod test_positional_encoding_layer {
         layer_input.set_target_batch_ids(target_token_id_batch.clone());
         layer_input.set_padding_mask_batch(padding_mask_batch.clone());
 
-        let positonal_encoding = positional_enc_layer.forward(&layer_input);
+        let positonal_encoding = positional_enc_layer.forward(&layer_input).get_output_batch();
 
         layer_input.set_input_batch(positonal_encoding);
-        softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+        softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
-        let softmax_gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
-        let positional_enc_gradient: Gradient = positional_enc_layer.backward(&softmax_gradient.get_gradient_input_batch());
+        let softmax_gradient: Gradient = softmax_layer.backward_inner(&target_token_id_batch);
+        let mut prev_grad_enc = Gradient::new_default();
+        prev_grad_enc.set_gradient_input_batch(softmax_gradient.get_gradient_input_batch());
+        let positional_enc_gradient: Gradient = positional_enc_layer.backward(&prev_grad_enc);
 
         let analytical_grad = positional_enc_gradient.get_gradient_input();
 
         // Define the loss function
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             layer_input.set_input_batch(input.clone());
-            let positonal_encoding = positional_enc_layer.forward(&layer_input);
+            let positonal_encoding = positional_enc_layer.forward(&layer_input).get_output_batch();
 
             layer_input.set_input_batch(positonal_encoding);
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -137,3 +141,4 @@ mod test_positional_encoding_layer {
         test_gradient_error_2d(&numerical_grad, &analytical_grad, epsilon_test);
     }
 }
+

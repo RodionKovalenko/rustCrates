@@ -1,4 +1,4 @@
-#[cfg(test)]
+﻿#[cfg(test)]
 pub mod test_ffn_swiglu {
     use crate::neural_networks::{
         network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
@@ -87,11 +87,11 @@ pub mod test_ffn_swiglu {
         );
 
         layer_input.set_input_batch(linear_output.get_output_batch());
-        let _softmax_batch_output = softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+        let _softmax_batch_output = softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
-        let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
+        let gradient_softmax: Gradient = softmax_layer.backward_inner(&target_token_id_batch);
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
-        let gradient_ffn: Gradient = ffn_layer.backward(&gradient_linear.get_gradient_input_batch());
+        let gradient_ffn: Gradient = ffn_layer.backward(&gradient_linear);
 
         let ffn_layer_gradient: Gradient = match ffn_layer.layers.get(0) {
             Some(LayerEnum::Dense(dense_layer)) => dense_layer.gradient.clone().unwrap().clone(),
@@ -109,7 +109,7 @@ pub mod test_ffn_swiglu {
             let linear_output: LayerOutput = linear_layer.forward(&layer_input);
 
             layer_input.set_input_batch(linear_output.get_output_batch());
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -183,7 +183,7 @@ pub mod test_ffn_swiglu {
             let linear_output: LayerOutput = linear_layer.forward(&layer_input);
 
             layer_input.set_input_batch(linear_output.get_output_batch());
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -225,7 +225,7 @@ pub mod test_ffn_swiglu {
 
             //println!("softmax batch output numerical loss {:?}", &softmax_batch_output);
             layer_input.set_input_batch(linear_output.get_output_batch());
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -242,3 +242,4 @@ pub mod test_ffn_swiglu {
         test_gradient_error_1d(&analytical_gradient_ffn_bias, &numerical_grad_linear_bias, epsilon_test);
     }
 }
+

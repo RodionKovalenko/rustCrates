@@ -1,7 +1,9 @@
 use crate::neural_networks::network_layers::adaptive_pooling::adaptive_avg_pool1d_layer::{AdaptiveAvgPool1dLayer, CompressionMetadata, CompressionType};
+use crate::neural_networks::network_layers::default_layer::LayerInterface;
 use crate::neural_networks::utils::dtype::C;
 
 use crate::neural_networks::network_components::{
+    gradient_struct::Gradient,
     layer_input_struct::LayerInput,
     layer_output_struct::LayerOutput,
 };
@@ -22,9 +24,20 @@ impl DynamicSequenceCompressorLayer {
         }
     }
 
-    pub fn forward(&mut self, input: &Vec<Vec<Vec<C>>>) -> LayerOutput {
+    pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        let input = layer_input.get_input_batch();
+        self.compress(&input)
+    }
+
+    pub fn forward_inner(&mut self, input: &Vec<Vec<Vec<C>>>) -> LayerOutput {
         self.compress(input)
     }
+
+    pub fn backward(&mut self, _previous_gradient: &Gradient) -> Gradient {
+        Gradient::new_default()
+    }
+
+    pub fn update_parameters(&mut self) {}
 
     pub fn decompress(&self, compressed: &Vec<Vec<Vec<C>>>) -> Vec<Vec<Vec<C>>> {
         self.pool_layer.decompress(compressed)
@@ -78,5 +91,17 @@ impl DynamicSequenceCompressorLayer {
         } else {
             target_middle
         }
+    }
+}
+
+impl LayerInterface for DynamicSequenceCompressorLayer {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        DynamicSequenceCompressorLayer::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        DynamicSequenceCompressorLayer::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        DynamicSequenceCompressorLayer::update_parameters(self)
     }
 }

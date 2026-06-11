@@ -2,6 +2,7 @@ use core::fmt::Debug;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
+use crate::neural_networks::network_layers::default_layer::LayerInterface;
 use crate::{
     neural_networks::network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     neural_networks::utils::dtype::{c_from_f64, c_to_f64, real_from_f64, C},
@@ -161,5 +162,21 @@ impl ComplexWaveletLayer {
         }
 
         mask
+    }
+}
+
+impl ComplexWaveletLayer {
+    pub fn update_parameters(&mut self) {}
+}
+
+impl LayerInterface for ComplexWaveletLayer {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        ComplexWaveletLayer::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        ComplexWaveletLayer::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        ComplexWaveletLayer::update_parameters(self)
     }
 }

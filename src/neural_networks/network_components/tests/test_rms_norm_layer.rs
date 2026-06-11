@@ -53,7 +53,9 @@ mod test_rms_norm_layer {
 
         let previous_gradient = vec![vec![vec![Complex::new(1.0, 0.0); rms_output_batch[0][0].len()]; rms_output_batch[0].len()]; rms_output_batch.len()];
 
-        let gradient = rms_norm_layer.backward(&previous_gradient);
+        let mut backward_input = crate::neural_networks::network_components::gradient_struct::Gradient::new_default();
+        backward_input.set_gradient_input_batch(previous_gradient.clone());
+        let gradient = rms_norm_layer.backward(&backward_input);
         let analytical_gradient_rms = gradient.get_gradient_input_batch();
 
         // Define the loss function

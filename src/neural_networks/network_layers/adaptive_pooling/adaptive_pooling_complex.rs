@@ -140,7 +140,7 @@ mod adaptive_pooling_complex_tests {
         let input = create_random_input(1, 50, 8);
         let pool = StridedPoolingLayer::new(5, Some(5));
 
-        let (compressed, metadata) = pool.forward(&input);
+        let (compressed, metadata) = pool.forward_inner(&input);
         let decompressed = pool.decompress(&compressed, &metadata);
 
         assert_eq!(decompressed[0].len(), 50);

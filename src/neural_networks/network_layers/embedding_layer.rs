@@ -12,6 +12,8 @@ use std::sync::Arc;
 
 use crate::neural_networks::network_components::gradient_struct::Gradient;
 use crate::neural_networks::network_components::layer_input_struct::LayerInput;
+use crate::neural_networks::network_components::layer_output_struct::LayerOutput;
+use crate::neural_networks::network_layers::default_layer::LayerInterface;
 use crate::neural_networks::network_layers::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
 use crate::neural_networks::utils::dtype::{c_from_f64, c_to_f64, r, C, ZERO};
 use crate::neural_networks::utils::matrix::normalize_gradients_batch;
@@ -39,6 +41,8 @@ pub struct EmbeddingLayer {
     pub tied_grad_by_token: Option<Arc<RwLock<HashMap<usize, Vec<C>>>>>,
     #[serde(skip)]
     pub batch_size: usize,
+    #[serde(skip)]
+    pub last_batch_ids: Option<Vec<Vec<u32>>>,
 }
 
 pub const EMBEDDING_PATH: &str = "embedding";
@@ -78,6 +82,7 @@ impl EmbeddingLayer {
             tied_grad_by_token: None,
             global_norm: 0.0,
             max_norm: 0.0,
+            last_batch_ids: None,
         }
     }
 
@@ -115,6 +120,7 @@ impl EmbeddingLayer {
             global_norm: 0.0,
             max_norm: 0.0,
             tied_grad_by_token: None,
+            last_batch_ids: None,
         }
     }
 
@@ -167,11 +173,12 @@ impl EmbeddingLayer {
     }
 
     /// Look up embeddings for a batch of token IDs
-    pub fn forward(&mut self, layer_input: &LayerInput) -> (Vec<Vec<Vec<C>>>, Vec<Vec<u32>>) {
+    pub fn forward_inner(&mut self, layer_input: &LayerInput) -> (Vec<Vec<Vec<C>>>, Vec<Vec<u32>>) {
         let token_input_ids: Vec<Vec<u32>> = layer_input.get_batch_ids();
         let target_batch_ids = layer_input.get_target_batch_ids();
         self.time_step = layer_input.get_time_step();
         self.batch_size = token_input_ids.len();
+        self.last_batch_ids = Some(token_input_ids.clone());
 
         let (token_input_batch_padded, _padding_mask) = EmbeddingLayer::apply_padding_to_batch(&token_input_ids, &target_batch_ids);
         let embedding_dim = self.embedding_dim;
@@ -204,7 +211,7 @@ impl EmbeddingLayer {
         (token_ids_output, _padding_mask)
     }
     // Update embeddings using gradients
-    pub fn backward(&mut self, previous_gradients: &Vec<Vec<Vec<C>>>) -> Gradient {
+    pub fn backward_inner(&mut self, previous_gradients: &Vec<Vec<Vec<C>>>) -> Gradient {
         let mut gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(previous_gradients.clone());
 
@@ -213,7 +220,7 @@ impl EmbeddingLayer {
         gradient
     }
 
-    pub fn update_parameters(&mut self, token_id_batches: &[Vec<u32>]) {
+    pub fn update_parameters_inner(&mut self, token_id_batches: &[Vec<u32>]) {
         let gradient: &Gradient = self.gradient.as_ref().expect("Output batch is missing in dense layer");
         let mut previous_gradients: Vec<Vec<Vec<C>>> = gradient.get_gradient_input_batch();
 
@@ -290,6 +297,7 @@ impl EmbeddingLayer {
             global_norm: 0.0,
             max_norm: 0.0,
             tied_grad_by_token: None,
+            last_batch_ids: None,
         };
         let serialized: Vec<u8> = bincode::serialize(&embedding_layer_meta).expect("Failed to serialize");
         let mut file = File::create(embedding_file_path).expect("Failed to create file");
@@ -316,5 +324,37 @@ impl EmbeddingLayer {
             Ok(None) => Err(format!("No token embedding found: {}", key)),
             Err(_) => Err("Failed to fetch embedding from Sled".to_string()),
         }
+    }
+}
+
+impl EmbeddingLayer {
+    pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        let (embeddings, padding_mask) = EmbeddingLayer::forward_inner(self, layer_input);
+        let mut output = LayerOutput::new_default();
+        output.set_output_batch(embeddings);
+        output.set_padding_mask_batch(padding_mask);
+        output
+    }
+
+    pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        let grad_batch = previous_gradient.get_gradient_input_batch();
+        EmbeddingLayer::backward_inner(self, &grad_batch)
+    }
+
+    pub fn update_parameters(&mut self) {
+        let batch_ids = self.last_batch_ids.clone().unwrap_or_default();
+        EmbeddingLayer::update_parameters_inner(self, &batch_ids)
+    }
+}
+
+impl LayerInterface for EmbeddingLayer {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        EmbeddingLayer::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        EmbeddingLayer::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        EmbeddingLayer::update_parameters(self)
     }
 }

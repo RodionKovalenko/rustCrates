@@ -3,11 +3,12 @@ use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     network_layers::{
         add_rms_norm_layer::RMSNormLayer,
+        default_layer::LayerInterface,
         layer::{LayerEnum, LayerType},
         norm_layer::NormalNormLayer,
     },
     network_types::transformer::transformer_updater::calculate_alpha,
-    utils::matrix::{RowMajorMatrix, add_matrix_3d_in_place, scale_matrix_3d_by_scalar_in_place},
+    utils::matrix::{add_matrix_3d_in_place, scale_matrix_3d_by_scalar_in_place, RowMajorMatrix},
 };
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
@@ -72,6 +73,18 @@ impl SelfAttentionLayer {
 }
 
 // Implement BaseLayer for SelfAttentionLayer
+impl LayerInterface for SelfAttentionLayer {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        SelfAttentionLayer::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        SelfAttentionLayer::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        SelfAttentionLayer::update_parameters(self)
+    }
+}
+
 impl SelfAttentionLayer {
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
         let mut batch_output = layer_input.get_input_batch();
@@ -144,12 +157,12 @@ impl SelfAttentionLayer {
         layer_output
     }
 
-    pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<C>>>) -> Gradient {
-        let mut gradient_input_batch: Vec<Vec<Vec<C>>> = previous_gradient_batch.clone();
+    pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        let mut gradient_input_batch: Vec<Vec<Vec<C>>> = previous_gradient.get_gradient_input_batch();
         scale_matrix_3d_by_scalar_in_place(&mut gradient_input_batch, self.beta);
 
         let mut gradient: Gradient = Gradient::new_default();
-        gradient.set_gradient_input_batch(previous_gradient_batch.clone());
+        gradient.set_gradient_input_batch(previous_gradient.get_gradient_input_batch());
 
         let num_heads = self.attention_heads.len();
         assert!(num_heads > 0, "No attention heads found in self-attention layer!");
@@ -161,14 +174,12 @@ impl SelfAttentionLayer {
             .par_iter_mut()
             .enumerate()
             .map(|(head_ind, attention_head)| {
-                // It's better to borrow if possible, not clone — clone only if needed
                 let previous_head_gradient_batch = &previous_gradient_head_splitted[head_ind];
                 let gradient = attention_head.backward(previous_head_gradient_batch);
                 gradient.get_gradient_input_batch()
             })
             .collect();
 
-        
         // println!("Gradient input batches from attention heads: {} {} {} {}", &gradient_input_batches.len(), &gradient_input_batches[0].len(), &gradient_input_batches[0][0].len(), &gradient_input_batches[0][0][0].len());
         let mut combined_gradient_input_batch: Vec<Vec<Vec<C>>> =
             vec![vec![vec![C::new(ZERO, ZERO); gradient_input_batches[0][0][0].len()]; gradient_input_batches[0][0].len()]; gradient_input_batches[0].len()];
@@ -182,11 +193,12 @@ impl SelfAttentionLayer {
                 }
             }
         }
-        
+
         if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
             match norm_layer_enum {
                 LayerEnum::RMSNorm(rms_norm_layer) => {
-                    let norm_gradient = rms_norm_layer.backward(&combined_gradient_input_batch);
+                    gradient.set_gradient_input_batch(combined_gradient_input_batch.clone());
+                    let norm_gradient = rms_norm_layer.backward(&gradient);
                     combined_gradient_input_batch = norm_gradient.get_gradient_input_batch();
                 }
                 LayerEnum::Norm(norm_layer) => {
@@ -198,12 +210,28 @@ impl SelfAttentionLayer {
             }
         }
 
-        add_matrix_3d_in_place(&mut combined_gradient_input_batch, &previous_gradient_batch);
+        add_matrix_3d_in_place(&mut combined_gradient_input_batch, &previous_gradient.get_gradient_input_batch());
 
         // Return the final gradient
         gradient.set_gradient_input_batch(combined_gradient_input_batch);
 
         gradient
+    }
+
+    pub fn update_parameters(&mut self) {
+        if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
+            match norm_layer_enum {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    rms_norm_layer.update_parameters();
+                }
+                LayerEnum::Norm(norm_layer) => {
+                    norm_layer.update_parameters();
+                }
+                _ => {}
+            }
+        }
+
+        self.attention_heads.par_iter_mut().for_each(|attention_head| attention_head.update_parameters());
     }
 
     pub fn split_gradient_into_heads(&self, previous_gradient_batch: &Vec<Vec<Vec<C>>>) -> Vec<Vec<Vec<Vec<C>>>> {
@@ -232,21 +260,5 @@ impl SelfAttentionLayer {
         //println!("grad_heads: {}, {}, {}, {}", &grad_heads.len(), grad_heads[0].len(), grad_heads[0][0].len(), grad_heads[0][0][0].len());
 
         grad_heads
-    }
-
-    pub fn update_parameters(&mut self) {
-        if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
-            match norm_layer_enum {
-                LayerEnum::RMSNorm(rms_norm_layer) => {
-                    rms_norm_layer.update_parameters();
-                }
-                LayerEnum::Norm(norm_layer) => {
-                    norm_layer.update_parameters();
-                }
-                _ => {}
-            }
-        }
-
-        self.attention_heads.par_iter_mut().for_each(|attention_head| attention_head.update_parameters());
     }
 }

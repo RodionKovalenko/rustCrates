@@ -4,8 +4,11 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    neural_networks::network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
-    neural_networks::utils::{dtype::{c_from_f64, c_to_f64, C}, matrix::RowMajorMatrix},
+    neural_networks::{
+        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+        network_layers::default_layer::LayerInterface,
+        utils::{dtype::{c_from_f64, c_to_f64, C}, matrix::RowMajorMatrix},
+    },
     wavelet_transform::{
         cwt_complex::{
             cwt_2d_full_rm, cwt_2d_rm, get_wavelet_derivative_full_rm, get_wavelet_derivative_slice, wavefun_complex, CWTComplex,
@@ -168,5 +171,19 @@ impl ComplexWaveletLayerRm {
 
         self.gradient = Some(gradient.clone());
         gradient
+    }
+
+    pub fn update_parameters(&mut self) {}
+}
+
+impl LayerInterface for ComplexWaveletLayerRm {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        ComplexWaveletLayerRm::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        ComplexWaveletLayerRm::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        ComplexWaveletLayerRm::update_parameters(self)
     }
 }

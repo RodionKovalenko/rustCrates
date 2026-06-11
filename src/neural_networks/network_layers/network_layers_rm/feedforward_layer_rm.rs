@@ -1,6 +1,7 @@
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     network_layers::{
+        default_layer::LayerInterface,
         layer::{LayerEnum, LayerType},
         network_layers_rm::{layer_rm::LayerRm, norm_layer_rm::NormalNormLayerRm},
     },
@@ -216,5 +217,17 @@ impl FeedForwardLayerRm {
         }
 
         self.gradient = None;
+    }
+}
+
+impl LayerInterface for FeedForwardLayerRm {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        FeedForwardLayerRm::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        FeedForwardLayerRm::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        FeedForwardLayerRm::update_parameters(self)
     }
 }

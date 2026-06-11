@@ -1,5 +1,7 @@
 use crate::neural_networks::network_components::gradient_struct::Gradient;
 use crate::neural_networks::network_components::layer_input_struct::LayerInput;
+use crate::neural_networks::network_components::layer_output_struct::LayerOutput;
+use crate::neural_networks::network_layers::default_layer::LayerInterface;
 use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
 use crate::neural_networks::utils::matrix::RowMajorMatrix;
 
@@ -29,7 +31,7 @@ impl PositionalEncodingLayerRm {
         }
     }
 
-    pub fn forward(&mut self, layer_input: &LayerInput) -> Vec<RowMajorMatrix<C>> {
+    pub fn forward_inner(&mut self, layer_input: &LayerInput) -> Vec<RowMajorMatrix<C>> {
         let input_batch_rm = layer_input.get_input_batch_rm_ref().expect("PositionalEncodingLayerRm::forward expects RM input_batch_rm");
 
         let scaling_factor = SCALING_FAKTOR;
@@ -80,7 +82,7 @@ impl PositionalEncodingLayerRm {
             .collect()
     }
 
-    pub fn backward(&mut self, previous_gradient_batch_rm: &[RowMajorMatrix<C>]) -> Gradient {
+    pub fn backward_inner(&mut self, previous_gradient_batch_rm: &[RowMajorMatrix<C>]) -> Gradient {
         let mut gradient = Gradient::new_default();
 
         assert_eq!(self.embedding_dim % 2, 0, "Embedding dimension must be even for RoPE.");
@@ -122,5 +124,34 @@ impl PositionalEncodingLayerRm {
         gradient.set_gradient_input_batch_rm(input_gradient_batch_rm);
         self.gradient = Some(gradient.clone());
         gradient
+    }
+
+    pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        let enc_rm = PositionalEncodingLayerRm::forward_inner(self, layer_input);
+        let mut output = LayerOutput::new_default();
+        output.set_output_batch_rm(enc_rm);
+        output
+    }
+
+    pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        let gr_rm = previous_gradient
+            .get_gradient_input_batch_rm_ref()
+            .map(|r| r.to_vec())
+            .unwrap_or_else(|| previous_gradient.get_gradient_input_batch_rm());
+        PositionalEncodingLayerRm::backward_inner(self, &gr_rm)
+    }
+
+    pub fn update_parameters(&mut self) {}
+}
+
+impl LayerInterface for PositionalEncodingLayerRm {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        PositionalEncodingLayerRm::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        PositionalEncodingLayerRm::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        PositionalEncodingLayerRm::update_parameters(self)
     }
 }

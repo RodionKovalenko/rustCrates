@@ -1,6 +1,9 @@
 use num::Complex;
 
-use crate::neural_networks::network_layers::adaptive_pooling::adaptive_avg_pool1d_layer::{CompressionMetadata, CompressionType};
+use crate::neural_networks::{
+    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+    network_layers::{adaptive_pooling::adaptive_avg_pool1d_layer::{CompressionMetadata, CompressionType}, default_layer::LayerInterface},
+};
 
 // ContentAwarePooling struct and implementation
 pub struct ContentAwarePoolingLayer {
@@ -12,9 +15,32 @@ impl ContentAwarePoolingLayer {
         Self { target_length }
     }
 
-    pub fn forward(&self, input: &Vec<Vec<Vec<Complex<f64>>>>) -> (Vec<Vec<Vec<Complex<f64>>>>, CompressionMetadata) {
+    pub fn forward_inner(&self, input: &Vec<Vec<Vec<Complex<f64>>>>) -> (Vec<Vec<Vec<Complex<f64>>>>, CompressionMetadata) {
         self.compress(input)
     }
+
+    pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        let input_f32 = layer_input.get_input_batch();
+        let input_f64: Vec<Vec<Vec<Complex<f64>>>> = input_f32
+            .iter()
+            .map(|seq| seq.iter().map(|tok| tok.iter().map(|c| Complex::new(c.re as f64, c.im as f64)).collect()).collect())
+            .collect();
+        let (output_f64, metadata) = self.forward_inner(&input_f64);
+        let output: Vec<Vec<Vec<_>>> = output_f64
+            .iter()
+            .map(|seq| seq.iter().map(|tok| tok.iter().map(|c| crate::neural_networks::utils::dtype::C::new(c.re as _, c.im as _)).collect()).collect())
+            .collect();
+        let mut layer_output = LayerOutput::new_default();
+        layer_output.set_output_batch(output);
+        layer_output.set_pooling_metadata(metadata);
+        layer_output
+    }
+
+    pub fn backward(&mut self, _previous_gradient: &Gradient) -> Gradient {
+        Gradient::new_default()
+    }
+
+    pub fn update_parameters(&mut self) {}
 
     pub fn compress(&self, input: &Vec<Vec<Vec<Complex<f64>>>>) -> (Vec<Vec<Vec<Complex<f64>>>>, CompressionMetadata) {
         if input.is_empty() {
@@ -199,5 +225,17 @@ impl ContentAwarePoolingLayer {
             windows.insert(min_idx, merged);
         }
         windows
+    }
+}
+
+impl LayerInterface for ContentAwarePoolingLayer {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        ContentAwarePoolingLayer::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        ContentAwarePoolingLayer::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        ContentAwarePoolingLayer::update_parameters(self)
     }
 }

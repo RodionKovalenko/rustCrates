@@ -1,4 +1,4 @@
-use crate::neural_networks::network_layers::layer::LayerEnum;
+﻿use crate::neural_networks::network_layers::layer::LayerEnum;
 use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
 use crate::neural_networks::utils::matrix::RowMajorMatrix;
 use colored::*;
@@ -279,6 +279,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
 
                 if epochs_without_improvement >= patience {
                     println!("⛔ Early stopping triggered! No improvement for {} epochs.", patience);
+                    println!("â›” Early stopping triggered! No improvement for {} epochs.", patience);
                     println!("Best validation loss: {} at epoch {}", best_val_loss, best_epoch);
                     save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
                     break 'outer;
@@ -576,7 +577,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
             LayerEnum::Embedding(embedding_layer) => {
                 layer_input.set_batch_ids(batch_ids.clone());
 
-                let (embeddings, padding_m) = embedding_layer.forward(&layer_input);
+                let (embeddings, padding_m) = embedding_layer.forward_inner(&layer_input);
                 output_batch = Some(embeddings);
 
                 padding_mask = Some(padding_m.clone());
@@ -585,7 +586,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
             LayerEnum::EmbeddingRm(embedding_layer) => {
                 layer_input.set_batch_ids(batch_ids.clone());
 
-                let (embeddings_rm, padding_m) = embedding_layer.forward(&layer_input);
+                let (embeddings_rm, padding_m) = embedding_layer.forward_inner(&layer_input);
                 padding_mask = Some(padding_m.clone());
                 layer_input.set_padding_mask_batch(padding_m);
 
@@ -606,7 +607,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                 };
 
                 layer_input.set_input_batch(previous_output);
-                let positional_encodings: Vec<Vec<Vec<C>>> = positional_encoding_layer.forward(&layer_input);
+                let positional_encodings: Vec<Vec<Vec<C>>> = positional_encoding_layer.forward(&layer_input).get_output_batch();
                 output_batch = Some(positional_encodings);
 
                 if VERBOSE {
@@ -622,7 +623,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                 layer_input.clear_input_batch();
                 layer_input.set_input_batch_rm(output_batch_rm.take().unwrap());
 
-                let enc_rm = positional_encoding_layer.forward(&layer_input);
+                let enc_rm = positional_encoding_layer.forward_inner(&layer_input);
                 output_batch_rm = Some(enc_rm);
 
                 if VERBOSE {
@@ -1082,7 +1083,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     layer_input.set_input_batch(previous_output);
                     layer_input.set_output_indices(linear_output_indices.clone());
 
-                    let _softmax_result: Vec<Vec<Vec<C>>> = softmax_layer.forward(&layer_input, padding_mask.clone(), target_batch_ids_option.clone());
+                    let _softmax_result: Vec<Vec<Vec<C>>> = softmax_layer.forward_inner(&layer_input, padding_mask.clone(), target_batch_ids_option.clone());
                     layer_output.set_cross_entropy_loss_batch(softmax_layer.cross_entropy_loss_batch.clone().unwrap());
                 } else {
                     output_batch_real = Some(complex_batch_to_real_batch(&previous_output));
@@ -1117,7 +1118,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     layer_input.set_input_batch_rm(logits_rm);
 
                     layer_input.set_output_indices(linear_output_indices.clone());
-                    let _softmax_result: Vec<Vec<Vec<C>>> = softmax_layer.forward(&layer_input, padding_mask.clone(), target_batch_ids_option.clone());
+                    let _softmax_result: Vec<Vec<Vec<C>>> = softmax_layer.forward_inner(&layer_input, padding_mask.clone(), target_batch_ids_option.clone());
                     layer_output.set_cross_entropy_loss_batch(softmax_layer.cross_entropy_loss_batch.clone().unwrap());
                 }
 
@@ -1173,7 +1174,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     } else {
                         previous_gradient.get_gradient_input_batch()
                     };
-                    let gradient_batch: Gradient = embedding_layer.backward(&grad_vec);
+                    let gradient_batch: Gradient = embedding_layer.backward_inner(&grad_vec);
                     if VERBOSE {
                         println!("time elapsed in seconds in embedding layer backward: {}", start.elapsed().as_secs_f64());
                     }
@@ -1186,7 +1187,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                 if let Some(previous_gradient) = gradient {
                     let start = Instant::now();
                     let gr_rm = previous_gradient.get_gradient_input_batch_rm_ref().filter(|g| !g.is_empty()).expect("EmbeddingRm expects RM gradients");
-                    let gradient_batch: Gradient = embedding_layer.backward(gr_rm);
+                    let gradient_batch: Gradient = embedding_layer.backward_inner(gr_rm);
                     if VERBOSE {
                         println!("time elapsed in seconds in embedding_rm layer backward: {}", start.elapsed().as_secs_f64());
                     }
@@ -1199,13 +1200,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                 if let Some(previous_gradient) = gradient {
                     let start = Instant::now();
 
-                    let grad_vec: Vec<Vec<Vec<C>>> = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
-                        gr_rm.iter().map(|m| m.to_rows()).collect()
-                    } else {
-                        previous_gradient.get_gradient_input_batch()
-                    };
-
-                    let gradient_batch: Gradient = positional_encoding_layer.backward(&grad_vec);
+                    let gradient_batch: Gradient = positional_encoding_layer.backward(&previous_gradient);
 
                     if VERBOSE {
                         println!("time elapsed in seconds in positional encoding layer backward: {}", start.elapsed().as_secs_f64());
@@ -1222,7 +1217,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                         previous_gradient.get_gradient_input_batch_rm()
                     };
 
-                    let gradient_batch: Gradient = positional_encoding_layer.backward(&gr_rm);
+                    let gradient_batch: Gradient = positional_encoding_layer.backward_inner(&gr_rm);
 
                     if VERBOSE {
                         println!("time elapsed in seconds in positional encoding layer backward: {}", start.elapsed().as_secs_f64());
@@ -1274,7 +1269,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             LayerEnum::SelfAttention(attention_layer) => {
                 if let Some(previous_gradient) = gradient {
                     let start = Instant::now();
-                    let gradient_batch: Gradient = attention_layer.backward(&previous_gradient.get_gradient_input_batch());
+                    let gradient_batch: Gradient = attention_layer.backward(&previous_gradient);
 
                     if VERBOSE {
                         println!("time elapsed in seconds in self attention layer backward: {:?}", start.elapsed().as_secs_f64());
@@ -1287,12 +1282,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             LayerEnum::SparseSelfAttention(attention_layer) => {
                 if let Some(previous_gradient) = gradient {
                     let start = Instant::now();
-                    let gradient_batch: Gradient = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
-                        let previous_gradient_batch: Vec<Vec<Vec<C>>> = gr_rm.iter().map(|m| m.to_rows()).collect();
-                        attention_layer.backward(&previous_gradient_batch)
-                    } else {
-                        attention_layer.backward(&previous_gradient.get_gradient_input_batch())
-                    };
+                    let gradient_batch: Gradient = attention_layer.backward(&previous_gradient);
                     if VERBOSE {
                         println!("time elapsed in seconds in sparse self attention layer backward: {:?}", start.elapsed().as_secs_f64());
                     }
@@ -1361,14 +1351,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
             LayerEnum::FeedForward(dense_layer) => {
                 if let Some(previous_gradient) = gradient {
                     let start = Instant::now();
-                    let gradient_batch: Gradient = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
-                        // FeedForwardLayer is Vec-only now; convert RM -> Vec.
-                        let previous_gradient_batch: Vec<Vec<Vec<C>>> = gr_rm.iter().map(|m| m.to_rows()).collect();
-                        dense_layer.backward(&previous_gradient_batch)
-                    } else {
-                        let previous_gradient_batch: Vec<Vec<Vec<C>>> = previous_gradient.get_gradient_input_batch();
-                        dense_layer.backward(&previous_gradient_batch)
-                    };
+                    let gradient_batch: Gradient = dense_layer.backward(&previous_gradient);
                     // println!("backward dense end");
                     gradient = Some(gradient_batch);
 
@@ -1383,16 +1366,8 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                 if let Some(previous_gradient) = gradient {
                     let start = Instant::now();
 
-                    let gradient_batch: Gradient = if previous_gradient.get_gradient_input_batch_rm_ref().is_some() {
-                        ffn_layer.backward(&previous_gradient)
-                    } else {
-                        let previous_gradient_batch: Vec<RowMajorMatrix<C>> = previous_gradient.get_gradient_input_batch().iter().map(|rows| RowMajorMatrix::from_rows(rows)).collect();
-                        let mut g = Gradient::new_default();
-                        g.set_gradient_input_batch_rm(previous_gradient_batch);
-                        g.set_total_valid_tokens(previous_gradient.get_total_valid_tokens());
-                        ffn_layer.backward(&g)
-                    };
-
+                    let gradient_batch: Gradient = ffn_layer.backward(&previous_gradient);
+                    
                     gradient = Some(gradient_batch);
 
                     if VERBOSE {
@@ -1723,7 +1698,7 @@ fn evaluate_validation(transformer_network: &mut NeuralNetwork, dataset: &Datase
     let val_batches = dataset.get_validation_batches(batch_size);
 
     if val_batches.is_empty() {
-        println!("⚠️  Warning: No validation data available! Validation loss will be unreliable.");
+        println!("âš ï¸  Warning: No validation data available! Validation loss will be unreliable.");
         println!(
             "   Total dataset size: {}, Training size: {}, Validation size: {}",
             dataset.input.len(),
@@ -1776,7 +1751,7 @@ fn evaluate_validation(transformer_network: &mut NeuralNetwork, dataset: &Datase
     }
 
     if num_batches == 0 {
-        println!("⚠️  Warning: No validation batches processed!");
+        println!("âš ï¸  Warning: No validation batches processed!");
         return Real::INFINITY;
     }
 
@@ -1784,7 +1759,7 @@ fn evaluate_validation(transformer_network: &mut NeuralNetwork, dataset: &Datase
 
     // Debug: print validation statistics on first epoch
     if transformer_network.time_step < 100 {
-        println!("📊 Validation: {} batches, total loss: {:.4}, avg loss: {:.4}", num_batches, total_val_loss, avg_val_loss);
+        println!("ðŸ“Š Validation: {} batches, total loss: {:.4}, avg loss: {:.4}", num_batches, total_val_loss, avg_val_loss);
     }
 
     avg_val_loss
@@ -1884,3 +1859,4 @@ mod tests {
         assert_eq!(target_chunks, vec![vec![19], vec![19, 20, 21, 22], vec![19, 20, 21, 22, 23]]);
     }
 }
+

@@ -614,8 +614,15 @@ impl SparseMaskedAttentionHead {
             gradient_ctl_k_batch = ctl_k_gradient.get_gradient_input_batch();
         }
 
-        gradient_ctl_q_batch = self.positional_encoding_layer.backward_sequences(&gradient_ctl_q_batch);
-        gradient_ctl_k_batch = self.positional_encoding_layer.backward_sequences(&gradient_ctl_k_batch);
+
+        let mut gradient_ctl_q = Gradient::new_default();
+        let mut gradient_ctl_k = Gradient::new_default();
+
+        gradient_ctl_q.set_gradient_input_batch(gradient_ctl_q_batch.clone());
+        gradient_ctl_k.set_gradient_input_batch(gradient_ctl_k_batch.clone());
+
+        gradient_ctl_q_batch = self.positional_encoding_layer.backward_sequences(&gradient_ctl_q);
+        gradient_ctl_k_batch = self.positional_encoding_layer.backward_sequences(&gradient_ctl_k);
 
         for batch_ind in 0..previous_gradient_batch.len() {
             // Gradient Wq

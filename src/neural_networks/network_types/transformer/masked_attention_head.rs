@@ -406,7 +406,7 @@ impl MaskedAttentionHead {
         gradient_k.set_gradient_input_batch(gradient_ctl_k_batch.clone());
         let gradient_k_norm = self.norm_layer_k.backward(&gradient_k);
         // let gradient_k_pool = self.pool_k_layer.backward(&gradient_k_norm);
-        gradient_ctl_k_batch = self.positional_encoding_layer.backward_sequences(&gradient_k_norm.get_gradient_input_batch());
+        gradient_ctl_k_batch = self.positional_encoding_layer.backward_sequences(&gradient_k_norm);
 
         for batch_ind in 0..previous_gradient_batch.len() {
             // Gradient Wq

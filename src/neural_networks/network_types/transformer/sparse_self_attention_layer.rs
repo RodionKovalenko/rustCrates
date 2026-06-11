@@ -1,9 +1,7 @@
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     network_layers::{
-        add_rms_norm_layer::RMSNormLayer,
-        layer::{LayerEnum, LayerType},
-        norm_layer::NormalNormLayer,
+        add_rms_norm_layer::RMSNormLayer, default_layer::LayerInterface, layer::{LayerEnum, LayerType}, norm_layer::NormalNormLayer
     },
     network_types::transformer::{sparse_masked_attention_head::SparseMaskedAttentionHead, transformer_updater::calculate_alpha},
     utils::matrix::{add_matrix_3d_in_place, scale_matrix_3d_by_scalar_in_place},
@@ -64,6 +62,18 @@ impl SparseSelfAttentionLayer {
         }
     }
 }
+impl LayerInterface for SparseSelfAttentionLayer {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        SparseSelfAttentionLayer::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        SparseSelfAttentionLayer::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        SparseSelfAttentionLayer::update_parameters(self)
+    }
+}
+
 impl SparseSelfAttentionLayer {
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
         let mut batch_output = layer_input.get_input_batch();
@@ -155,8 +165,10 @@ impl SparseSelfAttentionLayer {
         layer_output
     }
 
-    pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<C>>>) -> Gradient {
+    pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        let previous_gradient_batch = previous_gradient.get_gradient_input_batch();
         let mut gradient_input_batch: Vec<Vec<Vec<C>>> = previous_gradient_batch.clone();
+
         scale_matrix_3d_by_scalar_in_place(&mut gradient_input_batch, self.beta);
 
         let mut gradient: Gradient = Gradient::new_default();
@@ -172,7 +184,6 @@ impl SparseSelfAttentionLayer {
             .par_iter_mut()
             .enumerate()
             .map(|(head_ind, attention_head)| {
-                // It's better to borrow if possible, not clone — clone only if needed
                 let gradient = attention_head.backward(&previous_gradient_head_splitted[head_ind]);
                 gradient.get_gradient_input_batch()
             })
@@ -195,7 +206,8 @@ impl SparseSelfAttentionLayer {
         if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
             match norm_layer_enum {
                 LayerEnum::RMSNorm(rms_norm_layer) => {
-                    let norm_gradient = rms_norm_layer.backward(&combined_gradient_input_batch);
+                    gradient.set_gradient_input_batch(combined_gradient_input_batch.clone());
+                    let norm_gradient = rms_norm_layer.backward(&gradient);
                     combined_gradient_input_batch = norm_gradient.get_gradient_input_batch();
                 }
                 LayerEnum::Norm(norm_layer) => {
@@ -207,7 +219,7 @@ impl SparseSelfAttentionLayer {
             }
         }
 
-        add_matrix_3d_in_place(&mut combined_gradient_input_batch, previous_gradient_batch);
+        add_matrix_3d_in_place(&mut combined_gradient_input_batch, &previous_gradient_batch);
 
         // Return the final gradient
         gradient.set_gradient_input_batch(combined_gradient_input_batch);
@@ -215,7 +227,23 @@ impl SparseSelfAttentionLayer {
         gradient
     }
 
-    pub fn split_gradient_into_heads(&self, previous_gradient_batch: &Vec<Vec<Vec<C>>>) -> Vec<Vec<Vec<Vec<C>>>> {
+    pub fn update_parameters(&mut self) {
+        if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
+            match norm_layer_enum {
+                LayerEnum::RMSNorm(rms_norm_layer) => {
+                    rms_norm_layer.update_parameters();
+                }
+                LayerEnum::Norm(norm_layer) => {
+                    norm_layer.update_parameters();
+                }
+                _ => {}
+            }
+        }
+
+        self.attention_heads.par_iter_mut().for_each(|attention_head| attention_head.update_parameters());
+    }
+
+    fn split_gradient_into_heads(&self, previous_gradient_batch: &Vec<Vec<Vec<C>>>) -> Vec<Vec<Vec<Vec<C>>>> {
         let batch_size = previous_gradient_batch.len();
         let seq_len = previous_gradient_batch[0].len();
         let dim = previous_gradient_batch[0][0].len();
@@ -241,21 +269,5 @@ impl SparseSelfAttentionLayer {
         //println!("grad_heads: {}, {}, {}, {}", &grad_heads.len(), grad_heads[0].len(), grad_heads[0][0].len(), grad_heads[0][0][0].len());
 
         grad_heads
-    }
-
-    pub fn update_parameters(&mut self) {
-        if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
-            match norm_layer_enum {
-                LayerEnum::RMSNorm(rms_norm_layer) => {
-                    rms_norm_layer.update_parameters();
-                }
-                LayerEnum::Norm(norm_layer) => {
-                    norm_layer.update_parameters();
-                }
-                _ => {}
-            }
-        }
-
-        self.attention_heads.par_iter_mut().for_each(|attention_head| attention_head.update_parameters());
     }
 }

@@ -19,3 +19,4 @@ pub mod tied_sparse_embeddings;
 pub mod adaptive_linear_layer;
 
 pub mod network_layers_rm;
+pub mod default_layer;

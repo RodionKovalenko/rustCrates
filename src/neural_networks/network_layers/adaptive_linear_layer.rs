@@ -11,7 +11,7 @@ use crate::neural_networks::{
         layer_input_struct::LayerInput,
         layer_output_struct::LayerOutput,
     },
-    network_layers::layer::LayerEnum,
+    network_layers::{default_layer::LayerInterface, layer::LayerEnum},
     utils::{
         activation::softmax_backward_real_with_gradient,
         adam_w::{calculate_adam_w_bias_f32_sparse, calculate_adam_w_f32_sparse},
@@ -765,5 +765,17 @@ impl AdaptiveLinearLayer {
                 }
             }
         }
+    }
+}
+
+impl LayerInterface for AdaptiveLinearLayer {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        AdaptiveLinearLayer::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        AdaptiveLinearLayer::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        AdaptiveLinearLayer::update_parameters(self)
     }
 }

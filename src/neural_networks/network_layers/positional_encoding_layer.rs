@@ -1,5 +1,7 @@
 use crate::neural_networks::network_components::gradient_struct::Gradient;
 use crate::neural_networks::network_components::layer_input_struct::LayerInput;
+use crate::neural_networks::network_components::layer_output_struct::LayerOutput;
+use crate::neural_networks::network_layers::default_layer::LayerInterface;
 use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
 
 use rayon::prelude::*;
@@ -32,13 +34,6 @@ impl PositionalEncodingLayer {
         }
     }
 
-    pub fn forward(&mut self, layer_input: &LayerInput) -> Vec<Vec<Vec<C>>> {
-        let input_batch = layer_input.get_input_batch_ref().expect("PositionalEncodingLayer: input batch missing");
-        self.input_batch = Some(input_batch.to_vec());
-
-        input_batch.par_iter().map(|sequence| self.apply_rope_to_sequence(sequence, layer_input)).collect()
-    }
-
     pub fn forward_sequences(&self, batch_input: &Vec<Vec<Vec<C>>>, layer_input: &LayerInput) -> Vec<Vec<Vec<C>>> {
         batch_input.iter().map(|sequence| self.apply_rope_to_sequence(sequence, layer_input)).collect::<Vec<Vec<Vec<C>>>>()
     }
@@ -57,29 +52,8 @@ impl PositionalEncodingLayer {
             .collect::<Vec<Vec<C>>>()
     }
 
-    pub fn backward(&mut self, previous_gradient_batch: &Vec<Vec<Vec<C>>>) -> Gradient {
-        let input_batch = self.input_batch.as_ref().expect("Input batch is missing in positional encoding layer");
-
-        assert_eq!(input_batch.len(), previous_gradient_batch.len(), "Batch size mismatch");
-        assert_eq!(self.embedding_dim % 2, 0, "Embedding dimension must be even for RoPE.");
-
-        let input_gradient_batch: Vec<Vec<Vec<C>>> = input_batch
-            .par_iter()
-            .zip(previous_gradient_batch.par_iter())
-            .map(|(input_sequence, grad_sequence)| {
-                assert_eq!(input_sequence.len(), grad_sequence.len(), "Sequence length mismatch");
-                self.backward_sequence(grad_sequence)
-            })
-            .collect();
-
-        let mut gradient = Gradient::new_default();
-        gradient.set_gradient_input_batch(input_gradient_batch);
-        self.gradient = Some(gradient.clone());
-
-        gradient
-    }
-
-    pub fn backward_sequences(&mut self, previous_gradient_batch: &Vec<Vec<Vec<C>>>) -> Vec<Vec<Vec<C>>> {
+    pub fn backward_sequences(&mut self, previous_gradient_batch: &Gradient) -> Vec<Vec<Vec<C>>> {
+        let previous_gradient_batch = previous_gradient_batch.get_gradient_input_batch();
         assert_eq!(self.embedding_dim % 2, 0, "Embedding dimension must be even for RoPE.");
         previous_gradient_batch.par_iter().map(|grad_sequence| self.backward_sequence(grad_sequence)).collect()
     }
@@ -156,5 +130,55 @@ impl PositionalEncodingLayer {
         }
 
         rotated_embedding
+    }
+}
+
+impl PositionalEncodingLayer {
+    pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        let input_batch = layer_input.get_input_batch_ref().expect("PositionalEncodingLayer: input batch missing");
+        self.input_batch = Some(input_batch.to_vec());
+
+        let output_batch: Vec<Vec<Vec<C>>> = input_batch.par_iter().map(|sequence| self.apply_rope_to_sequence(sequence, layer_input)).collect();
+        let mut layer_output = LayerOutput::new_default();
+        layer_output.set_output_batch(output_batch);
+        layer_output.set_padding_mask_batch(layer_input.get_padding_mask_batch());
+        layer_output
+    }
+
+    pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        let previous_gradient_batch = previous_gradient.get_gradient_input_batch();
+        let input_batch = self.input_batch.as_ref().expect("Input batch is missing in positional encoding layer");
+
+        assert_eq!(input_batch.len(), previous_gradient_batch.len(), "Batch size mismatch");
+        assert_eq!(self.embedding_dim % 2, 0, "Embedding dimension must be even for RoPE.");
+
+        let input_gradient_batch: Vec<Vec<Vec<C>>> = input_batch
+            .par_iter()
+            .zip(previous_gradient_batch.par_iter())
+            .map(|(input_sequence, grad_sequence)| {
+                assert_eq!(input_sequence.len(), grad_sequence.len(), "Sequence length mismatch");
+                self.backward_sequence(grad_sequence)
+            })
+            .collect();
+
+        let mut gradient = Gradient::new_default();
+        gradient.set_gradient_input_batch(input_gradient_batch);
+        self.gradient = Some(gradient.clone());
+
+        gradient
+    }
+
+    pub fn update_parameters(&mut self) {}
+}
+
+impl LayerInterface for PositionalEncodingLayer {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        PositionalEncodingLayer::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        PositionalEncodingLayer::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        PositionalEncodingLayer::update_parameters(self)
     }
 }

@@ -1,6 +1,7 @@
 use core::fmt::Debug;
 use serde::{Deserialize, Serialize};
 
+use crate::neural_networks::network_layers::default_layer::LayerInterface;
 use crate::neural_networks::network_layers::layer::LayerEnum;
 use crate::neural_networks::network_layers::norm_layer::NormalNormLayer;
 use crate::neural_networks::utils::dtype::{c_from_f64, c_to_f64, C, CF64};
@@ -215,7 +216,7 @@ impl DiscreteWaveletLayer {
         if let Some(norm_layer) = &mut self.norm_layer {
             match norm_layer {
                 LayerEnum::RMSNorm(rms_norm_layer) => {
-                    gradient = rms_norm_layer.backward(&grad_output_batch);
+                    gradient = rms_norm_layer.backward(&gradient);
                     grad_output_batch = gradient.get_gradient_input_batch();
                     output_gradient_norm = grad_output_batch.clone();
                     // println!("FFN, gradient from RMS Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
@@ -561,5 +562,17 @@ impl DiscreteWaveletLayer {
                 _ => {}
             }
         }
+    }
+}
+
+impl LayerInterface for DiscreteWaveletLayer {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        DiscreteWaveletLayer::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        DiscreteWaveletLayer::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        DiscreteWaveletLayer::update_parameters(self)
     }
 }

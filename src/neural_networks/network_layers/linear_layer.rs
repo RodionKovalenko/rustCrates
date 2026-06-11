@@ -6,7 +6,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
-    network_layers::layer::LayerEnum,
+    network_layers::{default_layer::LayerInterface, layer::LayerEnum},
     utils::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         dtype::{r, C, ONE, ZERO},
@@ -306,5 +306,17 @@ impl LinearLayer {
         if self.tied_weights.is_some() {
             self.write_back_to_tied_weights();
         }
+    }
+}
+
+impl LayerInterface for LinearLayer {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        LinearLayer::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        LinearLayer::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        LinearLayer::update_parameters(self)
     }
 }

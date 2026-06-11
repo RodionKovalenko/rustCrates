@@ -1,4 +1,8 @@
-use crate::neural_networks::{network_layers::adaptive_pooling::adaptive_avg_pool1d_layer::{CompressionMetadata, CompressionType}, utils::dtype::{C, Real, ZERO, r}};
+use crate::neural_networks::{
+    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+    network_layers::{adaptive_pooling::adaptive_avg_pool1d_layer::{CompressionMetadata, CompressionType}, default_layer::LayerInterface},
+    utils::dtype::{C, Real, ZERO, r},
+};
 
 // StridedPooling implementation with forward/backward/backward_gradient
 pub struct StridedPoolingLayer {
@@ -11,7 +15,7 @@ impl StridedPoolingLayer {
         Self { stride, kernel_size: kernel_size.unwrap_or(stride) }
     }
 
-    pub fn forward(&self, input: &Vec<Vec<Vec<C>>>) -> (Vec<Vec<Vec<C>>>, CompressionMetadata) {
+    pub fn forward_inner(&self, input: &Vec<Vec<Vec<C>>>) -> (Vec<Vec<Vec<C>>>, CompressionMetadata) {
         if input.is_empty() {
             return (
                 Vec::new(),
@@ -67,7 +71,30 @@ impl StridedPoolingLayer {
         decompressed
     }
 
-    pub fn backward(&self, grad_output: &[Vec<Vec<C>>], metadata: &CompressionMetadata) -> Vec<Vec<Vec<C>>> {
+    pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        let input = layer_input.get_input_batch();
+        let (output, metadata) = self.forward_inner(&input);
+        let mut layer_output = LayerOutput::new_default();
+        layer_output.set_output_batch(output);
+        layer_output.set_pooling_metadata(metadata);
+        layer_output
+    }
+
+    pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        let metadata = previous_gradient.get_pooling_metadata();
+        if let Some(metadata) = metadata {
+            let grad_input = self.backward_inner(&previous_gradient.get_gradient_input_batch(), &metadata);
+            let mut gradient = Gradient::new_default();
+            gradient.set_gradient_input_batch(grad_input);
+            gradient
+        } else {
+            previous_gradient.clone()
+        }
+    }
+
+    pub fn update_parameters(&mut self) {}
+
+    pub fn backward_inner(&self, grad_output: &[Vec<Vec<C>>], metadata: &CompressionMetadata) -> Vec<Vec<Vec<C>>> {
         // Similar to AdaptiveAvgPool1d.backward_gradient but adjusted for overlapping windows
         if grad_output.is_empty() || metadata.original_length == 0 {
             return Vec::new();
@@ -145,5 +172,17 @@ impl StridedPoolingLayer {
             }
         }
         decompressed
+    }
+}
+
+impl LayerInterface for StridedPoolingLayer {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        StridedPoolingLayer::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        StridedPoolingLayer::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        StridedPoolingLayer::update_parameters(self)
     }
 }

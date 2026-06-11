@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
+use crate::neural_networks::network_layers::default_layer::LayerInterface;
 use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
 
 // Compression metadata for decompression
@@ -132,7 +133,9 @@ impl AdaptiveAvgPool1dLayer {
         compressed
     }
 
-    pub fn backward(&self, gradient: &Gradient) -> Gradient {
+    pub fn update_parameters(&mut self) {}
+
+    pub fn backward(&mut self, gradient: &Gradient) -> Gradient {
         let grad_in = gradient.get_gradient_input_batch();
         let metadata = &self.metadata;
 
@@ -191,7 +194,7 @@ impl AdaptiveAvgPool1dLayer {
         grad
     }
 
-    pub fn backward_through_decompress(&self, gradient: &Gradient) -> Gradient {
+    pub fn backward_through_decompress(&mut self, gradient: &Gradient) -> Gradient {
         let grad_in = gradient.get_gradient_input_batch();
         let metadata = &self.metadata;
 
@@ -370,5 +373,17 @@ impl AdaptiveAvgPool1dLayer {
         }
 
         windows
+    }
+}
+
+impl LayerInterface for AdaptiveAvgPool1dLayer {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        AdaptiveAvgPool1dLayer::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        AdaptiveAvgPool1dLayer::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        AdaptiveAvgPool1dLayer::update_parameters(self)
     }
 }

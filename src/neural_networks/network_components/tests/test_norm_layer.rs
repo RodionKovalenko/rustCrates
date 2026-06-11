@@ -1,4 +1,4 @@
-#[cfg(test)]
+﻿#[cfg(test)]
 mod test_norm_layer {
     use crate::neural_networks::{
         network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
@@ -42,9 +42,9 @@ mod test_norm_layer {
         let linear_layer_output = linear_layer.forward(&layer_input);
 
         layer_input.set_input_batch(linear_layer_output.get_output_batch());
-        let _softmax_batch_output = softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+        let _softmax_batch_output = softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
-        let softmax_gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
+        let softmax_gradient: Gradient = softmax_layer.backward_inner(&target_token_id_batch);
 
         println!("input batch :{:?}", &input_batch);
 
@@ -68,7 +68,7 @@ mod test_norm_layer {
             let linear_layer_output = linear_layer.forward(&layer_input);
 
             layer_input.set_input_batch(linear_layer_output.get_output_batch());
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -97,7 +97,7 @@ mod test_norm_layer {
             let linear_layer_output = linear_layer.forward(&layer_input);
 
             layer_input.set_input_batch(linear_layer_output.get_output_batch());
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -126,7 +126,7 @@ mod test_norm_layer {
             let linear_layer_output = linear_layer.forward(&layer_input);
 
             layer_input.set_input_batch(linear_layer_output.get_output_batch());
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -146,3 +146,4 @@ mod test_norm_layer {
         test_gradient_error_1d(&numerical_grad_beta, &analytical_beta_gradient, epsilot_test);
     }
 }
+

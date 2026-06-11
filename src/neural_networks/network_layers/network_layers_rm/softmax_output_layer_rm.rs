@@ -3,7 +3,8 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
-    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
+    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+    network_layers::default_layer::LayerInterface,
     network_types::neural_network_generic::OperationMode,
     utils::{activation::softmax_backward_real_with_gradient_rm, dtype::C, matrix::RowMajorMatrix},
 };
@@ -41,7 +42,7 @@ impl SoftmaxLayerRm {
         }
     }
 
-    pub fn forward(&mut self, layer_input: &LayerInput, padding_mask_option: Option<Vec<Vec<u32>>>, target_token_ids: Option<Vec<Vec<u32>>>) -> Vec<Vec<Vec<C>>> {
+    pub fn forward_inner(&mut self, layer_input: &LayerInput, padding_mask_option: Option<Vec<Vec<u32>>>, target_token_ids: Option<Vec<Vec<u32>>>) -> Vec<Vec<Vec<C>>> {
         self.time_step = layer_input.get_time_step();
         self.batch_size = layer_input.get_batch_size();
 
@@ -128,7 +129,35 @@ impl SoftmaxLayerRm {
 
     pub fn update_parameters(&mut self) {}
 
-    pub fn backward(&mut self, _target_token_ids: &Vec<Vec<u32>>) -> Gradient {
+    pub fn backward_inner(&mut self, _target_token_ids: &Vec<Vec<u32>>) -> Gradient {
         self.gradient.as_ref().unwrap().clone()
+    }
+
+    pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        let padding_mask = layer_input.get_padding_mask_batch();
+        let target_ids = layer_input.get_target_batch_ids();
+        SoftmaxLayerRm::forward_inner(
+            self,
+            layer_input,
+            if padding_mask.is_empty() { None } else { Some(padding_mask) },
+            if target_ids.is_empty() { None } else { Some(target_ids) },
+        );
+        LayerOutput::new_default()
+    }
+
+    pub fn backward(&mut self, _previous_gradient: &Gradient) -> Gradient {
+        self.gradient.as_ref().expect("SoftmaxLayerRm: gradient not set; call forward first").clone()
+    }
+}
+
+impl LayerInterface for SoftmaxLayerRm {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        SoftmaxLayerRm::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        SoftmaxLayerRm::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        SoftmaxLayerRm::update_parameters(self)
     }
 }

@@ -6,6 +6,7 @@ use crate::neural_networks::{
     },
     network_layers::{
         add_rms_norm_layer::RMSNormLayer,
+        default_layer::LayerInterface,
         layer::{ActivationType, Layer, LayerEnum, LayerType},
         norm_layer::NormalNormLayer,
     },
@@ -148,12 +149,12 @@ impl FeedForwardLayer {
         layer_output
     }
 
-    pub fn backward(&mut self, prev_gradients: &Vec<Vec<Vec<C>>>) -> Gradient {
-        let mut output_gradients = prev_gradients.clone();
+    pub fn backward(&mut self, prev_gradients: &Gradient) -> Gradient {
+        let mut output_gradients = prev_gradients.get_gradient_input_batch();
         output_gradients = scale_matrix_3d_by_scalar(&output_gradients, self.beta);
 
         let mut gradient = Gradient::new_default();
-        gradient.set_gradient_input_batch(prev_gradients.clone());
+        gradient.set_gradient_input_batch(prev_gradients.get_gradient_input_batch());
 
         // forward -> Dense, Linear
         // backward -> Linear, Dense
@@ -179,7 +180,7 @@ impl FeedForwardLayer {
         if let Some(norm_layer) = &mut self.norm_layer {
             match norm_layer {
                 LayerEnum::RMSNorm(rms_norm_layer) => {
-                    gradient = rms_norm_layer.backward(&output_gradients);
+                    gradient = rms_norm_layer.backward(&gradient);
                     output_gradients = gradient.get_gradient_input_batch();
                     // println!("FFN, gradient from RMS Norm backward: {}, {}, {}", output_gradients.len(), output_gradients[0].len(), output_gradients[0][0].len());
                 }
@@ -192,7 +193,7 @@ impl FeedForwardLayer {
             }
         }
 
-        output_gradients = add_matrix_3d(&prev_gradients, &output_gradients);
+        output_gradients = add_matrix_3d(&prev_gradients.get_gradient_input_batch(), &output_gradients);
 
         gradient.set_gradient_input_batch(output_gradients);
         self.gradient = Some(gradient.clone());
@@ -227,5 +228,17 @@ impl FeedForwardLayer {
                 _ => {}
             }
         }
+    }
+}
+
+impl LayerInterface for FeedForwardLayer {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        FeedForwardLayer::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        FeedForwardLayer::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        FeedForwardLayer::update_parameters(self)
     }
 }

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+    network_layers::default_layer::LayerInterface,
     utils::{
         adam_w::calculate_adam_w,
         dtype::{r, Real, C, ZERO},
@@ -264,5 +265,17 @@ impl ComplexToLinearLayerRm {
         self.previous_gradient = Some(gradient.clone());
 
         self.gradient = None;
+    }
+}
+
+impl LayerInterface for ComplexToLinearLayerRm {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        ComplexToLinearLayerRm::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        ComplexToLinearLayerRm::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        ComplexToLinearLayerRm::update_parameters(self)
     }
 }

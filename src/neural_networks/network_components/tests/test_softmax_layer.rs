@@ -1,4 +1,4 @@
-#[cfg(test)]
+﻿#[cfg(test)]
 mod test_softmax_layer {
     use crate::{
         neural_networks::{
@@ -51,7 +51,7 @@ mod test_softmax_layer {
         layer_input.clear_input_batch();
         layer_input.set_input_batch_rm(vec![logits_rm]);
 
-        let _ = softmax_layer.forward(&layer_input, Some(padding_mask_batch), Some(target_token_id_batch));
+        let _ = softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch), Some(target_token_id_batch));
 
         let grad = softmax_layer.gradient.as_ref().expect("Softmax gradient missing");
         let gr_rm = grad.get_gradient_input_batch_rm();
@@ -88,15 +88,15 @@ mod test_softmax_layer {
         let linear_output = linear_layer.forward(&layer_input);
 
         layer_input.set_input_batch(linear_output.get_output_batch());
-        let _softmax_batch_output = softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+        let _softmax_batch_output = softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
-        let gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
+        let gradient: Gradient = softmax_layer.backward_inner(&target_token_id_batch);
         let (analytical_grad_batch, analytical_grad) = (gradient.get_gradient_input_batch(), gradient.get_gradient_input());
 
         // Define the loss function
         let mut loss_fn = |input: &Vec<Vec<Vec<Complex<f64>>>>| -> Complex<f64> {
             layer_input.set_input_batch(input.clone());
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -335,3 +335,4 @@ mod test_softmax_layer {
         println!("\n\n global relative error input gradient: {:?}", &global_error);
     }
 }
+

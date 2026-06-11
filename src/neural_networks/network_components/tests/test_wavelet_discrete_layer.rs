@@ -1,4 +1,4 @@
-#[cfg(test)]
+﻿#[cfg(test)]
 mod test_wavelet_discrete_layer {
     use crate::neural_networks::{
         network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
@@ -96,9 +96,9 @@ mod test_wavelet_discrete_layer {
         let padding_mask_batch: Vec<Vec<u32>> = vec![vec![1; wavelet_dwt[0].len()]; wavelet_dwt.len()];
 
         layer_input.set_input_batch(wavelet_output.get_output_batch());
-        let _softmax_batch_output = softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+        let _softmax_batch_output = softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
-        let softmax_gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
+        let softmax_gradient: Gradient = softmax_layer.backward_inner(&target_token_id_batch);
         let wavelet_gradient = wavelet_layer.backward(&softmax_gradient);
 
         let analytical_grad = wavelet_gradient.get_gradient_input();
@@ -109,7 +109,7 @@ mod test_wavelet_discrete_layer {
             let wavelet_output = wavelet_layer.forward(&layer_input);
 
             layer_input.set_input_batch(wavelet_output.get_output_batch());
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
 
@@ -176,10 +176,10 @@ mod test_wavelet_discrete_layer {
         let linear_output = linear_layer.forward(&layer_input);
 
         layer_input.set_input_batch(linear_output.get_output_batch());
-        let _softmax_batch_output = softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+        let _softmax_batch_output = softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         // println!("softmax output batch: {:?}", _softmax_batch_output);
-        let softmax_gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
+        let softmax_gradient: Gradient = softmax_layer.backward_inner(&target_token_id_batch);
         let linear_gradient: Gradient = linear_layer.backward(&softmax_gradient);
         let wavelet_gradient: Gradient = wavelet_layer.backward(&linear_gradient);
 
@@ -195,7 +195,7 @@ mod test_wavelet_discrete_layer {
             let linear_output = linear_layer.forward(&layer_input);
 
             layer_input.set_input_batch(linear_output.get_output_batch());
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
 
@@ -264,10 +264,10 @@ mod test_wavelet_discrete_layer {
         let linear_output = linear_layer.forward(&layer_input);
 
         layer_input.set_input_batch(linear_output.get_output_batch());
-        let _softmax_batch_output = softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+        let _softmax_batch_output = softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         // println!("softmax output batch: {:?}", _softmax_batch_output);
-        let softmax_gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
+        let softmax_gradient: Gradient = softmax_layer.backward_inner(&target_token_id_batch);
         let linear_gradient: Gradient = linear_layer.backward(&softmax_gradient);
 
         let linear_layer_gradient = linear_gradient.get_gradient_input_batch();
@@ -278,7 +278,7 @@ mod test_wavelet_discrete_layer {
             linear_layer_gradient[0][0].len()
         );
 
-        let ffn_gradient: Gradient = ffn_layer.backward(&linear_gradient.get_gradient_input_batch());
+        let ffn_gradient: Gradient = ffn_layer.backward(&linear_gradient);
         let wavelet_gradient: Gradient = wavelet_layer.backward(&ffn_gradient);
 
         let analytical_grad = wavelet_gradient.get_gradient_input();
@@ -297,7 +297,7 @@ mod test_wavelet_discrete_layer {
             let linear_output = linear_layer.forward(&layer_input);
 
             layer_input.set_input_batch(linear_output.get_output_batch());
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
 
@@ -380,10 +380,10 @@ mod test_wavelet_discrete_layer {
         let linear_output = linear_layer.forward(&layer_input);
         
         layer_input.set_input_batch(linear_output.get_output_batch());
-        let _softmax_batch_output = softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+        let _softmax_batch_output = softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         // println!("softmax output batch: {:?}", _softmax_batch_output);
-        let softmax_gradient: Gradient = softmax_layer.backward(&target_token_id_batch);
+        let softmax_gradient: Gradient = softmax_layer.backward_inner(&target_token_id_batch);
         let linear_gradient: Gradient = linear_layer.backward(&softmax_gradient);
 
         let linear_layer_gradient = linear_gradient.get_gradient_input_batch();
@@ -417,7 +417,7 @@ mod test_wavelet_discrete_layer {
             let linear_output = linear_layer.forward(&layer_input);
 
             layer_input.set_input_batch(linear_output.get_output_batch());
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
 
@@ -577,3 +577,4 @@ mod test_wavelet_discrete_layer {
         assert!(g.get_gradient_input_batch_rm_ref().is_some(), "Expected RM gradient from discrete wavelet backward");
     }
 }
+

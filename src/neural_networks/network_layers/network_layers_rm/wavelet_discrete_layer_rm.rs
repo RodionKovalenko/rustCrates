@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     neural_networks::{
         network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
-        network_layers::layer::LayerEnum,
+        network_layers::{default_layer::LayerInterface, layer::LayerEnum},
         utils::{
             dtype::{c_from_f64, c_to_f64, C, CF64},
             matrix::{transpose_rm, RowMajorMatrix},
@@ -305,6 +305,8 @@ impl DiscreteWaveletLayerRm {
         RowMajorMatrix::from_data(grad.rows, grad.cols, grad.data.into_iter().map(c_from_f64).collect())
     }
 
+    pub fn update_parameters(&mut self) {}
+
     fn compress_padding_mask(&self, padding_mask: &Vec<u32>) -> Vec<u32> {
         let input_f64: Vec<f64> = padding_mask.iter().map(|v| *v as f64).collect();
         let mut dwt_partial: Vec<f64> = input_f64.clone();
@@ -316,5 +318,17 @@ impl DiscreteWaveletLayerRm {
         }
 
         vec![1; dwt_partial.len()]
+    }
+}
+
+impl LayerInterface for DiscreteWaveletLayerRm {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        DiscreteWaveletLayerRm::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        DiscreteWaveletLayerRm::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        DiscreteWaveletLayerRm::update_parameters(self)
     }
 }

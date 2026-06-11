@@ -1,4 +1,4 @@
-#[cfg(test)]
+﻿#[cfg(test)]
 mod test_self_attention_layer_approx_with_loss {
 
     use num::Complex;
@@ -58,7 +58,7 @@ mod test_self_attention_layer_approx_with_loss {
         let target_token_id_batch = vec![vec![0u32, 0u32, 2u32], vec![2u32, 1u32, 2u32]];
 
         layer_input.set_input_batch(output_batch.clone());
-        let _output_softmax = softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+        let _output_softmax = softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
         println!(
             "\ninput batch in attention head dim : {:?}, {}, {}",
@@ -76,7 +76,7 @@ mod test_self_attention_layer_approx_with_loss {
         );
         println!("\noutput_batch attention head: {:?}", &output_batch);
 
-        let gradient_softmax: Gradient = softmax_layer.backward(&target_token_id_batch);
+        let gradient_softmax: Gradient = softmax_layer.backward_inner(&target_token_id_batch);
         let gradient = attention_head_layer.backward(&gradient_softmax.get_gradient_input_batch());
         let analytical_gradient_weights_v = gradient.get_gradient_weights_v();
         let analytical_gradient_weights_q = gradient.get_gradient_weights_q();
@@ -95,7 +95,7 @@ mod test_self_attention_layer_approx_with_loss {
             let attention_head_output = attention_head_layer.forward(&layer_input);
 
             layer_input.set_input_batch(attention_head_output.get_output_batch());
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -124,7 +124,7 @@ mod test_self_attention_layer_approx_with_loss {
             let attention_head_output = attention_head_layer.forward(&layer_input);
 
             layer_input.set_input_batch(attention_head_output.get_output_batch());
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -156,7 +156,7 @@ mod test_self_attention_layer_approx_with_loss {
             let attention_head_output = attention_head_layer.forward(&layer_input);
 
             layer_input.set_input_batch(attention_head_output.get_output_batch());
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -190,7 +190,7 @@ mod test_self_attention_layer_approx_with_loss {
             let attention_head_output = attention_head_layer.forward(&layer_input);
 
             layer_input.set_input_batch(attention_head_output.get_output_batch());
-            softmax_layer.forward(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+            softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
 
             let cross_entropy_loss_batch = softmax_layer.cross_entropy_loss_batch.as_ref().unwrap();
             let loss = cross_entropy_sum_batch(&cross_entropy_loss_batch, &target_token_id_batch);
@@ -214,3 +214,4 @@ mod test_self_attention_layer_approx_with_loss {
         //Input gradient ------------------------------------------------------------------------------------------- end
     }
 }
+

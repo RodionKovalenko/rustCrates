@@ -1,6 +1,6 @@
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
-    network_layers::layer::{ActivationType, LayerType},
+    network_layers::{default_layer::LayerInterface, layer::{ActivationType, LayerType}},
     utils::{
         activation::activate_output_complex,
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
@@ -535,4 +535,16 @@ fn sigmoid_complex(z: &C) -> C {
 
 fn tanh_complex(z: C) -> C {
     z.tanh()
+}
+
+impl LayerInterface for LayerRm {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        LayerRm::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        LayerRm::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        LayerRm::update_parameters(self)
+    }
 }

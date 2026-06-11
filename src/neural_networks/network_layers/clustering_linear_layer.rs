@@ -8,7 +8,7 @@ use crate::neural_networks::network_types::transformer::transformer_network::TOP
 use crate::neural_networks::utils::matrix::{normalize_bias, normalize_gradients};
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
-    network_layers::layer::LayerEnum,
+    network_layers::{default_layer::LayerInterface, layer::LayerEnum},
     network_types::transformer::transformer_updater::VERBOSE,
     optimization::k_means_clustering::{kmeans, query_candidates},
     utils::{
@@ -576,5 +576,17 @@ impl ClusteringLinearLayer {
         indices.sort_unstable();
 
         indices
+    }
+}
+
+impl LayerInterface for ClusteringLinearLayer {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        ClusteringLinearLayer::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        ClusteringLinearLayer::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        ClusteringLinearLayer::update_parameters(self)
     }
 }

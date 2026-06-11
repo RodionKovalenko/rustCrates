@@ -11,6 +11,7 @@ use crate::neural_networks::{
         layer_input_struct::{InputRepresentation, LayerInput},
         layer_output_struct::LayerOutput,
     },
+    network_layers::default_layer::LayerInterface,
     network_types::transformer::transformer_updater::VERBOSE,
     optimization::k_means_clustering::{kmeans, query_candidates},
     utils::{
@@ -537,5 +538,17 @@ impl SparseLinearLayerRm {
         let mut indices: Vec<usize> = indices_set.into_iter().collect();
         indices.sort_unstable();
         indices
+    }
+}
+
+impl LayerInterface for SparseLinearLayerRm {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        SparseLinearLayerRm::forward(self, layer_input)
+    }
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        SparseLinearLayerRm::backward(self, previous_gradient)
+    }
+    fn update_parameters(&mut self) {
+        SparseLinearLayerRm::update_parameters(self)
     }
 }
