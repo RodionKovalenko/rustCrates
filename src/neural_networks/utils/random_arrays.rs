@@ -1,5 +1,5 @@
 use num::Complex;
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 use crate::neural_networks::utils::dtype::{r, Real};
 

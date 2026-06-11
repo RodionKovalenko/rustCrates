@@ -1,7 +1,7 @@
 use bincode;
 use core::fmt::Debug;
 use num::Complex;
-use rand::Rng;
+use rand::{Rng, RngExt};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sled::Db;

@@ -1,5 +1,5 @@
 use num::Complex;
-use rand::rngs::ThreadRng;
+use rand::{RngExt, rngs::ThreadRng};
 use rand::Rng;
 use std::fmt::Debug;
 

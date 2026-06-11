@@ -1,5 +1,5 @@
 use num_traits::Zero;
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 use crate::neural_networks::utils::dtype::{r, C, Real, ZERO};
 

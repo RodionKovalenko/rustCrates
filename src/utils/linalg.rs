@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 use crate::neural_networks::utils::matrix::{multiply, transpose};
 

@@ -2,6 +2,7 @@ use std::process::Command;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
+use rand::RngExt;
 use webbrowser;
 use rand::Rng;
 

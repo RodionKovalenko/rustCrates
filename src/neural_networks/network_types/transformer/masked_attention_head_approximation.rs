@@ -1,5 +1,5 @@
 use num_complex::ComplexFloat;
-use rand::Rng;
+use rand::{Rng, RngExt};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 

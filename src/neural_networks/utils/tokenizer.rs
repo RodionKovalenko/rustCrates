@@ -55,7 +55,7 @@ pub fn create_custom_tokenizer() -> Result<Tokenizer, Box<dyn Error + Send + Syn
     let mut tokenizer = Tokenizer::from_file(&path).expect("Fehler bei Tokenizer");
 
     // Add special tokens
-    tokenizer.add_special_tokens(&[
+    tokenizer.add_special_tokens([
         // begin of sentence
         AddedToken::from("<bos>", true),
         // separator

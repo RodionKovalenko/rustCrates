@@ -2,7 +2,7 @@ use crate::tcp::tcp_stream_actions::{send_msg, read_tcp_stream};
 use std::net::{TcpListener, TcpStream};
 use std::io::{Error};
 use std::{thread};
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 // Handles a single client
 fn handle_client(stream: TcpStream) -> Result<(), Error> {
