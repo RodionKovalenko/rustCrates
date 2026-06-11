@@ -21,7 +21,7 @@ fn copy_recursive(from: &Path, to: &Path) -> io::Result<()> {
 
 fn main() {
     copy_dir("training_data", "training_data");
-    copy_dir("tests", "tests");
+    // copy_dir("tests", "tests");
 
     let openblas_path = env::var("OPENBLAS_DIR").unwrap_or_else(|_| r"C:\\Users\\jeti8\\OneDrive\\Desktop\\Rodion Projects\\OpenBLAS-0.3.29_x64".into());
     let openblas_lib = format!("{}\\lib", openblas_path);

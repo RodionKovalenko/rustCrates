@@ -171,8 +171,6 @@ impl NeuralNetwork {
 
                 // Linear owns the optimizer update; it needs access to embedding-side accumulated grads.
                 embedding_layer.set_tied_weights(table, tied.grad_by_token.clone());
-                linear_layer.set_tied_weights(tied.weights.clone(), tied.grad_by_token.clone());
-
                 self.tied_sparse_embeddings = Some(tied);
             }
             _ => {}

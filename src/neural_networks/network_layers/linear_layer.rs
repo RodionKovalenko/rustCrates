@@ -52,71 +52,8 @@ pub struct LinearLayer {
 }
 
 impl LinearLayer {
-    pub fn set_tied_weights(&mut self, weights: SharedF32Matrix, grad_by_token: Arc<RwLock<HashMap<usize, Vec<C>>>>) {
-        self.tied_weights = Some(weights);
-        self.tied_embedding_grad_by_token = Some(grad_by_token);
-        self.sync_from_tied_weights();
-    }
-
-    pub fn is_tied(&self) -> bool {
-        self.tied_weights.is_some() && self.tied_embedding_grad_by_token.is_some()
-    }
-
-    fn sync_from_tied_weights(&mut self) {
-        let Some(tied) = &self.tied_weights else {
-            return;
-        };
-
-        let table = tied.read(); // vocab x in_dim (real)
-        if table.is_empty() || table[0].is_empty() {
-            return;
-        }
-
-        let vocab = table.len();
-        let in_dim = table[0].len();
-        let mut transposed: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); vocab]; in_dim];
-
-        for v in 0..vocab {
-            if table[v].len() != in_dim {
-                return;
-            }
-            for i in 0..in_dim {
-                transposed[i][v] = C::new(r(table[v][i] as f64), ZERO);
-            }
-        }
-
-        self.weights = transposed;
-    }
-
-    fn write_back_to_tied_weights(&mut self) {
-        let Some(tied) = &self.tied_weights else {
-            return;
-        };
-
-        if self.weights.is_empty() || self.weights[0].is_empty() {
-            return;
-        }
-
-        let in_dim = self.weights.len();
-        let vocab = self.weights[0].len();
-        let mut table = tied.write();
-
-        if table.len() != vocab || table.first().map_or(true, |r| r.len() != in_dim) {
-            *table = vec![vec![0.0; in_dim]; vocab];
-        }
-
-        for i in 0..in_dim {
-            if self.weights[i].len() != vocab {
-                return;
-            }
-            for v in 0..vocab {
-                table[v][i] = self.weights[i][v].re as f32;
-            }
-        }
-    }
-
     pub fn new(learning_rate: f64, rows: usize, cols: usize, is_complex: bool) -> Self {
-        let mut weights: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); cols]; rows];
+        let mut weights: Vec<Vec<C>> = vec![vec![C::new(0.0, 0.0); cols]; rows];
         let bias: Vec<C> = vec![C::new(ONE, ZERO); cols];
 
         if is_complex {
@@ -149,21 +86,12 @@ impl LinearLayer {
     }
 
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
-        if self.tied_weights.is_some() {
-            self.sync_from_tied_weights();
-        }
-
         let input_batch: Vec<Vec<Vec<C>>> = input.get_input_batch();
-        if input_batch.is_empty() && input.get_input_batch_rm_ref().is_some_and(|rm| !rm.is_empty()) {
-            panic!("LinearLayer received RM input; use LinearLayerRm");
-        }
 
         self.time_step = input.get_time_step();
         self.batch_size = input.get_batch_size();
 
         self.input_batch = (!input_batch.is_empty()).then_some(input_batch.clone());
-
-        let output_indices: Vec<Vec<Vec<usize>>> = vec![];
 
         let output_batch: Vec<Vec<Vec<C>>> = input_batch
             .par_iter()
@@ -176,8 +104,6 @@ impl LinearLayer {
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(output_batch);
-        layer_output.set_output_indices(output_indices);
-        self.output_indices = Some(layer_output.get_output_indices());
         return layer_output;
     }
 
@@ -215,8 +141,6 @@ impl LinearLayer {
         }
 
         gradient.set_gradient_input_batch(gradient_input_batch);
-
-        gradient.set_gradient_input_batch_rm(vec![]);
         gradient.set_gradient_weight_batch(weight_gradients);
         gradient.set_gradient_bias_batch(bias_gradients);
         gradient.set_total_valid_tokens(total_valid_tokens);
@@ -302,10 +226,6 @@ impl LinearLayer {
         self.previous_gradient = Some(gradient.clone());
 
         self.gradient = None;
-
-        if self.tied_weights.is_some() {
-            self.write_back_to_tied_weights();
-        }
     }
 }
 

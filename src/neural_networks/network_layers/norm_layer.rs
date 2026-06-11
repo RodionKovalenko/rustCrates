@@ -82,7 +82,7 @@ impl NormalNormLayer {
         let len: Real = r(input.len() as f64);
         let mean: C = input.iter().sum::<C>() / len;
 
-        let variance: C = input.iter().map(|x| (*x - mean).powu(2)).sum::<C>() / len;
+        let variance: C = input.iter().map(|x| (*x - mean).powf(2.0)).sum::<C>() / len;
 
         let stddev: C = (variance + C::new(r(self.epsilon), ZERO)).sqrt();
 
@@ -100,7 +100,7 @@ impl NormalNormLayer {
     }
 
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        let input_batch_ref = layer_input.get_input_batch_ref();
+        let input_batch = layer_input.get_input_batch();
 
         let mut output_batch: Vec<Vec<Vec<C>>> = Vec::new();
         let mut normalized_batch: Vec<Vec<Vec<C>>> = Vec::new();
@@ -109,13 +109,7 @@ impl NormalNormLayer {
         let padding_mask_batch = layer_input.get_padding_mask_batch();
 
         self.batch_size = layer_input.get_batch_size();
-
-        let feature_dim = input_batch_ref
-            .expect("NormalNormLayer: input batch missing")
-            .get(0)
-            .and_then(|seq| seq.get(0))
-            .map(|row| row.len())
-            .unwrap_or(0);
+        let feature_dim = input_batch[0][0].len();
 
         assert!(
             self.gamma.len() == self.beta.len() && self.gamma.len() == feature_dim,
@@ -128,7 +122,6 @@ impl NormalNormLayer {
         // let input_batch_before = vec![vec![vec![Complex::new(0.0, 0.0); input_batch[0][0].len()]; input_batch[0].len()]; input_batch.len()];
         // input_batch = add_matrix_3d_c(&input_batch, &input_batch_before);
 
-        let input_batch = input_batch_ref.expect("NormalNormLayer: input batch missing");
         for (batch_idx, input) in input_batch.iter().enumerate() {
             let mut norm_seq = Vec::new();
             let mut mean_seq = Vec::new();
@@ -159,7 +152,7 @@ impl NormalNormLayer {
         }
 
         if layer_input.get_calculate_gradient() {
-            self.input_batch = Some(input_batch_ref.unwrap().to_vec());
+            self.input_batch = Some(input_batch);
             self.normalized_batch = Some(normalized_batch);
 
             self.mean_batch = Some(mean_batch);
