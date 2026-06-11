@@ -43,8 +43,12 @@ mod test_linear_layer {
         // Forward pass (initialize the input batch) [2][2][3]  * [3][4] => [2][2][4]
         let linear_output = linear_layer.forward(&layer_input);
 
+        println!("linear output: {:?}", linear_output.get_output_batch());
+
         layer_input.set_input_batch(linear_output.get_output_batch());
         softmax_layer.forward_inner(&layer_input, Some(padding_mask_batch.clone()), Some(target_token_id_batch.clone()));
+
+        println!("softmax output: {:?}",  softmax_layer.cross_entropy_loss_batch.as_ref().unwrap());
 
         let gradient_softmax: Gradient = softmax_layer.backward_inner(&target_token_id_batch);
         let gradient_linear: Gradient = linear_layer.backward(&gradient_softmax);
@@ -69,7 +73,7 @@ mod test_linear_layer {
             loss
         };
 
-        let epsilon = 1e-4;
+        let epsilon = 1e-8;
         let numerical_grad_linear: Vec<Vec<Complex<f64>>> = numerical_gradient_weights(&mut loss_fn, input_batch.clone(), &linear_weights.clone(), epsilon);
 
         // Check if gradient batch dimensions match expected shapes

@@ -51,23 +51,6 @@ impl SoftmaxLayer {
         self.time_step = layer_input.get_time_step();
         self.batch_size = layer_input.get_batch_size();
 
-        if !layer_input.has_non_empty_input_batch() {
-            if layer_input.has_non_empty_input_batch_rm() {
-                panic!("SoftmaxLayer (Vec) received RM-only input; use SoftmaxLayerRm");
-            }
-
-            self.padding_mask_batch = Some(vec![]);
-            self.softmax_output_batch = Some(vec![]);
-            self.cross_entropy_loss_batch = Some(vec![]);
-            self.input_batch = Some(vec![]);
-
-            let mut gradient = Gradient::new_default();
-            gradient.set_gradient_input_batch(vec![]);
-            gradient.set_total_valid_tokens(0);
-            self.gradient = Some(gradient);
-            return vec![];
-        }
-
         let input_batch = layer_input.get_input_batch();
 
         let batch_size = input_batch.len();
