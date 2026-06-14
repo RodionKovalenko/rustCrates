@@ -1,6 +1,5 @@
 use num::Complex;
 use rand::{RngExt, rngs::ThreadRng};
-use rand::Rng;
 use std::fmt::Debug;
 
 use crate::neural_networks::utils::dtype::{r, C};

@@ -57,7 +57,7 @@ pub fn kmeans<T: Float + FromPrimitive + Debug + Send + Sync>(
 
     // init centroids
     let mut rng = rand::rng();
-    let mut centroids: Vec<Vec<T>> = data.as_slice().choose_multiple(&mut rng, k).map(|v| v.clone()).collect();
+    let mut centroids: Vec<Vec<T>> = data.as_slice().sample(&mut rng, k).map(|v| v.clone()).collect();
 
     let mut assignments = vec![0usize; n];
     let mut old_centroids = centroids.clone();

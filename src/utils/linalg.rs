@@ -1,4 +1,4 @@
-use rand::{Rng, RngExt};
+use rand::RngExt;
 
 use crate::neural_networks::utils::matrix::{multiply, transpose};
 
@@ -18,9 +18,7 @@ pub fn is_identity_matrix(matrix: &Vec<Vec<f64>>, tolerance: f64) -> bool {
     let size = matrix.len();
     for i in 0..size {
         for j in 0..size {
-            if (i == j && (matrix[i][j] - 1.0).abs() > tolerance)
-                || (i != j && matrix[i][j].abs() > tolerance)
-            {
+            if (i == j && (matrix[i][j] - 1.0).abs() > tolerance) || (i != j && matrix[i][j].abs() > tolerance) {
                 return false;
             }
         }

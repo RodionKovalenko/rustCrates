@@ -1,7 +1,7 @@
 use num_traits::Zero;
-use rand::{Rng, RngExt};
+use rand::RngExt;
 
-use crate::neural_networks::utils::dtype::{r, C, Real, ZERO};
+use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
 
 /// Normalize complex vector; if norm is tiny, reinitialize randomly (better than returning same vector).
 pub fn normalize(v: &Vec<C>) -> Vec<C> {
@@ -9,16 +9,9 @@ pub fn normalize(v: &Vec<C>) -> Vec<C> {
     if norm < r(1e-15) {
         // return a random normalized vector of the same size
         let mut rng = rand::rng();
-        let mut random_vec: Vec<C> = (0..v.len())
-            .map(|_| C::new(r(rng.random_range(-1.0f64..1.0f64)), r(rng.random_range(-1.0f64..1.0f64))))
-            .collect();
+        let mut random_vec: Vec<C> = (0..v.len()).map(|_| C::new(r(rng.random_range(-1.0f64..1.0f64)), r(rng.random_range(-1.0f64..1.0f64)))).collect();
         // normalize before returning
-        let norm_r: Real = random_vec
-            .iter()
-            .map(|x| x.norm_sqr())
-            .sum::<Real>()
-            .sqrt()
-            .max(r(1e-12));
+        let norm_r: Real = random_vec.iter().map(|x| x.norm_sqr()).sum::<Real>().sqrt().max(r(1e-12));
         random_vec.iter_mut().for_each(|x| *x /= C::new(norm_r, ZERO));
         random_vec
     } else {
@@ -95,9 +88,7 @@ pub fn power_iteration_svd(m: &Vec<Vec<C>>, max_iter: usize, tol: Real) -> (Real
     let mut rng = rand::rng();
 
     // random v (length p)
-    let mut v: Vec<C> = (0..p)
-        .map(|_| C::new(r(rng.random_range(-1.0f64..1.0f64)), r(rng.random_range(-1.0f64..1.0f64))))
-        .collect();
+    let mut v: Vec<C> = (0..p).map(|_| C::new(r(rng.random_range(-1.0f64..1.0f64)), r(rng.random_range(-1.0f64..1.0f64)))).collect();
     v = normalize(&v);
 
     let mut u = vec![C::zero(); n];
@@ -121,11 +112,7 @@ pub fn power_iteration_svd(m: &Vec<Vec<C>>, max_iter: usize, tol: Real) -> (Real
         let s_val: Real = s_complex.re.abs(); // ensure non-negative
 
         // convergence check on v
-        let diff: Real = v_new
-            .iter()
-            .zip(v.iter())
-            .map(|(a, b)| (*a - *b).norm())
-            .sum();
+        let diff: Real = v_new.iter().zip(v.iter()).map(|(a, b)| (*a - *b).norm()).sum();
 
         v = v_new;
         u = u_new;

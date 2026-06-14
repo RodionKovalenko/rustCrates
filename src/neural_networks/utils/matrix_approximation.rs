@@ -1,7 +1,7 @@
 use std::f64::consts::PI;
 
 use num::Complex;
-use rand::{Rng, RngExt};
+use rand::RngExt;
 use rand_distr::{Distribution, Normal};
 
 /// Computes the Hermitian inner product a^H b = sum conj(a_i) * b_i

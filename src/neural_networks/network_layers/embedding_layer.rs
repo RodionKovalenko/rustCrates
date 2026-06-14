@@ -1,7 +1,7 @@
 use bincode;
 use core::fmt::Debug;
 use num::Complex;
-use rand::{Rng, RngExt};
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use sled::Db;
 use std::collections::HashMap;

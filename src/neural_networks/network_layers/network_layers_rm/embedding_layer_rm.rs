@@ -1,7 +1,7 @@
 use bincode;
 use core::fmt::Debug;
 use num::Complex;
-use rand::{Rng, RngExt};
+use rand::RngExt;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sled::Db;
@@ -15,7 +15,7 @@ use crate::database::sled_db::{get_db_embedding, get_storage_path_embedding_db};
 use crate::neural_networks::network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput};
 use crate::neural_networks::network_layers::default_layer::LayerInterface;
 use crate::neural_networks::network_layers::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
-use crate::neural_networks::utils::dtype::{c_from_f64, c_to_f64, r, C, ONE, Real, ZERO};
+use crate::neural_networks::utils::dtype::{c_from_f64, c_to_f64, r, Real, C, ONE, ZERO};
 use crate::neural_networks::utils::matrix::{is_nan_or_inf, RowMajorMatrix};
 use crate::neural_networks::utils::shared_f32_matrix::SharedF32Matrix;
 
@@ -278,11 +278,7 @@ impl EmbeddingLayerRm {
             .expect("EmbeddingLayerRm::update_parameters expects RM gradients");
 
         if self.is_tied() {
-            let acc = self
-                .tied_grad_by_token
-                .as_ref()
-                .expect("tied accumulator missing")
-                .clone();
+            let acc = self.tied_grad_by_token.as_ref().expect("tied accumulator missing").clone();
 
             let mut acc_lock = acc.write().expect("tied grad accumulator poisoned");
             for (batch_idx, token_ids) in token_id_batches.iter().enumerate() {
@@ -307,11 +303,7 @@ impl EmbeddingLayerRm {
 
         let db: &Db = get_db_embedding();
 
-        let mut batch_size: Real = if self.batch_size > 0 {
-            r(self.batch_size as f64)
-        } else {
-            r(grads_rm.len() as f64)
-        };
+        let mut batch_size: Real = if self.batch_size > 0 { r(self.batch_size as f64) } else { r(grads_rm.len() as f64) };
         if batch_size <= ZERO {
             batch_size = ONE;
         }
