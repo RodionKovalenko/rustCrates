@@ -141,7 +141,12 @@ impl NeuralNetwork {
             (LayerEnum::Embedding(embedding_layer), LayerEnum::Linear(linear_layer))
             | (LayerEnum::Linear(linear_layer), LayerEnum::Embedding(embedding_layer)) => {
                 // Linear weights are stored as (in_dim x out_dim). For LM projection, out_dim is vocab.
-                // Build a dense table in (vocab x in_dim) layout for EmbeddingLayer.
+                // Build a dense complex table in (vocab x in_dim) layout for EmbeddingLayer.
+                //
+                // The tie is fully complex: both the real and imaginary parts are shared. Linear keeps the
+                // canonical complex weights and owns the Adam-W update; the embedding reads this snapshot
+                // (refreshed every step, since this runs at the end of each update) and accumulates
+                // per-token complex gradients into the shared accumulator that Linear consumes.
                 if linear_layer.weights.is_empty() || linear_layer.weights[0].is_empty() {
                     return;
                 }
@@ -155,23 +160,18 @@ impl NeuralNetwork {
                         return;
                     }
                     for v in 0..vocab {
+                        // Full complex copy: preserve both real and imaginary parts.
                         table[v][i] = linear_layer.weights[i][v];
                     }
                 }
 
-                let mut shared_table: Vec<Vec<f32>> = vec![vec![0.0; in_dim]; vocab];
-                for v in 0..vocab {
-                    for i in 0..in_dim {
-                        shared_table[v][i] = table[v][i].re as f32;
-                    }
-                }
+                // The embedding reads the tied weights via this snapshot (refreshed every step from
+                // Linear.weights). set_tied_weights still requires a per-token gradient accumulator
+                // argument, so we allocate one here.
+                let grad_by_token: std::sync::Arc<std::sync::RwLock<std::collections::HashMap<usize, Vec<C>>>> =
+                    std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new()));
 
-                let shared = crate::neural_networks::utils::shared_f32_matrix::SharedF32Matrix::new(shared_table);
-                let tied = TiedSparseEmbeddings::new(shared.clone());
-
-                // Linear owns the optimizer update; it needs access to embedding-side accumulated grads.
-                embedding_layer.set_tied_weights(table, tied.grad_by_token.clone());
-                self.tied_sparse_embeddings = Some(tied);
+                embedding_layer.set_tied_weights(table, grad_by_token);
             }
             _ => {}
         }

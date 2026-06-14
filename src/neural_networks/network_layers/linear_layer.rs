@@ -1,8 +1,6 @@
 use core::fmt::Debug;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
 
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
@@ -11,7 +9,6 @@ use crate::neural_networks::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         dtype::{r, C, ONE, ZERO},
         matrix::{add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, normalize_bias, normalize_gradients},
-        shared_f32_matrix::SharedF32Matrix,
         weights_initializer::{initialize_weights_complex, initialize_weights_complex_only_real},
     },
 };
@@ -29,11 +26,6 @@ pub struct LinearLayer {
     pub previous_gradient: Option<Gradient>,
 
     pub is_complex: bool,
-
-    #[serde(skip)]
-    pub tied_weights: Option<SharedF32Matrix>,
-    #[serde(skip)]
-    pub tied_embedding_grad_by_token: Option<Arc<RwLock<HashMap<usize, Vec<C>>>>>,
 
     #[serde(skip)]
     pub gradients: Vec<Vec<C>>,
@@ -79,8 +71,6 @@ impl LinearLayer {
             global_norm: 0.0,
             max_norm: 0.0,
             is_complex,
-            tied_weights: None,
-            tied_embedding_grad_by_token: None,
             output_indices: None,
         }
     }
@@ -162,24 +152,6 @@ impl LinearLayer {
 
         normalize_gradients(&mut weight_gradients);
         normalize_bias(&mut bias_gradients);
-
-        // Merge embedding-side token gradients when tied.
-        // Accumulator layout: token(vocab) -> [embedding_dim], while linear weights are [embedding_dim][vocab].
-        if let Some(acc) = &self.tied_embedding_grad_by_token {
-            let mut acc_lock = acc.write().expect("tied grad accumulator poisoned");
-            let in_dim = weight_gradients.len();
-            let vocab = weight_gradients.first().map(|r| r.len()).unwrap_or(0);
-
-            for (token_idx, grad_vec) in acc_lock.drain() {
-                if token_idx >= vocab {
-                    continue;
-                }
-                let n = in_dim.min(grad_vec.len());
-                for i in 0..n {
-                    weight_gradients[i][token_idx] += grad_vec[i];
-                }
-            }
-        }
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
