@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(cd c:\\\\Users\\\\rkovalenko\\\\Projects\\\\rustCrates; for \\($i=1; $i -le 5; $i++\\) { $result = cargo test --features dtype-f64 test_softmax_linear_backward 2>&1 | Select-String \"test result:\" ; Write-Host \"Run $i`: $\\($result[0]\\)\" })"
+    ]
+  }
+}

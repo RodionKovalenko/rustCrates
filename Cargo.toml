@@ -63,8 +63,7 @@ cudarc = { version = "0.18.2", optional = true, features = ["cublas"] }
 cublas-sys = { version = "0.1", optional = true }
 cc = "1.2.53"
 pyo3 = { version = "0.27.2", features = ["extension-module", "abi3-py37"] }
-ndarray = { version = "0.17.2", features = ["blas"] }
-openblas-src = { version = "0.10.14", features = ["system"] }
+ndarray = { version = "0.17.2" }
 
 [package.metadata.maturin]
 name = "neural_networks"

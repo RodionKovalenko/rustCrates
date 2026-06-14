@@ -1,0 +1,2 @@
+[env]
+OPENBLAS_NUM_THREADS = "1"

@@ -7,7 +7,6 @@ use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use serde::{Deserialize, Serialize};
 // use std::ffi::c_void;
-use std::ffi::c_char;
 use std::fmt::Debug;
 use std::ops::Div;
 use std::ops::{Add, Mul, Sub};
@@ -36,43 +35,6 @@ pub static GPU_MATMUL: Lazy<Mutex<Option<GpuMatmul>>> = Lazy::new(|| {
     }
 });
 
-#[cfg(feature = "dtype-f64")]
-extern "C" {
-    fn zgemm_(
-        transa: *const c_char,
-        transb: *const c_char,
-        m: *const i64,
-        n: *const i64,
-        k: *const i64,
-        alpha: *const Complex<f64>,
-        a: *const Complex<f64>,
-        lda: *const i64,
-        b: *const Complex<f64>,
-        ldb: *const i64,
-        beta: *const Complex<f64>,
-        c: *mut Complex<f64>,
-        ldc: *const i64,
-    );
-}
-
-#[cfg(not(feature = "dtype-f64"))]
-extern "C" {
-    fn cgemm_(
-        transa: *const c_char,
-        transb: *const c_char,
-        m: *const i64,
-        n: *const i64,
-        k: *const i64,
-        alpha: *const Complex<f32>,
-        a: *const Complex<f32>,
-        lda: *const i64,
-        b: *const Complex<f32>,
-        ldb: *const i64,
-        beta: *const Complex<f32>,
-        c: *mut Complex<f32>,
-        ldc: *const i64,
-    );
-}
 
 /// Contiguous row-major matrix storage.
 ///
@@ -326,66 +288,15 @@ fn multiply_complex_cpu_rm(a: &[C], b: &[C], m: usize, k: usize, n: usize) -> Ve
     assert_eq!(a.len(), m * k);
     assert_eq!(b.len(), k * n);
 
-    // Row-major BLAS trick (matches the GPU trick):
-    // C(m×n) row-major  ==  (Cᵀ)(n×m) column-major.
-    // Compute Cᵀ = Bᵀ * Aᵀ in column-major by swapping operands.
-    let m_i64 = m as i64;
-    let k_i64 = k as i64;
-    let n_i64 = n as i64;
-
     let mut c = vec![C::new(ZERO, ZERO); m * n];
-
-    let transa = b'N';
-    let transb = b'N';
-    let alpha = C::new(r(1.0), ZERO);
-    let beta = C::new(ZERO, ZERO);
-
-    // zgemm dims for Cᵀ (n×m) = Bᵀ (n×k) * Aᵀ (k×m)
-    let gemm_m = n_i64;
-    let gemm_n = m_i64;
-    let gemm_k = k_i64;
-    let lda = n_i64;
-    let ldb = k_i64;
-    let ldc = n_i64;
-
-    #[cfg(feature = "dtype-f64")]
-    unsafe {
-        zgemm_(
-            &transa as *const u8 as *const c_char,
-            &transb as *const u8 as *const c_char,
-            &gemm_m,
-            &gemm_n,
-            &gemm_k,
-            (&alpha as *const Complex<Real>).cast(),
-            b.as_ptr().cast(),
-            &lda,
-            a.as_ptr().cast(),
-            &ldb,
-            (&beta as *const Complex<Real>).cast(),
-            c.as_mut_ptr().cast(),
-            &ldc,
-        );
+    for i in 0..m {
+        for p in 0..k {
+            let aip = a[i * k + p];
+            for j in 0..n {
+                c[i * n + j] = c[i * n + j] + aip * b[p * n + j];
+            }
+        }
     }
-
-    #[cfg(not(feature = "dtype-f64"))]
-    unsafe {
-        cgemm_(
-            &transa as *const u8 as *const c_char,
-            &transb as *const u8 as *const c_char,
-            &gemm_m,
-            &gemm_n,
-            &gemm_k,
-            (&alpha as *const Complex<Real>).cast(),
-            b.as_ptr().cast(),
-            &lda,
-            a.as_ptr().cast(),
-            &ldb,
-            (&beta as *const Complex<Real>).cast(),
-            c.as_mut_ptr().cast(),
-            &ldc,
-        );
-    }
-
     c
 }
 
