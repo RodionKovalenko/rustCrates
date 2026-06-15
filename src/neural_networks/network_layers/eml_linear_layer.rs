@@ -55,6 +55,16 @@ const LOGIT_SCALE: f64 = 16.0;
 /// Global L2-norm cap applied to the (per-token-averaged) gradient before the AdamW step.
 /// Cheap insurance against acute gradient transients.
 const MAX_GRAD_NORM: f64 = 1.0;
+/// Clamp band for the trainable temperatures. The effective softmax scale is
+/// `LOGIT_SCALE * alpha`, so leaving `alpha` unconstrained lets AdamW push it past the
+/// validated sweet spot: at ~1.5x (effective `16*1.5 = 24`) the minimum turns cliff-prone
+/// and the synchronized loss spikes return — exactly the regime the header comment warns
+/// about. Capping `alpha <= 1.0` keeps the effective scale `<= LOGIT_SCALE`; the floor
+/// stops it collapsing. `beta` is the weaker repulsion knob, kept in a bounded positive band.
+const ALPHA_MIN: f64 = 0.25;
+const ALPHA_MAX: f64 = 1.0;
+const BETA_MIN: f64 = 0.0;
+const BETA_MAX: f64 = 2.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmlLinearLayer {
@@ -607,6 +617,15 @@ impl EmlLinearLayer {
         for idx in 0..4 {
             adam_scalar(scalars[idx], grad_scalars[idx], &mut opt.m_s[idx], &mut opt.v_s[idx], lr, bc1, bc2);
         }
+
+        // Clamp the temperatures into the cliff-free band (see ALPHA_*/BETA_* docs). This is
+        // the primary fix for the synchronized loss spikes: it caps the effective softmax
+        // scale `LOGIT_SCALE * alpha` so a confident-phase AdamW step cannot over-sharpen the
+        // softmax into the cliff regime that flips many tokens' argmax at once.
+        self.alpha_c = self.alpha_c.clamp(r(ALPHA_MIN), r(ALPHA_MAX));
+        self.alpha_w = self.alpha_w.clamp(r(ALPHA_MIN), r(ALPHA_MAX));
+        self.beta_c = self.beta_c.clamp(r(BETA_MIN), r(BETA_MAX));
+        self.beta_w = self.beta_w.clamp(r(BETA_MIN), r(BETA_MAX));
 
         self.gradient = None;
     }

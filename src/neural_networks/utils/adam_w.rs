@@ -3,7 +3,7 @@ use num_traits::Float;
 
 use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
 
-pub static B_1: f64 = 0.9;
+pub static B_1: f64 = 0.85;
 pub static B_2: f64 = 0.999;
 pub static EPSILON: f64 = 1e-8;
 pub static WEIGHT_DECAY: f64 = 0.001;
@@ -214,14 +214,24 @@ pub fn calculate_adam_w_bias(bias: &mut Vec<C>, gradient: &Vec<C>, prev_m: &mut 
 //     }
 // }
 
+/// Fraction of `base_lr` kept as a floor once cosine decay completes, so the LR
+/// never collapses to 0 (which would freeze training) and never ramps back up.
+pub static MIN_LR_RATIO: f64 = 0.05;
+
 pub fn get_current_learning_rate(base_lr: f64, step: usize) -> f64 {
     if step < WARMUP_STEPS {
         // Linear warmup
         base_lr * (step as f64) / (WARMUP_STEPS as f64)
     } else {
         let total_steps = 2000;
-        let progress = (step - WARMUP_STEPS) as f64 / (total_steps - WARMUP_STEPS) as f64;
-        base_lr * 0.5 * (1.0 + (std::f64::consts::PI * progress).cos())
+        // Clamp progress to [0, 1] so the cosine monotonically decays and then HOLDS
+        // at the floor. Without the clamp, step > total_steps makes cos() climb back
+        // toward +1, ramping the LR back up to base_lr and re-introducing oscillation.
+        let raw = (step - WARMUP_STEPS) as f64 / (total_steps - WARMUP_STEPS) as f64;
+        let progress = raw.clamp(0.0, 1.0);
+        let cosine = 0.5 * (1.0 + (std::f64::consts::PI * progress).cos());
+        // Decay from base_lr down to MIN_LR_RATIO * base_lr.
+        base_lr * (MIN_LR_RATIO + (1.0 - MIN_LR_RATIO) * cosine)
     }
 }
 

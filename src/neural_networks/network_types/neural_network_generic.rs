@@ -229,7 +229,10 @@ pub fn get_from_db(filename: &str) -> Result<NeuralNetwork, String> {
 }
 
 pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64) {
-    // transformer.learning_rate = learning_rate;
+    // Keep the network-level base LR in sync with the per-layer base LR so there is a
+    // single source of truth. The warmup+cosine schedule is applied on top of this
+    // base inside the AdamW step.
+    transformer.learning_rate = learning_rate;
     for layer in transformer.layers.iter_mut() {
         match layer {
             LayerEnum::AdaptiveAvgPool1d(_adaptive_avg_pooling_layer) => {

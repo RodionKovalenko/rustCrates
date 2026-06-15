@@ -117,11 +117,9 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
     let mut total_loss: C;
     let loss_threshold: Real = r(0.001);
     let now = Instant::now();
-    let mut previous_last_losses: Vec<Real> = Vec::new();
     let mut total_loss_exp_ma: Real = ZERO;
     let alpha: Real = r(0.2);
     let mut layer_input = LayerInput::new_default();
-    let mut epoch_processed = 0;
     let mut timestep = 1;
     let mut total_valid_target_tokens_epoch: usize;
 
@@ -227,7 +225,10 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
                 println!("TOTAL time elapsed for FORWARD AND BACKWARD pass in seconds: {}", seconds.to_string().green().bold());
             }
 
-            transformer_network.update_step_lr_scheduler(epoch, 500, 0.9);
+            // NOTE: learning-rate scheduling is owned entirely by the warmup+cosine
+            // schedule inside the AdamW step (see `get_current_learning_rate`). Do not
+            // add competing schedulers here — stacking several LR mutators was a source
+            // of the erratic effective LR and loss oscillation.
         }
 
         if epoch % 10 == 0 {
@@ -287,36 +288,6 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
             }
         }
         // ============================================================
-
-        if previous_last_losses.len() <= 4 {
-            previous_last_losses.push(total_loss.re);
-        }
-        let len = previous_last_losses.len();
-        previous_last_losses[epoch % len] = total_loss.re;
-
-        if previous_last_losses.len() >= 4 {
-            let end_ind = epoch % previous_last_losses.len();
-
-            // Only continue if we have enough range to compute a start index safely
-            if end_ind >= 4 {
-                let start_ind = end_ind - 4;
-                let mut loss_increasing_count = 0;
-
-                for i in start_ind..end_ind - 1 {
-                    if previous_last_losses[i] < previous_last_losses[i + 1] {
-                        loss_increasing_count += 1;
-                    }
-                }
-
-                if loss_increasing_count > 3 && epoch_processed != epoch {
-                    println!("loss is increasing too much, reducing learning rate");
-                    transformer_network.decay_learning_rate(0.5); // e.g., reduce LR by half
-                                                                  // reset_previous_gradient(transformer_network);
-
-                    epoch_processed = epoch;
-                }
-            }
-        }
 
         if total_valid_target_tokens_epoch == 0 {
             println!("WARNING: epoch {} had 0 valid target tokens across all batches; skipping early-stop on loss threshold.", epoch);
