@@ -7,7 +7,7 @@ use crate::neural_networks::{
     network_layers::{default_layer::LayerInterface, layer::LayerEnum},
     utils::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
-        dtype::{r, C, ONE, ZERO},
+        dtype::{r, C, ZERO},
         matrix::{add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex, normalize_bias, normalize_gradients},
         weights_initializer::{initialize_weights_complex, initialize_weights_complex_only_real},
     },
@@ -46,7 +46,7 @@ pub struct LinearLayer {
 impl LinearLayer {
     pub fn new(learning_rate: f64, rows: usize, cols: usize, is_complex: bool) -> Self {
         let mut weights: Vec<Vec<C>> = vec![vec![C::new(0.0, 0.0); cols]; rows];
-        let bias: Vec<C> = vec![C::new(ONE, ZERO); cols];
+        let bias: Vec<C> = vec![C::new(0.001, ZERO); cols];
 
         if is_complex {
             initialize_weights_complex(rows, cols, &mut weights);

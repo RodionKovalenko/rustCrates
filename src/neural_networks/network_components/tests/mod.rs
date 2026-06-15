@@ -50,3 +50,7 @@ pub mod test_layer_input_ragged;
 pub mod test_embedding_missing_token;
 #[cfg(feature = "dtype-f64")]
 pub mod test_embedding_layer;
+#[cfg(feature = "dtype-f64")]
+pub mod test_adaptive_linear_layer;
+#[cfg(feature = "dtype-f64")]
+pub mod test_eml_linear_layer;

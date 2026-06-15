@@ -48,7 +48,7 @@ impl LayerRm {
         let mut weights_vec: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); cols]; rows];
         initialize_weights_complex(rows, cols, &mut weights_vec);
         let weights = RowMajorMatrix::from_rows(&weights_vec);
-        let bias: Vec<C> = vec![C::new(ONE, ZERO); cols];
+        let bias: Vec<C> = vec![C::new(0.001, ZERO); cols];
 
         Self {
             weights,

@@ -1,7 +1,7 @@
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     network_layers::{
-        adaptive_linear_layer::AdaptiveLinearLayer, adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, clustering_linear_layer::ClusteringLinearLayer, complex_to_linear_layer::ComplexToLinearLayer, feedforward_layer::FeedForwardLayer, multi_linear_layer::MultiLinearLayer, network_layers_rm::{
+        adaptive_linear_layer::AdaptiveLinearLayer, adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, clustering_linear_layer::ClusteringLinearLayer, complex_to_linear_layer::ComplexToLinearLayer, eml_linear_layer::EmlLinearLayer, feedforward_layer::FeedForwardLayer, multi_linear_layer::MultiLinearLayer, network_layers_rm::{
             complex_to_linear_layer_rm::ComplexToLinearLayerRm, embedding_layer_rm::EmbeddingLayerRm, feedforward_layer_rm::FeedForwardLayerRm, layer_rm::LayerRm, linear_layer_rm::LinearLayerRm,
             sparse_linear_layer_rm::SparseLinearLayerRm, wavelet_complex_layer_rm::ComplexWaveletLayerRm, wavelet_discrete_layer_rm::DiscreteWaveletLayerRm,
         }, wavelet_complex_layer::ComplexWaveletLayer, wavelet_discrete_layer::DiscreteWaveletLayer
@@ -25,7 +25,7 @@ use core::fmt::Debug;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::utils::dtype::{r, Real, C, ONE, ZERO};
+use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
 
 use super::{
     add_rms_norm_layer::RMSNormLayer,
@@ -115,6 +115,7 @@ pub enum LayerEnum {
     LinearRm(Box<LinearLayerRm>),
     ClusteringLinear(Box<ClusteringLinearLayer>),
     AdaptiveLinear(Box<AdaptiveLinearLayer>),
+    Eml(Box<EmlLinearLayer>),
     SparseLinearRm(Box<SparseLinearLayerRm>),
     MultiLinear(Box<MultiLinearLayer>),
     DiscreteWavelet(Box<DiscreteWaveletLayer>),
@@ -402,7 +403,7 @@ impl Layer {
 impl Layer {
     pub fn default(rows: usize, cols: usize, learning_rate: &f64) -> Self {
         let mut weights: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); cols]; rows];
-        let bias: Vec<C> = vec![C::new(ONE, ZERO); cols];
+        let bias: Vec<C> = vec![C::new(0.001, ZERO); cols];
 
         initialize_weights_complex(rows, cols, &mut weights); // 2D matrix
 

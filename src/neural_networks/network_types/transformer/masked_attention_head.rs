@@ -95,9 +95,9 @@ impl MaskedAttentionHead {
         let ctl_k = ComplexToLinearLayer::new(cols, cols, learning_rate);
         let linear_v = LinearLayer::new(learning_rate, cols, cols, true);
 
-        let bias_q: Vec<C> = vec![C::new(ONE, ZERO); cols];
-        let bias_k: Vec<C> = vec![C::new(ONE, ZERO); cols];
-        let bias_v: Vec<C> = vec![C::new(ONE, ZERO); cols];
+        let bias_q: Vec<C> = vec![C::new(0.001, ZERO); cols];
+        let bias_k: Vec<C> = vec![C::new(0.001, ZERO); cols];
+        let bias_v: Vec<C> = vec![C::new(0.001, ZERO); cols];
 
         let positional_encoding_layer = PositionalEncodingLayer::new(cols);
         let norm_layer_q = NormalNormLayer::new(cols, 1e-8, learning_rate);

@@ -87,7 +87,7 @@ impl MaskedAttentionHeadApproximation {
         initialize_weights_complex(rows, cols, &mut weights_v);
         let mut bias_pos = vec![vec![C::new(ZERO, ZERO); 5]; 5];
         initialize_weights_complex(5, 5, &mut bias_pos);
-        let bias_q = vec![C::new(ONE, ZERO); cols];
+        let bias_q = vec![C::new(0.001, ZERO); cols];
         let bias_k = bias_q.clone();
         let bias_v = bias_q.clone();
         let w = (0..cols).map(|_| (0..cols).map(|_| C::new(rng.random::<Real>(), ZERO)).collect()).collect();

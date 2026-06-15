@@ -63,6 +63,24 @@ pub struct AdaptiveLinearLayer {
     cluster_word_weight_gradients: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
     cluster_word_bias_gradients: Option<Vec<Vec<C>>>,
+
+    // Sparse AdamW moment state for the cluster word table, one slab per cluster,
+    // shaped like `cluster_word_weights` / `cluster_word_bias`. Allocated lazily on the
+    // first update and reset on reload (skipped during serialization to keep saved models
+    // small — the routing path persists its state via `previous_gradient`, but the word
+    // table is vocab-sized so persisting its moments would bloat the model file).
+    #[serde(skip)]
+    word_w_prev_m: Vec<Vec<Vec<C>>>,
+    #[serde(skip)]
+    word_w_prev_v: Vec<Vec<Vec<C>>>,
+    #[serde(skip)]
+    word_w_prev_v_hat: Vec<Vec<Vec<C>>>,
+    #[serde(skip)]
+    word_b_prev_m: Vec<Vec<C>>,
+    #[serde(skip)]
+    word_b_prev_v: Vec<Vec<C>>,
+    #[serde(skip)]
+    word_b_prev_v_hat: Vec<Vec<C>>,
 }
 
 impl AdaptiveLinearLayer {
@@ -133,7 +151,31 @@ impl AdaptiveLinearLayer {
             cross_entropy_loss_batch: None,
             cluster_word_weight_gradients: None,
             cluster_word_bias_gradients: None,
+            word_w_prev_m: vec![],
+            word_w_prev_v: vec![],
+            word_w_prev_v_hat: vec![],
+            word_b_prev_m: vec![],
+            word_b_prev_v: vec![],
+            word_b_prev_v_hat: vec![],
         }
+    }
+
+    /// Lazily allocate the AdamW moment buffers for the cluster word table so they mirror
+    /// the current shape of `cluster_word_weights` / `cluster_word_bias`. No-op once sized.
+    fn ensure_word_adam_state(&mut self) {
+        if self.word_w_prev_m.len() == self.cluster_word_weights.len() && self.word_b_prev_m.len() == self.cluster_word_bias.len() {
+            return;
+        }
+        self.word_w_prev_m = self
+            .cluster_word_weights
+            .iter()
+            .map(|c| vec![vec![C::new(ZERO, ZERO); c.first().map(|row| row.len()).unwrap_or(0)]; c.len()])
+            .collect();
+        self.word_w_prev_v = self.word_w_prev_m.clone();
+        self.word_w_prev_v_hat = self.word_w_prev_m.clone();
+        self.word_b_prev_m = self.cluster_word_bias.iter().map(|c| vec![C::new(ZERO, ZERO); c.len()]).collect();
+        self.word_b_prev_v = self.word_b_prev_m.clone();
+        self.word_b_prev_v_hat = self.word_b_prev_m.clone();
     }
 
     /// Forward pass.
@@ -230,14 +272,16 @@ impl AdaptiveLinearLayer {
                                     logit += input_row[d].re * r(w as f64);
                                 }
                             }
-                            // Only add routing score during training: at inference the routing
-                            // selects which tail-cluster tokens to *include* as candidates, but
-                            // should not bias the final logit comparison between head and tail
-                            // tokens. During training the correct cluster is forced, so the
-                            // routing score is part of the supervised signal; at inference the
-                            // cluster is predicted and adding the score would unfairly boost
-                            // tail tokens over head-cluster answers.
-                            if cluster > 0 && is_training {
+                            // Add the routing score to tail-token logits in BOTH training and
+                            // inference. It is the cluster-probability term of the hierarchical
+                            // softmax (score ≈ log P(cluster) + log P(word|cluster)), so it must
+                            // be part of the logit the model is trained on AND the logit used at
+                            // prediction time. Adding it only during training made the two paths
+                            // optimise different scoring functions, so the argmax flipped between
+                            // train and inference (the trained ranking was discarded at predict
+                            // time). The learned routing bias self-calibrates the head/tail
+                            // balance, so there is no "unfair boost".
+                            if cluster > 0 {
                                 let rc = cluster - 1;
                                 if let Some(rw) = routing_weights.get(rc) {
                                     let rb = r(routing_bias.get(rc).copied().unwrap_or(0.0) as f64);
@@ -591,38 +635,61 @@ impl AdaptiveLinearLayer {
             &all_routing_indices,
         );
 
-        // Sparse SGD update for cluster word weights
+        // Sparse AdamW update for the cluster word table. Mirrors the routing-weight
+        // optimizer (calculate_adam_w_*_f32_sparse) so both parameter groups in this head
+        // train at a consistent effective rate; the previous plain-SGD step left the word
+        // table learning far slower than the AdamW-driven router.
         let word_w_grads = self.cluster_word_weight_gradients.take();
         let word_b_grads = self.cluster_word_bias_gradients.take();
 
         if let (Some(ww_grads), Some(wb_grads)) = (word_w_grads, word_b_grads) {
+            self.ensure_word_adam_state();
+
             let used_tokens = self.collect_used_token_indices();
-            let lr = learning_rate as f32;
 
-            let updates: Vec<(usize, usize, Vec<C>, C)> = used_tokens
-                .iter()
-                .filter_map(|&token_id| {
-                    let &cluster = self.token_cluster_by_id.get(token_id)?;
-                    let &idx = self.token_index_in_cluster.get(token_id)?;
-                    let g_row = ww_grads.get(cluster)?.get(idx)?.clone();
-                    let g_bias = *wb_grads.get(cluster)?.get(idx)?;
-                    Some((cluster, idx, g_row, g_bias))
-                })
-                .collect();
-
-            for (cluster, idx, g_row, g_bias) in updates {
-                if cluster < self.cluster_word_weights.len()
-                    && idx < self.cluster_word_weights[cluster].len()
-                {
-                    let w_row = &mut self.cluster_word_weights[cluster][idx];
-                    for (d, w) in w_row.iter_mut().enumerate() {
-                        if d < g_row.len() {
-                            *w -= lr * g_row[d].re as f32;
-                        }
+            // Group the used token slots by cluster, collecting the word indices touched
+            // inside each cluster so AdamW only updates rows that received a gradient.
+            let num_clusters = self.cluster_word_weights.len();
+            let mut used_word_idx_by_cluster: Vec<Vec<usize>> = vec![Vec::new(); num_clusters];
+            for &token_id in &used_tokens {
+                if let (Some(&cluster), Some(&idx)) = (self.token_cluster_by_id.get(token_id), self.token_index_in_cluster.get(token_id)) {
+                    if cluster < num_clusters && idx < self.cluster_word_weights[cluster].len() {
+                        used_word_idx_by_cluster[cluster].push(idx);
                     }
                 }
-                if cluster < self.cluster_word_bias.len() && idx < self.cluster_word_bias[cluster].len() {
-                    self.cluster_word_bias[cluster][idx] -= lr * g_bias.re as f32;
+            }
+
+            for cluster in 0..num_clusters {
+                let used_idx = &mut used_word_idx_by_cluster[cluster];
+                if used_idx.is_empty() {
+                    continue;
+                }
+                used_idx.sort_unstable();
+                used_idx.dedup();
+
+                if let Some(g_w) = ww_grads.get(cluster) {
+                    calculate_adam_w_f32_sparse(
+                        &mut self.cluster_word_weights[cluster],
+                        g_w,
+                        &mut self.word_w_prev_m[cluster],
+                        &mut self.word_w_prev_v[cluster],
+                        &mut self.word_w_prev_v_hat[cluster],
+                        learning_rate,
+                        time_step,
+                        used_idx,
+                    );
+                }
+                if let Some(g_b) = wb_grads.get(cluster) {
+                    calculate_adam_w_bias_f32_sparse(
+                        &mut self.cluster_word_bias[cluster],
+                        g_b,
+                        &mut self.word_b_prev_m[cluster],
+                        &mut self.word_b_prev_v[cluster],
+                        &mut self.word_b_prev_v_hat[cluster],
+                        learning_rate,
+                        time_step,
+                        used_idx,
+                    );
                 }
             }
         }
@@ -638,6 +705,18 @@ impl AdaptiveLinearLayer {
         gradient.set_gradient_bias(routing_b_grads);
         self.previous_gradient = Some(gradient.clone());
         self.gradient = None;
+    }
+
+    /// Test/diagnostic accessor: the analytical gradient w.r.t. the cluster word weights
+    /// computed during the most recent training forward pass. Layout mirrors
+    /// `cluster_word_weights`: `[cluster][word_in_cluster][hidden]`.
+    pub fn cluster_word_weight_gradients(&self) -> Option<&Vec<Vec<Vec<C>>>> {
+        self.cluster_word_weight_gradients.as_ref()
+    }
+
+    /// Test/diagnostic accessor: the analytical gradient w.r.t. the cluster word biases.
+    pub fn cluster_word_bias_gradients(&self) -> Option<&Vec<Vec<C>>> {
+        self.cluster_word_bias_gradients.as_ref()
     }
 
     fn collect_used_token_indices(&self) -> Vec<usize> {

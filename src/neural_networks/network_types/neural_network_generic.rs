@@ -410,6 +410,9 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
             LayerEnum::AdaptiveLinear(adaptive_linear_layer) => {
                 adaptive_linear_layer.learning_rate = learning_rate;
             }
+            LayerEnum::Eml(eml_linear_layer) => {
+                eml_linear_layer.learning_rate = learning_rate;
+            }
             LayerEnum::SparseLinearRm(sparse_linear_layer) => {
                 sparse_linear_layer.learning_rate = learning_rate;
             }
@@ -660,6 +663,10 @@ pub fn reset_previous_gradient(transformer: &mut NeuralNetwork) {
                 // adaptive_linear_layer.previous_gradient = None;
                 adaptive_linear_layer.gradient = None;
                 adaptive_linear_layer.batch_size = 0;
+            }
+            LayerEnum::Eml(eml_linear_layer) => {
+                eml_linear_layer.gradient = None;
+                eml_linear_layer.batch_size = 0;
             }
             LayerEnum::SparseLinearRm(sparse_linear_layer) => {
                 sparse_linear_layer.gradient = None;

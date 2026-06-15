@@ -904,6 +904,43 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
                     println!("time elapsed in seconds in adaptive linear layer: {:?}", start.elapsed().as_secs_f64());
                 }
             }
+            LayerEnum::Eml(eml_linear_layer) => {
+                if VERBOSE {
+                    println!("forward eml linear start");
+                }
+
+                let previous_output = match output_batch.take() {
+                    Some(v) => v,
+                    None => {
+                        println!("No previous output for Eml layer");
+                        continue;
+                    }
+                };
+                layer_input.set_input_batch(previous_output.clone());
+
+                let start = Instant::now();
+                let mut output_linear = eml_linear_layer.forward(&layer_input);
+                if !forward_only {
+                    let eml_loss_batch = output_linear.get_cross_entropy_loss_batch();
+                    if !eml_loss_batch.is_empty() {
+                        layer_output.set_cross_entropy_loss_batch(eml_loss_batch);
+                    }
+                    // Terminal teacher-forced head on the training path: no dense logits, so
+                    // pass the hidden states through unchanged for any downstream consumer.
+                    output_batch = Some(previous_output);
+                } else {
+                    // Inference: the head emits sparse top-k token scores + indices, exactly
+                    // like AdaptiveLinear, so the greedy decoder can argmax and map to ids.
+                    linear_output_indices = output_linear.get_output_indices();
+                    let eml_logits = output_linear.get_output_batch();
+                    output_batch_real = Some(complex_batch_to_real_batch(&eml_logits));
+                    output_batch = output_linear.take_output_batch();
+                }
+
+                if VERBOSE {
+                    println!("time elapsed in seconds in eml linear layer: {:?}", start.elapsed().as_secs_f64());
+                }
+            }
             LayerEnum::SparseLinearRm(sparse_linear_layer) => {
                 if VERBOSE {
                     println!("forward sparse linear_rm start");
@@ -1415,6 +1452,14 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     gradient = Some(stored_gradient.clone());
                 } else {
                     println!("No previous gradient in Adaptive Linear Layer");
+                }
+            }
+            LayerEnum::Eml(eml_linear_layer) => {
+                // Terminal head: the gradient was computed during the training forward.
+                if let Some(stored_gradient) = eml_linear_layer.gradient.as_ref() {
+                    gradient = Some(stored_gradient.clone());
+                } else {
+                    println!("No stored gradient in Eml Linear Layer");
                 }
             }
             LayerEnum::SparseLinearRm(sparse_linear_layer) => {

@@ -5,7 +5,7 @@ use crate::neural_networks::{
     network_layers::default_layer::LayerInterface,
     utils::{
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
-        dtype::{r, C, ONE, ZERO},
+        dtype::{r, C, ZERO},
         matrix::{
             add_vector_rm, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose_rm, multiply_complex_rm, normalize_bias, normalize_gradients,
             RowMajorMatrix,
@@ -40,7 +40,7 @@ impl LinearLayerRm {
         let mut weights_vec: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); cols]; rows];
         initialize_weights_complex(rows, cols, &mut weights_vec);
         let weights = RowMajorMatrix::from_rows(&weights_vec);
-        let bias: Vec<C> = vec![C::new(ONE, ZERO); cols];
+        let bias: Vec<C> = vec![C::new(0.001, ZERO); cols];
 
         Self {
             weights,

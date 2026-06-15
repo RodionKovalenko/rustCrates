@@ -1,8 +1,8 @@
-use crate::tcp::tcp_stream_actions::{send_msg, read_tcp_stream};
+use crate::tcp::tcp_stream_actions::{read_tcp_stream, send_msg};
+use rand::RngExt;
+use std::io::Error;
 use std::net::{TcpListener, TcpStream};
-use std::io::{Error};
-use std::{thread};
-use rand::{Rng, RngExt};
+use std::thread;
 
 // Handles a single client
 fn handle_client(stream: TcpStream) -> Result<(), Error> {
@@ -27,8 +27,7 @@ pub fn start_server(server_address_with_port: String) {
             Err(e) => eprintln!("failed: {}", e),
             Ok(stream) => {
                 thread::spawn(move || {
-                    handle_client(stream).unwrap_or_else(|error|
-                        eprintln!("{:?}", error));
+                    handle_client(stream).unwrap_or_else(|error| eprintln!("{:?}", error));
                 });
             }
         }

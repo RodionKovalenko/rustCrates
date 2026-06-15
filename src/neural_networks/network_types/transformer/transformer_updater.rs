@@ -70,6 +70,9 @@ pub fn update_transformer(transformer_network: &mut NeuralNetwork, target_batch_
             LayerEnum::AdaptiveLinear(adaptive_linear_layer) => {
                 adaptive_linear_layer.update_parameters();
             }
+            LayerEnum::Eml(eml_linear_layer) => {
+                eml_linear_layer.update_parameters();
+            }
             LayerEnum::SparseLinearRm(sparse_linear_layer) => {
                 sparse_linear_layer.update_parameters();
             }
