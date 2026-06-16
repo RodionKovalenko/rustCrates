@@ -3,7 +3,7 @@ use num_traits::Float;
 
 use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
 
-pub static B_1: f64 = 0.85;
+pub static B_1: f64 = 0.9;
 pub static B_2: f64 = 0.999;
 pub static EPSILON: f64 = 1e-8;
 pub static WEIGHT_DECAY: f64 = 0.001;

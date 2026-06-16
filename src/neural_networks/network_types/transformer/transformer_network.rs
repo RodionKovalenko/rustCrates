@@ -1,4 +1,4 @@
-﻿use crate::neural_networks::network_layers::layer::LayerEnum;
+use crate::neural_networks::network_layers::layer::LayerEnum;
 use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
 use crate::neural_networks::utils::matrix::RowMajorMatrix;
 use colored::*;
@@ -176,6 +176,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
             layer_input.set_calculate_gradient(true);
             layer_input.set_target_batch_ids(target_ids.clone());
             layer_input.set_top_k_size(TOP_K_SIZE);
+            layer_input.set_total_valid_tokens(valid_target_tokens_batch.max(1));
 
             transformer_network.minibatch_size = actual_batch_size;
             transformer_network.time_step = timestep;
@@ -204,7 +205,11 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
             total_loss += loss;
 
             if epoch > 0 && epoch == (num_epochs - 1) || loss.norm() <= loss_threshold || epoch % 50 == 0 {
-                println!("Epoch: {:?}, Loss: {:?}", epoch, loss);
+                let batch_loss_per_token = loss.re / r(valid_target_tokens_batch.max(1) as f64);
+                println!(
+                    "Epoch: {:?}, Batch loss/token: {:?}, Batch loss(sum): {:?}",
+                    epoch, batch_loss_per_token, loss
+                );
                 let seconds_elapsed_end = now.elapsed();
                 let duration = seconds_elapsed_end - seconds_elapsed;
                 let seconds = duration.as_secs_f64();
@@ -237,14 +242,20 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
 
         update_k_mean_clusters(transformer_network, epoch);
 
+        let train_loss = if total_valid_target_tokens_epoch > 0 {
+            total_loss.re / r(total_valid_target_tokens_epoch as f64)
+        } else {
+            total_loss.re
+        };
+
         if total_loss_exp_ma == ZERO && epoch == 0 {
-            total_loss_exp_ma = total_loss.re;
+            total_loss_exp_ma = train_loss;
         }
 
-        total_loss_exp_ma = alpha * total_loss.re + (r(1.0) - alpha) * total_loss_exp_ma;
+        total_loss_exp_ma = alpha * train_loss + (r(1.0) - alpha) * total_loss_exp_ma;
 
-        if epoch % 5 == 0 || total_loss.norm() <= loss_threshold {
-            println!("Epoch: {}, TRAINING LOSS: {}", epoch.to_string().blue().bold(), total_loss.re.to_string().red().bold());
+        if epoch % 5 == 0 || train_loss <= loss_threshold {
+            println!("Epoch: {}, TRAINING LOSS: {}", epoch.to_string().blue().bold(), train_loss.to_string().red().bold());
         }
 
         if dataset.total_validation_records_size > 120 {
@@ -291,8 +302,8 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
 
         if total_valid_target_tokens_epoch == 0 {
             println!("WARNING: epoch {} had 0 valid target tokens across all batches; skipping early-stop on loss threshold.", epoch);
-        } else if total_loss.norm() <= loss_threshold {
-            println!("loss is smaller than {loss_threshold} Break the training: {:?}", &total_loss);
+        } else if train_loss <= loss_threshold {
+            println!("loss is smaller than {loss_threshold} Break the training: {:?}", &train_loss);
             save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
             break 'outer;
         }
@@ -1708,7 +1719,7 @@ fn evaluate_validation(transformer_network: &mut NeuralNetwork, dataset: &Datase
     clear_network_caches(transformer_network);
 
     let mut total_val_loss: Real = ZERO;
-    let mut num_batches = 0;
+    let mut total_valid_target_tokens: usize = 0;
 
     // Get validation batches (NOT shuffled)
     let val_batches = dataset.get_validation_batches(batch_size);
@@ -1755,6 +1766,8 @@ fn evaluate_validation(transformer_network: &mut NeuralNetwork, dataset: &Datase
         layer_input.set_calculate_gradient(false); // NO GRADIENT COMPUTATION
         layer_input.set_target_batch_ids(target_ids.clone());
         layer_input.set_top_k_size(TOP_K_SIZE);
+        let valid_target_tokens_batch: usize = target_ids.iter().map(|seq| seq.iter().filter(|&&id| id != 1).count()).sum();
+        layer_input.set_total_valid_tokens(valid_target_tokens_batch.max(1));
 
         transformer_network.minibatch_size = actual_batch_size; // Update network's batch size too
 
@@ -1763,19 +1776,22 @@ fn evaluate_validation(transformer_network: &mut NeuralNetwork, dataset: &Datase
         let loss: C = cross_entropy_sum_batch(&network_output.get_cross_entropy_loss_batch(), &target_ids);
 
         total_val_loss += loss.re;
-        num_batches += 1;
+        total_valid_target_tokens += valid_target_tokens_batch;
     }
 
-    if num_batches == 0 {
+    if total_valid_target_tokens == 0 {
         println!("âš ï¸  Warning: No validation batches processed!");
         return Real::INFINITY;
     }
 
-    let avg_val_loss = total_val_loss / r(num_batches as f64);
+    let avg_val_loss = total_val_loss / r(total_valid_target_tokens as f64);
 
     // Debug: print validation statistics on first epoch
     if transformer_network.time_step < 100 {
-        println!("ðŸ“Š Validation: {} batches, total loss: {:.4}, avg loss: {:.4}", num_batches, total_val_loss, avg_val_loss);
+        println!(
+            "ðŸ“Š Validation: {} valid tokens, total loss: {:.4}, avg loss/token: {:.4}",
+            total_valid_target_tokens, total_val_loss, avg_val_loss
+        );
     }
 
     avg_val_loss
@@ -1787,7 +1803,7 @@ pub fn evaluate_test(transformer_network: &mut NeuralNetwork, dataset: &Dataset<
     clear_network_caches(transformer_network);
 
     let mut total_test_loss: Real = ZERO;
-    let mut num_batches = 0;
+    let mut total_valid_target_tokens: usize = 0;
     let mut layer_input = LayerInput::new_default();
 
     // Get test batches (NOT shuffled)
@@ -1833,6 +1849,8 @@ pub fn evaluate_test(transformer_network: &mut NeuralNetwork, dataset: &Dataset<
         layer_input.set_calculate_gradient(false); // NO GRADIENT COMPUTATION
         layer_input.set_target_batch_ids(target_ids.clone());
         layer_input.set_top_k_size(TOP_K_SIZE);
+        let valid_target_tokens_batch: usize = target_ids.iter().map(|seq| seq.iter().filter(|&&id| id != 1).count()).sum();
+        layer_input.set_total_valid_tokens(valid_target_tokens_batch.max(1));
 
         transformer_network.minibatch_size = actual_batch_size; // Update network's batch size too
 
@@ -1841,10 +1859,15 @@ pub fn evaluate_test(transformer_network: &mut NeuralNetwork, dataset: &Dataset<
         let loss: C = cross_entropy_sum_batch(&network_output.get_cross_entropy_loss_batch(), &target_ids);
 
         total_test_loss += loss.re;
-        num_batches += 1;
+        total_valid_target_tokens += valid_target_tokens_batch;
     }
 
-    let avg_test_loss = total_test_loss / r(num_batches as f64);
+    if total_valid_target_tokens == 0 {
+        println!("Warning: No valid target tokens in test set");
+        return Real::INFINITY;
+    }
+
+    let avg_test_loss = total_test_loss / r(total_valid_target_tokens as f64);
 
     println!("\n{}", "FINAL TEST LOSS:".bright_cyan().bold());
     println!("{}", avg_test_loss.to_string().bright_green().bold());
@@ -1875,4 +1898,3 @@ mod tests {
         assert_eq!(target_chunks, vec![vec![19], vec![19, 20, 21, 22], vec![19, 20, 21, 22, 23]]);
     }
 }
-

@@ -13,23 +13,28 @@ use crate::{
 
 pub fn train_transformer_from_dataset(num_epochs: usize, num_records: usize, batch_size: usize) -> bool {
     let now = Instant::now();
+    const REUSE_SAVED_MODEL: bool = false;
 
-    let mut transformer = match get_from_db(SLED_DB_TRANSFORMER_V1) {
-        Ok(transformer) => {
-            // Successfully loaded transformer from the database
-            println!("Loaded transformer from the database!");
-            transformer
+    let mut transformer = if REUSE_SAVED_MODEL {
+        match get_from_db(SLED_DB_TRANSFORMER_V1) {
+            Ok(transformer) => {
+                println!("Loaded transformer from the database!");
+                transformer
+            }
+            Err(e) => {
+                println!("error: {:?}", e);
+                let transformer: NeuralNetwork = create_transformer(OperationMode::TRAINING);
+                println!("Created a new transformer for training.");
+                transformer
+            }
         }
-        Err(e) => {
-            println!("error: {:?}", e);
-            // Create a new transformer since the database didn't have one
-            let transformer: NeuralNetwork = create_transformer(OperationMode::TRAINING);
-            println!("Created a new transformer for training.");
-            transformer
-        }
+    } else {
+        let transformer: NeuralNetwork = create_transformer(OperationMode::TRAINING);
+        println!("Created a new transformer for training (checkpoint loading disabled).");
+        transformer
     };
 
-    let learning_rate = 0.008;
+    let learning_rate = 0.001;
     let num_epochs = num_epochs;
     transformer.learning_rate = learning_rate;
     update_learning_rate(&mut transformer, learning_rate);

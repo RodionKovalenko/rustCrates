@@ -28,7 +28,10 @@ use serde::{Deserialize, Serialize};
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     network_layers::default_layer::LayerInterface,
-    utils::dtype::{r, Real, C, ONE, ZERO},
+    utils::{
+        adam_w::get_current_learning_rate,
+        dtype::{r, Real, C, ONE, ZERO},
+    },
 };
 
 /// Numerical floor inside `log(softplus(V) + eps)` so the log never sees zero.
@@ -53,18 +56,38 @@ const ADAM_EPS: f64 = 1e-8;
 /// minimum is more cliff-prone), so it is deliberately kept at 16.
 const LOGIT_SCALE: f64 = 16.0;
 /// Global L2-norm cap applied to the (per-token-averaged) gradient before the AdamW step.
-/// Cheap insurance against acute gradient transients.
-const MAX_GRAD_NORM: f64 = 1.0;
-/// Clamp band for the trainable temperatures. The effective softmax scale is
-/// `LOGIT_SCALE * alpha`, so leaving `alpha` unconstrained lets AdamW push it past the
-/// validated sweet spot: at ~1.5x (effective `16*1.5 = 24`) the minimum turns cliff-prone
-/// and the synchronized loss spikes return — exactly the regime the header comment warns
-/// about. Capping `alpha <= 1.0` keeps the effective scale `<= LOGIT_SCALE`; the floor
-/// stops it collapsing. `beta` is the weaker repulsion knob, kept in a bounded positive band.
+/// Tightened from 1.0 → 0.25 to suppress the late-training cliff spikes that show up once
+/// `EML_LABEL_SMOOTHING` is small (the bigger the optimal step, the easier it is for AdamW
+/// to overshoot a confident minimum and flip several tokens' argmax at once).
+const MAX_GRAD_NORM: f64 = 0.25;
+/// Label-smoothing factor for the per-level (cluster and word) cross-entropy. With hard
+/// targets (`eps = 0`) the head can drive the per-token loss all the way to 0; the catch is
+/// it needs extreme cosine logits, so a confident-phase AdamW step can flip the argmax on
+/// several tokens at once and the loss bounces. We compensate for the missing smoothing
+/// floor with a tighter gradient clip (`MAX_GRAD_NORM`) and the temperature clamps below.
+///
+/// **IMPORTANT**: the minimum achievable per-token training loss for this head is roughly
+/// `H_smooth ≈ -(1-eps)·ln(1-eps) - eps·ln(eps/N_active)` PER LEVEL (cluster + word). With
+/// `eps = 0.01` and ~226 active classes that lower bound is ≈ 0.22, which is exactly the
+/// floor you see when training plateaus around 0.23. Setting `eps = 0.0` removes this floor
+/// entirely so the loss can keep descending past 0.23.
+const EML_LABEL_SMOOTHING: f64 = 0.0;
+/// Clamp band for the trainable temperatures. The logit is `LOGIT_SCALE*(alpha*u - beta*rr)`,
+/// so BOTH temperatures scale the softmax sharpness and both are cliff-prone if AdamW pushes
+/// them past the validated `alpha = beta = 1.0` sweet spot:
+///   * `alpha` weights the U-channel cosine `u ∈ [-1, 1]`. At ~1.5x (effective `16*1.5 = 24`)
+///     the minimum turns cliff-prone and the synchronized loss spikes return.
+///   * `beta` weights the V-channel `rr = ln(softplus(v) + eps) ∈ [-1.16, 0.27]`. Because that
+///     span is *wider* than the U-channel, an unconstrained `beta` is actually the more
+///     dangerous knob: at `beta = 2` the `beta*rr` term alone swings the logit by ~±37,
+///     blowing the range past the scale-24 cliff. (Observed: `beta` drifts upward and a
+///     model that had converged to ~0.25 oscillates again once `beta` saturates.)
+/// Capping both at their validated init `1.0` keeps the effective scale bounded; the `alpha`
+/// floor stops the U-channel collapsing.
 const ALPHA_MIN: f64 = 0.25;
 const ALPHA_MAX: f64 = 1.0;
 const BETA_MIN: f64 = 0.0;
-const BETA_MAX: f64 = 2.0;
+const BETA_MAX: f64 = 1.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmlLinearLayer {
@@ -518,20 +541,28 @@ impl EmlLinearLayer {
             p[k] *= inv_sum;
         }
 
-        let loss = -(p[target].max(r(1e-30))).ln();
+        // Label-smoothed target: (1 - eps) on the correct class, eps/N_active spread over the
+        // active classes (see EML_LABEL_SMOOTHING). This is what keeps the optimum off the cliffs.
+        let eps = r(EML_LABEL_SMOOTHING);
+        let n_active = (0..n).filter(|&k| active(k)).count().max(1);
+        let smooth = eps / r(n_active as f64);
 
         // ── Backward ─────────────────────────────────────────────────────────
-        // dS = P - one_hot(target)  (masked entries already have P = 0).
+        // dS = P - y, where y is the smoothed target (masked entries already have P = 0). The
+        // smoothed cross-entropy is accumulated in the same pass.
         let mut d_alpha = ZERO;
         let mut d_beta = ZERO;
         let mut dqu_hat = vec![ZERO; self.d_coord];
         let mut dqv_hat = vec![ZERO; self.d_coord];
+        let mut loss = ZERO;
         for k in 0..n {
             if !active(k) {
                 continue;
             }
+            let y_k = smooth + if k == target { ONE - eps } else { ZERO };
+            loss += -y_k * (p[k].max(r(1e-30))).ln();
             // s[k] = LOGIT_SCALE*(alpha*u - beta*rr); fold the scale into every downstream grad.
-            let ds = r(LOGIT_SCALE) * (p[k] - if k == target { ONE } else { ZERO });
+            let ds = r(LOGIT_SCALE) * (p[k] - y_k);
             d_alpha += u[k] * ds;
             d_beta += -rr[k] * ds;
 
@@ -590,7 +621,12 @@ impl EmlLinearLayer {
 
         self.time_step += 1;
         let t = self.time_step as f64;
-        let lr = self.learning_rate;
+        // Use the same warmup+cosine LR schedule as the backbone instead of a flat rate. With a
+        // flat LR the head keeps taking full-size steps after the loss has reached a sharp,
+        // confident minimum (~epoch 2000, once the backbone schedule has decayed to its floor),
+        // so it overshoots and the loss bounces. Decaying the head LR to the same floor lets it
+        // settle into the minimum instead of orbiting it.
+        let lr = get_current_learning_rate(self.learning_rate, self.time_step);
         let bc1 = 1.0 - ADAM_B1.powf(t);
         let bc2 = 1.0 - ADAM_B2.powf(t);
 
