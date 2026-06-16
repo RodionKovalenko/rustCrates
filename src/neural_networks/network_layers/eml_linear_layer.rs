@@ -199,13 +199,15 @@ struct AdamState {
 impl EmlLinearLayer {
     /// Build a head for `vocab_size` tokens over a `d_model`-wide backbone.
     ///
-    /// `M = ceil(sqrt(V))`, `K = ceil(V / M)`, and `d_coord = K` so the cluster
-    /// coordinate matrix is square and can be made exactly orthogonal (Option C).
+    /// `K = M = ceil(sqrt(V)) + 1` and `d_coord = K`, so the addressable grid is the
+    /// square `K x M` of the doc's `d = K = M` design with one extra row/column of
+    /// margin beyond the minimal `ceil(sqrt(V))`. `K*M` is comfortably `>= V`; the
+    /// trailing `K*M - V` slots are padding (masked by `valid`). Keeping `K = M = d_coord`
+    /// preserves the square, exactly-orthogonal cluster coords (Option C).
     pub fn new(learning_rate: f64, d_model: usize, vocab_size: usize) -> Self {
         let vocab = vocab_size.max(1);
-        let m_words = (vocab as f64).sqrt().ceil() as usize;
-        let m_words = m_words.max(1);
-        let k_clusters = vocab.div_ceil(m_words).max(1);
+        let m_words = ((vocab as f64).sqrt().ceil() as usize).max(1) + 1;
+        let k_clusters = m_words; // K = M -> square grid, K*M >= V, exact orthogonal cluster coords
         let d_coord = k_clusters; // square -> exact orthogonal cluster coords
 
         let mut rng = SplitMix64::new(0x5eed_1234_abcd_ef01);
