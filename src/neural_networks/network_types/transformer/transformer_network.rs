@@ -328,11 +328,10 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
     let mut layer_input = LayerInput::new_default();
     layer_input.set_calculate_gradient(false);
     layer_input.set_forward_only(true);
-    // NOTE: no KV cache here. The Vec sparse attention head (SparseSelfAttention) does not
-    // implement the k/v cache, so incremental decoding that feeds only the last few tokens
-    // silently loses the whole prompt context. Until a working cache exists for that head,
-    // every step must re-run the full sequence so inference matches training exactly.
-    layer_input.set_calculate_k_v_cache(false);
+    // Incremental decoding with a real K/V cache (see SparseMaskedAttentionHead::forward_cached):
+    // the first pass runs the full prompt and fills the cache, every later step feeds only the
+    // newly generated token. Caches are cleared above by clear_network_caches().
+    layer_input.set_calculate_k_v_cache(true);
     layer_input.set_top_k_size(TOP_K_SIZE); // Set k for sparse linear layer
 
     print!("Antwort: ");
@@ -346,6 +345,9 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
             return current_input_batch;
         }
     };
+
+    // True once the prompt has been run and the attention K/V caches are filled.
+    let mut cache_warm = false;
 
     // Continue predicting until EOS token is predicted
     loop {
@@ -376,13 +378,20 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
 
         layer_input.set_batch_ids(batch_ids.clone());
 
-        // time_step must stay 0: RoPE assigns every token the SAME absolute position
-        // `time_step` when forward_only && time_step > 0 (incremental-decode mode). With
-        // full-sequence decoding the per-token position path (0..seq_len) is the correct
-        // one, matching training.
+        if cache_warm {
+            // With a warm K/V cache only the newly generated token needs to run; all
+            // earlier positions are already cached inside the attention heads.
+            let last_tokens_batch: Vec<Vec<u32>> = batch_ids.iter().map(|seq| seq.last().map(|t| vec![*t]).unwrap_or_default()).collect();
+            layer_input.set_batch_ids(last_tokens_batch);
+        }
+
+        // time_step must stay 0: RoPE positions are derived from the cache length inside
+        // forward_cached, and the legacy branch in apply_rope_to_sequence assigns every
+        // token the SAME position when forward_only && time_step > 0.
         layer_input.set_time_step(0);
 
         let network_output = predict(transformer_network, &layer_input);
+        cache_warm = true;
         let current_predictions = network_output.get_output_batch_real();
         let output_indices = network_output.get_output_indices();
 

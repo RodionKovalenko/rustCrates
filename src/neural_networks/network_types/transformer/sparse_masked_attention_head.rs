@@ -6,14 +6,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::network_layers::complex_to_linear_layer::ComplexToLinearLayer;
 use crate::neural_networks::network_layers::layer::LayerType;
-use crate::neural_networks::network_layers::positional_encoding_layer::PositionalEncodingLayer;
+use crate::neural_networks::network_layers::positional_encoding_layer::{PositionalEncodingLayer, SCALING_FAKTOR};
 use crate::neural_networks::utils::dtype::{r, Real, C};
 
 use crate::neural_networks::utils::matrix::normalize_gradients;
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     utils::{
-        activation::softmax_complex_padding_complex,
+        activation::{softmax_complex_padding_complex, softmax_row_complex},
         adam_w::calculate_adam_w,
         low_rank_approx::transpose,
         matrix::{add_matrix, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose, multiply_complex},
@@ -159,6 +159,10 @@ impl SparseMaskedAttentionHead {
     }
 
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        if layer_input.get_forward_only() && layer_input.get_calculate_k_v_cache() {
+            return self.forward_cached(layer_input);
+        }
+
         let input_batch = layer_input.get_input_batch();
 
         let padding_mask_batch = layer_input.get_padding_mask_batch();
@@ -208,6 +212,125 @@ impl SparseMaskedAttentionHead {
 
         let output_batch = self.calculated_sparse_masked_attention(q_ctl_batch, k_ctl_batch, v_batch, padding_mask_batch);
         self.output_batch = Some(output_batch.clone());
+
+        let mut output = LayerOutput::new_default();
+        output.set_output_batch(output_batch);
+        output
+    }
+
+    /// Incremental-decoding forward with a real K/V cache (inference only).
+    ///
+    /// The input batch holds only the NEW suffix tokens: the full prompt on the first
+    /// call (empty cache), then one token per generation step. Q/K are RoPE-rotated by
+    /// their ABSOLUTE position in the full sequence (`cache_len + i`), the suffix K/V
+    /// (K after CTL, matching the training path) are appended to the cache, and each
+    /// suffix query attends over its causal local window in the cached sequence. With
+    /// an empty cache this reproduces the non-cached forward exactly, so cached and
+    /// full-recompute decoding yield identical outputs. Stores no state for backward().
+    pub fn forward_cached(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        let input_batch = layer_input.get_input_batch();
+        let batch_size = input_batch.len();
+
+        self.time_step = layer_input.get_time_step();
+        self.batch_size = layer_input.get_batch_size();
+
+        let cache_len = self.k_cache.as_ref().and_then(|c| c.first()).map(|s| s.len()).unwrap_or(0);
+
+        let q_batch: Vec<Vec<Vec<C>>> = input_batch
+            .par_iter()
+            .map(|input| {
+                let q = multiply_complex(input, &self.weights_q);
+                q.iter()
+                    .enumerate()
+                    .map(|(i, row)| self.positional_encoding_layer.apply_rotary_positional_encoding(row, cache_len + i, SCALING_FAKTOR))
+                    .collect()
+            })
+            .collect();
+
+        let k_batch: Vec<Vec<Vec<C>>> = input_batch
+            .par_iter()
+            .map(|input| {
+                let k = multiply_complex(input, &self.weights_k);
+                k.iter()
+                    .enumerate()
+                    .map(|(i, row)| self.positional_encoding_layer.apply_rotary_positional_encoding(row, cache_len + i, SCALING_FAKTOR))
+                    .collect()
+            })
+            .collect();
+
+        let v_batch: Vec<Vec<Vec<C>>> = input_batch.par_iter().map(|input| multiply_complex(input, &self.weights_v)).collect();
+
+        // CTL layers are position-wise, so applying them to the suffix alone is exact.
+        let q_ctl_batch: Vec<Vec<Vec<C>>> = if let Some(ctl_q) = self.ctl_q.as_mut() {
+            let mut li = LayerInput::new_default();
+            li.set_input_batch(q_batch.clone());
+            ctl_q.forward(&li).get_output_batch()
+        } else {
+            q_batch
+        };
+
+        let k_ctl_batch: Vec<Vec<Vec<C>>> = if let Some(ctl_k) = self.ctl_k.as_mut() {
+            let mut li = LayerInput::new_default();
+            li.set_input_batch(k_batch.clone());
+            ctl_k.forward(&li).get_output_batch()
+        } else {
+            k_batch
+        };
+
+        // Append the new K/V rows to the cache.
+        let k_cache = self.k_cache.get_or_insert_with(|| vec![Vec::new(); batch_size]);
+        let v_cache = self.v_cache.get_or_insert_with(|| vec![Vec::new(); batch_size]);
+        for b in 0..batch_size {
+            k_cache[b].extend(k_ctl_batch[b].iter().cloned());
+            v_cache[b].extend(v_batch[b].iter().cloned());
+        }
+
+        // Same scaling as calculate_local_attention.
+        let d_k_sqrt: Real = (q_ctl_batch[0][0].len() as Real).sqrt() + r(1e-12);
+
+        let output_batch: Vec<Vec<Vec<C>>> = (0..batch_size)
+            .map(|b| {
+                let suffix_len = input_batch[b].len();
+                let seq_total = k_cache[b].len();
+
+                (0..suffix_len)
+                    .map(|i| {
+                        // Absolute position of this query in the full (cached) sequence.
+                        let p = seq_total - suffix_len + i;
+                        let (start_ind, end_ind) = calculate_start_end_indices(p, self.window_size, seq_total);
+
+                        // Local-window scores with the causal mask applied exactly like
+                        // apply_sparse_causal_mask (future positions -> -inf -> softmax 0).
+                        let scores: Vec<C> = (start_ind..end_ind)
+                            .map(|j| {
+                                if j > p {
+                                    Complex::new(Real::NEG_INFINITY, Real::NEG_INFINITY)
+                                } else {
+                                    let mut dot = Complex::zero();
+                                    for (f, feature) in q_ctl_batch[b][i].iter().enumerate() {
+                                        dot += *feature * k_cache[b][j][f];
+                                    }
+                                    dot / d_k_sqrt
+                                }
+                            })
+                            .collect();
+
+                        let attention_weights = softmax_row_complex(&scores);
+
+                        // Weighted V sum, mirroring multiply_sparse (real-valued accumulation).
+                        let dim = v_cache[b][start_ind].len();
+                        let mut out_row = vec![Complex::zero(); dim];
+                        for (f, attention_weight) in attention_weights.iter().enumerate() {
+                            let v_row = &v_cache[b][start_ind + f];
+                            for k in 0..dim {
+                                out_row[k] += (attention_weight.re * v_row[k]).re;
+                            }
+                        }
+                        out_row
+                    })
+                    .collect()
+            })
+            .collect();
 
         let mut output = LayerOutput::new_default();
         output.set_output_batch(output_batch);
