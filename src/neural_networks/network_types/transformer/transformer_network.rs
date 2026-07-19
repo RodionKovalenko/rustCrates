@@ -1,3 +1,4 @@
+use crate::neural_networks::network_layers::default_layer::LayerInterface;
 use crate::neural_networks::network_layers::layer::LayerEnum;
 use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
 use crate::neural_networks::utils::matrix::RowMajorMatrix;
@@ -28,11 +29,6 @@ pub const MAX_CONTEXT_WINDOW_SIZE: usize = 50280;
 pub const CONTEXT_OVERLAPPING: usize = 16;
 pub const EMA_SCALER: f64 = 1.1;
 pub const TOP_K_SIZE: usize = 500;
-
-#[inline]
-fn complex_batch_to_real_batch(data: &[Vec<Vec<C>>]) -> Vec<Vec<Vec<Real>>> {
-    data.iter().map(|seq| seq.iter().map(|row| row.iter().map(|z| z.re).collect()).collect()).collect()
-}
 
 fn shift_targets_for_next_token_prediction(target_ids: &[Vec<u32>]) -> Vec<Vec<u32>> {
     target_ids.to_vec()
@@ -483,8 +479,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
     let forward_only = layer_input.get_forward_only();
 
     let mut layer_input = layer_input.clone();
-    let target_batch_ids_option = Some(layer_input.get_target_batch_ids());
-    let mut linear_output_indices = vec![];
+    let mut linear_output_indices: Vec<Vec<Vec<usize>>> = vec![];
 
     // Compute total valid tokens across batch for proper gradient normalization
     if !forward_only {
@@ -535,620 +530,66 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
     // Optional contiguous row-major activations; used to avoid conversions between consecutive Linear layers.
     let mut output_batch_rm: Option<Vec<RowMajorMatrix<C>>> = None;
 
-    let layers_len = transformer_network.layers.len();
-    for layer_idx in 0..layers_len {
-        // Only keep RM activations when the next layer can consume RM directly.
-        // Vec-only layers (e.g. Norm(Vec), PositionalEncoding(Vec), SparseLinear(Vec)) require RM->Vec conversion,
-        // which is forbidden in rm_strict mode.
-
-        let layer = transformer_network.layers.get_mut(layer_idx).expect("layer index");
-        match layer {
-            LayerEnum::AdaptiveAvgPool1d(adaptive_avg_pooling_layer) => {
-                let previous_output = match output_batch.take() {
-                    Some(v) => v,
-                    None => {
-                        println!("No previous output for Attention layer");
-                        continue;
-                    }
-                };
-
-                layer_input.set_input_batch(previous_output);
-                let mut layer_output: LayerOutput = adaptive_avg_pooling_layer.forward(&layer_input);
-                output_batch = layer_output.take_output_batch();
+    for layer in transformer_network.layers.iter_mut() {
+        // A standalone softmax head is skipped in training when an adaptive/EML output
+        // layer earlier in the stack already produced the CE loss.
+        if matches!(layer, LayerEnum::Softmax(_) | LayerEnum::SoftmaxRm(_)) && !forward_only && !layer_output.get_cross_entropy_loss_batch().is_empty() {
+            if VERBOSE {
+                println!("skipping standalone softmax because adaptive output layer already produced CE loss");
             }
-            LayerEnum::Embedding(embedding_layer) => {
-                layer_input.set_batch_ids(batch_ids.clone());
-
-                let (embeddings, padding_m) = embedding_layer.forward_inner(&layer_input);
-                output_batch = Some(embeddings);
-
-                padding_mask = Some(padding_m.clone());
-                layer_input.set_padding_mask_batch(padding_m);
-            }
-            LayerEnum::EmbeddingRm(embedding_layer) => {
-                layer_input.set_batch_ids(batch_ids.clone());
-
-                let (embeddings_rm, padding_m) = embedding_layer.forward_inner(&layer_input);
-                padding_mask = Some(padding_m.clone());
-                layer_input.set_padding_mask_batch(padding_m);
-
-                output_batch_rm = Some(embeddings_rm);
-            }
-            LayerEnum::PositionalEncoding(positional_encoding_layer) => {
-                if VERBOSE {
-                    println!("forward pos encoding (vec)");
-                }
-                let start = Instant::now();
-
-                let previous_output = match output_batch.take() {
-                    Some(v) => v,
-                    None => {
-                        println!("No previous output for Attention layer");
-                        continue;
-                    }
-                };
-
-                layer_input.set_input_batch(previous_output);
-                let positional_encodings: Vec<Vec<Vec<C>>> = positional_encoding_layer.forward(&layer_input).get_output_batch();
-                output_batch = Some(positional_encodings);
-
-                if VERBOSE {
-                    println!("time elapsed in seconds in positional encoding: {:?}", start.elapsed().as_secs_f64());
-                }
-            }
-            LayerEnum::PositionalEncodingRm(positional_encoding_layer) => {
-                if VERBOSE {
-                    println!("forward pos encoding (rm)");
-                }
-                let start = Instant::now();
-
-                layer_input.clear_input_batch();
-                layer_input.set_input_batch_rm(output_batch_rm.take().unwrap());
-
-                let enc_rm = positional_encoding_layer.forward_inner(&layer_input);
-                output_batch_rm = Some(enc_rm);
-
-                if VERBOSE {
-                    println!("time elapsed in seconds in positional encoding rm: {:?}", start.elapsed().as_secs_f64());
-                }
-            }
-            LayerEnum::Norm(norm_layer) => {
-                let previous_output = match output_batch.take() {
-                    Some(v) => v,
-                    None => {
-                        println!("No previous output for Attention layer");
-                        continue;
-                    }
-                };
-
-                layer_input.set_input_batch(previous_output);
-
-                let mut norm_output = norm_layer.forward(&layer_input);
-                output_batch = norm_output.take_output_batch();
-            }
-            LayerEnum::NormRm(norm_layer) => {
-                layer_input.clear_input_batch();
-                layer_input.set_input_batch_rm(output_batch_rm.take().unwrap());
-
-                let mut norm_output = norm_layer.forward(&layer_input);
-                output_batch_rm = norm_output.take_output_batch_rm();
-            }
-            LayerEnum::SelfAttention(attention) => {
-                // Ensure there's an output from the previous layer before forwarding
-                if let Some(padding_m) = &padding_mask {
-                    let previous_output = match output_batch.take() {
-                        Some(v) => v,
-                        None => {
-                            println!("No previous output for Attention layer");
-                            continue;
-                        }
-                    };
-
-                    layer_input.set_input_batch(previous_output);
-                    layer_input.set_padding_mask_batch(padding_m.clone());
-
-                    if VERBOSE {
-                        println!("forward self-attention start");
-                    }
-                    let start = Instant::now();
-                    let mut output_attention = attention.forward(&layer_input);
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in self attention layer: {:?}", start.elapsed().as_secs_f64());
-                    }
-                    output_batch = output_attention.take_output_batch();
-                } else {
-                    println!("No previous output for Attention layer");
-                }
-            }
-            LayerEnum::SparseSelfAttention(attention) => {
-                // Ensure there's an output from the previous layer before forwarding
-                if let Some(padding_m) = &padding_mask {
-                    let previous_output = match output_batch.take() {
-                        Some(v) => v,
-                        None => {
-                            println!("No previous output for Attention layer");
-                            continue;
-                        }
-                    };
-
-                    layer_input.set_input_batch(previous_output);
-                    layer_input.set_padding_mask_batch(padding_m.clone());
-
-                    if VERBOSE {
-                        println!("forward sparse self-attention start (vec)");
-                    }
-                    let start = Instant::now();
-                    let mut output_attention = attention.forward(&layer_input);
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in sparse self attention layer: {:?}", start.elapsed().as_secs_f64());
-                    }
-                    output_batch = output_attention.take_output_batch();
-                } else {
-                    println!("No previous output for Attention layer");
-                }
-            }
-            LayerEnum::SparseSelfAttentionRm(attention) => {
-                if let Some(padding_m) = &padding_mask {
-                    layer_input.clear_input_batch();
-                    layer_input.set_input_batch_rm(output_batch_rm.take().unwrap());
-                    layer_input.set_padding_mask_batch(padding_m.clone());
-
-                    if VERBOSE {
-                        println!("forward sparse self-attention start (rm)");
-                    }
-
-                    let start = Instant::now();
-                    let mut output_attention = attention.forward(&layer_input);
-                    output_batch_rm = output_attention.take_output_batch_rm();
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in sparse self attention layer (rm): {:?}", start.elapsed().as_secs_f64());
-                    }
-                } else {
-                    println!("No previous output for Attention layer");
-                }
-            }
-            LayerEnum::SelfAttentionApproximation(attention) => {
-                // Ensure there's an output from the previous layer before forwarding
-                if let Some(padding_m) = &padding_mask {
-                    let previous_output: Vec<Vec<Vec<C>>> = match output_batch.take() {
-                        Some(v) => v,
-                        None => {
-                            println!("No previous output for Attention layer");
-                            continue;
-                        }
-                    };
-
-                    layer_input.set_input_batch(previous_output);
-                    layer_input.set_padding_mask_batch(padding_m.clone());
-                    layer_input.set_input_batch_rm(vec![]);
-
-                    if VERBOSE {
-                        println!("forward self-attention approximation start");
-                    }
-                    let start = Instant::now();
-                    let mut output_attention = attention.forward(&layer_input);
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in self attention approximation layer: {:?}", start.elapsed().as_secs_f64());
-                    }
-
-                    output_batch = output_attention.take_output_batch();
-                } else {
-                    println!("No previous output for Attention layer");
-                }
-            }
-            LayerEnum::SelfAttentionApproximationRm(attention) => {
-                if let Some(padding_m) = &padding_mask {
-                    layer_input.clear_input_batch();
-                    layer_input.set_input_batch_rm(output_batch_rm.take().unwrap());
-                    layer_input.set_padding_mask_batch(padding_m.clone());
-
-                    if VERBOSE {
-                        println!("forward self-attention approximation start (rm)");
-                    }
-                    let start = Instant::now();
-                    let mut output_attention = attention.forward(&layer_input);
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in self attention approximation layer (rm): {:?}", start.elapsed().as_secs_f64());
-                    }
-
-                    output_batch_rm = output_attention.take_output_batch_rm();
-                } else {
-                    println!("No previous output for Attention layer");
-                }
-            }
-            LayerEnum::FeedForward(dense_layer) => {
-                if VERBOSE {
-                    println!("forward feed-forward network start");
-                }
-
-                let start = Instant::now();
-
-                let previous_output = match output_batch.take() {
-                    Some(v) => v,
-                    None => {
-                        println!("No previous output for Dense layer");
-                        continue;
-                    }
-                };
-                layer_input.set_input_batch(previous_output);
-                layer_input.set_padding_mask_batch(padding_mask.clone().unwrap());
-
-                let mut layer_output = dense_layer.forward(&layer_input);
-                output_batch = layer_output.take_output_batch();
-
-                if VERBOSE {
-                    println!("time elapsed in seconds in ffn layer: {:?}", start.elapsed().as_secs_f64());
-                }
-
-                //check_nan_or_inf_3d(&mut layer_output.get_output_batch(), "output ffn dense");
-            }
-            LayerEnum::FeedForwardRm(ffn_layer) => {
-                ffn_layer.padding_mask_batch = padding_mask.clone();
-
-                if VERBOSE {
-                    println!("forward feed-forward RM network start");
-                }
-
-                let start = Instant::now();
-
-                layer_input.clear_input_batch();
-                layer_input.set_input_batch_rm(output_batch_rm.take().unwrap());
-
-                let mut layer_output = ffn_layer.forward(&layer_input);
-                output_batch_rm = layer_output.take_output_batch_rm();
-
-                if VERBOSE {
-                    println!("time elapsed in seconds in ffn_rm layer: {:?}", start.elapsed().as_secs_f64());
-                }
-            }
-            LayerEnum::Linear(linear_layer) => {
-                if VERBOSE {
-                    println!("forward linear start");
-                }
-
-                let previous_output = match output_batch.take() {
-                    Some(v) => v,
-                    None => {
-                        println!("No previous output for Dense layer");
-                        continue;
-                    }
-                };
-                layer_input.set_input_batch(previous_output);
-
-                let start = Instant::now();
-                let mut output_linear = linear_layer.forward(&layer_input);
-
-                linear_output_indices = output_linear.get_output_indices();
-                output_batch = output_linear.take_output_batch();
-
-                if VERBOSE {
-                    println!("time elapsed in seconds in linear layer: {:?}", start.elapsed().as_secs_f64());
-                }
-            }
-            LayerEnum::ClusteringLinear(clustering_linear_layer) => {
-                if VERBOSE {
-                    println!("forward clustering linear start");
-                }
-
-                let previous_output = match output_batch.take() {
-                    Some(v) => v,
-                    None => {
-                        println!("No previous output for ClusteringLinear(Vec) layer");
-                        continue;
-                    }
-                };
-                layer_input.set_input_batch(previous_output);
-
-                let start = Instant::now();
-                let mut output_linear = clustering_linear_layer.forward(&layer_input);
-
-                linear_output_indices = output_linear.get_output_indices();
-                output_batch = output_linear.take_output_batch();
-
-                if VERBOSE {
-                    println!("time elapsed in seconds in clustering linear layer: {:?}", start.elapsed().as_secs_f64());
-                }
-            }
-            LayerEnum::AdaptiveLinear(adaptive_linear_layer) => {
-                if VERBOSE {
-                    println!("forward adaptive linear start");
-                }
-
-                let previous_output = match output_batch.take() {
-                    Some(v) => v,
-                    None => {
-                        println!("No previous output for AdaptiveLinear layer");
-                        continue;
-                    }
-                };
-                layer_input.set_input_batch(previous_output);
-
-                let start = Instant::now();
-                let mut output_linear = adaptive_linear_layer.forward(&layer_input);
-                linear_output_indices = output_linear.get_output_indices();
-                if !forward_only {
-                    let adaptive_loss_batch = output_linear.get_cross_entropy_loss_batch();
-                    if !adaptive_loss_batch.is_empty() {
-                        layer_output.set_cross_entropy_loss_batch(adaptive_loss_batch);
-                    }
-                } else {
-                    let adaptive_logits = output_linear.get_output_batch();
-                    output_batch_real = Some(complex_batch_to_real_batch(&adaptive_logits));
-                }
-                output_batch = output_linear.take_output_batch();
-
-                if VERBOSE {
-                    println!("time elapsed in seconds in adaptive linear layer: {:?}", start.elapsed().as_secs_f64());
-                }
-            }
-            LayerEnum::Eml(eml_linear_layer) => {
-                if VERBOSE {
-                    println!("forward eml linear start");
-                }
-
-                let previous_output = match output_batch.take() {
-                    Some(v) => v,
-                    None => {
-                        println!("No previous output for Eml layer");
-                        continue;
-                    }
-                };
-                layer_input.set_input_batch(previous_output.clone());
-
-                let start = Instant::now();
-                let mut output_linear = eml_linear_layer.forward(&layer_input);
-                if !forward_only {
-                    let eml_loss_batch = output_linear.get_cross_entropy_loss_batch();
-                    if !eml_loss_batch.is_empty() {
-                        layer_output.set_cross_entropy_loss_batch(eml_loss_batch);
-                    }
-                    // Terminal teacher-forced head on the training path: no dense logits, so
-                    // pass the hidden states through unchanged for any downstream consumer.
-                    output_batch = Some(previous_output);
-                } else {
-                    // Inference: the head emits sparse top-k token scores + indices, exactly
-                    // like AdaptiveLinear, so the greedy decoder can argmax and map to ids.
-                    linear_output_indices = output_linear.get_output_indices();
-                    let eml_logits = output_linear.get_output_batch();
-                    output_batch_real = Some(complex_batch_to_real_batch(&eml_logits));
-                    output_batch = output_linear.take_output_batch();
-                }
-
-                if VERBOSE {
-                    println!("time elapsed in seconds in eml linear layer: {:?}", start.elapsed().as_secs_f64());
-                }
-            }
-            LayerEnum::SparseLinearRm(sparse_linear_layer) => {
-                if VERBOSE {
-                    println!("forward sparse linear_rm start");
-                }
-
-                let rm_in = match output_batch_rm.take() {
-                    Some(v) => v,
-                    None => {
-                        println!("No previous RM output for SparseLinearRm layer");
-                        continue;
-                    }
-                };
-
-                layer_input.clear_input_batch();
-                layer_input.set_input_batch_rm(rm_in);
-
-                let start = Instant::now();
-                let mut output_linear = sparse_linear_layer.forward(&layer_input);
-                linear_output_indices = output_linear.get_output_indices();
-                output_batch_rm = output_linear.take_output_batch_rm();
-
-                if VERBOSE {
-                    println!("time elapsed in seconds in sparse linear_rm layer: {:?}", start.elapsed().as_secs_f64());
-                }
-            }
-            LayerEnum::MultiLinear(multi_linear_layer) => {
-                if VERBOSE {
-                    println!("forward multilinear start");
-                }
-
-                let previous_output = match output_batch.take() {
-                    Some(v) => v,
-                    None => {
-                        panic!("No previous output for Multilinear layer");
-                    }
-                };
-                layer_input.set_input_batch(previous_output);
-
-                let start = Instant::now();
-                let mut output_linear = multi_linear_layer.forward(&layer_input);
-                output_batch = output_linear.take_output_batch();
-
-                if VERBOSE {
-                    println!("time elapsed in seconds in multilayer layer: {:?}", start.elapsed().as_secs_f64());
-                }
-            }
-            LayerEnum::Wavelet(wavelet_layer) => {
-                if output_batch.is_none() {
-                    panic!("No previous output for Wavelet layer");
-                }
-
-                let previous_output = output_batch.take().unwrap();
-                layer_input.set_input_batch(previous_output);
-
-                let start = Instant::now();
-                let mut output_cwt = wavelet_layer.forward(&layer_input);
-                output_batch = output_cwt.take_output_batch();
-
-                if VERBOSE {
-                    println!("time elapsed in seconds in wavelet layer: {:?}", start.elapsed().as_secs_f64());
-                }
-            }
-            LayerEnum::WaveletRm(wavelet_layer) => {
-                layer_input.clear_input_batch();
-                layer_input.set_input_batch_rm(output_batch_rm.take().unwrap());
-
-                let start = Instant::now();
-                let mut output_cwt = wavelet_layer.forward(&layer_input);
-                output_batch_rm = output_cwt.take_output_batch_rm();
-
-                if VERBOSE {
-                    println!("time elapsed in seconds in wavelet rm layer: {:?}", start.elapsed().as_secs_f64());
-                }
-            }
-            LayerEnum::DiscreteWavelet(wavelet_layer) => {
-                if output_batch.is_none() {
-                    panic!("No previous output for DiscreteWavelet layer");
-                }
-
-                let previous_output = output_batch.take().unwrap();
-                layer_input.set_input_batch(previous_output);
-
-                let start = Instant::now();
-                let mut output_dwt = wavelet_layer.forward(&layer_input);
-
-                let new_padding_mask = output_dwt.get_padding_mask_batch();
+            continue;
+        }
+
+        // Feed the previous layer's activations; exactly one representation (Vec or RM)
+        // is active at a time. Embedding layers take token ids instead of activations.
+        if let Some(previous_output) = output_batch.take() {
+            layer_input.clear_input_batch_rm();
+            layer_input.set_input_batch(previous_output);
+        } else if let Some(previous_output_rm) = output_batch_rm.take() {
+            layer_input.clear_input_batch();
+            layer_input.set_input_batch_rm(previous_output_rm);
+        } else if !matches!(layer, LayerEnum::Embedding(_) | LayerEnum::EmbeddingRm(_)) {
+            println!("No previous output for {} layer", layer.name());
+            continue;
+        }
+
+        let start = Instant::now();
+        let mut output = layer.forward(&layer_input);
+
+        if VERBOSE {
+            println!("time elapsed in seconds in {} layer: {:?}", layer.name(), start.elapsed().as_secs_f64());
+        }
+
+        // Layers that (re)compute the padding mask (embedding, discrete wavelet) publish it here.
+        if let Some(new_padding_mask) = output.take_padding_mask_batch() {
+            if !new_padding_mask.is_empty() {
                 padding_mask = Some(new_padding_mask.clone());
                 layer_input.set_padding_mask_batch(new_padding_mask);
-                output_batch = output_dwt.take_output_batch();
-
-                if VERBOSE {
-                    println!("time elapsed in seconds in discrete wavelet layer: {:?}", start.elapsed().as_secs_f64());
-                }
-            }
-            LayerEnum::DiscreteWaveletRm(wavelet_layer) => {
-                if output_batch_rm.is_none() {
-                    panic!("No previous output for DiscreteWaveletRm layer");
-                }
-
-                layer_input.clear_input_batch();
-                layer_input.set_input_batch_rm(output_batch_rm.take().unwrap());
-
-                let start = Instant::now();
-                let mut output_dwt = wavelet_layer.forward(&layer_input);
-
-                let new_padding_mask = output_dwt.get_padding_mask_batch();
-                padding_mask = Some(new_padding_mask.clone());
-                layer_input.set_padding_mask_batch(new_padding_mask);
-                output_batch_rm = output_dwt.take_output_batch_rm();
-
-                if VERBOSE {
-                    println!("time elapsed in seconds in discrete wavelet rm layer: {:?}", start.elapsed().as_secs_f64());
-                }
-            }
-            LayerEnum::ComplexToLinear(ctl_layer) => {
-                if output_batch.is_none() {
-                    panic!("No previous output for ComplexToLinear layer");
-                }
-
-                let previous_output = match output_batch.take() {
-                    Some(v) => v,
-                    None => {
-                        println!("No previous output for Complex to Linear layer");
-                        continue;
-                    }
-                };
-                layer_input.set_input_batch(previous_output);
-
-                let start = Instant::now();
-                let mut output_ctl = ctl_layer.forward(&layer_input);
-                output_batch = output_ctl.take_output_batch();
-
-                if VERBOSE {
-                    println!("time elapsed in seconds in complex to linear layer: {:?}", start.elapsed().as_secs_f64());
-                }
-            }
-            LayerEnum::ComplexToLinearRm(ctl_layer) => {
-                if output_batch_rm.is_none() {
-                    panic!("No previous output for ComplexToLinearRm layer");
-                }
-
-                // Prefer RM-only path when available.
-                layer_input.clear_input_batch();
-                layer_input.set_input_batch_rm(output_batch_rm.take().unwrap());
-
-                let start = Instant::now();
-                let mut output_ctl = ctl_layer.forward(&layer_input);
-                if VERBOSE {
-                    println!("time elapsed in seconds in complex to linear layer: {:?}", start.elapsed().as_secs_f64());
-                }
-
-                output_batch_rm = output_ctl.take_output_batch_rm();
-            }
-            LayerEnum::Softmax(softmax_layer) => {
-                let start = Instant::now();
-
-                if !forward_only && !layer_output.get_cross_entropy_loss_batch().is_empty() {
-                    if VERBOSE {
-                        println!("skipping standalone softmax because adaptive output layer already produced CE loss");
-                    }
-                    continue;
-                }
-
-                let previous_output = match output_batch.take() {
-                    Some(v) => v,
-                    None => {
-                        println!("No previous output for Softmax(Vec) layer");
-                        continue;
-                    }
-                };
-
-                if !forward_only {
-                    // Training always requires CE loss + gradients; ensure Softmax is in TRAINING
-                    // even if a prior inference call switched it to PRODUCTION.
-                    softmax_layer.operation_mode = OperationMode::TRAINING;
-
-                    layer_input.set_input_batch(previous_output);
-                    layer_input.set_output_indices(linear_output_indices.clone());
-
-                    let _softmax_result: Vec<Vec<Vec<C>>> = softmax_layer.forward_inner(&layer_input, padding_mask.clone(), target_batch_ids_option.clone());
-                    layer_output.set_cross_entropy_loss_batch(softmax_layer.cross_entropy_loss_batch.clone().unwrap());
-                } else {
-                    output_batch_real = Some(complex_batch_to_real_batch(&previous_output));
-                }
-
-                if VERBOSE {
-                    println!("time elapsed in seconds in softmax layer: {:?}", start.elapsed().as_secs_f64());
-                }
-            }
-            LayerEnum::SoftmaxRm(softmax_layer) => {
-                let start = Instant::now();
-
-                if !forward_only && !layer_output.get_cross_entropy_loss_batch().is_empty() {
-                    if VERBOSE {
-                        println!("skipping standalone softmax_rm because adaptive output layer already produced CE loss");
-                    }
-                    continue;
-                }
-
-                let logits_rm = match output_batch_rm.take() {
-                    Some(v) => v,
-                    None => {
-                        println!("No previous RM output for SoftmaxRm layer");
-                        continue;
-                    }
-                };
-
-                if !forward_only {
-                    softmax_layer.operation_mode = OperationMode::TRAINING;
-
-                    layer_input.clear_input_batch();
-                    layer_input.set_input_batch_rm(logits_rm);
-
-                    layer_input.set_output_indices(linear_output_indices.clone());
-                    let _softmax_result: Vec<Vec<Vec<C>>> = softmax_layer.forward_inner(&layer_input, padding_mask.clone(), target_batch_ids_option.clone());
-                    layer_output.set_cross_entropy_loss_batch(softmax_layer.cross_entropy_loss_batch.clone().unwrap());
-                }
-
-                if VERBOSE {
-                    println!("time elapsed in seconds in softmax_rm layer: {:?}", start.elapsed().as_secs_f64());
-                }
-            }
-            _ => {
-                panic!("Layer type not supported for backward pass");
             }
         }
+
+        // Sparse output heads publish top-k indices; the softmax consumes them via layer_input.
+        let output_indices = output.get_output_indices();
+        if !output_indices.is_empty() {
+            linear_output_indices = output_indices;
+            layer_input.set_output_indices(linear_output_indices.clone());
+        }
+
+        // Output heads (AdaptiveLinear, EML, Softmax) publish the CE loss in training mode.
+        if let Some(ce_loss_batch) = output.take_cross_entropy_loss_batch() {
+            if !ce_loss_batch.is_empty() {
+                layer_output.set_cross_entropy_loss_batch(ce_loss_batch);
+            }
+        }
+
+        // Output heads publish real-valued logits in inference mode.
+        let real_output = output.get_output_batch_real();
+        if !real_output.is_empty() {
+            output_batch_real = Some(real_output);
+        }
+
+        output_batch = output.take_output_batch();
+        output_batch_rm = output.take_output_batch_rm();
     }
 
     layer_output.set_output_batch_real(output_batch_real.unwrap());
@@ -1174,402 +615,43 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
 
     for layer in transformer_network.layers.iter_mut().rev() {
         match layer {
-            LayerEnum::AdaptiveAvgPool1d(adaptive_pooling) => {
-                if let Some(previous_gradient) = gradient {
-                    // println!("backward adaptive avg pool start");
-                    let gradient_batch: Gradient = adaptive_pooling.backward(&previous_gradient);
-                    gradient = Some(gradient_batch);
-                    // println!("backward adaptive avg pool end");
-                } else {
-                    println!("No previous gradient for norm layer");
-                }
+            // Terminal heads seed the gradient chain from the gradient stored during the
+            // training forward pass instead of consuming a previous layer's gradient.
+            LayerEnum::Softmax(softmax_layer) => {
+                softmax_layer.batch_size = batch_size;
+                gradient = Some(softmax_layer.gradient.as_ref().unwrap().clone());
             }
-            LayerEnum::Embedding(embedding_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    // println!("backward embedding start");
-                    let start = Instant::now();
-                    let grad_vec: Vec<Vec<Vec<C>>> = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref().filter(|g| !g.is_empty()) {
-                        gr_rm.iter().map(|m| m.to_rows()).collect()
-                    } else {
-                        previous_gradient.get_gradient_input_batch()
-                    };
-                    let gradient_batch: Gradient = embedding_layer.backward_inner(&grad_vec);
-                    if VERBOSE {
-                        println!("time elapsed in seconds in embedding layer backward: {}", start.elapsed().as_secs_f64());
-                    }
-                    gradient = Some(gradient_batch);
-                } else {
-                    println!("No previous gradient in Token Embedding Layer");
-                }
-            }
-            LayerEnum::EmbeddingRm(embedding_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-                    let gr_rm = previous_gradient.get_gradient_input_batch_rm_ref().filter(|g| !g.is_empty()).expect("EmbeddingRm expects RM gradients");
-                    let gradient_batch: Gradient = embedding_layer.backward_inner(gr_rm);
-                    if VERBOSE {
-                        println!("time elapsed in seconds in embedding_rm layer backward: {}", start.elapsed().as_secs_f64());
-                    }
-                    gradient = Some(gradient_batch);
-                } else {
-                    println!("No previous gradient in Token Embedding Layer");
-                }
-            }
-            LayerEnum::PositionalEncoding(positional_encoding_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-
-                    let gradient_batch: Gradient = positional_encoding_layer.backward(&previous_gradient);
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in positional encoding layer backward: {}", start.elapsed().as_secs_f64());
-                    }
-                    gradient = Some(gradient_batch);
-                }
-            }
-            LayerEnum::PositionalEncodingRm(positional_encoding_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-                    let gr_rm = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
-                        gr_rm.to_vec()
-                    } else {
-                        previous_gradient.get_gradient_input_batch_rm()
-                    };
-
-                    let gradient_batch: Gradient = positional_encoding_layer.backward_inner(&gr_rm);
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in positional encoding layer backward: {}", start.elapsed().as_secs_f64());
-                    }
-                    gradient = Some(gradient_batch);
-                }
-            }
-            LayerEnum::Norm(norm_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-
-                    let gradient_batch: Gradient = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
-                        let mut pg = previous_gradient.clone();
-                        pg.set_gradient_input_batch(gr_rm.iter().map(|m| m.to_rows()).collect());
-                        pg.set_gradient_input_batch_rm(vec![]);
-                        norm_layer.backward(&pg)
-                    } else {
-                        norm_layer.backward(&previous_gradient)
-                    };
-                    gradient = Some(gradient_batch);
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in norm layer backward: {}", start.elapsed().as_secs_f64());
-                    }
-                } else {
-                    println!("No previous gradient for norm layer");
-                }
-            }
-            LayerEnum::NormRm(norm_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-                    let gradient_batch: Gradient = if previous_gradient.get_gradient_input_batch_rm_ref().is_some() {
-                        norm_layer.backward(&previous_gradient)
-                    } else {
-                        let mut pg = previous_gradient.clone();
-                        let gr_rm = pg.get_gradient_input_batch_rm();
-                        pg.set_gradient_input_batch_rm(gr_rm);
-                        norm_layer.backward(&pg)
-                    };
-                    gradient = Some(gradient_batch);
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in norm layer backward: {}", start.elapsed().as_secs_f64());
-                    }
-                } else {
-                    println!("No previous gradient for norm layer");
-                }
-            }
-            LayerEnum::SelfAttention(attention_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-                    let gradient_batch: Gradient = attention_layer.backward(&previous_gradient);
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in self attention layer backward: {:?}", start.elapsed().as_secs_f64());
-                    }
-                    gradient = Some(gradient_batch);
-                } else {
-                    println!("No previous gradient in Self Attention Layer");
-                }
-            }
-            LayerEnum::SparseSelfAttention(attention_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-                    let gradient_batch: Gradient = attention_layer.backward(&previous_gradient);
-                    if VERBOSE {
-                        println!("time elapsed in seconds in sparse self attention layer backward: {:?}", start.elapsed().as_secs_f64());
-                    }
-
-                    gradient = Some(gradient_batch);
-                } else {
-                    println!("No previous gradient in Self Attention Layer");
-                }
-            }
-            LayerEnum::SparseSelfAttentionRm(attention_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-
-                    let gradient_batch: Gradient = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
-                        attention_layer.backward_rm(gr_rm)
-                    } else {
-                        let previous_gradient_batch_rm: Vec<RowMajorMatrix<C>> = previous_gradient.get_gradient_input_batch().iter().map(|rows| RowMajorMatrix::from_rows(rows)).collect();
-                        attention_layer.backward_rm(&previous_gradient_batch_rm)
-                    };
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in sparse self attention layer backward (rm): {:?}", start.elapsed().as_secs_f64());
-                    }
-                    gradient = Some(gradient_batch);
-                } else {
-                    println!("No previous gradient in SparseSelfAttentionLayerRm");
-                }
-            }
-            LayerEnum::SelfAttentionApproximation(attention_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-                    let gradient_batch: Gradient = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
-                        let previous_gradient_batch: Vec<Vec<Vec<C>>> = gr_rm.iter().map(|m| m.to_rows()).collect();
-                        attention_layer.backward(&previous_gradient_batch)
-                    } else {
-                        attention_layer.backward(&previous_gradient.get_gradient_input_batch())
-                    };
-                    if VERBOSE {
-                        println!("time elapsed in seconds in self attention approximation layer backward: {:?}", start.elapsed().as_secs_f64());
-                    }
-
-                    gradient = Some(gradient_batch);
-                } else {
-                    println!("No previous gradient in Self Attention Layer");
-                }
-            }
-            LayerEnum::SelfAttentionApproximationRm(attention_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-
-                    let gradient_batch: Gradient = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
-                        attention_layer.backward_rm(gr_rm)
-                    } else {
-                        let previous_gradient_batch_rm: Vec<RowMajorMatrix<C>> = previous_gradient.get_gradient_input_batch().iter().map(|rows| RowMajorMatrix::from_rows(rows)).collect();
-                        attention_layer.backward_rm(&previous_gradient_batch_rm)
-                    };
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in self attention approximation layer backward (rm): {:?}", start.elapsed().as_secs_f64());
-                    }
-                    gradient = Some(gradient_batch);
-                } else {
-                    println!("No previous gradient in Self Attention Layer");
-                }
-            }
-            LayerEnum::FeedForward(dense_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-                    let gradient_batch: Gradient = dense_layer.backward(&previous_gradient);
-                    // println!("backward dense end");
-                    gradient = Some(gradient_batch);
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in ffn layer backward: {:?}", start.elapsed().as_secs_f64());
-                    }
-                } else {
-                    println!("No previous gradient in Dense Layer");
-                }
-            }
-            LayerEnum::FeedForwardRm(ffn_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-
-                    let gradient_batch: Gradient = ffn_layer.backward(&previous_gradient);
-                    
-                    gradient = Some(gradient_batch);
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in ffn_rm layer backward: {:?}", start.elapsed().as_secs_f64());
-                    }
-                } else {
-                    println!("No previous gradient in FeedForwardRm Layer");
-                }
-            }
-            LayerEnum::Linear(linear_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-                    let gradient_batch: Gradient = linear_layer.backward(&previous_gradient);
-                    gradient = Some(gradient_batch);
-                    if VERBOSE {
-                        println!("time elapsed in seconds in linear layer backward: {:?}", start.elapsed().as_secs_f64());
-                    }
-                } else {
-                    println!("No previous gradient in Linear Layer");
-                }
-            }
-            LayerEnum::ClusteringLinear(sparse_linear_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-                    let gradient_batch: Gradient = sparse_linear_layer.backward(&previous_gradient);
-                    gradient = Some(gradient_batch);
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in sparse linear layer backward: {:?}", start.elapsed().as_secs_f64());
-                    }
-                } else {
-                    println!("No previous gradient in Linear Layer");
-                }
-            }
-            LayerEnum::AdaptiveLinear(adaptive_linear_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-                    let gradient_batch: Gradient = adaptive_linear_layer.backward(&previous_gradient);
-                    gradient = Some(gradient_batch);
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in adaptive linear layer backward: {:?}", start.elapsed().as_secs_f64());
-                    }
-                } else if let Some(stored_gradient) = adaptive_linear_layer.gradient.as_ref() {
-                    gradient = Some(stored_gradient.clone());
-                } else {
-                    println!("No previous gradient in Adaptive Linear Layer");
-                }
+            LayerEnum::SoftmaxRm(softmax_layer) => {
+                softmax_layer.batch_size = batch_size;
+                gradient = Some(softmax_layer.gradient.as_ref().unwrap().clone());
             }
             LayerEnum::Eml(eml_linear_layer) => {
-                // Terminal head: the gradient was computed during the training forward.
                 if let Some(stored_gradient) = eml_linear_layer.gradient.as_ref() {
                     gradient = Some(stored_gradient.clone());
                 } else {
                     println!("No stored gradient in Eml Linear Layer");
                 }
             }
-            LayerEnum::SparseLinearRm(sparse_linear_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-                    let gradient_batch: Gradient = sparse_linear_layer.backward(&previous_gradient);
-                    gradient = Some(gradient_batch);
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in sparse linear_rm layer backward: {:?}", start.elapsed().as_secs_f64());
-                    }
+            // AdaptiveLinear acts as a terminal head only when nothing above it produced a
+            // gradient; otherwise it backpropagates like any other layer below.
+            LayerEnum::AdaptiveLinear(adaptive_linear_layer) if gradient.is_none() => {
+                if let Some(stored_gradient) = adaptive_linear_layer.gradient.as_ref() {
+                    gradient = Some(stored_gradient.clone());
                 } else {
-                    println!("No previous gradient in SparseLinearRm Layer");
+                    println!("No previous gradient in Adaptive Linear Layer");
                 }
             }
-            LayerEnum::MultiLinear(multi_linear_layer) => {
-                if let Some(previous_gradient) = gradient {
+            layer => {
+                if let Some(previous_gradient) = gradient.as_ref() {
                     let start = Instant::now();
-                    let gradient_batch: Gradient = multi_linear_layer.backward(&previous_gradient);
-                    gradient = Some(gradient_batch);
-
+                    let gradient_batch: Gradient = layer.backward(previous_gradient);
                     if VERBOSE {
-                        println!("time elapsed in seconds in multi linear layer backward: {:?}", start.elapsed().as_secs_f64());
+                        println!("time elapsed in seconds in {} layer backward: {:?}", layer.name(), start.elapsed().as_secs_f64());
                     }
-                } else {
-                    println!("No previous gradient in Linear Layer");
-                }
-            }
-            LayerEnum::Wavelet(wavelet_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-                    let gradient_batch: Gradient = wavelet_layer.backward(&previous_gradient);
                     gradient = Some(gradient_batch);
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in wavelet layer backward: {:?}", start.elapsed().as_secs_f64());
-                    }
                 } else {
-                    println!("No previous gradient in Linear Layer");
+                    println!("No previous gradient in {} layer", layer.name());
                 }
-            }
-            LayerEnum::WaveletRm(wavelet_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-
-                    let gradient_batch: Gradient = if previous_gradient.get_gradient_input_batch_rm_ref().is_some() {
-                        wavelet_layer.backward(&previous_gradient)
-                    } else {
-                        let previous_gradient_batch: Vec<RowMajorMatrix<C>> = previous_gradient.get_gradient_input_batch().iter().map(|rows| RowMajorMatrix::from_rows(rows)).collect();
-                        let mut g = Gradient::new_default();
-                        g.set_gradient_input_batch_rm(previous_gradient_batch);
-                        g.set_total_valid_tokens(previous_gradient.get_total_valid_tokens());
-                        wavelet_layer.backward(&g)
-                    };
-
-                    gradient = Some(gradient_batch);
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in wavelet rm layer backward: {:?}", start.elapsed().as_secs_f64());
-                    }
-                } else {
-                    println!("No previous gradient in WaveletRm Layer");
-                }
-            }
-            LayerEnum::DiscreteWavelet(wavelet_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-                    let gradient_batch: Gradient = wavelet_layer.backward(&previous_gradient);
-                    gradient = Some(gradient_batch);
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in discrete wavelet layer backward: {:?}", start.elapsed().as_secs_f64());
-                    }
-                } else {
-                    println!("No previous gradient in Linear Layer");
-                }
-            }
-            LayerEnum::DiscreteWaveletRm(wavelet_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-
-                    let gradient_batch: Gradient = if previous_gradient.get_gradient_input_batch_rm_ref().is_some() {
-                        wavelet_layer.backward(&previous_gradient)
-                    } else {
-                        let previous_gradient_batch: Vec<RowMajorMatrix<C>> = previous_gradient.get_gradient_input_batch().iter().map(|rows| RowMajorMatrix::from_rows(rows)).collect();
-                        let mut g = Gradient::new_default();
-                        g.set_gradient_input_batch_rm(previous_gradient_batch);
-                        g.set_total_valid_tokens(previous_gradient.get_total_valid_tokens());
-                        wavelet_layer.backward(&g)
-                    };
-
-                    gradient = Some(gradient_batch);
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in discrete wavelet rm layer backward: {:?}", start.elapsed().as_secs_f64());
-                    }
-                } else {
-                    println!("No previous gradient in DiscreteWaveletRm Layer");
-                }
-            }
-            LayerEnum::ComplexToLinear(complex_to_linear_layer) => {
-                if let Some(previous_gradient) = gradient {
-                    let start = Instant::now();
-                    let gradient_batch: Gradient = complex_to_linear_layer.backward(&previous_gradient);
-                    gradient = Some(gradient_batch);
-
-                    if VERBOSE {
-                        println!("time elapsed in seconds in complex to linear layer backward: {:?}", start.elapsed().as_secs_f64());
-                    }
-                } else {
-                    println!("No previous gradient in Complex to Linear Layer");
-                }
-            }
-            LayerEnum::Softmax(softmax_layer) => {
-                softmax_layer.batch_size = batch_size;
-                // println!("backward softmax start");
-                // let gradient_batch: Gradient = softmax_layer.backward(target_batch_ids);
-                // gradient = Some(gradient_batch);
-
-                gradient = Some(softmax_layer.gradient.as_ref().unwrap().clone());
-                // println!("backward softmax end");
-            }
-            LayerEnum::SoftmaxRm(softmax_layer) => {
-                softmax_layer.batch_size = batch_size;
-                gradient = Some(softmax_layer.gradient.as_ref().unwrap().clone());
-            }
-            _ => {
-                panic!("Layer type not supported for backward pass");
             }
         }
     }

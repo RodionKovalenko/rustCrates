@@ -1,6 +1,7 @@
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     network_layers::{
+        default_layer::LayerInterface,
         adaptive_linear_layer::AdaptiveLinearLayer, adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, clustering_linear_layer::ClusteringLinearLayer, complex_to_linear_layer::ComplexToLinearLayer, eml_linear_layer::EmlLinearLayer, feedforward_layer::FeedForwardLayer, multi_linear_layer::MultiLinearLayer, network_layers_rm::{
             complex_to_linear_layer_rm::ComplexToLinearLayerRm, embedding_layer_rm::EmbeddingLayerRm, feedforward_layer_rm::FeedForwardLayerRm, layer_rm::LayerRm, linear_layer_rm::LinearLayerRm,
             sparse_linear_layer_rm::SparseLinearLayerRm, wavelet_complex_layer_rm::ComplexWaveletLayerRm, wavelet_discrete_layer_rm::DiscreteWaveletLayerRm,
@@ -10,13 +11,14 @@ use crate::neural_networks::{
         self_attention_layer::SelfAttentionLayer, self_attention_layer_approximation::SelfAttentionLayerApproximation, self_attention_layer_approximation_rm::SelfAttentionLayerApproximationRm,
         sparse_self_attention_layer::SparseSelfAttentionLayer, sparse_self_attention_layer_rm::SparseSelfAttentionLayerRm,
     },
+    network_types::neural_network_generic::OperationMode,
     utils::{
         activation::{activate_output_complex, swish},
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         derivative::{get_gradient_complex, get_gradient_swish},
         matrix::{
             add_matrix, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate, conjugate_transpose, hadamard_product_2d_c, multiply_complex,
-            normalize_bias, normalize_gradients, split_data_by_columns,
+            normalize_bias, normalize_gradients, split_data_by_columns, RowMajorMatrix,
         },
         weights_initializer::initialize_weights_complex,
     },
@@ -397,6 +399,294 @@ impl Layer {
         self.previous_gradient = Some(gradient.clone());
 
         self.gradient = None;
+    }
+}
+
+#[inline]
+fn complex_batch_to_real_batch(data: &[Vec<Vec<C>>]) -> Vec<Vec<Vec<Real>>> {
+    data.iter().map(|seq| seq.iter().map(|row| row.iter().map(|z| z.re).collect()).collect()).collect()
+}
+
+impl LayerEnum {
+    /// Short human-readable layer name for logging.
+    pub fn name(&self) -> &'static str {
+        match self {
+            LayerEnum::AdaptiveAvgPool1d(_) => "AdaptiveAvgPool1d",
+            LayerEnum::Embedding(_) => "Embedding",
+            LayerEnum::EmbeddingRm(_) => "EmbeddingRm",
+            LayerEnum::PositionalEncoding(_) => "PositionalEncoding",
+            LayerEnum::PositionalEncodingRm(_) => "PositionalEncodingRm",
+            LayerEnum::Dense(_) => "Dense",
+            LayerEnum::DenseRm(_) => "DenseRm",
+            LayerEnum::FeedForward(_) => "FeedForward",
+            LayerEnum::FeedForwardRm(_) => "FeedForwardRm",
+            LayerEnum::RMSNorm(_) => "RMSNorm",
+            LayerEnum::Norm(_) => "Norm",
+            LayerEnum::NormRm(_) => "NormRm",
+            LayerEnum::SelfAttention(_) => "SelfAttention",
+            LayerEnum::SparseSelfAttention(_) => "SparseSelfAttention",
+            LayerEnum::SparseSelfAttentionRm(_) => "SparseSelfAttentionRm",
+            LayerEnum::SelfAttentionApproximation(_) => "SelfAttentionApproximation",
+            LayerEnum::SelfAttentionApproximationRm(_) => "SelfAttentionApproximationRm",
+            LayerEnum::Linear(_) => "Linear",
+            LayerEnum::LinearRm(_) => "LinearRm",
+            LayerEnum::ClusteringLinear(_) => "ClusteringLinear",
+            LayerEnum::AdaptiveLinear(_) => "AdaptiveLinear",
+            LayerEnum::Eml(_) => "Eml",
+            LayerEnum::SparseLinearRm(_) => "SparseLinearRm",
+            LayerEnum::MultiLinear(_) => "MultiLinear",
+            LayerEnum::DiscreteWavelet(_) => "DiscreteWavelet",
+            LayerEnum::DiscreteWaveletRm(_) => "DiscreteWaveletRm",
+            LayerEnum::ComplexToLinear(_) => "ComplexToLinear",
+            LayerEnum::ComplexToLinearRm(_) => "ComplexToLinearRm",
+            LayerEnum::Wavelet(_) => "Wavelet",
+            LayerEnum::WaveletRm(_) => "WaveletRm",
+            LayerEnum::Softmax(_) => "Softmax",
+            LayerEnum::SoftmaxRm(_) => "SoftmaxRm",
+        }
+    }
+}
+
+/// Uniform layer dispatch used by the network forward/backward loops.
+///
+/// Every variant funnels into the concrete layer's own forward/backward; the
+/// per-variant glue (Vec<->RowMajor gradient conversion, terminal-head
+/// specifics for Softmax/EML/AdaptiveLinear) lives here so the network code in
+/// `transformer_network.rs` stays a plain loop.
+impl LayerInterface for LayerEnum {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        let forward_only = layer_input.get_forward_only();
+
+        match self {
+            LayerEnum::AdaptiveAvgPool1d(layer) => layer.forward(layer_input),
+            LayerEnum::Embedding(layer) => layer.forward(layer_input),
+            LayerEnum::EmbeddingRm(layer) => layer.forward(layer_input),
+            LayerEnum::PositionalEncoding(layer) => layer.forward(layer_input),
+            LayerEnum::PositionalEncodingRm(layer) => layer.forward(layer_input),
+            LayerEnum::Dense(layer) => layer.forward(layer_input),
+            LayerEnum::DenseRm(layer) => LayerInterface::forward(&mut **layer, layer_input),
+            LayerEnum::FeedForward(layer) => layer.forward(layer_input),
+            LayerEnum::FeedForwardRm(layer) => layer.forward(layer_input),
+            LayerEnum::RMSNorm(layer) => LayerInterface::forward(&mut **layer, layer_input),
+            LayerEnum::Norm(layer) => layer.forward(layer_input),
+            LayerEnum::NormRm(layer) => layer.forward(layer_input),
+            LayerEnum::SelfAttention(layer) => layer.forward(layer_input),
+            LayerEnum::SparseSelfAttention(layer) => layer.forward(layer_input),
+            LayerEnum::SparseSelfAttentionRm(layer) => layer.forward(layer_input),
+            LayerEnum::SelfAttentionApproximation(layer) => layer.forward(layer_input),
+            LayerEnum::SelfAttentionApproximationRm(layer) => layer.forward(layer_input),
+            LayerEnum::Linear(layer) => layer.forward(layer_input),
+            LayerEnum::LinearRm(layer) => LayerInterface::forward(&mut **layer, layer_input),
+            LayerEnum::ClusteringLinear(layer) => layer.forward(layer_input),
+            LayerEnum::AdaptiveLinear(layer) => {
+                let mut output = layer.forward(layer_input);
+                if forward_only {
+                    let logits = output.get_output_batch();
+                    output.set_output_batch_real(complex_batch_to_real_batch(&logits));
+                }
+                output
+            }
+            LayerEnum::Eml(layer) => {
+                let mut output = layer.forward(layer_input);
+                if forward_only {
+                    // Inference: the head emits sparse top-k token scores + indices, exactly
+                    // like AdaptiveLinear, so the greedy decoder can argmax and map to ids.
+                    let logits = output.get_output_batch();
+                    output.set_output_batch_real(complex_batch_to_real_batch(&logits));
+                } else {
+                    // Terminal teacher-forced head on the training path: no dense logits, so
+                    // pass the hidden states through unchanged for any downstream consumer.
+                    output.set_output_batch(layer_input.get_input_batch());
+                }
+                output
+            }
+            LayerEnum::SparseLinearRm(layer) => layer.forward(layer_input),
+            LayerEnum::MultiLinear(layer) => layer.forward(layer_input),
+            LayerEnum::DiscreteWavelet(layer) => layer.forward(layer_input),
+            LayerEnum::DiscreteWaveletRm(layer) => layer.forward(layer_input),
+            LayerEnum::ComplexToLinear(layer) => layer.forward(layer_input),
+            LayerEnum::ComplexToLinearRm(layer) => layer.forward(layer_input),
+            LayerEnum::Wavelet(layer) => layer.forward(layer_input),
+            LayerEnum::WaveletRm(layer) => layer.forward(layer_input),
+            LayerEnum::Softmax(layer) => {
+                let mut output = LayerOutput::new_default();
+                if !forward_only {
+                    // Training always requires CE loss + gradients; ensure Softmax is in TRAINING
+                    // even if a prior inference call switched it to PRODUCTION.
+                    layer.operation_mode = OperationMode::TRAINING;
+                    let padding_mask = layer_input.get_padding_mask_batch();
+                    let padding_mask_option = if padding_mask.is_empty() { None } else { Some(padding_mask) };
+                    let _softmax_result = layer.forward_inner(layer_input, padding_mask_option, Some(layer_input.get_target_batch_ids()));
+                    output.set_cross_entropy_loss_batch(layer.cross_entropy_loss_batch.clone().unwrap());
+                } else {
+                    output.set_output_batch_real(complex_batch_to_real_batch(&layer_input.get_input_batch()));
+                }
+                output
+            }
+            LayerEnum::SoftmaxRm(layer) => {
+                let mut output = LayerOutput::new_default();
+                if !forward_only {
+                    layer.operation_mode = OperationMode::TRAINING;
+                    let padding_mask = layer_input.get_padding_mask_batch();
+                    let padding_mask_option = if padding_mask.is_empty() { None } else { Some(padding_mask) };
+                    let _softmax_result = layer.forward_inner(layer_input, padding_mask_option, Some(layer_input.get_target_batch_ids()));
+                    output.set_cross_entropy_loss_batch(layer.cross_entropy_loss_batch.clone().unwrap());
+                }
+                // Inference: the RM logits are consumed here without emitting anything,
+                // matching the previous network-level behavior.
+                output
+            }
+        }
+    }
+
+    fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
+        match self {
+            LayerEnum::AdaptiveAvgPool1d(layer) => layer.backward(previous_gradient),
+            LayerEnum::Embedding(layer) => {
+                let grad_vec: Vec<Vec<Vec<C>>> = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref().filter(|g| !g.is_empty()) {
+                    gr_rm.iter().map(|m| m.to_rows()).collect()
+                } else {
+                    previous_gradient.get_gradient_input_batch()
+                };
+                layer.backward_inner(&grad_vec)
+            }
+            LayerEnum::EmbeddingRm(layer) => {
+                let gr_rm = previous_gradient.get_gradient_input_batch_rm_ref().filter(|g| !g.is_empty()).expect("EmbeddingRm expects RM gradients");
+                layer.backward_inner(gr_rm)
+            }
+            LayerEnum::PositionalEncoding(layer) => layer.backward(previous_gradient),
+            LayerEnum::PositionalEncodingRm(layer) => {
+                let gr_rm = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
+                    gr_rm.to_vec()
+                } else {
+                    previous_gradient.get_gradient_input_batch_rm()
+                };
+                layer.backward_inner(&gr_rm)
+            }
+            LayerEnum::Dense(layer) => layer.backward(&previous_gradient.get_gradient_input_batch()),
+            LayerEnum::DenseRm(layer) => LayerInterface::backward(&mut **layer, previous_gradient),
+            LayerEnum::FeedForward(layer) => layer.backward(previous_gradient),
+            LayerEnum::FeedForwardRm(layer) => layer.backward(previous_gradient),
+            LayerEnum::RMSNorm(layer) => LayerInterface::backward(&mut **layer, previous_gradient),
+            LayerEnum::Norm(layer) => {
+                if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
+                    let mut pg = previous_gradient.clone();
+                    pg.set_gradient_input_batch(gr_rm.iter().map(|m| m.to_rows()).collect());
+                    pg.set_gradient_input_batch_rm(vec![]);
+                    layer.backward(&pg)
+                } else {
+                    layer.backward(previous_gradient)
+                }
+            }
+            LayerEnum::NormRm(layer) => {
+                if previous_gradient.get_gradient_input_batch_rm_ref().is_some() {
+                    layer.backward(previous_gradient)
+                } else {
+                    let mut pg = previous_gradient.clone();
+                    let gr_rm = pg.get_gradient_input_batch_rm();
+                    pg.set_gradient_input_batch_rm(gr_rm);
+                    layer.backward(&pg)
+                }
+            }
+            LayerEnum::SelfAttention(layer) => layer.backward(previous_gradient),
+            LayerEnum::SparseSelfAttention(layer) => layer.backward(previous_gradient),
+            LayerEnum::SparseSelfAttentionRm(layer) => {
+                if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
+                    layer.backward_rm(gr_rm)
+                } else {
+                    let previous_gradient_batch_rm: Vec<RowMajorMatrix<C>> = previous_gradient.get_gradient_input_batch().iter().map(|rows| RowMajorMatrix::from_rows(rows)).collect();
+                    layer.backward_rm(&previous_gradient_batch_rm)
+                }
+            }
+            LayerEnum::SelfAttentionApproximation(layer) => {
+                if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
+                    let previous_gradient_batch: Vec<Vec<Vec<C>>> = gr_rm.iter().map(|m| m.to_rows()).collect();
+                    layer.backward(&previous_gradient_batch)
+                } else {
+                    layer.backward(&previous_gradient.get_gradient_input_batch())
+                }
+            }
+            LayerEnum::SelfAttentionApproximationRm(layer) => {
+                if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
+                    layer.backward_rm(gr_rm)
+                } else {
+                    let previous_gradient_batch_rm: Vec<RowMajorMatrix<C>> = previous_gradient.get_gradient_input_batch().iter().map(|rows| RowMajorMatrix::from_rows(rows)).collect();
+                    layer.backward_rm(&previous_gradient_batch_rm)
+                }
+            }
+            LayerEnum::Linear(layer) => layer.backward(previous_gradient),
+            LayerEnum::LinearRm(layer) => LayerInterface::backward(&mut **layer, previous_gradient),
+            LayerEnum::ClusteringLinear(layer) => layer.backward(previous_gradient),
+            LayerEnum::AdaptiveLinear(layer) => layer.backward(previous_gradient),
+            LayerEnum::Eml(layer) => layer.backward(previous_gradient),
+            LayerEnum::SparseLinearRm(layer) => layer.backward(previous_gradient),
+            LayerEnum::MultiLinear(layer) => layer.backward(previous_gradient),
+            LayerEnum::DiscreteWavelet(layer) => layer.backward(previous_gradient),
+            LayerEnum::DiscreteWaveletRm(layer) => {
+                if previous_gradient.get_gradient_input_batch_rm_ref().is_some() {
+                    layer.backward(previous_gradient)
+                } else {
+                    let previous_gradient_batch: Vec<RowMajorMatrix<C>> = previous_gradient.get_gradient_input_batch().iter().map(|rows| RowMajorMatrix::from_rows(rows)).collect();
+                    let mut g = Gradient::new_default();
+                    g.set_gradient_input_batch_rm(previous_gradient_batch);
+                    g.set_total_valid_tokens(previous_gradient.get_total_valid_tokens());
+                    layer.backward(&g)
+                }
+            }
+            LayerEnum::ComplexToLinear(layer) => layer.backward(previous_gradient),
+            LayerEnum::ComplexToLinearRm(layer) => LayerInterface::backward(&mut **layer, previous_gradient),
+            LayerEnum::Wavelet(layer) => layer.backward(previous_gradient),
+            LayerEnum::WaveletRm(layer) => {
+                if previous_gradient.get_gradient_input_batch_rm_ref().is_some() {
+                    layer.backward(previous_gradient)
+                } else {
+                    let previous_gradient_batch: Vec<RowMajorMatrix<C>> = previous_gradient.get_gradient_input_batch().iter().map(|rows| RowMajorMatrix::from_rows(rows)).collect();
+                    let mut g = Gradient::new_default();
+                    g.set_gradient_input_batch_rm(previous_gradient_batch);
+                    g.set_total_valid_tokens(previous_gradient.get_total_valid_tokens());
+                    layer.backward(&g)
+                }
+            }
+            LayerEnum::Softmax(layer) => layer.backward(previous_gradient),
+            LayerEnum::SoftmaxRm(layer) => LayerInterface::backward(&mut **layer, previous_gradient),
+        }
+    }
+
+    fn update_parameters(&mut self) {
+        match self {
+            LayerEnum::AdaptiveAvgPool1d(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::Embedding(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::EmbeddingRm(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::PositionalEncoding(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::PositionalEncodingRm(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::Dense(layer) => layer.update_parameters(),
+            LayerEnum::DenseRm(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::FeedForward(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::FeedForwardRm(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::RMSNorm(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::Norm(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::NormRm(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::SelfAttention(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::SparseSelfAttention(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::SparseSelfAttentionRm(layer) => layer.update_parameters(),
+            LayerEnum::SelfAttentionApproximation(layer) => layer.update_parameters(),
+            LayerEnum::SelfAttentionApproximationRm(layer) => layer.update_parameters(),
+            LayerEnum::Linear(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::LinearRm(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::ClusteringLinear(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::AdaptiveLinear(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::Eml(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::SparseLinearRm(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::MultiLinear(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::DiscreteWavelet(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::DiscreteWaveletRm(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::ComplexToLinear(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::ComplexToLinearRm(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::Wavelet(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::WaveletRm(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::Softmax(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::SoftmaxRm(layer) => LayerInterface::update_parameters(&mut **layer),
+        }
     }
 }
 
