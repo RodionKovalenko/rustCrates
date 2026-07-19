@@ -17,7 +17,7 @@ use crate::{
         network_types::{
             neural_network_generic::{get_from_db, print_networt_structure, save_to_sled, NeuralNetwork, OperationMode},
             transformer::{
-                transformer_builder::{create_transformer, SPARSE_WINDOW_SIZE},
+                transformer_builder::create_transformer,
                 transformer_updater::{update_k_mean_clusters, update_transformer, VERBOSE},
             },
         },
@@ -116,7 +116,11 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
     let mut total_loss_exp_ma: Real = ZERO;
     let alpha: Real = r(0.2);
     let mut layer_input = LayerInput::new_default();
-    let mut timestep = 1;
+    // Resume the optimizer schedule from the persisted step instead of restarting at 1.
+    // Restarting re-runs the LR warmup (up to base_lr) on an already-converged checkpoint,
+    // which knocks it out of its minimum and leaves the loss oscillating. A fresh model
+    // has time_step == 0, so warmup still applies exactly once.
+    let mut timestep = transformer_network.time_step + 1;
     let mut total_valid_target_tokens_epoch: usize;
 
     // Early stopping parameters
@@ -324,7 +328,11 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
     let mut layer_input = LayerInput::new_default();
     layer_input.set_calculate_gradient(false);
     layer_input.set_forward_only(true);
-    layer_input.set_calculate_k_v_cache(true);
+    // NOTE: no KV cache here. The Vec sparse attention head (SparseSelfAttention) does not
+    // implement the k/v cache, so incremental decoding that feeds only the last few tokens
+    // silently loses the whole prompt context. Until a working cache exists for that head,
+    // every step must re-run the full sequence so inference matches training exactly.
+    layer_input.set_calculate_k_v_cache(false);
     layer_input.set_top_k_size(TOP_K_SIZE); // Set k for sparse linear layer
 
     print!("Antwort: ");
@@ -338,8 +346,6 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
             return current_input_batch;
         }
     };
-
-    let mut time_step = 0;
 
     // Continue predicting until EOS token is predicted
     loop {
@@ -370,28 +376,11 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
 
         layer_input.set_batch_ids(batch_ids.clone());
 
-        if time_step > 0 && layer_input.get_forward_only() {
-            // let last_tokens: Vec<Vec<u32>> = batch_ids.iter().map(|seq| vec![*seq.last().unwrap()]).collect();
-            // window_size * 2
-            let last_n = if SPARSE_WINDOW_SIZE != 0 { SPARSE_WINDOW_SIZE * 2 } else { 1 };
-
-            let last_tokens_batch: Vec<Vec<u32>> = batch_ids
-                .iter()
-                .map(|seq| {
-                    let len = seq.len();
-                    if len >= last_n {
-                        seq[len - last_n..].to_vec() // take last n tokens
-                    } else {
-                        seq.to_vec() // fallback: return the whole sequence
-                    }
-                })
-                .collect();
-
-            layer_input.set_batch_ids(last_tokens_batch);
-        }
-
-        layer_input.set_time_step(time_step);
-        // layer_input.set_padding_mask_batch(vec![vec![1; batch_ids[0].len()]; batch_ids.len()]); // assuming all tokens are valid
+        // time_step must stay 0: RoPE assigns every token the SAME absolute position
+        // `time_step` when forward_only && time_step > 0 (incremental-decode mode). With
+        // full-sequence decoding the per-token position path (0..seq_len) is the correct
+        // one, matching training.
+        layer_input.set_time_step(0);
 
         let network_output = predict(transformer_network, &layer_input);
         let current_predictions = network_output.get_output_batch_real();
@@ -455,8 +444,6 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
             println!("\nMax token prediction limit reached. Breaking.");
             break;
         }
-
-        time_step = if time_step == 0 { batch_ids[0].len() - 1 } else { time_step + 1 };
     }
 
     let seconds_elapsed_end = now.elapsed();
