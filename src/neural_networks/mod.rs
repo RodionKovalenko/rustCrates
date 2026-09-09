@@ -5,3 +5,4 @@ pub mod training;
 pub mod optimization;
 pub mod hidden_markov_models;
 pub mod network_layers;
+pub mod spectral_model;

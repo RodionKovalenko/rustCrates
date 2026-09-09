@@ -1,308 +1,1066 @@
-----------------------------------------------------------------------------------------
-
-High-level architecture
+# Spectral Flow — Complete Algorithm
 
-Node Features
-↓
-Spectral PE (precomputed, frozen)
-↓
-Linear Projection
-↓
-Encoder Layer(s):
-    LayerNorm
-    Spectral Self-Attention
-    Add & Norm
-    FeedForward
-    Add & Norm
-↓
-Readout / Head
-↓
-Softmax
----------------------------------------------------------------------------------------
+Every step, every array shape, in order. Target: 32×32 grayscale images, CPU only.
 
-Final “canonical” structure (clean version)
+There are three phases:
+
+- **A. Setup** — runs once, before training
+- **B. Training** — one step, repeated ~100k times
+- **C. Sampling** — after training, to make images
 
-Graph G = (V, E)
-↓
-Compute Laplacian L = D − A
-↓
-Eigenvectors φ₂ … φ_k
-↓
-Spectral Positional Encoding (PE)
-↓
-Concatenate with Node Features
-↓
-Linear Projection → d_model
-↓
-N × Encoder Blocks:
-    Pre-LN
-    Multi-Head Self-Attention
-        + Spectral Bias
-    Residual
-    Pre-LN
-    FeedForward
-    Residual
-↓
-Pooling / Readout (graph-level or node-level)
-↓
-Linear
-↓
-Softmax
+---
 
------------------------------------------------------------------------------------------------------
+# A. SETUP (runs once)
 
+## A1. Prepare the data
 
-Details: 
+```
+Load MNIST:        60,000 images, 28×28, values 0..255
+Convert to f32:    divide by 255           → values 0..1
+Pad to 32×32:      add 2 pixels of zero on every side
+```
 
-Hybrid positional encoding (best practice)
-token_embedding
-+ sequential_PE
-+ spectral_PE
+Result: `Vec<[f32; 1024]>`, 60,000 entries.
 
+32 is chosen because it is a power of two, which the radix-2 FFT requires.
 
-Or:
+## A2. Build the band table
 
-concat(
-    token_embedding,
-    sequential_PE,
-    spectral_PE
-)
-→ linear projection
+Pure arithmetic on array indices. No data involved.
 
+```rust
+fn build_band_table() -> Vec<u8> {
+    let mut band = vec![0u8; 32 * 17];
+    for i in 0..32 {
+        for j in 0..17 {
+            // rows above 16 hold NEGATIVE frequencies
+            let k1 = if i <= 16 { i as i32 } else { i as i32 - 32 };
+            let k2 = j as i32;
+            let rho = ((k1*k1 + k2*k2) as f32).sqrt();
+            band[i*17 + j] = if rho <  4.0 { 0 }
+                        else if rho <  8.0 { 1 }
+                        else if rho < 13.0 { 2 }
+                        else               { 3 };
+        }
+    }
+    band
+}
+```
 
-Sequential PE = syntax & order
-Spectral PE = semantics & structure
+Verified counts:
 
+| Band | ρ range | Coefficients | Share |
+|---|---|---|---|
+| 0 | 0.00 – 3.61 | **26** | 4.8% |
+| 1 | 4.00 – 7.81 | **78** | 14.3% |
+| 2 | 8.00 – 12.81 | **167** | 30.7% |
+| 3 | 13.00 – 22.63 | **273** | 50.2% |
+| | | **544** | 100% |
 
-1. Graph G = (V, E) — what this really means
+Also build the permutation that groups coefficients by band, so each band is contiguous in memory:
 
-This is just a fancy way of saying:
+```rust
+// order: all band-0 coeffs, then all band-1, then band-2, then band-3
+let mut order: Vec<usize> = (0..544).collect();
+order.sort_by_key(|&k| band[k]);
+// offsets into the reordered array
+let offsets = [0, 26, 104, 271, 544];
+```
 
-“I describe my data as things and relationships between things.”
+Do this once. Every later operation works on the reordered layout, so a band is a contiguous slice. This matters more than it looks — it is what makes the per-band matrix multiply a clean GEMM.
 
-V (vertices / nodes) = the things
+## A3. Compute the `s` table (whitening statistics)
 
-E (edges) = who is related to whom
+```rust
+let mut acc = vec![0.0f64; 544];
+for img in &training_set {
+    let x = rfft2(img);                    // [f32;1024] -> [Complex;544]
+    for k in 0..544 {
+        acc[k] += (x[k].re*x[k].re + x[k].im*x[k].im) as f64;
+    }
+}
+let s: Vec<f32> = acc.iter()
+    .map(|v| ((v / training_set.len() as f64).sqrt() as f32).max(1e-8))
+    .collect();
+```
 
-For text (example)
+`s[k]` is the root-mean-square magnitude of coefficient `k` across the whole dataset. Roughly 8000 for the brightness coefficient, roughly 3 for fine texture.
 
-Sentence:
+**Save `s` to disk alongside the weights.** Sampling needs it.
 
-"The cat sat on the mat"
+## A4. Initialise weights
 
+Channel widths per band (tapered — high bands get less capacity because they carry less information):
 
-Nodes (V):
+```
+d = [64, 48, 32, 16]     for bands 0,1,2,3
+d_merge = 16             common width inside the R-block
+```
 
-0: "The"
-1: "cat"
-2: "sat"
-3: "on"
-4: "the"
-5: "mat"
+Complex weights: sample magnitude from a Rayleigh distribution scaled so that `E[|W|²] = 2/(fan_in + fan_out)`, and phase uniform on `[-π, π]`. In practice:
 
+```rust
+let sigma = (1.0 / (fan_in + fan_out) as f32).sqrt();
+let re = normal(0.0, sigma);
+let im = normal(0.0, sigma);
+```
 
-Edges (E) (simplest choice):
+Sampling real and imaginary parts independently as Gaussians gives a Rayleigh magnitude and uniform phase automatically.
 
-(0 ↔ 1), (1 ↔ 2), (2 ↔ 3), (3 ↔ 4), (4 ↔ 5)
+---
 
+# B. ONE TRAINING STEP
 
-So the “graph” is just:
+Batch size 64 throughout. Shapes are given as `(batch, ...)`.
 
-tokens connected to their neighbors
+## B1. Draw a batch
 
-No magic yet. Just structure.
+```
+x : (64, 32, 32) f32
+```
 
-2. Adjacency matrix A — turning the graph into numbers
+## B2. Forward FFT
 
-A graph becomes math via a matrix.
+```
+X = rfft2(x)          →  (64, 544) complex
+```
 
-Adjacency matrix A:
+## B3. Whiten
 
-A[i, j] = 1 if there is an edge between node i and j
+```
+ĉ[b][k] = X[b][k] / s[k]        →  (64, 544) complex
+```
 
-A[i, j] = 0 otherwise
+Every coefficient now has typical magnitude ≈ 1.
 
-For our sentence (undirected):
+## B4. Convert to polar — this is the data endpoint `z₁`
 
-    0 1 2 3 4 5
-A = 0 1 0 0 0 0
-    1 0 1 0 0 0
-    0 1 0 1 0 0
-    0 0 1 0 1 0
-    0 0 0 1 0 1
-    0 0 0 0 1 0
+```rust
+const EPS: f32 = 0.1;
+u1[b][k]   = asinh( ĉ[b][k].abs() / EPS );        // (64,544) f32
+phi1[b][k] = atan2( ĉ[b][k].im, ĉ[b][k].re );     // (64,544) f32, in (-π,π]
+```
 
+`asinh` rather than `log`: it behaves like a logarithm for large magnitudes but is linear and finite near zero, so a coefficient that happens to be tiny cannot blow up the target.
 
-This matrix just says:
+The inverse, needed later: `|ĉ| = EPS * sinh(u)`.
 
-“Who is next to whom?”
+## B5. Draw the noise endpoint `z₀`
 
-3. Degree matrix D — how connected each node is
+Sample in Cartesian, then convert — this guarantees the right statistics:
 
-Degree = number of connections a node has.
+```rust
+let a = normal(0.0, 1.0) / SQRT2;
+let b = normal(0.0, 1.0) / SQRT2;      // so E[|c|²] = 1, matching whitened data
+u0   = asinh(hypot(a,b) / EPS);
+phi0 = atan2(b, a);                     // uniform on the circle
+```
 
-From the adjacency matrix:
+Shapes: `u0, phi0 : (64, 544) f32`.
 
-middle words have degree 2
+**What this noise is:** un-whiten it and inverse-FFT it and you get an image with the correct natural power spectrum but no structure — soft cloudy blobs, not white static. The model starts from something statistically image-like and only has to organise it.
 
-endpoints have degree 1
+## B6. Sample the time
 
-Degree matrix D is diagonal:
+```
+t : (64,) f32,  uniform on [0,1]        one t per image in the batch
+```
 
-D = diag([1, 2, 2, 2, 2, 1])
+## B7. Per-band local times
 
+Window duration `D = 0.4`, stride `S = 0.2`:
 
-Nothing fancy:
+```rust
+for b in 0..4 {
+    let a_b = b as f32 * 0.2;
+    tau[b] = ((t - a_b) / 0.4).clamp(0.0, 1.0);
+}
+```
 
-D[i,i] = number of edges touching node i
+Windows: band 0 moves on `[0.0, 0.4]`, band 1 on `[0.2, 0.6]`, band 2 on `[0.4, 0.8]`, band 3 on `[0.6, 1.0]`.
 
-4. L = D − A — the graph Laplacian (the key object)
+```
+band 0  ####----------------
+band 1  ----####------------
+band 2  --------####--------
+band 3  ------------####----
+        t=0                t=1
+```
 
-This line:
+Shape: `tau : (64, 4) f32`.
 
-Compute Laplacian L = D − A
+## B8. Active mask
 
+```rust
+active[b][band] = tau[b][band] > 0.0 && tau[b][band] < 1.0;
+```
 
-means:
+A coefficient whose band has `τ = 0` has not started moving. One with `τ = 1` is finished and frozen. Only coefficients in between contribute to the loss or need computing.
 
-“Compare how connected a node is to how it differs from its neighbors.”
+Expand to per-coefficient: `mask : (64, 544) bool`, via the band table.
 
-For our sentence, L looks like:
+## B9. Interpolate — the current state `z_t`
 
-    1 -1  0  0  0  0
-   -1  2 -1  0  0  0
-    0 -1  2 -1  0  0
-    0  0 -1  2 -1  0
-    0  0  0 -1  2 -1
-    0  0  0  0 -1  1
+```rust
+let tau_k = tau[b][ band_table[k] ];        // this coefficient's local time
 
+// magnitude: straight line
+ut[b][k] = (1.0 - tau_k) * u0[b][k] + tau_k * u1[b][k];
 
-Interpretation:
+// phase: shortest arc around the circle
+let delta = wrap(phi1[b][k] - phi0[b][k]);  // wrap(x) = atan2(sin x, cos x)
+phit[b][k] = phi0[b][k] + tau_k * delta;
+```
 
-diagonal = “how stiff this node is”
+The `wrap` is essential. Without it the model is asked to rotate the long way round roughly half the time, and the same visual outcome gets two different targets.
 
-off-diagonal = “how strongly nodes are tied”
+Shapes: `ut, phit : (64, 544) f32`.
 
-This is the vibration operator.
+## B10. Target velocity
 
-5. Eigenvectors φ₂ … φ_k — the “vibration modes”
+```rust
+v_u_target[b][k]   = u1[b][k] - u0[b][k];
+v_phi_target[b][k] = wrap(phi1[b][k] - phi0[b][k]);
+```
 
-Now comes the famous step.
+Both are constant along the path — this is straight-line (rectified) flow, transferred to the magnitude/phase coordinates.
 
-We solve:
+> **Superseded as the default — see I4f.** Transferring the straight line into
+> magnitude/phase coordinates costs the flow its early-time drift: at `tau = 0`
+> the state is pure noise and a coefficient's phase is marginally uniform, so
+> `E[Delta phi | state] = 0` and the optimal early prediction is *no rotation*.
+> The default path (`FlowPath::ComplexLinear`) keeps the straight line in the
+> complex plane and reads its velocity in the rotating frame, which restores the
+> drift without introducing a singularity at the origin. B9/B10 as written above
+> remain available as `FlowPath::Polar`.
 
-L φ = λ φ
+## B11. Forward pass
 
+```
+(v_u_pred, v_phi_pred) = network(ut, phit, tau, mask)
+shapes: (64, 544) f32 each
+```
 
-This asks:
+Detailed in section C.
 
-“If this graph vibrates, what standing wave patterns are possible?”
+## B12. Loss
 
-The answers are:
+```rust
+// energy weight: phase errors only matter where magnitude is significant
+let mag = EPS * sinh(ut[b][k]);
+let w   = stop_gradient(mag * mag);
+// normalise w over active coefficients so the term is scale-stable
 
-eigenvalues λ → frequencies
+loss += mask * ( (v_u_pred - v_u_target).powi(2)
+               + LAMBDA_PHI * w_normalised * wrap(v_phi_pred - v_phi_target).powi(2) );
+```
 
-eigenvectors φ → shapes of vibration
+Divide by the number of active entries. Start with `LAMBDA_PHI = 1.0`, then measure both terms at initialisation and rescale so they are comparable.
 
-Important facts
+Rotating a coefficient that is nearly zero changes nothing visible, so weighting phase error by energy puts capacity where phase actually determines the image.
 
-φ₁ is always constant (all ones) → useless
+## B13. Backward
 
-φ₂ = smoothest non-trivial variation
+Reverse-mode autodiff over the real `(re, im)` pairs.
 
-φ₃, φ₄ … = finer oscillations
+**You do not need Wirtinger calculus.** For a real-valued loss, the correct complex gradient rule `w ← w − η·∂L/∂w̄` is algebraically identical to ordinary real SGD on the pair `(Re w, Im w)`. Treat every complex number as two real numbers on the tape and the gradients come out right. Use the explicit Wirtinger formula only as a unit test.
 
-For a path graph (sentence), these look like:
+## B14. Optimiser
 
-sine waves over token positions
+AdamW, learning rate `2e-4`, weight decay `0.01`, gradient clipping at norm `1.0`.
 
-6. What does φ look like for tokens?
+---
 
-Each eigenvector is just a list of numbers:
+# C. THE FORWARD PASS
 
-φ₂ = [0.12, 0.35, 0.49, 0.49, 0.35, 0.12]
-φ₃ = [-0.5, -0.3, 0.1, 0.3, 0.5, 0.3]
-...
+Input: `ut, phit : (64, 544)`, `tau : (64, 4)`, `mask : (64, 544)`.
 
+## C1. Rebuild complex coefficients
 
-So each token i gets coordinates:
+```rust
+let mag = EPS * sinh(ut[b][k]);
+c[b][k] = Complex { re: mag * cos(phit[b][k]),
+                    im: mag * sin(phit[b][k]) };
+```
 
-PE(i) = (φ₂(i), φ₃(i), ..., φ_k(i))
+Shape: `(64, 544)` complex.
 
+## C2. Lift to channels, split by band
 
-This is your spectral positional encoding.
+Each coefficient is a single complex number. That is too little for a network to compute with, so expand it into a vector — exactly like a word embedding turns one token ID into a 64-dim vector.
 
-No token index.
-No absolute position.
-Just “how this token vibrates in the structure”.
+```rust
+h_band[bd][b][i] = W_in[bd] * c[b][ offsets[bd] + i ] + pos[bd][i];
+```
 
-7. Why skip φ₁?
+- `W_in[bd] : ℂ^{d[bd]}` — one learned vector per band
+- `pos[bd] : (n[bd], d[bd])` complex — learned per-coefficient offset, the positional code
 
-φ₁ looks like:
+Resulting shapes:
 
-[1, 1, 1, 1, 1, 1]
+```
+h_band[0] : (64,  26, 64) complex
+h_band[1] : (64,  78, 48) complex
+h_band[2] : (64, 167, 32) complex
+h_band[3] : (64, 273, 16) complex
+```
 
+**This is where the ×64 comes from — a learned layer, not the FFT.** The FFT produces 544 numbers. The lift turns each into a vector.
 
-That encodes:
+## C3. Time conditioning
 
-“All nodes are equal.”
+```
+tau (64,4) → sinusoidal features (64,32) → trunk MLP (32→32, SiLU)
+           → per-(S-block, band) linear (32 → 3d) → (gamma, beta)
+```
 
-True, but useless.
+Condition on the **whole vector** of band times, not the scalar `t`. The network needs to know which bands are frozen, which are moving, and how far along each one is.
 
-So we start at φ₂.
+Sinusoidal features: for each of the 4 bands and each of 4 frequencies
+`{1,2,4,8}·π`, take `sin` and `cos` of `freq · tau[bd]` — 4×4×2 = 32.
 
-8. One-line intuition (burn this in)
+`gamma` is **real** (one scale per channel) and `beta` is complex. A real scale
+shrinks or grows a coefficient without touching its phase, which is the same
+discipline the soft-shrink follows; `beta` is where a conditional phase offset
+belongs.
 
-G = (V, E) → what exists and how it’s connected
+The output layer is **zero-initialised**, so at step 0 `gamma = 1` and
+`beta = 0` and every S-block is exactly its unconditioned self. Conditioning
+then grows in only as far as it earns its way.
 
-L = D − A → how structure resists change
+**On the FiLM budget.** The earlier spec spent 45,056 parameters here — 30% of
+the model — by mapping the time features straight to per-band `(gamma, beta)`.
+Routing everything through one shared 32-wide trunk first and giving each
+`(S-block, band)` pair only a `32 → 3d` head costs `32·32 + Σ 32·3d ≈ 16.4k`,
+about 2.7× less, with the saving spent on channel width where it does work.
 
-φ₂ … φ_k → the natural coordinates of that structure
+## C4. Stage loop — three iterations, **same weights each time**
 
-You didn’t “add math”.
-You extracted geometry that was already there.
+Sharing weights across stages cuts parameters roughly threefold and acts as regularisation at this size. If quality suffers, untie only the final iteration.
 
-9. Why this matters for Transformers
+### C4a. Two S-blocks per band
 
-Instead of telling a Transformer:
+Two *distinct* blocks — each stage applies S-block 0 then S-block 1, each with
+its own `R`, its own separable filter and its own FiLM head. (The parameter
+table in section F counts two of each; this makes that explicit.) The pair is
+what is reused across the three stages.
 
-“This word is position 7”
+```rust
+// for each band bd, operating on (n[bd], d[bd])
+let mut y = matmul(h_band[bd], R[bd]);        // (n,d) × (d,d) -> (n,d)   ONE GEMM
+y = y * filter[bd];                            // separable per-mode filter
+y = y * gamma[bd] + beta[bd];                  // FiLM conditioning
+y = soft_shrink(y, lambda);
+h_band[bd] = h_band[bd] + y;                   // residual
+```
 
-You tell it:
+The separable filter factors the per-coefficient weight along the two frequency axes:
 
-“This word sits here in the structure of the sentence.”
+```
+filter[k1][k2] = a[k1] ⊙ b[k2]        a : (32, d),  b : (17, d)
+```
 
-Self-attention already knows what to do with coordinates.
+49 vectors per channel instead of 544 — about 11× fewer parameters than a full per-coefficient filter, for a prior (separability) that natural image spectra largely satisfy.
 
-Final answer in one sentence
+**Complex soft-shrink:**
 
-Graph G = (V, E) defines tokens and their relationships, L = D − A turns those relationships into a vibration operator, and eigenvectors φ₂ … φ_k give each token geometry-aware coordinates that act as positional encodings.
+```rust
+fn soft_shrink(z: Complex, lambda: f32) -> Complex {
+    let m = z.abs();
+    if m <= lambda { Complex::zero() } else { z * (1.0 - lambda/m) }
+}
+```
 
-If you want, next we can:
+It shrinks magnitude and leaves phase **exactly** unchanged — the right nonlinearity for a domain where phase carries the signal. It also drives small coefficients to exactly zero, which you can skip in the next block.
 
-draw this for a real sentence
+**An S-block cannot create new frequencies.** A coefficient that is zero stays zero. It only reweights what is already there. That is why C4b exists.
 
-show eigenvectors numerically
+### C4b. R-block — the only place new frequency content is born
 
-or connect this directly to RoPE vs absolute PE
+```rust
+// 1. project every band down to the common merge width
+for bd in 0..4 {
+    m_band[bd] = matmul(h_band[bd], proj_down[bd]);   // (n[bd], 16)
+}
 
-Just say the word 🎻
+// 2. scatter all bands back into one full grid
+let mut grid = zeros((64, 32, 17, 16));               // complex
+scatter(m_band, &mut grid);                            // frozen/inactive stay zero
 
+// 3. inverse FFT: frequency -> pixels
+let spatial = irfft2_per_channel(grid);                // (64, 32, 32, 16) REAL
 
+// 4. nonlinearity IN PIXEL SPACE
+let spatial = crelu(linear(spatial, 16, 32));
+let spatial = linear(spatial, 32, 16);                 // (64, 32, 32, 16) real
 
-----------------------------------------------------------------------
+// 5. forward FFT: pixels -> frequency
+let grid = rfft2_per_channel(spatial);                 // (64, 32, 17, 16) complex
 
-The correct hybrid architecture (ChatGPT-compatible)
+// 6. gather back per band and project up
+for bd in 0..4 {
+    h_band[bd] += matmul(gather(grid, bd), proj_up[bd]);   // (n[bd], d[bd])
+}
+```
 
-Here’s the right mental picture:
+**This is where the bands talk to each other.** In frequency space they are four independent streams. A pixel is the sum of all frequencies, so one nonlinearity applied in pixel space couples every band to every other — for free, with no fusion parameters. The inverse FFT *is* the merge operator; you do not need to build one.
 
-[ Spectral / Graph Encoder ]
-        ↓
-[ Semantic / Structural Representation ]
-        ↓
-[ Causal Decoder Transformer (RoPE, GPT-style) ]
-        ↓
-[ Token-by-token generation ]
+**Why it creates frequencies:** expand a nonlinearity as a power series, `σ(x) = Σ aₚ xᵖ`. The Fourier transform of a product is a convolution of spectra, so `x²` puts energy at every sum and difference `k₁ ± k₂` of existing modes. That is what refills the band after truncation.
 
+**Design rule: at least one R-block must sit downstream of every truncation you expect the model to recover from.**
 
--------------------------------------------------------------------------------
+## C5. Head
+
+```rust
+// per band: real linear map from the real/imag pair to two rates
+(v_u, v_phi) = linear_real( [Re h_band[bd], Im h_band[bd]], 2*d[bd] -> 2 );
+```
+
+Output is **real**, and that is correct. The state is a complex number, but a *velocity* is a rate of change: how fast the magnitude grows, and an angular velocity in radians per unit time. A point moving on a circle has a complex position but a real speed. Same structure here.
+
+Scatter the per-band outputs back to `(64, 544)` and return.
+
+---
+
+# D. SAMPLING
+
+**Two corrections to the obvious version of this loop.** Both were bugs in the
+earlier spec and both are load-bearing.
+
+**(1) Integrate in `tau`, not in `t`.** The training target is `v_u = u1 - u0`,
+which is `du/dtau` — a rate per unit of *local band time*. But `tau` advances
+`1/D = 1/0.4` times faster than `t`. Stepping `u += dt * v_u` therefore
+under-integrates every band by a factor of 0.4 and the sampler lands 60% short
+of the data endpoint. The update must use the band's own `dtau`.
+
+**(2) Take `dtau` as a telescoping difference, and evaluate at the midpoint.**
+
+```rust
+let dtau_b = tau_b(t + dt) - tau_b(t);
+```
+
+Summed over a full sweep this telescopes to exactly 1 for every band, whatever
+the step count and however the step grid lines up with the window boundaries.
+Computing `tau` only at step *starts* instead loses the fraction of a step that
+straddles each boundary — with `n_steps = 16` and windows at multiples of 0.2,
+band 0 would stop at `tau = 0.9375` and never reach the data. Note also that a
+naive loop starting at `t = 0` does nothing at all on its first step: every
+`tau` is exactly 0 there, so no band is active. Evaluating the network at the
+window midpoint fixes that too, and upgrades plain Euler to a midpoint rule for
+free.
+
+```rust
+// 1. draw the starting point, same distribution as B5
+let (mut u, mut phi) = sample_prior();          // (544,) each
+
+// 2. integrate
+let n_steps = 16;
+let dt = 1.0 / n_steps as f32;
+for step in 0..n_steps {
+    let t0 = step as f32 * dt;
+    let t1 = t0 + dt;
+
+    let a = band_times(t0);
+    let b = band_times(t1);
+    let mut dtau = [0.0; 4];
+    let mut tau_mid = [0.0; 4];
+    let mut active = [false; 4];
+    for bd in 0..4 {
+        dtau[bd]    = b[bd] - a[bd];
+        tau_mid[bd] = 0.5 * (a[bd] + b[bd]);
+        active[bd]  = dtau[bd] > 0.0;      // moves during THIS step
+    }
+    if !active.iter().any(|&x| x) { continue; }
+
+    let (v_u, v_phi) = network(u, phi, tau_mid, active);  // ONLY active coefficients
+
+    for k in 0..544 {
+        let bd = band_table[k];
+        if active[bd] {
+            u[k]   += dtau[bd] * v_u[k];
+            phi[k]  = wrap(phi[k] + dtau[bd] * v_phi[k]);
+        }
+        // frozen coefficients are left untouched and never recomputed
+    }
+}
+
+// 3. back to a complex spectrum
+let mut c = vec![Complex::zero(); 544];
+for k in 0..544 {
+    let mag = EPS * sinh(u[k]);
+    c[k] = Complex { re: mag * phi[k].cos(), im: mag * phi[k].sin() };
+}
+
+// 4. un-whiten
+for k in 0..544 { c[k] = c[k] * s[k]; }
+
+// 5. back to an image
+let image = irfft2(&c);                          // (32,32) f32
+```
+
+The phase update `phi += dt * v_phi` is, in complex form, multiplication by `exp(i·dt·v_phi)` — a unit-modulus complex multiply. That is the chosen primitive doing the actual generative work, and by the Fourier shift theorem it is literally translating that spatial frequency's contribution.
+
+---
+
+# E. SHAPE REFERENCE
+
+| Stage | Shape | Type |
+|---|---|---|
+| Image | (64, 32, 32) | f32 |
+| After rfft2 | (64, 544) | complex |
+| After whitening | (64, 544) | complex |
+| Polar state `(u, φ)` | (64, 544) ×2 | f32 |
+| After lift, band 0 | (64, 26, 64) | complex |
+| After lift, band 1 | (64, 78, 48) | complex |
+| After lift, band 2 | (64, 167, 32) | complex |
+| After lift, band 3 | (64, 273, 16) | complex |
+| R-block, merged grid | (64, 32, 17, 16) | complex |
+| R-block, pixel space | (64, 32, 32, 16) | **real** |
+| Head output | (64, 544) ×2 | f32 |
+
+---
+
+# F. VERIFIED COST
+
+## Parameters (real floats)
+
+| Component | Count |
+|---|---|
+| Lift `W_in` | 320 |
+| Positional codes | 30,240 |
+| S-block matrices `R` | 30,720 |
+| S-block separable filters | 31,360 |
+| Projections down / up | 10,240 |
+| R-block MLP | 2,048 |
+| Head | 640 |
+| FiLM conditioning | 45,056 |
+| **Total** | **150,624** |
+
+**Note: FiLM is 30% of the model.** That is disproportionate for a conditioning path. Shrink the time-embedding MLP, or share `(γ, β)` across bands with a small per-band offset, and spend the savings on channel width where it does actual work.
+
+## MACs per forward pass
+
+| | All 4 bands active | 2 bands active (typical) |
+|---|---|---|
+| S-blocks | 12,650,496 | 5,781,504 |
+| Separable filters | 362,880 | 233,088 |
+| Projections | 5,806,080 | 3,729,408 |
+| R-block FFTs | 3,932,160 | 3,932,160 |
+| R-block MLP | 3,145,728 | 3,145,728 |
+| Head | 60,480 | 38,848 |
+| **Total** | **26.0M** | **16.9M** |
+
+Tapering versus a uniform 64 channels: **4.23× fewer S-block MACs** (12.7M against 53.5M).
+
+**An honest finding from these numbers:** freezing saves less than you would hope. Going from 4 active bands to 2 cuts total cost only 35%, because the R-block is a **fixed 7.1M** regardless of how many bands are active — it always transforms the full 32×32 grid.
+
+**The fix:** when the high bands are frozen, run the round trip at reduced spatial resolution. If only bands 0–1 are active, every nonzero coefficient sits within `ρ < 8`, so a 16×16 inverse FFT loses nothing and costs 4× less. Choose the grid size from the highest active band:
+
+| Highest active band | Round-trip grid | R-block cost |
+|---|---|---|
+| 0 | 8×8 | ~0.4M |
+| 1 | 16×16 | ~1.8M |
+| 2 | 32×32 | 7.1M |
+| 3 | 32×32 | 7.1M |
+
+This makes early sampling steps genuinely cheap and is the single best optimisation available. It was not in the earlier spec.
+
+**Getting the scale right.** A reduced round trip is not merely an
+approximation — for band-limited content it is *exact*, provided the resampling
+factors are undone. Reconstructing the same coefficients on an `ng` grid gives
+`x'[m] = (N/ng)² · x[2m]`, because `irfft2` carries a `1/ng²` and the smaller
+grid is the larger one subsampled. So:
+
+```
+spatial = irfft2_ng(grid)   * (ng/N)²      // pixel values now match the full grid
+grid    = rfft2_ng(spatial) * (N/ng)²      // and the spectrum comes back at the right scale
+```
+
+With those two factors, an identity nonlinearity round-trips exactly at every
+`ng`, and the MLP sees the same pixel magnitudes whatever grid it is on — which
+matters, because a ReLU network is not scale-invariant. The only residual
+approximation is aliasing: the nonlinearity creates content above the reduced
+grid's Nyquist, which folds back instead of being truncated.
+
+One index caveat: a reduced grid's Nyquist row and column are their own
+Hermitian mirror, so two distinct frequencies would land in the same cell.
+Choose `ng` from the table above and every active coefficient sits *strictly*
+inside — band 1 reaches `|k| = 7` on a 16-grid whose Nyquist is 8 — but assert
+it rather than assume it.
+
+## Estimated wall-clock
+
+At ~20M MACs forward, ~3× that for forward-plus-backward, batch 64, on 4 cores at roughly 2 GFLOP/s effective per core: **~0.1 s per training step**. 100k steps ≈ **3 hours**.
+
+Multiply by 2–4 if your GEMM is not cache-blocked. Which brings us to:
+
+---
+
+# G. THE ONE PIECE OF CODE THAT DECIDES YOUR SPEED
+
+Because `R[bd]` is shared across every coefficient in its band, all of them go through a **single dense matrix multiply**: `(n, d) × (d, d)`. That is a GEMM, and it is ~50% of your compute.
+
+Write one cache-blocked complex GEMM — tiled so the working set fits in L1, inner loop over contiguous memory, accumulating into registers. A naive triple loop can be **10× slower** on identical hardware.
+
+This routine matters more for your wall-clock than any architectural decision in this document.
+
+---
+
+# H. BUILD ORDER
+
+Each step has an exit test. Do not proceed past a failure.
+
+| # | Build | Test |
+|---|---|---|
+| 1 | Complex type, FFT, inverse FFT | `irfft2(rfft2(x)) == x` to 1e-6; FFT matches a naive O(N²) DFT to 1e-6 |
+| 2 | Autodiff tape, one linear layer | Numerical gradient check to 1e-4 |
+| 3 | Band table, `s` table | Counts are 26/78/167/273; `s` decays smoothly with ρ |
+| 4 | Whiten → polar → un-polar → un-whiten | Round trip returns the original image to 1e-5 |
+| 5 | Full network forward | Output shape correct; no NaN |
+| 6 | Backward through the whole network | Every tensor gradient-checked to 1e-4 — in `f64`, see I6 |
+| 6b | Sampler, fed the *oracle* velocity | Every band lands on the data endpoint to 1e-3. Isolates section D from the network; if this fails, no amount of training produces an image |
+| 7 | Train bands 0–1 only, no band schedule | Samples approach the **band-limited** data (see I4c), not blobs |
+| 8 | Add the band schedule | Same quality, lower cost per step |
+| 9 | Add bands 2–3 | Sharp digits |
+
+Step 7 is the critical gate and it is deliberately cheap: 104 coefficients, small network, fast convergence. If blurry digit-shaped blobs never appear, nothing downstream will save it — and the bug is far more likely to be in your autodiff (step 2/6) than in the architecture.
+
+---
+
+# I. IMPLEMENTATION NOTES
+
+The Rust implementation lives in `src/neural_networks/spectral_model/`. Every
+module names the section of this document it implements. What follows is the
+set of decisions that were underdetermined above, plus the places where the
+implementation deliberately departs from it.
+
+## I1. Where the implementation departs from the spec
+
+| # | Spec | Implementation | Why |
+|---|---|---|---|
+| 1 | `u += dt * v_u` | `u += dtau_band * v_u` | The target is `du/dtau`; see section D |
+| 2 | One `t` per image | One `t` per *time group* of 16 | See I2 |
+| 3 | FiLM straight from time features | Shared trunk + zero-init per-band head | 45k → 16.4k params; see C3 |
+| 4 | Fixed grid for the R-block | Grid chosen from the highest active band | See section F |
+| 5 | Build gate 7: "all `tau` forced to 1" | All bands share the window `[0,1]` | `tau = 1` means *frozen*; the intent is plainly "no band schedule yet", i.e. ordinary rectified flow |
+| 6 | — | EMA of the weights, used for sampling | Standard for flow models and nearly free |
+| 7 | Polar interpolation of the path | Straight line in the complex plane, velocity in the rotating frame (default) | The polar path has no drift at `tau = 0`; see I4f |
+| 8 | Energy weight from `sinh(u_t)` | Weight uses `s[k]^alpha` too | Whitening cancels the spec's weight entirely; see I4e |
+| 9 | Gradient clip 1.0 | 12.0, from the measured p90 | Every step was being clipped; see I4h |
+| 10 | Coefficients mix only in the R-block | Neighbour stencil + band summary tokens | Three round trips is thin, and both alternatives are far cheaper; see I4g |
+
+## I2. One `t` per time group
+
+The spec draws an independent `t` per image. That makes the active set differ
+image by image, so every tensor becomes ragged and the S-block's one clean GEMM
+turns into 64 small ones — which section G identifies as the thing that decides
+wall-clock.
+
+Instead, a batch of 64 is four **time groups** of 16 images. A group shares one
+`t`, hence one band schedule, one active set and one R-block grid size, so its
+tensors are rectangular and inactive bands are skipped wholesale rather than
+masked element by element. Four groups per step keeps enough spread over `t`
+that the time-conditioning path still gets a useful gradient, and the groups are
+independent, which makes them the natural unit of parallelism — they run on
+separate threads and their gradients are summed.
+
+`group_size` and `n_groups` are both configurable; set `n_groups = 64,
+group_size = 1` to recover the spec exactly, at a large cost in speed.
+
+## I3. The stored spectrum is redundant, and that is fine
+
+544 complex coefficients is 1088 real numbers, but a real 32×32 image has only
+1024 degrees of freedom. The gap is in columns `k2 = 0` and `k2 = 16`, which are
+their own Hermitian mirror: there `X[k1] = conj(X[32-k1])`, worth 32 constraints
+each.
+
+The model treats all 1088 reals as free. `irfft2` projects whatever it is handed
+onto the valid subspace — exactly what every standard `irfft2` does — so nothing
+breaks; the model simply has 64 directions that cannot affect the output. Not
+worth special-casing at this size.
+
+## I4. Initialisation choices that matter
+
+- **Separable filter at ~1, not ~0.** `filter = a[k1] ⊙ b[k2]` multiplies the
+  GEMM output. Initialised from a zero-mean Gaussian it would nearly annihilate
+  the S-block; initialised at `1 + N(0, 0.02)` the block starts life as a plain
+  matrix multiply.
+- **FiLM head at exactly 0** (see C3).
+- **`proj_up` small but non-zero.** Zeroing it would make the R-block a clean
+  no-op at init, which is tempting — but then no gradient reaches `proj_down` or
+  the pixel-space MLP either, and that whole path is dead for good. 0.1× the
+  usual scale gives the residual behaviour without the dead branch.
+- Everything else: independent Gaussians on the real and imaginary parts with
+  `sigma = sqrt(1/(fan_in + fan_out))`, which gives Rayleigh magnitude and
+  uniform phase, per A4.
+
+## I4b. `u` must be clamped when sampling
+
+`u = asinh(|c|/eps)` is non-negative by construction, and every training input
+is a convex combination of two such values, so training never leaves
+`[0, U_MAX]`. Sampling has no such guarantee: the integrator follows an
+imperfect velocity field, and one bad step sends `u` somewhere `sinh` overflows
+`f32` — after which the whole image is `NaN`, silently, for every seed.
+
+An untrained model does this immediately, which makes it an easy thing to
+mistake for a broken forward pass. Clamp `u` to `[0, 12]` after each update and
+again on entry to C1. This is a projection back onto the valid set, not a fudge:
+`u < 0` does not describe any complex number, and `u = 12` is a whitened
+magnitude of 8135, three orders of magnitude past anything real.
+
+## I4c. Judge gate 7 against the band-limited data, not the data
+
+MNIST energy is concentrated far more sharply than the coefficient counts
+suggest. Measured over the training set:
+
+| Bands kept | Coefficients | Share of image energy |
+|---|---|---|
+| 0 | 26 (4.8%) | **99.81%** |
+| 0–1 | 104 (19%) | 99.95% |
+| 0–2 | 271 (50%) | 99.98% |
+| 0–3 | 544 | 100% |
+
+Two consequences.
+
+First, a bands-0–1 reconstruction of a real digit is *not* a blurry blob — it is
+a nearly perfect digit. So "blurry blobs in the rough shape of digits" is the
+wrong bar for gate 7: the right comparison is a grid of real images passed
+through the same band mask (`spectral-lowpass` writes one). Anything short of
+that is the model, not the band limit.
+
+Second, this is exactly why whitening is not optional. Without it a loss in raw
+coefficients would be 99.8% about 26 numbers and the other 518 would never get a
+gradient. After whitening every coefficient has magnitude ≈ 1 and the bands
+compete on equal terms.
+
+## I4d. What the loss numbers mean
+
+Both terms have a floor, and it is worth knowing where, or a plateau reads as a
+bug. Against the trivial predictor (predict zero velocity):
+
+- magnitude: `E[(u1 − u0)²] ≈ 1.8`
+- phase: `E[wrap(dphi)²] = π²/3 ≈ 3.29`, times `LAMBDA_PHI`
+
+The phase term also has an *irreducible* floor well above zero. From the state
+`(u_t, phi_t)` alone the endpoint phase is genuinely ambiguous — at `tau = 0`
+the state carries no information about `phi1` at all — so the MSE-optimal
+prediction is the conditional mean and the residual variance stays large. A
+phase term that stops falling is expected behaviour, not a stalled optimiser.
+Watch the *ratio* to the trivial predictor instead.
+
+## I4e. The energy weight in B12 is cancelled by whitening — fix it
+
+B12 weights the phase term by `w = (EPS·sinh(u_t))²`, reasoning that "rotating a
+coefficient that is nearly zero changes nothing visible". The reasoning is
+right; the quantity is wrong. `u_t` is the **whitened** magnitude, and A3 exists
+precisely to make every coefficient's magnitude ≈ 1. So `w` comes out uniform,
+`w/w_mean ≈ 1` everywhere, and the term does nothing at all.
+
+This was confirmed on a trained checkpoint: the generated per-band magnitude
+profile matches the data to within 4% in every active band, while the images
+still look like organised static — the model had learned magnitudes and not
+structure, exactly what a phase term with no spatial priority produces.
+
+A phase error `dphi` at coefficient `k` perturbs the image by `s[k]·|c_k|·dphi`,
+so the weight belongs on the un-whitened magnitude:
+
+```
+w = (s[k]^alpha · EPS · sinh(u_t))²,   w_normalised = min(w / mean(w), CAP)
+```
+
+- `alpha = 0` — the blueprint's version, i.e. no weighting at all.
+- `alpha = 1` — the term becomes an exact proxy for image-space MSE. Principled,
+  but `s` spans ~200× on MNIST, so band 0 takes essentially the whole gradient
+  and the outer bands the multi-band design exists to serve get nothing.
+- `alpha = 0.5` with a cap of 50× on any single coefficient's normalised weight
+  is the default: phase accuracy is prioritised where it is visible, without
+  starving the bands that make the image sharp.
+
+`alpha` is a config field (`TrainConfig::phase_alpha`), so `0` recovers the
+original behaviour exactly for comparison.
+
+## I4f. The phase flow has no drift at early times — and the fix
+
+### The problem
+
+Worth stating plainly, because it is the architecture's central bet and it is
+not obviously safe.
+
+In Cartesian flow matching the target `x1 − x0` has conditional mean
+`E[x1|x_t] − x0`, which is informative even at `t = 0`. Here the phase target is
+`Delta = wrap(phi1 − phi0)`, and at `tau = 0` the state is `phi_t = phi0` — pure
+noise, independent of the data. Since a single MNIST coefficient's marginal
+phase is close to uniform, `E[Delta | phi_t] ≈ 0`: the MSE-optimal prediction at
+early times is *no rotation at all*.
+
+So per coefficient there is nothing to learn early on. All the signal lives in
+the joint structure across coefficients, and the only place coefficients meet is
+the R-block — three of them, one per stage. Everything the model knows about
+which digit is forming has to flow through those.
+
+### The fix: a straight line in the complex plane, read in the rotating frame
+
+`FlowPath::ComplexLinear` interpolates the coefficient itself,
+`c_t = (1−tau)·c0 + tau·c1`, and derives `(u_t, phi_t)` from it. Now
+`E[c1 − c0 | c_t]` is informative from `tau = 0` onward — the same property
+ordinary flow matching relies on.
+
+The obvious way to write this down does not work. Converting the path to polar
+gives
+
+```
+dphi/dtau = Im(e^{-i phi_t} · dc) / |c_t|
+```
+
+which blows up whenever the straight line passes near the origin — and with
+`c0` and `c1` independent, it does, often. That singularity is exactly what the
+polar path was avoiding, so trading one for the other would be no progress.
+
+The resolution is to **express the velocity in the rotating frame** and never
+divide by the magnitude at all. The head's two real outputs become the radial
+and tangential components of `dc/dtau` measured against the current phase:
+
+```
+dc/dtau = e^{i phi_t} · (v_r + i·v_t)
+```
+
+Forward (target):
+
+```rust
+let ct = c0*(1.0 - tau) + c1*tau;
+let dc = c1 - c0;
+let ph = atan2(ct.im, ct.re);            // inherit phi0 exactly at the origin
+let (cs, sn) = (ph.cos(), ph.sin());
+v_r =  dc.re*cs + dc.im*sn;              // radial
+v_t =  dc.im*cs - dc.re*sn;              // tangential
+```
+
+Inverse (one integration step):
+
+```rust
+let dc = Complex::new(v_r*cs - v_t*sn, v_r*sn + v_t*cs);
+c = c + dc*dtau;                          // step in the complex plane
+(u, phi) = (asinh(|c|/EPS), atan2(c.im, c.re));
+```
+
+Both components are bounded by `|c1| + |c0|`, the origin is an ordinary point,
+`v_t` is still exactly the rotational part — so the phase-preserving character
+of the design survives — and the head keeps its two real outputs, so C5 and the
+whole backward pass are unchanged.
+
+**One consequence to be careful about:** unlike the polar path, this velocity is
+**state-dependent** — it is expressed in the frame of whatever phase the state
+actually has. Training is consistent because `build_sample` rotates by the same
+`phi_t` the network is given. But any oracle or teacher-forcing check must
+rotate by the *current* state's phase, not the ideal path's, or it drifts and
+looks like a bug in the integrator. That mistake is easy to make and the test
+`oracle_integration_reaches_the_data` exists to catch it.
+
+**Loss changes with the path.** Under `ComplexLinear` the second output is a
+Cartesian rate, not an angle: it must not be `wrap`ped, and it needs no energy
+weight, because it is already an amplitude rate — a large tangential error is a
+large error in the image whatever the coefficient's magnitude. So I4e's `alpha`
+applies only to `FlowPath::Polar`.
+
+Measured effect on conditioning: gradient norms fell from 100–260 to 3–20, and
+`LAMBDA_PHI` calibrates to 0.83 instead of 1.7 — both terms are now the same
+physical quantity, so they were always going to balance. Removing the `wrap`
+discontinuity (I6) and the 50× weight cap together account for most of that.
+
+`FlowPath::Polar` is retained and tested, so the blueprint's original path stays
+available for comparison.
+
+### What this costs the novelty claim
+
+Worth stating plainly, because it is the kind of drift that is easy not to
+notice until someone asks what the contribution is.
+
+Rotation is orthogonal, so it preserves norms. For `v = R(-phi)(c1 - c0)` and a
+prediction `v_hat`:
+
+```
+||v - v_hat||^2 = ||R(phi)(v - v_hat)||^2 = ||(c1 - c0) - R(phi) v_hat||^2
+```
+
+Equal-weighted L2 in the rotating frame is **identically** Cartesian L2 on the
+complex velocity — not approximately, term for term. So with `LAMBDA_PHI = 1`
+and the energy weight dropped, the objective *is* Cartesian flow matching. The
+rotating frame is still doing real work as a **head parameterisation** — the
+network predicts in the state's own frame rather than in absolute coordinates —
+but it is no longer changing the loss geometry.
+
+The honest description of the default configuration has therefore shifted. It is
+**not** geodesic transport on `R+ x S^1`. It is Cartesian straight-line flow
+matching with a phase-relative output head, a per-band time schedule, and a
+phase-preserving nonlinearity. The `(u, phi)` state is now a storage
+parameterisation, not a geometry.
+
+What survives of the original hypothesis:
+
+- **The band schedule** (B7-B8) — untouched, and still the main structural claim.
+- **The soft-shrink** (C4a) — still shrinks magnitude and leaves phase exactly
+  unchanged; genuinely phase-centric and unaffected by any of this.
+- **The phase-relative head** — a real reparameterisation, plausibly useful,
+  but a much weaker claim than "phase transport".
+
+What does not survive is the "flow in polar coordinates / phase transport as the
+generative primitive" framing. That hypothesis is now testable **only** against
+`FlowPath::Polar`, which is why it is retained, tested, and why the polar
+checkpoints (`warmup_polar_step84000.bin`, `warmup_alpha0_step44000.bin`) are
+kept rather than deleted. Any claim about the polar path must be measured on
+those, at matched step count, on samples — the two paths have different loss
+scales and the numbers are not commensurable.
+
+## I4g. Cheap mixing before more round trips
+
+Coefficients only ever meet in the R-block, and each round trip costs a full FFT
+pair — the single most expensive thing in the forward pass. Two much cheaper
+mechanisms come first, both additive to the design and both testable
+independently.
+
+**Band summary tokens.** After *each* S-block: mean-pool every band, project to
+the merge width, concatenate the four into one vector, mix with a shared matrix,
+soft-shrink, project back and broadcast-add. Cost is `O(n*d)` against the
+S-block's `O(n*d^2)`, with no FFT. It raises the number of global, cross-band
+context injections per forward pass from 3 to 6.
+
+It cannot replace the R-block: a mean is not a nonlinearity in pixel space, so
+it creates no new frequency content. It supplies context, not bandwidth.
+
+**Neighbour stencil.** Adjacent modes are correlated in natural images. Two
+3-tap passes (along `k1`, then `k2`) give a 3x3 effective stencil for `6*d`
+parameters per band per S-block. In spatial terms this is envelope information —
+exactly what is missing when the only options are global filters and rare round
+trips.
+
+Two details that matter:
+
+- `k1` is a circular frequency axis and wraps; `k2` indexes a half spectrum and
+  does not. Getting this wrong silently couples the wrong modes.
+- Neighbours in a *different* band are dropped. Bands have different channel
+  widths, so cross-band taps would not typecheck, let alone mean anything —
+  cross-band mixing is the summary tokens' and the R-block's job.
+
+Both start at identity (centre tap 1, sides 0; summary `sum_up` small but
+non-zero, as with `proj_up`), so the model begins exactly where it did without
+them.
+
+Cost: 137,336 -> 159,608 real parameters, +16%.
+
+## I4h. The gradient clip was the binding constraint
+
+B14 specifies clipping at norm 1.0. Measured over a four-band run:
+
+| min | p25 | p50 | p75 | p90 | p95 | max |
+|---|---|---|---|---|---|---|
+| 1.19 | 4.12 | 6.19 | 9.04 | 11.54 | 14.82 | 25.75 |
+
+**100% of steps were clipped.**
+
+This is worse than it first looks, and the reason is worth internalising: Adam is
+invariant to a *constant* rescale of the gradient, because `m` and `v` scale
+together and `m_hat / sqrt(v_hat)` is unchanged. Uniform clipping would be
+harmless. What does damage is the *variation* — a 22x spread of clip factors
+across steps — because rescaling every step to the same norm discards precisely
+the information about which steps deserve a large move. The net effect is to
+silently convert AdamW into normalised-gradient descent.
+
+The threshold is now 12.0, near the measured p90, so clipping is what it should
+be: a safety valve for rare spikes. `AdamW::grad_norm_percentiles` reports
+p50/p90/p99 and the clipped fraction, and the trainer logs them every interval.
+**Re-measure after any change to the loss or architecture** — this number is
+empirical, not universal, and a loss change can move it by an order of magnitude.
+
+### Still open
+
+Even with an informative drift, the only place coefficients meet is the R-block
+— three of them, one per stage. If phase quality remains poor, the next thing to
+try is more mixing: a token-mixing path across coefficients within a band, or
+more stages. That is cheap and does not touch the flow.
+
+## I5. Soft-shrink threshold
+
+`SHRINK_LAMBDA = 0.02`, fixed. A learned per-band threshold is tempting but has
+a degenerate optimum in each direction (drive it to zero and the nonlinearity
+vanishes; drive it up and the band dies), so it is not worth the risk before the
+architecture has proved itself.
+
+## I6. What the gradient check can and cannot tell you
+
+Build gate 6 asks for agreement to 1e-4. Two things get in the way.
+
+**`f32` cannot deliver it.** A central difference needs a step large enough to
+survive cancellation in the loss, and at that step truncation around the ReLU
+and soft-shrink kinks leaves ~1e-2 relative error. The check is run at both
+precisions, but **`cargo test --release --features dtype-f64` is the run that
+certifies the backward pass**; it reaches 1e-10 on clean directions. The `f32`
+run keeps a loose tolerance and catches what it honestly can — a sign flip, a
+missing conjugate, a dropped term.
+
+**The loss has a genuine kink.** `wrap(dphi)²` is continuous everywhere, but its
+derivative `2·wrap(dphi)` jumps from `+2π` to `−2π` when a coefficient's phase
+error crosses `π`. A difference quotient straddling that seam is meaningless and
+says nothing about the gradient. The check therefore perturbs a whole tensor
+along a random unit direction rather than poking single entries — kinks average
+out, and one clean number per tensor still localises a broken tensor — and it
+tries a few directions, since whether any coefficient sits on the seam is
+direction-dependent. A genuinely wrong gradient fails every direction.
+
+## I7. Gradients of the pieces that are easy to get wrong
+
+For a real loss with `G = dL/d(Re z) + i·dL/d(Im z)`:
+
+```
+c = a·b        =>  dL/da = G·conj(b)
+z = y·gamma + beta, gamma real
+               =>  dL/dgamma = Re(conj(G)·y),  dL/dbeta = G,  dL/dy = G·gamma
+soft_shrink    =>  J = (1 − lambda/m)·I + (lambda/m³)·z·zᵀ   (symmetric; zero when m ≤ lambda)
+```
+
+The two FFT adjoints are **not** each other. Viewing the stored half spectrum as
+`2·n·nh` independent reals:
+
+```
+adjoint(irfft2)(g) = rfft2(g) ⊙ w / n²        w = 1 for k2 ∈ {0, n/2}, else 2
+adjoint(rfft2)(G)  = irfft2(G ⊙ 1/w) · n²
+```
+
+Both are verified directly against `⟨A x, y⟩ = ⟨x, Aᵀ y⟩` rather than by
+finite differences.
+
+## I8. Actual cost
+
+137,336 real parameters, against the 150,624 of section F — the FiLM saving
+of I1.3 spent partly on the extra conditioning trunk.
+
+Measured on 4 cores, batch 64, bands 0–1 only (build gate 7): **0.18 s/step**.
+Extrapolating to all four bands, 100k steps is on the order of a day rather than
+the 3 hours section F estimates. Section G's warning applies and then some: at
+this size the R-block's FFTs, not the GEMM, dominate — 16 channels × 64 images ×
+2 transforms × 3 stages per forward pass. If more speed is needed, batching the
+per-channel FFTs and reusing twiddle tables across them is the first place to
+look, ahead of any further architectural change.
+
+## I9. Running it
+
+```
+cargo test  --release --features dtype-f64 --lib spectral_model   # gates 1-6
+cargo run   --release -- spectral-warmup [steps]                  # gate 7
+cargo run   --release -- spectral-lowpass [max_band]              # the gate-7 reference (I4c)
+cargo run   --release -- spectral-train [steps]                   # gates 8-9
+cargo run   --release -- spectral-sample [ckpt] [out.png]
+```
+
+MNIST is downloaded to `datasets/mnist/` on first use. Checkpoints and sample
+grids land under `STORAGE/spectral_flow/`. Training resumes from the checkpoint
+if one is present.
+
+**Checkpoint format.** `magic | meta_len: u32 | meta_json | bincode(body)`. The
+scalars go in JSON and only the bulk arrays in bincode, because bincode is
+positional and not self-describing: appending a single field to a flat bincode
+struct silently invalidates every checkpoint ever written. That is not
+hypothetical — adding `phase_alpha` destroyed a 44k-step run's resume path, and
+the error surfaces as "unexpected end of file", which points nowhere near the
+cause. With the envelope, new scalars take their `serde(default)`. Saves also go
+through a temp file and a rename, so an interrupted write cannot replace a good
+checkpoint with a truncated one.
