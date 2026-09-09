@@ -300,7 +300,9 @@ fn read_input(prompt: &str) -> Result<String, io::Error> {
 async fn start_server() -> std::io::Result<()> {
     println!("🚀 Starting Actix-web server at http://localhost:7860");
 
-    let tera = Tera::new("templates/**/*").expect("Failed to load templates");
+    let mut tera = Tera::new();
+    tera.load_from_glob("templates/**/*")
+        .expect("Failed to load templates");
 
     let app_state = web::Data::new(AppState {
         training_done: Mutex::new(true),
