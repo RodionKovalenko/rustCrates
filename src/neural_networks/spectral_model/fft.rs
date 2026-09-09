@@ -13,6 +13,7 @@
 
 use crate::neural_networks::utils::dtype::{Real, C};
 use num::Complex;
+use rayon::prelude::*;
 
 /// Precomputed twiddle factors and bit-reversal table for one transform length.
 ///
@@ -131,29 +132,40 @@ impl Rfft2Plan {
     }
 
     /// Real image (`n*n`, row-major) -> half spectrum (`n*nh`).
+    ///
+    /// The row and column passes are each independent per row/column, so both
+    /// are parallelised with rayon; every closure owns its own scratch buffer,
+    /// so there is no shared mutable state and no risk of a data race.
     pub fn rfft2(&self, img: &[Real]) -> Vec<C> {
         assert_eq!(img.len(), self.n * self.n);
         let (n, nh) = (self.n, self.nh);
 
         // Rows first: real -> complex, keep the non-redundant half.
         let mut tmp = vec![Complex::new(0.0 as Real, 0.0 as Real); n * nh];
-        let mut row = vec![Complex::new(0.0 as Real, 0.0 as Real); n];
-        for n1 in 0..n {
+        img.par_chunks(n).zip(tmp.par_chunks_mut(nh)).for_each(|(img_row, tmp_row)| {
+            let mut row = vec![Complex::new(0.0 as Real, 0.0 as Real); n];
             for n2 in 0..n {
-                row[n2] = Complex::new(img[n1 * n + n2], 0.0 as Real);
+                row[n2] = Complex::new(img_row[n2], 0.0 as Real);
             }
             self.plan.fft(&mut row);
-            tmp[n1 * nh..n1 * nh + nh].copy_from_slice(&row[..nh]);
-        }
+            tmp_row.copy_from_slice(&row[..nh]);
+        });
 
-        // Then columns.
+        // Then columns (strided, so gather each column into an owned buffer
+        // rather than trying to slice it out of the row-major `tmp`).
+        let cols: Vec<Vec<C>> = (0..nh)
+            .into_par_iter()
+            .map(|k2| {
+                let mut col = vec![Complex::new(0.0 as Real, 0.0 as Real); n];
+                for n1 in 0..n {
+                    col[n1] = tmp[n1 * nh + k2];
+                }
+                self.plan.fft(&mut col);
+                col
+            })
+            .collect();
         let mut out = vec![Complex::new(0.0 as Real, 0.0 as Real); n * nh];
-        let mut col = vec![Complex::new(0.0 as Real, 0.0 as Real); n];
-        for k2 in 0..nh {
-            for n1 in 0..n {
-                col[n1] = tmp[n1 * nh + k2];
-            }
-            self.plan.fft(&mut col);
+        for (k2, col) in cols.iter().enumerate() {
             for k1 in 0..n {
                 out[k1 * nh + k2] = col[k1];
             }
@@ -170,34 +182,40 @@ impl Rfft2Plan {
         assert_eq!(coef.len(), self.n * self.nh);
         let (n, nh) = (self.n, self.nh);
 
-        // Inverse along k1 for every retained column.
+        // Inverse along k1 for every retained column (strided, so gather into
+        // an owned per-column buffer, same reasoning as in `rfft2`).
+        let cols: Vec<Vec<C>> = (0..nh)
+            .into_par_iter()
+            .map(|k2| {
+                let mut col = vec![Complex::new(0.0 as Real, 0.0 as Real); n];
+                for k1 in 0..n {
+                    col[k1] = coef[k1 * nh + k2];
+                }
+                self.plan.ifft(&mut col);
+                col
+            })
+            .collect();
         let mut tmp = vec![Complex::new(0.0 as Real, 0.0 as Real); n * nh];
-        let mut col = vec![Complex::new(0.0 as Real, 0.0 as Real); n];
-        for k2 in 0..nh {
-            for k1 in 0..n {
-                col[k1] = coef[k1 * nh + k2];
-            }
-            self.plan.ifft(&mut col);
+        for (k2, col) in cols.iter().enumerate() {
             for n1 in 0..n {
                 tmp[n1 * nh + k2] = col[n1];
             }
         }
 
-        // Then rebuild each row from its half spectrum.
+        // Then rebuild each row from its half spectrum; rows of `tmp`/`out`
+        // are contiguous, so this pass parallelises directly.
         let mut out = vec![0.0 as Real; n * n];
-        let mut row = vec![Complex::new(0.0 as Real, 0.0 as Real); n];
-        for n1 in 0..n {
-            for k2 in 0..nh {
-                row[k2] = tmp[n1 * nh + k2];
-            }
+        tmp.par_chunks(nh).zip(out.par_chunks_mut(n)).for_each(|(tmp_row, out_row)| {
+            let mut row = vec![Complex::new(0.0 as Real, 0.0 as Real); n];
+            row[..nh].copy_from_slice(&tmp_row[..nh]);
             for k2 in nh..n {
-                row[k2] = tmp[n1 * nh + (n - k2)].conj();
+                row[k2] = tmp_row[n - k2].conj();
             }
             self.plan.ifft(&mut row);
             for n2 in 0..n {
-                out[n1 * n + n2] = row[n2].re;
+                out_row[n2] = row[n2].re;
             }
-        }
+        });
         out
     }
 

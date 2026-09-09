@@ -10,7 +10,7 @@ use neural_networks::neural_networks::spectral_model::data as spectral_data;
 use neural_networks::neural_networks::spectral_model::model::SpectralNet;
 use neural_networks::neural_networks::spectral_model::sample::{
     lowpass_reference_png, prior_reference_png, report_band_profile, sample_batch,
-    sample_from_checkpoint,
+    sample_from_checkpoint, DEFAULT_SAMPLE_STEPS,
 };
 use neural_networks::neural_networks::spectral_model::train::Checkpoint as SpectralCheckpoint;
 use neural_networks::neural_networks::spectral_model::spectral::SpectralPrep;
@@ -95,6 +95,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "spectral-bench" => {
                 neural_networks::neural_networks::spectral_model::bench::run_bench();
             }
+            "spectral-bench-upscale" => {
+                neural_networks::neural_networks::spectral_model::bench::run_upscale_bench();
+            }
             "spectral-diag" => {
                 let path = args
                     .get(2)
@@ -134,7 +137,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Integration steps. This is a genuine quality knob and costs
                 // nothing but time: the sampler solves an ODE, and 16 steps is
                 // a coarse solve. 64 is usually visibly cleaner.
-                let steps: usize = args.get(6).and_then(|s| s.parse().ok()).unwrap_or(64);
+                let steps: usize = args.get(6).and_then(|s| s.parse().ok()).unwrap_or(DEFAULT_SAMPLE_STEPS);
                 // Pixel upscale; 0 = automatic.
                 let scale: usize = args.get(7).and_then(|s| s.parse().ok()).unwrap_or(0);
                 let cols = (count as f64).sqrt().ceil() as usize;
@@ -165,7 +168,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or_else(|| "STORAGE/spectral_flow/hd.png".to_string());
                 let seed: u64 =
                     args.get(4).and_then(|s| s.parse().ok()).unwrap_or_else(default_seed);
-                let steps: usize = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(64);
+                let steps: usize = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(DEFAULT_SAMPLE_STEPS);
                 // Apodisation strength; pass 0 for the exact (ringing) upsample.
                 let alpha: f32 = args
                     .get(6)
@@ -206,7 +209,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or_else(|| "STORAGE/spectral_flow/compare.png".to_string());
                 let seed: u64 =
                     args.get(4).and_then(|s| s.parse().ok()).unwrap_or_else(default_seed);
-                let steps: usize = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(64);
+                let steps: usize = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(DEFAULT_SAMPLE_STEPS);
 
                 let ckpt = SpectralCheckpoint::load(&ckpt_path)?;
                 let net = SpectralNet::new(ckpt.adaptive_roundtrip);
@@ -243,7 +246,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or_else(|| "STORAGE/spectral_flow/compare3.png".to_string());
                 let seed: u64 =
                     args.get(4).and_then(|s| s.parse().ok()).unwrap_or_else(default_seed);
-                let steps: usize = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(64);
+                let steps: usize = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(DEFAULT_SAMPLE_STEPS);
                 let alpha: f32 = args
                     .get(6)
                     .and_then(|s| s.parse().ok())

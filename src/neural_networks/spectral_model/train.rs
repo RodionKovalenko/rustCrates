@@ -5,12 +5,12 @@
 //! `group_size` images each. Groups are the unit of parallelism: they share no
 //! state, so they run on rayon threads and their gradients are summed.
 
-use crate::neural_networks::spectral_model::bands::{FlowPath, Schedule, NBANDS, NCOEF};
+use crate::neural_networks::spectral_model::bands::{FlowPath, Schedule, D, NBANDS, NCOEF};
 use crate::neural_networks::spectral_model::loss::{
     calibrate_for_path, flow_loss, PhaseWeights, DEFAULT_PHASE_ALPHA,
 };
 use crate::neural_networks::spectral_model::model::{Diagnostics, GroupInput, SpectralNet};
-use crate::neural_networks::spectral_model::params::{AdamW, NormTracker, SpectralParams};
+use crate::neural_networks::spectral_model::params::{AdamW, NormTracker, SpectralParams, N_STAGES};
 use crate::neural_networks::spectral_model::spectral::{
     build_sample, sample_prior, SpectralPrep, WhiteningTable,
 };
@@ -118,10 +118,54 @@ struct CheckpointMeta {
     #[serde(default = "default_phase_alpha")]
     phase_alpha: Real,
     step: usize,
+    /// Per-band channel widths the checkpoint was trained with. Checkpoints
+    /// written before this field existed predate the band-3 capacity
+    /// widening, so they default to that earlier shape rather than the
+    /// live `bands::D` — letting `load` detect the mismatch instead of
+    /// silently deserializing arrays at the wrong length.
+    #[serde(default = "default_d_bands")]
+    d_bands: [usize; NBANDS],
+    #[serde(default = "default_n_stages")]
+    n_stages: usize,
 }
 
 fn default_phase_alpha() -> Real {
     DEFAULT_PHASE_ALPHA
+}
+
+fn default_d_bands() -> [usize; NBANDS] {
+    [64, 48, 32, 16]
+}
+
+fn default_n_stages() -> usize {
+    3
+}
+
+/// A checkpoint's `d_bands`/`n_stages` are baked into the length of every
+/// tensor in its `SpectralParams`. Loading one trained under a different
+/// architecture into today's binary would not fail here — bincode happily
+/// deserializes a `Vec` at whatever length was serialized — it would fail
+/// later, deep inside `model.rs`/`gemm.rs`, as an opaque index-out-of-bounds
+/// panic once a forward/backward pass iterates `0..D[bd]` against the wrong
+/// live constant. Catching the mismatch here, with the shapes named, turns
+/// that into an actionable error instead.
+pub(crate) fn check_architecture_shape(
+    path: &str,
+    d_bands: [usize; NBANDS],
+    n_stages: usize,
+) -> std::io::Result<()> {
+    if d_bands != D || n_stages != N_STAGES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "checkpoint {path:?} was trained with D={d_bands:?}, N_STAGES={n_stages}, \
+                 but this binary is built with D={D:?}, N_STAGES={N_STAGES} — this checkpoint \
+                 is incompatible after the capacity change and cannot be resumed or sampled \
+                 from; retrain from scratch."
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// The bulk arrays. Positional bincode, but this half does not change shape.
@@ -168,6 +212,8 @@ impl Checkpoint {
             lambda_phi: self.lambda_phi,
             phase_alpha: self.phase_alpha,
             step: self.step,
+            d_bands: D,
+            n_stages: N_STAGES,
         };
         let meta_json = serde_json::to_vec(&meta)?;
         let body = CheckpointBody {
@@ -217,6 +263,7 @@ impl Checkpoint {
                 ));
             }
             let meta: CheckpointMeta = serde_json::from_slice(&bytes[12..meta_end])?;
+            check_architecture_shape(path, meta.d_bands, meta.n_stages)?;
             let body: CheckpointBody = bincode::deserialize(&bytes[meta_end..])
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
             return Ok(Self {
@@ -239,6 +286,9 @@ impl Checkpoint {
                 format!("unrecognised checkpoint format at {path}: {e}"),
             )
         })?;
+        // Pre-envelope checkpoints predate the metadata format entirely, so
+        // they always carry the original, pre-widening architecture.
+        check_architecture_shape(path, default_d_bands(), default_n_stages())?;
         println!("[spectral] migrating pre-envelope checkpoint {path}");
         Ok(Self {
             params: old.params,
@@ -542,7 +592,7 @@ impl Trainer {
                     cfg.path,
                     8,
                     8,
-                    16,
+                    crate::neural_networks::spectral_model::sample::DEFAULT_SAMPLE_STEPS,
                     self.step as u64,
                     &path,
                     0,

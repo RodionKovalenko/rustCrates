@@ -12,6 +12,10 @@ use crate::neural_networks::spectral_model::bands::{BandTable, D, D_MERGE, NBAND
 use crate::neural_networks::spectral_model::fft::Rfft2Plan;
 use crate::neural_networks::spectral_model::gemm::gemm;
 use crate::neural_networks::spectral_model::model::stencil_pass_for_test;
+use crate::neural_networks::spectral_model::upscale::{
+    spectral_upsample, spectral_upsample_apodized, spectral_upsample_apodized_with_plans,
+    spectral_upsample_with_plans, DEFAULT_APODISATION,
+};
 use crate::neural_networks::utils::dtype::{Real, C};
 use num::Complex;
 use std::time::Instant;
@@ -99,4 +103,46 @@ pub fn run_bench() {
     println!("  Reading this: a kernel whose GFLOP/s is far below the GEMM's, at a");
     println!("  low flop/byte intensity, is bandwidth-bound — extra width there is");
     println!("  nearly free, extra structure is not.");
+}
+
+/// Time [`spectral_upsample`]/[`spectral_upsample_apodized`] at the sizes the
+/// CLI actually uses (32->512 for `spectral-compare`/`spectral-compare3`,
+/// 32->1024 for `spectral-hd`), plus the `_with_plans` variants at the same
+/// sizes to isolate how much of the cost is FFT-plan construction versus the
+/// transform itself.
+///
+/// Run with `cargo run --release -- spectral-bench-upscale`.
+pub fn run_upscale_bench() {
+    println!("[spectral] upscale benchmark");
+    println!("  {:<38} {:>9}", "case", "time");
+
+    for &(n, m) in &[(32usize, 512usize), (32, 1024)] {
+        let img: Vec<Real> = (0..n * n).map(|i| (i as Real * 0.01).sin()).collect();
+
+        bench(&format!("spectral_upsample {n}->{m}"), 5, 0.0, 1.0, || {
+            let out = spectral_upsample(&img, n, m);
+            std::hint::black_box(&out);
+        });
+        bench(&format!("spectral_upsample_apodized {n}->{m}"), 5, 0.0, 1.0, || {
+            let out = spectral_upsample_apodized(&img, n, m, DEFAULT_APODISATION);
+            std::hint::black_box(&out);
+        });
+
+        let src = Rfft2Plan::new(n);
+        let dst = Rfft2Plan::new(m);
+        bench(&format!("spectral_upsample_with_plans {n}->{m}"), 5, 0.0, 1.0, || {
+            let out = spectral_upsample_with_plans(&img, &src, &dst);
+            std::hint::black_box(&out);
+        });
+        bench(&format!("spectral_upsample_apodized_with_plans {n}->{m}"), 5, 0.0, 1.0, || {
+            let out = spectral_upsample_apodized_with_plans(&img, &src, &dst, DEFAULT_APODISATION);
+            std::hint::black_box(&out);
+        });
+    }
+
+    println!();
+    println!("  Reading this: the `_with_plans` variants exclude FFT-plan");
+    println!("  construction, so their gap versus the plain variants is the cost of");
+    println!("  rebuilding twiddle/bit-reversal tables on every call — worth caching");
+    println!("  when upscaling many images at the same (n, m).");
 }

@@ -21,7 +21,18 @@ pub const NBANDS: usize = 4;
 pub const RADII: [f32; NBANDS + 1] = [0.0, 4.0, 8.0, 13.0, f32::INFINITY];
 
 /// Channel width per band (tapered: high bands carry less information).
-pub const D: [usize; NBANDS] = [64, 48, 32, 16];
+///
+/// Band 3 holds `RADII[3]..inf`, i.e. every coefficient with `rho >= 13` —
+/// half of all 544 coefficients in the 32x17 half spectrum, and all of the
+/// fine edge/stroke detail that separates a sharp digit from a blurry one.
+/// The original tapering gave it the fewest channels of any band, which
+/// starves exactly the content that needs the most capacity; widened here
+/// (and band 2, the second most content-heavy band, nudged up too) per the
+/// blueprint's own guidance that more per-band mixing is the cheap lever to
+/// pull for poor output quality. Bands 0-1 are untouched: they already carry
+/// adequate quality and hold the least content, so widening them buys the
+/// least.
+pub const D: [usize; NBANDS] = [64, 48, 40, 32];
 /// Common width inside the R-block.
 pub const D_MERGE: usize = 16;
 

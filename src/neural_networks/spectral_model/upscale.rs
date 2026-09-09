@@ -22,16 +22,30 @@ use crate::neural_networks::utils::dtype::{Real, C};
 
 /// Ideal band-limited upsample of a square real image, `n x n -> m x m`.
 ///
-/// Both sides must be powers of two with `m >= n`.
+/// Both sides must be powers of two with `m >= n` (enforced transitively by
+/// `Rfft2Plan::new`, via `FftPlan::new`'s `is_power_of_two` assertion, which
+/// panics naming the offending size).
+///
+/// Constructs fresh FFT plans (twiddle/bit-reversal tables) for `n` and `m`
+/// on every call. For repeated calls at the same fixed `(n, m)` — e.g.
+/// upscaling many images in a batch — use
+/// [`spectral_upsample_with_plans`] instead to build those plans once.
 pub fn spectral_upsample(img: &[Real], n: usize, m: usize) -> Vec<Real> {
+    spectral_upsample_with_plans(img, &Rfft2Plan::new(n), &Rfft2Plan::new(m))
+}
+
+/// Same as [`spectral_upsample`], but takes pre-built FFT plans instead of
+/// constructing them internally — the plan-construction cost (twiddle and
+/// bit-reversal tables) is paid once by the caller and amortised across
+/// however many images are upscaled at this `(n, m)` pair.
+pub fn spectral_upsample_with_plans(img: &[Real], src: &Rfft2Plan, dst: &Rfft2Plan) -> Vec<Real> {
+    let (n, m) = (src.n, dst.n);
     assert!(m >= n, "spectral_upsample only enlarges: {n} -> {m}");
     assert_eq!(img.len(), n * n);
     if m == n {
         return img.to_vec();
     }
 
-    let src = Rfft2Plan::new(n);
-    let dst = Rfft2Plan::new(m);
     let x = src.rfft2(img);
 
     // irfft2 carries a 1/side^2, so preserving pixel amplitude needs (m/n)^2.
@@ -245,15 +259,31 @@ pub const DEFAULT_APODISATION: Real = 0.8;
 /// The trade is explicit — ringing falls, fine detail softens — and it costs
 /// the exact-sample-reproduction property, which is the right thing to give up
 /// since that property was measuring fidelity to a truncation artefact.
+///
+/// Like [`spectral_upsample`], both sides must be powers of two (same
+/// transitive assertion), and constructing fresh FFT plans on every call is
+/// wasted work for repeated calls at a fixed `(n, m)` — see
+/// [`spectral_upsample_apodized_with_plans`] to amortise that cost.
 pub fn spectral_upsample_apodized(img: &[Real], n: usize, m: usize, alpha: Real) -> Vec<Real> {
+    spectral_upsample_apodized_with_plans(img, &Rfft2Plan::new(n), &Rfft2Plan::new(m), alpha)
+}
+
+/// Same as [`spectral_upsample_apodized`], but takes pre-built FFT plans
+/// instead of constructing them internally — see
+/// [`spectral_upsample_with_plans`] for why that matters.
+pub fn spectral_upsample_apodized_with_plans(
+    img: &[Real],
+    src: &Rfft2Plan,
+    dst: &Rfft2Plan,
+    alpha: Real,
+) -> Vec<Real> {
+    let (n, m) = (src.n, dst.n);
     assert!(m >= n, "spectral_upsample_apodized only enlarges: {n} -> {m}");
     assert_eq!(img.len(), n * n);
     if alpha <= 0.0 {
-        return spectral_upsample(img, n, m);
+        return spectral_upsample_with_plans(img, src, dst);
     }
 
-    let src = Rfft2Plan::new(n);
-    let dst = Rfft2Plan::new(m);
     let x = src.rfft2(img);
 
     let gain = (m as Real / n as Real).powi(2);

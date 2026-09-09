@@ -514,8 +514,31 @@ fn parameter_count_is_in_budget() {
     // conditioning (I4b) buys that back; the neighbour stencil and band
     // summary tokens (I4g) spend it again on mixing, which is where the model
     // was actually starved.
-    assert!(total > 120_000 && total < 190_000, "unexpected parameter count {total}");
-    assert_eq!(D.iter().sum::<usize>(), 160);
+    // Widening D from [64,48,32,16] to [64,48,40,32] (band 3 was starved of
+    // capacity relative to the fine detail it carries) raised this from
+    // ~150,624 to ~189,640.
+    assert!(total > 150_000 && total < 220_000, "unexpected parameter count {total}");
+    assert_eq!(D.iter().sum::<usize>(), 184);
+}
+
+/// A checkpoint trained under a different `D`/`N_STAGES` must be rejected
+/// with a descriptive error, not accepted and left to panic later inside
+/// `model.rs`/`gemm.rs` on a mismatched tensor length.
+#[test]
+fn stale_architecture_checkpoint_is_rejected_with_a_clear_error() {
+    use crate::neural_networks::spectral_model::train::check_architecture_shape;
+
+    // Matches the live D/N_STAGES: accepted.
+    assert!(check_architecture_shape("test.bin", D, crate::neural_networks::spectral_model::params::N_STAGES).is_ok());
+
+    // The pre-widening shape this checkpoint would have been trained under:
+    // rejected, and the message names both the stale and the live shape.
+    let err = check_architecture_shape("test.bin", [64, 48, 32, 16], 3).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("test.bin"), "{msg}");
+    assert!(msg.contains("[64, 48, 32, 16]"), "{msg}");
+    assert!(msg.contains(&format!("{:?}", D)), "{msg}");
+    assert!(msg.to_lowercase().contains("retrain"), "{msg}");
 }
 
 // -- Section D: the integrator, independent of the network -----------------
@@ -894,6 +917,55 @@ fn spectral_upsample_preserves_original_samples() {
                 );
             }
         }
+    }
+}
+
+/// `spectral_upsample_with_plans`/`spectral_upsample_apodized_with_plans`
+/// must produce the exact same output as the plain (plan-constructing)
+/// variants they were factored out of — the refactor should not change
+/// behaviour, only let the caller reuse FFT plans across calls.
+#[test]
+fn upsample_with_plans_matches_plain_variant() {
+    use crate::neural_networks::spectral_model::fft::Rfft2Plan;
+    use crate::neural_networks::spectral_model::upscale::{
+        spectral_upsample, spectral_upsample_apodized, spectral_upsample_apodized_with_plans,
+        spectral_upsample_with_plans, DEFAULT_APODISATION,
+    };
+
+    let mut rng = SmallRng::seed_from_u64(53);
+    let img = smooth_image(&mut rng);
+    let (n, m) = (N, 128usize);
+    let src = Rfft2Plan::new(n);
+    let dst = Rfft2Plan::new(m);
+
+    let plain = spectral_upsample(&img, n, m);
+    let with_plans = spectral_upsample_with_plans(&img, &src, &dst);
+    assert_eq!(plain, with_plans);
+
+    let plain_ap = spectral_upsample_apodized(&img, n, m, DEFAULT_APODISATION);
+    let with_plans_ap = spectral_upsample_apodized_with_plans(&img, &src, &dst, DEFAULT_APODISATION);
+    assert_eq!(plain_ap, with_plans_ap);
+}
+
+/// Parallelizing `rfft2`/`irfft2`'s row and column passes with rayon must not
+/// change their output: each parallel closure owns private scratch state and
+/// results are merged by plain assignment (never summed across threads), so
+/// this should be bit-for-bit identical to a sequential run, not just
+/// "close." A tolerance here would silently hide a genuine data race.
+#[test]
+fn fft_parallel_passes_are_deterministic() {
+    let mut rng = SmallRng::seed_from_u64(54);
+    for n in [8usize, 16, 32] {
+        let plan = Rfft2Plan::new(n);
+        let img: Vec<Real> = (0..n * n).map(|_| rng.random_range(-1.0f64..1.0) as Real).collect();
+
+        let a = plan.rfft2(&img);
+        let b = plan.rfft2(&img);
+        assert_eq!(a, b, "rfft2 not deterministic at n={n}");
+
+        let ia = plan.irfft2(&a);
+        let ib = plan.irfft2(&a);
+        assert_eq!(ia, ib, "irfft2 not deterministic at n={n}");
     }
 }
 

@@ -20,6 +20,13 @@ use crate::neural_networks::utils::dtype::Real;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
 
+/// Default integration step count for sampling. 16 steps is a coarse solve;
+/// this default is visibly cleaner and is shared by the CLI's sampling
+/// commands and training's periodic preview PNGs so the two can't silently
+/// diverge (as they did when the preview path hardcoded 16 while the CLI
+/// defaulted to 64).
+pub const DEFAULT_SAMPLE_STEPS: usize = 64;
+
 /// Draw `count` images. Returns `count` grids of `N*N` floats in `0..1`-ish
 /// (the model is unconstrained, so values are clamped only when written out).
 pub fn sample_batch(
