@@ -1,17 +1,14 @@
 use crate::neural_networks::{
-    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
-    network_layers::{default_layer::LayerInterface, layer::{ActivationType, LayerType}},
-    utils::{
-        activation::activate_output_complex,
-        adam_w::{calculate_adam_w, calculate_adam_w_bias},
-        dtype::{r, Real, C, ONE, ZERO},
-        matrix::{
-            add_vector_rm, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose_rm, multiply_complex_rm, normalize_bias, normalize_gradients,
-            RowMajorMatrix,
-        },
-        weights_initializer::initialize_weights_complex,
+    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput}, network_layers::{
+        default_layer::LayerInterface,
+        layer::{ActivationType, LayerType},
+    }, utils::{
+         activation_rm::{activate_output_complex_rm, swish_rm}, adam_w::{calculate_adam_w, calculate_adam_w_bias}, derivative_rm::swish_grad_rm, dtype::{C, Real, ZERO, r}, matrix::{
+            RowMajorMatrix, add_vector_rm, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose_rm, multiply_complex_rm, normalize_bias, normalize_gradients, split_data_by_columns_rm,
+        }, matrix_rm::{add_rm, conjugate_rm, hadamard_rm}, weights_initializer::initialize_weights_complex,
     },
 };
+use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,188 +69,148 @@ impl LayerRm {
     }
 
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
-        let input_rm = input.get_input_batch_rm_ref().expect("LayerRm::forward expects input_batch_rm").to_vec();
-
-        let calculate_gradient = input.get_calculate_gradient();
-
-        let activation_supported_rm = matches!(
-            self.activation_type,
-            ActivationType::LINEAR | ActivationType::TANH | ActivationType::RELU | ActivationType::LEAKYRELU | ActivationType::SIGMOID | ActivationType::GELU | ActivationType::SWiGLU
-        );
-
-        if !activation_supported_rm {
-            if input.get_rm_strict() {
-                panic!("RM strict mode violation: Dense RM layer activation {:?} lacks RM support", self.activation_type);
-            }
-        }
-
-        let needs_raw_pre_activation_rm = matches!(self.activation_type, ActivationType::SWiGLU | ActivationType::GELU);
-
-        let mut output_batch_rm: Vec<RowMajorMatrix<C>> = Vec::with_capacity(input_rm.len());
-        let mut raw_output_batch_rm: Vec<RowMajorMatrix<C>> = if calculate_gradient && needs_raw_pre_activation_rm {
-            Vec::with_capacity(input_rm.len())
-        } else {
-            Vec::new()
-        };
-
-        for m in input_rm.iter() {
-            let mut out = multiply_complex_rm(m, &self.weights);
-            add_vector_rm(&mut out, &self.bias);
-
-            if calculate_gradient && needs_raw_pre_activation_rm {
-                raw_output_batch_rm.push(out.clone());
-            }
-
-            let out_act = if activation_supported_rm {
-                activate_output_complex_rm(out, &self.activation_type)
-            } else {
-                // Fallback: do activation in legacy (Vec) representation.
-                let rows = out.to_rows();
-                let activated = activate_output_complex(&rows, self.activation_type.clone());
-                RowMajorMatrix::from_rows(&activated)
-            };
-
-            output_batch_rm.push(out_act);
-        }
-
+        let input_batch: Vec<RowMajorMatrix<C>> = input.get_input_batch_rm();
+        let padding_mask_batch = input.get_padding_mask_batch();
         self.batch_size = input.get_batch_size();
+
+        self.input_batch_rm = Some(input_batch.clone());
         self.time_step = input.get_time_step();
-        self.input_batch_rm = if calculate_gradient { Some(input_rm) } else { None };
-        self.inactivated_input_batch_rm = if calculate_gradient && needs_raw_pre_activation_rm { Some(raw_output_batch_rm) } else { None };
-        self.output_batch_rm = if calculate_gradient { Some(output_batch_rm.clone()) } else { None };
-        self.padding_mask_batch = Some(input.get_padding_mask_batch());
+
+        let mut inactivated_batch_output: Vec<RowMajorMatrix<C>> = input_batch
+            .par_iter()
+            .map(|input| {
+                let mut output: RowMajorMatrix<C> = multiply_complex_rm(input, &self.weights);
+
+                // Add bias to the result
+                add_vector_rm(&mut output, &self.bias);
+                output
+            })
+            .collect();
+
+        self.inactivated_input_batch_rm = Some(inactivated_batch_output.clone());
+
+        let batch_output: Vec<RowMajorMatrix<C>> = inactivated_batch_output
+            .par_iter_mut()
+            .map(|input| {
+                // Apply activation if the layer type is DenseLayer
+                let activated_output = activate_output_complex_rm(input, &self.activation_type);
+                activated_output
+            })
+            .collect();
+
+        self.output_batch_rm = Some(batch_output.clone());
+        self.padding_mask_batch = Some(padding_mask_batch.clone());
 
         let mut output = LayerOutput::new_default();
-        output.set_output_batch_rm(output_batch_rm);
+        output.set_output_batch_rm(batch_output);
+
         output
     }
 
-    pub fn backward_rm(&mut self, previous_gradient_batch_rm: &[RowMajorMatrix<C>]) -> Gradient {
-        let input_batch_rm = self.input_batch_rm.as_ref().expect("Input RM batch is missing in dense RM layer");
-
-        let batch_len = input_batch_rm.len();
-        if batch_len == 0 {
-            let mut gradient = Gradient::new_default();
-            gradient.set_gradient_input_batch_rm(vec![]);
-            gradient.set_gradient_weight_batch(vec![]);
-            gradient.set_gradient_bias_batch(vec![]);
-            self.gradient = Some(gradient.clone());
-            return gradient;
-        }
-
-        let (out_rows, out_cols) = if let Some(out_rm) = self.output_batch_rm.as_ref().and_then(|v| v.first()) {
-            (out_rm.rows, out_rm.cols)
-        } else {
-            (input_batch_rm[0].rows, self.weights.cols)
-        };
-
-        let mut prev_grads: Vec<RowMajorMatrix<C>> = Vec::with_capacity(batch_len);
-        for b in 0..batch_len {
-            if let Some(g) = previous_gradient_batch_rm.get(b) {
-                prev_grads.push(g.clone());
-            } else {
-                prev_grads.push(RowMajorMatrix::from_data(out_rows, out_cols, vec![C::new(ZERO, ZERO); out_rows * out_cols]));
-            }
-        }
-
-        let weights_h_rm = conjugate_transpose_rm(&self.weights);
+    pub fn backward_rm(&mut self, previous_gradient: &Gradient) -> Gradient {
+        let input_batch = self.input_batch_rm.as_ref().expect("Input batch is missing in dense layer");
+        let raw_output_batch = self.inactivated_input_batch_rm.as_ref().expect("Raw output batch is missing in dense layer");
+        let output_batch = self.output_batch_rm.as_ref().expect("Output batch is missing in dense layer");
+        let previous_gradient_batch = previous_gradient.get_gradient_input_batch_rm_ref().expect("No previous gradient input batch found");
 
         let mut gradient = Gradient::new_default();
 
-        let mut weight_gradients: Vec<Vec<Vec<C>>> = vec![vec![vec![C::new(ZERO, ZERO); self.weights.cols]; self.weights.rows]; batch_len];
-        let mut bias_gradients: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); self.bias.len()]; batch_len];
-        let mut input_gradient_batch_rm: Vec<RowMajorMatrix<C>> = Vec::with_capacity(batch_len);
+        // Initialize gradients for weights and biases
+        let mut weight_gradients: Vec<RowMajorMatrix<C>> = Vec::with_capacity(input_batch.len());
+        let mut bias_gradients: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); self.bias.len()]; input_batch.len()];
+
+        // Gradient w.r.t input has the input feature dimension (weights rows).
+        let in_features = self.weights.cols;
+
+        let mut input_gradient_batch: Vec<RowMajorMatrix<C>> = RowMajorMatrix::create_from_batch(input_batch);
 
         match &self.activation_type {
             ActivationType::SWiGLU => {
-                let raw_output_batch_rm = self.inactivated_input_batch_rm.as_ref().expect("Raw output RM batch is missing in dense SWiGLU RM layer");
+                let (weights_1, weights_2) = split_data_by_columns_rm(&self.weights);
+                let mut gradient_weights_1 = vec![RowMajorMatrix::create_empty(weights_1.rows, weights_1.cols); input_batch.len()];
+                let mut gradient_weights_2 =  vec![RowMajorMatrix::create_empty(weights_2.rows, weights_2.cols); input_batch.len()];
 
-                let cols = self.weights.cols;
-                assert!(cols % 2 == 0, "SWiGLU expects even column count");
-                let half = cols / 2;
+                let mut gradient_bias_1 = vec![vec![C::new(ZERO, ZERO); bias_gradients[0].len() / 2]; input_batch.len()];
+                let mut gradient_bias_2 = vec![vec![C::new(ZERO, ZERO); bias_gradients[0].len() / 2]; input_batch.len()];
 
-                let weights_1_rm = split_columns_rm(&self.weights, 0, half);
-                let weights_2_rm = split_columns_rm(&self.weights, half, cols);
-                let weights_1_h_rm = conjugate_transpose_rm(&weights_1_rm);
-                let weights_2_h_rm = conjugate_transpose_rm(&weights_2_rm);
+                for batch_ind in 0..input_batch.len() {
+                    let (a, b) = split_data_by_columns_rm(&raw_output_batch[batch_ind]);
 
-                for batch_ind in 0..batch_len {
-                    let input_rm = &input_batch_rm[batch_ind];
-                    let grad_y_rm = &prev_grads[batch_ind];
+                    let swish_b = swish_rm(&b);
+                    let gradient_b = swish_grad_rm(&b);
 
-                    let raw_rm = &raw_output_batch_rm[batch_ind];
-                    assert_eq!(raw_rm.cols, cols);
-                    assert_eq!(grad_y_rm.cols, half, "SWiGLU gradient must match activated output cols");
+                    //5x10 hadamard 5x10 = 5x10
+                    let dl_da = hadamard_rm(&previous_gradient_batch[batch_ind], &conjugate_rm(&swish_b));
+                    // 16x5 * 5x10 = 16x10
+                    gradient_weights_1[batch_ind] = multiply_complex_rm(&conjugate_transpose_rm(&input_batch[batch_ind]), &dl_da);
 
-                    let a_rm = split_columns_rm(raw_rm, 0, half);
-                    let b_rm = split_columns_rm(raw_rm, half, cols);
+                    // 5x10 hadamard 5x10 = 5x10
+                    let dl_db_1 = hadamard_rm(&previous_gradient_batch[batch_ind], &conjugate_rm(&a));
+                    // 5x10 hadamard 5x10 = 5x10
+                    let dl_db_2 = hadamard_rm(&dl_db_1, &conjugate_rm(&gradient_b));
 
-                    let swish_b = swish_rm(&b_rm);
-                    let grad_swish_b = swish_grad_rm(&b_rm);
+                    // 16x5 * 5x10 = 16x10
+                    gradient_weights_2[batch_ind] = multiply_complex_rm(&conjugate_transpose_rm(&input_batch[batch_ind]), &dl_db_2);
 
-                    let dl_da = hadamard_rm(grad_y_rm, &conjugate_rm(&swish_b));
-                    let dl_db_1 = hadamard_rm(grad_y_rm, &conjugate_rm(&a_rm));
-                    let dl_db = hadamard_rm(&dl_db_1, &conjugate_rm(&grad_swish_b));
-
-                    let input_h_rm = conjugate_transpose_rm(input_rm);
-                    let wgrad1_rm = multiply_complex_rm(&input_h_rm, &dl_da);
-                    let wgrad2_rm = multiply_complex_rm(&input_h_rm, &dl_db);
-
-                    accumulate_bias_from_rm(&mut bias_gradients[batch_ind][0..half], &dl_da);
-                    accumulate_bias_from_rm(&mut bias_gradients[batch_ind][half..cols], &dl_db);
-
-                    let gx_a = multiply_complex_rm(&dl_da, &weights_1_h_rm);
-                    let gx_b = multiply_complex_rm(&dl_db, &weights_2_h_rm);
-                    let gx = add_rm(&gx_a, &gx_b);
-                    input_gradient_batch_rm.push(gx);
-
-                    let mut rows = wgrad1_rm.to_rows();
-                    let rows2 = wgrad2_rm.to_rows();
-                    for (r_i, row2) in rows2.into_iter().enumerate() {
-                        rows[r_i].extend_from_slice(&row2);
+                    for grad_row in dl_da.iter() {
+                        for (k, grad_val) in grad_row.iter().enumerate() {
+                            gradient_bias_1[batch_ind][k] += grad_val;
+                        }
                     }
-                    weight_gradients[batch_ind] = rows;
+                    for grad_row in dl_db_2.iter() {
+                        for (k, grad_val) in grad_row.iter().enumerate() {
+                            gradient_bias_2[batch_ind][k] += grad_val;
+                        }
+                    }
+
+                    // 5x10 * 10x16 = 5x16
+                    let gradient_input_a = multiply_complex_rm(&dl_da, &conjugate_transpose_rm(&weights_1));
+                    // 5x10 * 10x16 = 5x16
+                    let gradient_input_b = multiply_complex_rm(&dl_db_2, &conjugate_transpose_rm(&weights_2));
+                    input_gradient_batch[batch_ind] = add_rm(&gradient_input_a, &gradient_input_b);
                 }
+
+                for batch_ind in 0..input_batch.len() {
+                    for (row_ind, row) in gradient_weights_1[batch_ind].iter_mut().enumerate() {
+                        row.extend_from_slice(&gradient_weights_2[batch_ind][row_ind]);
+                    }
+                    gradient_bias_1[batch_ind].extend_from_slice(&gradient_bias_2[batch_ind]);
+                }
+
+                weight_gradients = gradient_weights_1;
+                bias_gradients = gradient_bias_1;
             }
             _ => {
-                let output_batch_rm = self.output_batch_rm.as_ref().expect("Output RM batch is missing in dense RM layer");
+                for (batch_ind, (input, previous_gradient)) in input_batch.iter().zip(&previous_gradient_batch).enumerate() {
+                    let gradient_output = get_gradient_complex(&output_batch[batch_ind], &raw_output_batch[batch_ind], self.activation_type.clone());
+                    let gradient_output_conj = conjugate(&gradient_output);
 
-                let raw_output_batch_rm = if self.activation_type == ActivationType::GELU {
-                    Some(self.inactivated_input_batch_rm.as_ref().expect("Raw output RM batch is missing in dense GELU RM layer"))
-                } else {
-                    None
-                };
+                    input_gradient_batch[batch_ind] = hadamard_product_2d_c(previous_gradient, &gradient_output_conj);
+                    weight_gradients[batch_ind] = multiply_complex(&conjugate_transpose(&input), &input_gradient_batch[batch_ind]);
 
-                for batch_ind in 0..batch_len {
-                    let input_rm = &input_batch_rm[batch_ind];
-                    let grad_y_rm = &prev_grads[batch_ind];
-                    let out_act_rm = &output_batch_rm[batch_ind];
+                    //Accumulate gradients for biases
+                    for grad_row in input_gradient_batch[batch_ind].iter() {
+                        for (k, grad_val) in grad_row.iter().enumerate() {
+                            bias_gradients[batch_ind][k] += grad_val;
+                        }
+                    }
 
-                    let d_act = if self.activation_type == ActivationType::GELU {
-                        let raw_rm = &raw_output_batch_rm.unwrap()[batch_ind];
-                        activation_derivative_from_raw_rm(raw_rm, &self.activation_type)
-                    } else {
-                        activation_derivative_rm(out_act_rm, &self.activation_type)
-                    };
-
-                    let dz = hadamard_rm(grad_y_rm, &conjugate_rm(&d_act));
-
-                    let input_h_rm = conjugate_transpose_rm(input_rm);
-                    let wgrad_rm = multiply_complex_rm(&input_h_rm, &dz);
-                    weight_gradients[batch_ind] = wgrad_rm.to_rows();
-
-                    accumulate_bias_from_rm(&mut bias_gradients[batch_ind], &dz);
-
-                    let gx_rm = multiply_complex_rm(&dz, &weights_h_rm);
-                    input_gradient_batch_rm.push(gx_rm);
+                    input_gradient_batch[batch_ind] = multiply_complex(&input_gradient_batch[batch_ind], &conjugate_transpose(&self.weights));
                 }
             }
         }
 
-        gradient.set_gradient_input_batch_rm(input_gradient_batch_rm);
+        // if self.gradient.is_some() {
+        //     let previous_gradient = self.gradient.as_ref().expect("");
+        //     weight_gradients = add_matrix_3d(&weight_gradients, &previous_gradient.get_gradient_weight_batch());
+        //     bias_gradients = add_matrix(&bias_gradients, &previous_gradient.get_gradient_bias_batch());
+        // }
+
+        gradient.set_gradient_input_batch(input_gradient_batch);
         gradient.set_gradient_weight_batch(weight_gradients);
         gradient.set_gradient_bias_batch(bias_gradients);
         self.gradient = Some(gradient.clone());
+
         gradient
     }
 
@@ -300,15 +257,7 @@ impl LayerRm {
             )
         };
 
-        calculate_adam_w_bias(
-            &mut self.bias,
-            &bias_gradients,
-            &mut prev_m_bias,
-            &mut prev_v_bias,
-            &mut prev_v_bias_hat,
-            learning_rate,
-            time_step,
-        );
+        calculate_adam_w_bias(&mut self.bias, &bias_gradients, &mut prev_m_bias, &mut prev_v_bias, &mut prev_v_bias_hat, learning_rate, time_step);
 
         // Update weights by round-tripping through Vec<Vec<C>> to reuse the existing AdamW.
         let mut weights_vec = self.weights.to_rows();
@@ -335,206 +284,6 @@ impl LayerRm {
 
         self.gradient = None;
     }
-}
-
-fn activate_output_complex_rm(mut data: RowMajorMatrix<C>, activation: &ActivationType) -> RowMajorMatrix<C> {
-    match activation {
-        ActivationType::LINEAR => data,
-        ActivationType::TANH => {
-            for v in data.data.iter_mut() {
-                *v = tanh_complex(*v);
-            }
-            data
-        }
-        ActivationType::RELU => {
-            for v in data.data.iter_mut() {
-                *v = if v.re > ZERO { *v } else { C::new(ZERO, ZERO) };
-            }
-            data
-        }
-        ActivationType::LEAKYRELU => {
-            for v in data.data.iter_mut() {
-                *v = if v.re > ZERO { *v } else { *v * r(0.01) };
-            }
-            data
-        }
-        ActivationType::SIGMOID => {
-            for v in data.data.iter_mut() {
-                *v = sigmoid_complex(v);
-            }
-            data
-        }
-        ActivationType::GELU => {
-            for v in data.data.iter_mut() {
-                *v = C::new(gelu_real(v.re), v.im);
-            }
-            data
-        }
-        ActivationType::SWiGLU => {
-            let cols = data.cols;
-            assert!(cols % 2 == 0, "SWiGLU expects an even column count");
-            let half = cols / 2;
-            let mut out = RowMajorMatrix::from_data(data.rows, half, vec![C::new(ZERO, ZERO); data.rows * half]);
-            for r_i in 0..data.rows {
-                let row = data.row_range(r_i);
-                let out_row = out.row_range(r_i);
-                for c in 0..half {
-                    let a = data.data[row.start + c];
-                    let b = data.data[row.start + half + c];
-                    out.data[out_row.start + c] = a * b * sigmoid_complex(&b);
-                }
-            }
-            out
-        }
-        _ => data,
-    }
-}
-
-fn activation_derivative_rm(activated: &RowMajorMatrix<C>, activation: &ActivationType) -> RowMajorMatrix<C> {
-    let mut out = RowMajorMatrix::from_data(activated.rows, activated.cols, vec![C::new(ZERO, ZERO); activated.rows * activated.cols]);
-    match activation {
-        ActivationType::LINEAR => {
-            for v in out.data.iter_mut() {
-                *v = C::new(ONE, ZERO);
-            }
-        }
-        ActivationType::TANH => {
-            for (dst, &z) in out.data.iter_mut().zip(activated.data.iter()) {
-                *dst = C::new(ONE, ZERO) - (z * z);
-            }
-        }
-        ActivationType::SIGMOID => {
-            for (dst, &z) in out.data.iter_mut().zip(activated.data.iter()) {
-                *dst = z * (C::new(ONE, ZERO) - z);
-            }
-        }
-        ActivationType::RELU => {
-            for (dst, &z) in out.data.iter_mut().zip(activated.data.iter()) {
-                *dst = if z.re > ZERO { C::new(ONE, ZERO) } else { C::new(ZERO, ZERO) };
-            }
-        }
-        ActivationType::LEAKYRELU => {
-            for (dst, &z) in out.data.iter_mut().zip(activated.data.iter()) {
-                *dst = if z.re > ZERO { C::new(ONE, ZERO) } else { C::new(r(0.01), ZERO) };
-            }
-        }
-        _ => {}
-    }
-    out
-}
-
-fn activation_derivative_from_raw_rm(raw: &RowMajorMatrix<C>, activation: &ActivationType) -> RowMajorMatrix<C> {
-    let mut out = RowMajorMatrix::from_data(raw.rows, raw.cols, vec![C::new(ZERO, ZERO); raw.rows * raw.cols]);
-    match activation {
-        ActivationType::GELU => {
-            for (dst, &z) in out.data.iter_mut().zip(raw.data.iter()) {
-                *dst = C::new(gelu_derivative_real(z.re), ZERO);
-            }
-        }
-        _ => {}
-    }
-    out
-}
-
-fn gelu_real(x: Real) -> Real {
-    const SQRT_2_OVER_PI: f64 = 0.797_884_560_802_865_4;
-    let xf = x as f64;
-    let x3 = xf * xf * xf;
-    let inner = SQRT_2_OVER_PI * (xf + 0.044_715 * x3);
-    r(0.5 * xf * (1.0 + inner.tanh()))
-}
-
-fn gelu_derivative_real(x: Real) -> Real {
-    const SQRT_2_OVER_PI: f64 = 0.797_884_560_802_865_4;
-    let xf = x as f64;
-    let x2 = xf * xf;
-    let inner = SQRT_2_OVER_PI * (xf + 0.044_715 * (xf * xf * xf));
-    let t = inner.tanh();
-    let sech2 = 1.0 - t * t;
-    let inner_prime = SQRT_2_OVER_PI * (1.0 + 3.0 * 0.044_715 * x2);
-    r(0.5 * (1.0 + t) + 0.5 * xf * sech2 * inner_prime)
-}
-
-fn conjugate_rm(m: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
-    let mut out = RowMajorMatrix::from_data(m.rows, m.cols, vec![C::new(ZERO, ZERO); m.rows * m.cols]);
-    for (dst, &v) in out.data.iter_mut().zip(m.data.iter()) {
-        *dst = v.conj();
-    }
-    out
-}
-
-fn hadamard_rm(a: &RowMajorMatrix<C>, b: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
-    assert_eq!(a.rows, b.rows);
-    assert_eq!(a.cols, b.cols);
-    let mut out = RowMajorMatrix::from_data(a.rows, a.cols, vec![C::new(ZERO, ZERO); a.rows * a.cols]);
-    for i in 0..out.data.len() {
-        out.data[i] = a.data[i] * b.data[i];
-    }
-    out
-}
-
-fn add_rm(a: &RowMajorMatrix<C>, b: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
-    assert_eq!(a.rows, b.rows);
-    assert_eq!(a.cols, b.cols);
-    let mut out = RowMajorMatrix::from_data(a.rows, a.cols, vec![C::new(ZERO, ZERO); a.rows * a.cols]);
-    for i in 0..out.data.len() {
-        out.data[i] = a.data[i] + b.data[i];
-    }
-    out
-}
-
-fn split_columns_rm(matrix: &RowMajorMatrix<C>, start_col: usize, end_col: usize) -> RowMajorMatrix<C> {
-    assert!(start_col <= end_col);
-    assert!(end_col <= matrix.cols);
-    let cols = end_col - start_col;
-    let mut data = vec![C::new(ZERO, ZERO); matrix.rows * cols];
-    for r_i in 0..matrix.rows {
-        let src_row = matrix.row_range(r_i);
-        let dst_row_start = r_i * cols;
-        let src_start = src_row.start + start_col;
-        let src_end = src_row.start + end_col;
-        data[dst_row_start..dst_row_start + cols].copy_from_slice(&matrix.data[src_start..src_end]);
-    }
-    RowMajorMatrix::from_data(matrix.rows, cols, data)
-}
-
-fn swish_rm(b: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
-    let mut out = RowMajorMatrix::from_data(b.rows, b.cols, vec![C::new(ZERO, ZERO); b.rows * b.cols]);
-    for i in 0..out.data.len() {
-        let z = b.data[i];
-        out.data[i] = z * sigmoid_complex(&z);
-    }
-    out
-}
-
-fn swish_grad_rm(b: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
-    let mut out = RowMajorMatrix::from_data(b.rows, b.cols, vec![C::new(ZERO, ZERO); b.rows * b.cols]);
-    let one = C::new(ONE, ZERO);
-    for i in 0..out.data.len() {
-        let z = b.data[i];
-        let sigma = sigmoid_complex(&z);
-        out.data[i] = sigma + z * sigma * (one - sigma);
-    }
-    out
-}
-
-fn accumulate_bias_from_rm(dst: &mut [C], grad: &RowMajorMatrix<C>) {
-    assert_eq!(dst.len(), grad.cols);
-    for r_i in 0..grad.rows {
-        let row = grad.row_range(r_i);
-        for c in 0..grad.cols {
-            dst[c] += grad.data[row.start + c];
-        }
-    }
-}
-
-fn sigmoid_complex(z: &C) -> C {
-    let one = C::new(ONE, ZERO);
-    one / (one + (-*z).exp())
-}
-
-fn tanh_complex(z: C) -> C {
-    z.tanh()
 }
 
 impl LayerInterface for LayerRm {

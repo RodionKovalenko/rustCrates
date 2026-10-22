@@ -35,7 +35,6 @@ pub static GPU_MATMUL: Lazy<Mutex<Option<GpuMatmul>>> = Lazy::new(|| {
     }
 });
 
-
 /// Contiguous row-major matrix storage.
 ///
 /// This is the layout expected by the GPU path (`GpuMatmul`) and can also be used
@@ -56,6 +55,15 @@ impl<T> RowMajorMatrix<T> {
     #[inline]
     pub fn idx(&self, row: usize, col: usize) -> usize {
         row * self.cols + col
+    }
+    pub fn create_from_batch(batch: &Vec<RowMajorMatrix<C>>) -> Vec<RowMajorMatrix<C>> {
+        (0..batch.len())
+            .into_iter()
+            .map(|ind|  RowMajorMatrix::from_data(batch[ind].rows,batch[ind].cols, vec![C::ZERO; batch[ind].cols * batch[ind].rows]))
+            .collect()
+    }
+    pub fn create_empty(rows: usize, cols: usize) -> RowMajorMatrix<C> {
+        RowMajorMatrix::from_data(rows, cols, vec![C::ZERO; rows * cols])
     }
 }
 
@@ -123,12 +131,12 @@ pub fn add_vector_rm(matrix: &mut RowMajorMatrix<Complex<Real>>, bias: &[Complex
     }
 }
 
-pub fn conjugate_transpose_rm(matrix: &RowMajorMatrix<Complex<Real>>) -> RowMajorMatrix<Complex<Real>> {
+pub fn conjugate_transpose_rm(matrix: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
     let rows = matrix.rows;
     let cols = matrix.cols;
 
     // Output is (cols x rows)
-    let mut data = vec![Complex::new(ZERO, ZERO); rows * cols];
+    let mut data = vec![C::ZERO; rows * cols];
     for r in 0..rows {
         for c in 0..cols {
             data[c * rows + r] = matrix.data[matrix.idx(r, c)].conj();
@@ -327,7 +335,13 @@ pub fn multiply_complex_f32(matrix_a: &[Vec<Complex<Real>>], matrix_b: &[Vec<f32
 
     // Ensure that the number of columns in matrix_a is equal to the number of rows in matrix_b
     if matrix_a[0].len() != matrix_b.len() {
-        panic!("Matrix A does not have the same number of columns as Matrix B rows. A: {} {}, B: {} {}", matrix_a.len(), matrix_a[0].len(), matrix_b.len(), matrix_b[0].len());
+        panic!(
+            "Matrix A does not have the same number of columns as Matrix B rows. A: {} {}, B: {} {}",
+            matrix_a.len(),
+            matrix_a[0].len(),
+            matrix_b.len(),
+            matrix_b[0].len()
+        );
     }
 
     // Initialize result matrix with 0.0 values
@@ -1305,6 +1319,32 @@ pub fn split_data_by_columns(data: &Vec<Vec<C>>) -> (Vec<Vec<C>>, Vec<Vec<C>>) {
             (l.to_vec(), r.to_vec()) // clone the slices
         })
         .unzip();
+
+    (left, right)
+}
+
+pub fn split_data_by_columns_rm(matrix: &RowMajorMatrix<C>) -> (RowMajorMatrix<C>, RowMajorMatrix<C>) {
+    let half_cols = matrix.cols / 2;
+    let mut left_rm = vec![C::ZERO; matrix.rows * half_cols];
+    let mut right_rm = vec![C::ZERO; matrix.rows * half_cols];
+
+    for row in 0..matrix.rows {
+        for col in 0..matrix.cols {
+            let ind = matrix.idx(row, col);
+            let value = matrix.data[ind];
+
+            let half_ind = row * half_cols + col % half_cols;
+
+            if col < half_cols {
+                left_rm[half_ind] = value;
+            } else {
+                right_rm[half_ind] = value;
+            }
+        }
+    }
+
+    let left = RowMajorMatrix::from_data(matrix.rows, half_cols, left_rm);
+    let right = RowMajorMatrix::from_data(matrix.rows, half_cols, right_rm);
 
     (left, right)
 }

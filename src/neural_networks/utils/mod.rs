@@ -15,6 +15,9 @@ pub mod array_splitting;
 pub mod matrix_approximation;
 pub mod low_rank_approx;
 pub mod shared_f32_matrix;
+pub mod matrix_rm;
+pub mod derivative_rm;
+pub mod activation_rm;
 
 #[cfg(feature = "cuda")]
 pub mod gpu_matmul;
