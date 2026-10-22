@@ -5,6 +5,9 @@ mod test_attention_rm {
         network_components::layer_input_struct::LayerInput,
         network_layers::{layer::LayerEnum, network_layers_rm::complex_to_linear_layer_rm::ComplexToLinearLayerRm},
         network_types::transformer::{
+            masked_attention_head_approximation::MaskedAttentionHeadApproximation,
+            self_attention_layer_approximation::SelfAttentionLayerApproximation,
+            self_attention_layer_approximation_rm::SelfAttentionLayerApproximationRm,
             sparse_masked_attention_head::SparseMaskedAttentionHead, sparse_masked_attention_head_rm::SparseMaskedAttentionHeadRm, sparse_self_attention_layer::SparseSelfAttentionLayer,
             sparse_self_attention_layer_rm::SparseSelfAttentionLayerRm,
         },
@@ -145,6 +148,80 @@ mod test_attention_rm {
             layer_rm.update_parameters();
             for (h, (head, head_rm)) in layer.attention_heads.iter().zip(layer_rm.attention_heads.iter()).enumerate() {
                 assert_sparse_head_parameters_close(&format!("{} head {}", name, h), head, head_rm);
+            }
+        }
+    }
+
+    #[test]
+    fn test_attention_head_approximation_rm_input_matches_vec_input() {
+        // seq_len and head dim must stay <= 5 (size of bias_pos).
+        let (batch_size, seq_len, dim, head_dim) = (2, 5, 6, 4);
+        let mut head = MaskedAttentionHeadApproximation::new(dim, head_dim, 0.01);
+        let mut head_rm = head.clone();
+        let padding_mask_batch = vec![vec![1; seq_len], vec![1, 1, 1, 1, 0]];
+
+        for step in 1..=3 {
+            let name = format!("MaskedAttentionHeadApproximation RM step {}", step);
+            let input_batch = generate_random_complex_3d(batch_size, seq_len, dim);
+            let (mut input, mut input_rm) = layer_inputs_with_mask(&input_batch, &padding_mask_batch);
+            input.set_time_step(step);
+            input_rm.set_time_step(step);
+
+            let output = head.forward(&input).get_output_batch();
+            let output_rm = head_rm.forward(&input_rm);
+            assert_close_3d(&format!("{} output", name), &output, output_rm.get_output_batch_rm_ref().unwrap());
+
+            let upstream_batch = generate_random_complex_3d(batch_size, seq_len, head_dim);
+            let gradient = head.backward(&upstream_batch);
+            let gradient_rm = head_rm.backward_rm(&to_rm_batch(&upstream_batch));
+            assert_input_gradients_close(&name, &gradient, &gradient_rm);
+            for (which, g, g_rm) in [
+                ("w_q", gradient.get_gradient_weights_q(), gradient_rm.get_gradient_weights_q()),
+                ("w_k", gradient.get_gradient_weights_k(), gradient_rm.get_gradient_weights_k()),
+                ("w_v", gradient.get_gradient_weights_v(), gradient_rm.get_gradient_weights_v()),
+            ] {
+                assert_close_2d(&format!("{} {} gradient", name, which), &g, &RowMajorMatrix::from_rows(&g_rm));
+            }
+
+            head.update_parameters();
+            head_rm.update_parameters();
+            assert_close_2d(&format!("{} w_q", name), &head.weights_q, &RowMajorMatrix::from_rows(&head_rm.weights_q));
+            assert_close_2d(&format!("{} w_k", name), &head.weights_k, &RowMajorMatrix::from_rows(&head_rm.weights_k));
+            assert_close_2d(&format!("{} w_v", name), &head.weights_v, &RowMajorMatrix::from_rows(&head_rm.weights_v));
+        }
+    }
+
+    #[test]
+    fn test_self_attention_layer_approximation_rm_matches_self_attention_layer_approximation() {
+        let (batch_size, seq_len, dim, num_heads) = (2, 5, 8, 2);
+        let mut layer = SelfAttentionLayerApproximation::new(num_heads, dim, dim, 0.01);
+        let mut layer_rm = SelfAttentionLayerApproximationRm::new(num_heads, dim, dim, 0.01);
+        // Both layers use the same head type.
+        layer_rm.attention_heads = layer.attention_heads.clone();
+
+        let padding_mask_batch = vec![vec![1; seq_len]; batch_size];
+
+        for step in 1..=3 {
+            let name = format!("SelfAttentionLayerApproximationRm step {}", step);
+            let input_batch = generate_random_complex_3d(batch_size, seq_len, dim);
+            let (mut input, mut input_rm) = layer_inputs_with_mask(&input_batch, &padding_mask_batch);
+            input.set_time_step(step);
+            input_rm.set_time_step(step);
+
+            let output = layer.forward(&input).get_output_batch();
+            let output_rm = layer_rm.forward(&input_rm);
+            assert_close_3d(&format!("{} output", name), &output, output_rm.get_output_batch_rm_ref().unwrap());
+
+            let upstream_batch: Vec<Vec<Vec<C>>> = generate_random_complex_3d(batch_size, seq_len, dim);
+            let gradient = layer.backward(&upstream_batch);
+            let gradient_rm = layer_rm.backward_rm(&to_rm_batch(&upstream_batch));
+            assert_input_gradients_close(&name, &gradient, &gradient_rm);
+
+            layer.update_parameters();
+            layer_rm.update_parameters();
+            for (h, (head, head_rm)) in layer.attention_heads.iter().zip(layer_rm.attention_heads.iter()).enumerate() {
+                assert_close_2d(&format!("{} head {} w_q", name, h), &head.weights_q, &RowMajorMatrix::from_rows(&head_rm.weights_q));
+                assert_close_2d(&format!("{} head {} w_v", name, h), &head.weights_v, &RowMajorMatrix::from_rows(&head_rm.weights_v));
             }
         }
     }

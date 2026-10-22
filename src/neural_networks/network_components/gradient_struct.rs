@@ -245,6 +245,9 @@ impl Gradient {
     pub fn set_gradient_input_batch_rm(&mut self, gradient_input_batch_rm: Vec<RowMajorMatrix<C>>) {
         self.gradient_input_batch_rm = Some(gradient_input_batch_rm);
     }
+    pub fn clear_gradient_input_batch_rm(&mut self) {
+        self.gradient_input_batch_rm = None;
+    }
     pub fn set_gradient_input_batch_softmax(&mut self, gradient_input_batch: Vec<Vec<Vec<Real>>>) {
         self.gradient_input_batch_softmax = Some(gradient_input_batch);
     }
