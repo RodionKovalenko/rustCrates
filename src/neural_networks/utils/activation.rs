@@ -509,6 +509,29 @@ pub fn softmax_complex_padding_complex(input: &Vec<Vec<C>>, padding_mask: &Vec<u
         .collect() // Collect the results into a Vec<Vec<C>>
 }
 
+/// Position of the first target in the (left-aligned) unpadded sequence. Shared by the Vec and RM softmax.
+pub fn target_offset(padding_mask: &[u32], target_len: usize) -> usize {
+    let seq_len_unpadded = padding_mask.iter().filter(|&&x| x != 0).count();
+    if target_len > seq_len_unpadded {
+        panic!(
+            "softmax_backward_real_with_gradient: target_len ({}) > seq_len_unpadded ({}) (padding_mask_len={}). This would underflow and silently zero-out loss/grads in release builds.",
+            target_len,
+            seq_len_unpadded,
+            padding_mask.len()
+        );
+    }
+    seq_len_unpadded - target_len
+}
+
+/// Logit columns of row `t`: the sparse indices if present, otherwise the full range.
+pub fn logit_indices_for_row(logit_indices: &[Vec<usize>], t: usize, cols: usize) -> Vec<usize> {
+    if logit_indices.is_empty() || t >= logit_indices.len() || logit_indices[t].is_empty() {
+        (0..cols).collect()
+    } else {
+        logit_indices[t].clone()
+    }
+}
+
 pub fn softmax_backward_real_with_gradient(
     logits: &Vec<Vec<C>>,
     targets: &Vec<u32>,
@@ -522,17 +545,7 @@ pub fn softmax_backward_real_with_gradient(
     assert_eq!(padding_mask.len(), seq_len);
     assert!(target_len <= seq_len);
 
-    let seq_len_unpadded = padding_mask.iter().filter(|&&x| x != 0).count();
-    if target_len > seq_len_unpadded {
-        panic!(
-            "softmax_backward_real_with_gradient: target_len ({}) > seq_len_unpadded ({}) (seq_len={}, padding_mask_len={}). This would underflow and silently zero-out loss/grads in release builds.",
-            target_len,
-            seq_len_unpadded,
-            seq_len,
-            padding_mask.len()
-        );
-    }
-    let offset = seq_len_unpadded.saturating_sub(target_len);
+    let offset = target_offset(padding_mask, target_len);
 
     // Normalize by total valid tokens across entire batch for consistent averaging
     let scale: Real = r(1.0) / r(total_valid_tokens.max(1) as f64);
@@ -549,11 +562,7 @@ pub fn softmax_backward_real_with_gradient(
             let target_token = targets[target_idx] as usize;
 
             // Handle empty logit_indices (non-sparse mode) by creating default full range
-            let indices_for_t = if logit_indices.is_empty() || t >= logit_indices.len() || logit_indices[t].is_empty() {
-                (0..row.len()).collect::<Vec<usize>>()
-            } else {
-                logit_indices[t].clone()
-            };
+            let indices_for_t = logit_indices_for_row(logit_indices, t, row.len());
 
             let (loss_real, grad_complex) = softmax_ce_grad_complex(row, target_token, &indices_for_t);
 
@@ -601,103 +610,9 @@ pub fn softmax_ce_grad_complex_slice(logits: &[C], target: usize, logit_indices:
     (loss, grad)
 }
 
-/// RowMajorMatrix variant of `softmax_backward_real_with_gradient`.
-///
-/// - `logits` are shape (seq_len x vocab_or_k)
-/// - `logit_indices[t]` (optional) maps sparse column -> original vocab index for that timestep
-pub fn softmax_backward_real_with_gradient_rm(
-    logits: &crate::neural_networks::utils::matrix::RowMajorMatrix<C>,
-    targets: &Vec<u32>,
-    padding_mask: &Vec<u32>,
-    total_valid_tokens: usize,
-    logit_indices: &Vec<Vec<usize>>,
-) -> (Vec<Vec<C>>, crate::neural_networks::utils::matrix::RowMajorMatrix<C>) {
-    let seq_len = logits.rows;
-    let cols = logits.cols;
-    let target_len = targets.len();
-
-    assert_eq!(padding_mask.len(), seq_len);
-    assert!(target_len <= seq_len);
-
-    let seq_len_unpadded = padding_mask.iter().filter(|&&x| x != 0).count();
-    let offset = seq_len_unpadded.saturating_sub(target_len);
-
-    let scale: Real = r(1.0) / r(total_valid_tokens.max(1) as f64);
-
-    let mut losses: Vec<Vec<C>> = Vec::with_capacity(seq_len);
-    let mut grad_rm = crate::neural_networks::utils::matrix::RowMajorMatrix::from_data(
-        seq_len,
-        cols,
-        vec![C::new(ZERO, ZERO); seq_len * cols],
-    );
-
-    for t in 0..seq_len {
-        if padding_mask[t] == 0 || t < offset {
-            losses.push(vec![C::new(ZERO, ZERO)]);
-            continue;
-        }
-
-        let target_idx = t - offset;
-        let target_token = targets[target_idx] as usize;
-
-        let indices_for_t: Vec<usize> = if logit_indices.is_empty() || t >= logit_indices.len() || logit_indices[t].is_empty() {
-            (0..cols).collect()
-        } else {
-            logit_indices[t].clone()
-        };
-
-        let row = logits.row_range(t);
-        let logits_row = &logits.data[row.start..row.start + cols];
-
-        let (loss_real, grad_row) = softmax_ce_grad_complex_slice(logits_row, target_token, &indices_for_t);
-        losses.push(vec![C::new(loss_real * scale, ZERO)]);
-
-        // grad_row is length = indices_for_t.len(); in sparse mode it should match cols.
-        let g_len = grad_row.len().min(cols);
-        for c in 0..g_len {
-            grad_rm.data[row.start + c] = grad_row[c] * scale;
-        }
-    }
-
-    (losses, grad_rm)
-}
-
 /// COMPLEX-SAFE softmax + CE + gradient using Wirtinger calculus
 pub fn softmax_ce_grad_complex(logits: &Vec<C>, target: usize, logit_indices: &Vec<usize>) -> (Real, Vec<C>) {
-    let n = logits.len();
-    // assert!(target < n);
-
-    let max_norm: Real = logits.iter().map(|z| z.re).fold(Real::NEG_INFINITY, Real::max);
-
-    let mut s: Vec<Real> = Vec::with_capacity(n);
-    let mut sum_s: Real = ZERO;
-
-    for z in logits.iter() {
-        let scaled: Real = (z.re - max_norm).exp();
-        sum_s += scaled;
-        s.push(scaled);
-    }
-
-    // println!("target index: {}, logit_indices: {:?}", target, logit_indices);
-
-    let target_ind = logit_indices.iter().position(|&x| x == target).unwrap_or(target);
-
-    let p_k = s[target_ind] / sum_s;
-
-    let pk_norm: Real = if p_k > ZERO { p_k } else { r(1e-30) };
-    let loss: Real = -pk_norm.ln();
-
-    let mut grad: Vec<C> = Vec::with_capacity(n);
-    for (sparse_ind, real_ind) in logit_indices.iter().enumerate() {
-        let p_j: Real = s[sparse_ind] / sum_s;
-        let mut g: Real = p_j;
-        if *real_ind == target {
-            g -= r(1.0);
-        }
-        grad.push(C::new(g, ZERO));
-    }
-
-    (loss, grad)
+    softmax_ce_grad_complex_slice(logits, target, logit_indices)
 }
 
 pub fn softmax_matrix_f64(input: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {

@@ -7,9 +7,9 @@ use crate::{
         network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
         network_layers::{default_layer::LayerInterface, layer::LayerEnum},
         utils::{
-            dtype::{c_from_f64, c_to_f64, C, CF64},
+            dtype::{C, CF64},
             matrix::RowMajorMatrix,
-            matrix_rm::transpose_rm,
+            matrix_rm::{rm_from_f64, rm_to_f64, transpose_rm},
         },
     },
     wavelet_transform::{
@@ -74,14 +74,7 @@ impl DiscreteWaveletLayerRm {
     }
 
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        if layer_input.has_non_empty_input_batch() {
-            panic!("DiscreteWaveletLayerRm received Vec input batch; use DiscreteWaveletLayer instead");
-        }
-
-        let input_batch_rm: Vec<RowMajorMatrix<C>> = layer_input
-            .get_input_batch_rm_ref()
-            .expect("DiscreteWaveletLayerRm::forward expects RM input")
-            .to_vec();
+        let input_batch_rm: Vec<RowMajorMatrix<C>> = layer_input.get_input_batch_rm();
 
         let target_batch_ids: Vec<Vec<u32>> = layer_input.get_target_batch_ids();
         let forward_only = layer_input.get_forward_only();
@@ -152,32 +145,7 @@ impl DiscreteWaveletLayerRm {
     }
 
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
-        // Strict RM-only: require RM gradients; do not use get_gradient_input_batch() because it will
-        // convert RM->Vec and appear "non-empty" even when only RM is provided.
-        let Some(grad_output_batch_rm_ref) = previous_gradient.get_gradient_input_batch_rm_ref() else {
-            if previous_gradient
-                .get_gradient_input_batch_ref()
-                .is_some_and(|vec_g| !vec_g.is_empty())
-            {
-                panic!("DiscreteWaveletLayerRm received Vec gradients; use DiscreteWaveletLayer instead");
-            }
-
-            let mut out = Gradient::new_default();
-            out.set_time_step(previous_gradient.get_time_step());
-            out.set_gradient_input_batch_rm(vec![]);
-            self.gradient = Some(out.clone());
-            return out;
-        };
-
-        let mut grad_output_batch_rm = grad_output_batch_rm_ref.to_vec();
-
-        if grad_output_batch_rm.is_empty() {
-            let mut out = Gradient::new_default();
-            out.set_time_step(previous_gradient.get_time_step());
-            out.set_gradient_input_batch_rm(vec![]);
-            self.gradient = Some(out.clone());
-            return out;
-        }
+        let mut grad_output_batch_rm = previous_gradient.get_gradient_input_batch_rm_cow().into_owned();
 
         let input_batch_rm = self
             .input_batch_rm
@@ -224,7 +192,7 @@ impl DiscreteWaveletLayerRm {
     }
 
     fn compress_partial_rm(&mut self, input_rm: &RowMajorMatrix<C>) -> (RowMajorMatrix<C>, RowMajorMatrix<C>, Vec<usize>) {
-        let mut wav_out_f64 = RowMajorMatrix::from_data(input_rm.rows, input_rm.cols, input_rm.data.iter().copied().map(c_to_f64).collect());
+        let mut wav_out_f64 = rm_to_f64(input_rm);
         let mut details_last_f64: RowMajorMatrix<CF64> = RowMajorMatrix::from_data(0, 0, vec![]);
         let mut compression_dims: Vec<usize> = Vec::new();
 
@@ -254,18 +222,14 @@ impl DiscreteWaveletLayerRm {
             }
         }
 
-        let wav_out_c = RowMajorMatrix::from_data(wav_out_f64.rows, wav_out_f64.cols, wav_out_f64.data.into_iter().map(c_from_f64).collect());
-        let details_last_c = RowMajorMatrix::from_data(details_last_f64.rows, details_last_f64.cols, details_last_f64.data.into_iter().map(c_from_f64).collect());
-
-        (wav_out_c, details_last_c, compression_dims)
+        (rm_from_f64(&wav_out_f64), rm_from_f64(&details_last_f64), compression_dims)
     }
 
     fn decompress_partial_gradient_rm(&mut self, grad_output_rm: &RowMajorMatrix<C>, compression_dim: &Vec<usize>, batch_ind: usize) -> RowMajorMatrix<C> {
         let input_batch_rm = self.input_batch_rm.as_ref().expect("Input batch RM not found");
         let original_seq_len = input_batch_rm[batch_ind].rows;
 
-        let grad_output_f64 = RowMajorMatrix::from_data(grad_output_rm.rows, grad_output_rm.cols, grad_output_rm.data.iter().copied().map(c_to_f64).collect());
-        let mut grad_transp = transpose_rm(&grad_output_f64); // dim x trend_len
+        let mut grad_transp = transpose_rm(&rm_to_f64(grad_output_rm)); // dim x trend_len
 
         for _ in (0..compression_dim.len()).rev() {
             let ll_len = grad_transp.cols;
@@ -303,7 +267,7 @@ impl DiscreteWaveletLayerRm {
             grad = truncated;
         }
 
-        RowMajorMatrix::from_data(grad.rows, grad.cols, grad.data.into_iter().map(c_from_f64).collect())
+        rm_from_f64(&grad)
     }
 
     pub fn update_parameters(&mut self) {}

@@ -7,7 +7,11 @@ use crate::{
     neural_networks::{
         network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
         network_layers::default_layer::LayerInterface,
-        utils::{dtype::{c_from_f64, c_to_f64, C}, matrix::RowMajorMatrix},
+        utils::{
+            dtype::{C, CF64},
+            matrix::RowMajorMatrix,
+            matrix_rm::{rm_from_f64, rm_to_f64},
+        },
     },
     wavelet_transform::{
         cwt_complex::{
@@ -23,7 +27,7 @@ pub struct ComplexWaveletLayerRm {
     pub is_full_mode: bool,
 
     #[serde(skip)]
-    input_batch_rm: Option<Vec<RowMajorMatrix<num::Complex<f64>>>>,
+    input_batch_rm: Option<Vec<RowMajorMatrix<CF64>>>,
     #[serde(skip)]
     pub gradient: Option<Gradient>,
     #[serde(skip)]
@@ -51,37 +55,16 @@ impl ComplexWaveletLayerRm {
         }
     }
 
+    /// RM counterpart of `ComplexWaveletLayer::forward`.
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        if layer_input.has_non_empty_input_batch() {
-            panic!("ComplexWaveletLayerRm received Vec input batch; use ComplexWaveletLayer instead");
-        }
+        let input_batch_rm: Vec<RowMajorMatrix<CF64>> = layer_input.get_input_batch_rm().iter().map(rm_to_f64).collect();
 
-        let input_batch_rm_c: Vec<RowMajorMatrix<C>> = layer_input
-            .get_input_batch_rm_ref()
-            .expect("ComplexWaveletLayerRm::forward expects RM input")
-            .to_vec();
-
-        let input_batch_rm: Vec<RowMajorMatrix<num::Complex<f64>>> = input_batch_rm_c
-            .iter()
-            .map(|m| RowMajorMatrix::from_data(m.rows, m.cols, m.data.iter().copied().map(c_to_f64).collect()))
-            .collect();
-
-        let output_batch_rm_f64: Vec<RowMajorMatrix<num::Complex<f64>>> = input_batch_rm
+        let output_batch_rm: Vec<RowMajorMatrix<C>> = input_batch_rm
             .par_iter()
             .map(|input| {
-                if self.is_full_mode {
-                    let (wavelet_output, _frequencies) = cwt_2d_full_rm(input, &self.wavelet);
-                    wavelet_output[0].clone()
-                } else {
-                    let (wavelet_output, _frequencies) = cwt_2d_rm(input, &self.wavelet);
-                    wavelet_output[0].clone()
-                }
+                let (wavelet_output, _frequencies) = if self.is_full_mode { cwt_2d_full_rm(input, &self.wavelet) } else { cwt_2d_rm(input, &self.wavelet) };
+                rm_from_f64(&wavelet_output[0])
             })
-            .collect();
-
-        let output_batch_rm: Vec<RowMajorMatrix<C>> = output_batch_rm_f64
-            .iter()
-            .map(|m| RowMajorMatrix::from_data(m.rows, m.cols, m.data.iter().copied().map(c_from_f64).collect()))
             .collect();
 
         self.input_batch_rm = Some(input_batch_rm);
@@ -92,77 +75,32 @@ impl ComplexWaveletLayerRm {
         layer_output
     }
 
+    /// RM counterpart of `ComplexWaveletLayer::backward`.
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
-        // Strict RM-only: require RM gradients; do not use get_gradient_input_batch() because it will
-        // convert RM->Vec and appear "non-empty" even when only RM is provided.
-        let Some(prev_rm_ref) = previous_gradient.get_gradient_input_batch_rm_ref() else {
-            if previous_gradient
-                .get_gradient_input_batch_ref()
-                .is_some_and(|vec_g| !vec_g.is_empty())
-            {
-                panic!("ComplexWaveletLayerRm received Vec gradients; use ComplexWaveletLayer instead");
-            }
+        let input_batch_rm = self.input_batch_rm.as_ref().expect("ComplexWaveletLayerRm::backward expects RM cache from forward");
+        let previous_gradient_rm = previous_gradient.get_gradient_input_batch_rm_cow();
+        assert_eq!(input_batch_rm.len(), previous_gradient_rm.len(), "ComplexWaveletLayerRm::backward batch mismatch");
 
-            let mut gradient = Gradient::new_default();
-            gradient.set_time_step(previous_gradient.get_time_step());
-            gradient.set_gradient_input_batch_rm(vec![]);
-            self.gradient = Some(gradient.clone());
-            return gradient;
-        };
+        let wavefun_result: Vec<Vec<CF64>> = wavefun_complex(&10, &self.wavelet);
+        let scale = &self.wavelet.scales[0];
 
-        let prev_rm: Vec<RowMajorMatrix<C>> = prev_rm_ref.to_vec();
-
-        if prev_rm.is_empty() {
-            let mut gradient = Gradient::new_default();
-            gradient.set_time_step(previous_gradient.get_time_step());
-            gradient.set_gradient_input_batch_rm(vec![]);
-            self.gradient = Some(gradient.clone());
-            return gradient;
-        }
-
-        let input_batch_rm = self
-            .input_batch_rm
-            .as_ref()
-            .expect("ComplexWaveletLayerRm::backward expects RM cache from forward");
-        assert_eq!(input_batch_rm.len(), prev_rm.len(), "ComplexWaveletLayerRm::backward batch mismatch");
-
-        let prev_rm_f64: Vec<RowMajorMatrix<num::Complex<f64>>> = prev_rm
-            .iter()
-            .map(|m| RowMajorMatrix::from_data(m.rows, m.cols, m.data.iter().copied().map(c_to_f64).collect()))
-            .collect();
-
-        let wavefun_result: Vec<Vec<num::Complex<f64>>> = wavefun_complex(&10, &self.wavelet);
-
-        let input_gradient_batch_rm_f64: Vec<RowMajorMatrix<num::Complex<f64>>> = prev_rm_f64
+        let input_gradient_batch_rm: Vec<RowMajorMatrix<C>> = previous_gradient_rm
             .iter()
             .zip(input_batch_rm.iter())
-            .map(|(prev_grad_rm, input_rm)| {
+            .map(|(previous_gradient_rm, input_rm)| {
+                let previous_gradient_rm = rm_to_f64(previous_gradient_rm);
                 if self.is_full_mode {
-                    get_wavelet_derivative_full_rm(input_rm, &wavefun_result, &self.wavelet.scales[0], prev_grad_rm)
+                    rm_from_f64(&get_wavelet_derivative_full_rm(input_rm, &wavefun_result, scale, &previous_gradient_rm))
                 } else {
-                    let mut out = RowMajorMatrix::from_data(
-                        input_rm.rows,
-                        input_rm.cols,
-                        vec![num::Complex::new(0.0, 0.0); input_rm.rows * input_rm.cols],
-                    );
+                    let mut out = RowMajorMatrix::from_data(input_rm.rows, input_rm.cols, vec![CF64::new(0.0, 0.0); input_rm.rows * input_rm.cols]);
                     for r in 0..input_rm.rows {
                         let row = input_rm.row_range(r);
-                        let g = get_wavelet_derivative_slice(
-                            &input_rm.data[row.clone()],
-                            &wavefun_result,
-                            &self.wavelet.scales[0],
-                            &prev_grad_rm.data[row.clone()],
-                        );
+                        let g = get_wavelet_derivative_slice(&input_rm.data[row.clone()], &wavefun_result, scale, &previous_gradient_rm.data[row.clone()]);
                         out.data[row].copy_from_slice(&g);
                     }
-                    out
+                    rm_from_f64(&out)
                 }
             })
-            .collect();
-
-        let input_gradient_batch_rm: Vec<RowMajorMatrix<C>> = input_gradient_batch_rm_f64
-            .iter()
-            .map(|m| RowMajorMatrix::from_data(m.rows, m.cols, m.data.iter().copied().map(c_from_f64).collect()))
             .collect();
 
         let mut gradient = Gradient::new_default();

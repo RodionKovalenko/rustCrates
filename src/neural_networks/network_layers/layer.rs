@@ -407,6 +407,11 @@ fn complex_batch_to_real_batch(data: &[Vec<Vec<C>>]) -> Vec<Vec<Vec<Real>>> {
     data.iter().map(|seq| seq.iter().map(|row| row.iter().map(|z| z.re).collect()).collect()).collect()
 }
 
+#[inline]
+fn complex_batch_to_real_batch_rm(data: &[RowMajorMatrix<C>]) -> Vec<Vec<Vec<Real>>> {
+    data.iter().map(|m| (0..m.rows).map(|r| m.data[m.row_range(r)].iter().map(|z| z.re).collect()).collect()).collect()
+}
+
 impl LayerEnum {
     /// Short human-readable layer name for logging.
     pub fn name(&self) -> &'static str {
@@ -531,9 +536,9 @@ impl LayerInterface for LayerEnum {
                     let padding_mask_option = if padding_mask.is_empty() { None } else { Some(padding_mask) };
                     let _softmax_result = layer.forward_inner(layer_input, padding_mask_option, Some(layer_input.get_target_batch_ids()));
                     output.set_cross_entropy_loss_batch(layer.cross_entropy_loss_batch.clone().unwrap());
+                } else {
+                    output.set_output_batch_real(complex_batch_to_real_batch_rm(&layer_input.get_input_batch_rm()));
                 }
-                // Inference: the RM logits are consumed here without emitting anything,
-                // matching the previous network-level behavior.
                 output
             }
         }

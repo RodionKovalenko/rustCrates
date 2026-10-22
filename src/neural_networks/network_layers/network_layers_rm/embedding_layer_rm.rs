@@ -17,6 +17,7 @@ use crate::neural_networks::network_layers::default_layer::LayerInterface;
 use crate::neural_networks::network_layers::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
 use crate::neural_networks::utils::dtype::{c_from_f64, c_to_f64, r, Real, C, ONE, ZERO};
 use crate::neural_networks::utils::matrix::{is_nan_or_inf, RowMajorMatrix};
+use crate::neural_networks::utils::matrix_rm::normalize_gradients_rm;
 use crate::neural_networks::utils::shared_f32_matrix::SharedF32Matrix;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -272,12 +273,13 @@ impl EmbeddingLayerRm {
     pub fn update_parameters_inner(&mut self, token_id_batches: &[Vec<u32>]) {
         let gradient: &Gradient = self.gradient.as_ref().expect("EmbeddingLayerRm missing gradients");
 
-        let grads_rm = gradient
-            .get_gradient_input_batch_rm_ref()
-            .filter(|g| !g.is_empty())
-            .expect("EmbeddingLayerRm::update_parameters expects RM gradients");
+        let grads_rm = gradient.get_gradient_input_batch_rm_cow();
 
         if self.is_tied() {
+            // Same as EmbeddingLayer: the per-sample gradients are normalized before they are accumulated.
+            let mut grads_rm = grads_rm.into_owned();
+            grads_rm.iter_mut().for_each(normalize_gradients_rm);
+
             let acc = self.tied_grad_by_token.as_ref().expect("tied accumulator missing").clone();
 
             let mut acc_lock = acc.write().expect("tied grad accumulator poisoned");
@@ -312,6 +314,11 @@ impl EmbeddingLayerRm {
 
         for (batch_idx, token_ids) in token_id_batches.iter().enumerate() {
             for (i, &token_id) in token_ids.iter().enumerate() {
+                // Padding tokens are not trained.
+                if token_id == 1 {
+                    continue;
+                }
+
                 let mut token_embedding: Vec<C> = Self::get_embedding_or_fallback(&db, token_id, self.embedding_dim, true);
 
                 for j in 0..self.embedding_dim {
@@ -396,11 +403,7 @@ impl EmbeddingLayerRm {
     }
 
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
-        let gr_rm = previous_gradient
-            .get_gradient_input_batch_rm_ref()
-            .filter(|g| !g.is_empty())
-            .expect("EmbeddingLayerRm::backward expects RM gradients");
-        EmbeddingLayerRm::backward_inner(self, gr_rm)
+        EmbeddingLayerRm::backward_inner(self, &previous_gradient.get_gradient_input_batch_rm_cow())
     }
 
     pub fn update_parameters(&mut self) {

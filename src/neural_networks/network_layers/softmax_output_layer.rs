@@ -74,29 +74,7 @@ impl SoftmaxLayer {
             }
             OperationMode::TRAINING => {
                 // Compute total valid tokens across entire batch for proper normalization
-                total_valid_tokens = padding_mask_batch
-                    .iter()
-                    .zip(target_token_batch_ids.iter())
-                    .map(|(mask, targets)| {
-                        let target_len = targets.len();
-                        // Calculate offset from the VALID sequence length, not total padded length
-                        let valid_seq_len = mask.iter().filter(|&&m| m != 0).count();
-                        let offset = valid_seq_len.saturating_sub(target_len);
-
-                        // Count only valid target tokens (not padding)
-                        targets
-                            .iter()
-                            .enumerate()
-                            .filter(|(i, &target_id)| {
-                                if (target_id == 1) || (i + offset >= mask.len()) {
-                                    panic !("Invalid target token ID {} at position {} with offset {}, valid sequence length {}, and mask length {}", target_id, i, offset, valid_seq_len, mask.len());
-                                }
-                                target_id != 1 && // not padding token
-                                mask[offset + i] != 0 // mask is valid at this position
-                            })
-                            .count()
-                    })
-                    .sum();
+                total_valid_tokens = count_valid_target_tokens(&padding_mask_batch, &target_token_batch_ids);
 
                 let output_gradients = (0..batch_size)
                     .into_par_iter()
@@ -249,4 +227,37 @@ impl LayerInterface for SoftmaxLayer {
     fn update_parameters(&mut self) {
         SoftmaxLayer::update_parameters(self)
     }
+}
+
+/// Number of target tokens (not padding) that contribute to the loss. Shared by the Vec and RM softmax layers.
+pub fn count_valid_target_tokens(padding_mask_batch: &[Vec<u32>], target_token_batch_ids: &[Vec<u32>]) -> usize {
+    padding_mask_batch
+        .iter()
+        .zip(target_token_batch_ids.iter())
+        .map(|(mask, targets)| {
+            let target_len = targets.len();
+            // Calculate offset from the VALID sequence length, not total padded length
+            let valid_seq_len = mask.iter().filter(|&&m| m != 0).count();
+            let offset = valid_seq_len.saturating_sub(target_len);
+
+            // Count only valid target tokens (not padding)
+            targets
+                .iter()
+                .enumerate()
+                .filter(|(i, &target_id)| {
+                    if (target_id == 1) || (i + offset >= mask.len()) {
+                        panic!(
+                            "Invalid target token ID {} at position {} with offset {}, valid sequence length {}, and mask length {}",
+                            target_id,
+                            i,
+                            offset,
+                            valid_seq_len,
+                            mask.len()
+                        );
+                    }
+                    mask[offset + i] != 0 // mask is valid at this position
+                })
+                .count()
+        })
+        .sum()
 }

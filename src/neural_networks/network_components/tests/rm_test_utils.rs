@@ -4,7 +4,7 @@
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
     network_layers::default_layer::LayerInterface,
-    utils::{dtype::C, matrix::RowMajorMatrix, random_arrays::generate_random_complex_3d},
+    utils::{dtype::C, matrix::RowMajorMatrix, random_arrays::{generate_random_complex_2d, generate_random_complex_3d}},
 };
 
 /// Relative tolerance for Vec vs RM comparisons. Both paths run the same arithmetic,
@@ -79,34 +79,35 @@ pub fn assert_input_gradients_close(name: &str, gradient: &Gradient, gradient_rm
 }
 
 /// Runs `steps` training steps (forward, backward, update) on a Vec layer and its RM counterpart with
-/// identical random inputs and upstream gradients and checks that outputs and input gradients match.
+/// identical random inputs (`shape` = batch, seq_len, input_dim) and upstream gradients and checks that outputs and input gradients match.
 /// `compare_gradients` checks the parameter gradients after each backward, `compare_parameters`
 /// the parameters after each update.
 pub fn compare_training_steps<V: LayerInterface, R: LayerInterface>(
     name: &str,
     layer: &mut V,
     layer_rm: &mut R,
-    shape: (usize, usize, usize, usize),
+    shape: (usize, usize, usize),
     padding_mask_batch: Option<Vec<Vec<u32>>>,
     steps: usize,
     mut compare_gradients: impl FnMut(&Gradient, &Gradient, &str),
     mut compare_parameters: impl FnMut(&V, &R, &str),
 ) {
-    let (batch_size, seq_len, input_dim, output_dim) = shape;
+    let (batch_size, seq_len, input_dim) = shape;
     let padding_mask_batch = padding_mask_batch.unwrap_or_else(|| vec![vec![1; seq_len]; batch_size]);
 
     for step in 1..=steps {
         let step_name = format!("{} step {}", name, step);
         let input_batch = generate_random_complex_3d(batch_size, seq_len, input_dim);
-        let upstream_batch = generate_random_complex_3d(batch_size, seq_len, output_dim);
-
         let (mut input, mut input_rm) = layer_inputs_with_mask(&input_batch, &padding_mask_batch);
         input.set_time_step(step);
         input_rm.set_time_step(step);
 
-        let output = layer.forward(&input);
+        let output = layer.forward(&input).get_output_batch();
         let output_rm = layer_rm.forward(&input_rm);
-        assert_close_3d(&format!("{} output", step_name), &output.get_output_batch(), output_rm.get_output_batch_rm_ref().expect("RM layer must return RM output"));
+        assert_close_3d(&format!("{} output", step_name), &output, output_rm.get_output_batch_rm_ref().expect("RM layer must return RM output"));
+
+        // Upstream gradient with the shape of the layer output.
+        let upstream_batch: Vec<Vec<Vec<C>>> = output.iter().map(|m| generate_random_complex_2d(m.len(), m[0].len())).collect();
 
         let (upstream, upstream_rm) = upstream_gradients(&upstream_batch);
         let gradient = layer.backward(&upstream);
