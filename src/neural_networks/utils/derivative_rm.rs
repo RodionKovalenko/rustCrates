@@ -2,65 +2,43 @@ use crate::neural_networks::{
     network_layers::layer::ActivationType,
     utils::{
         activation::sigmoid_complex,
-        derivative::gelu_derivative_complex,
+        activation_rm::map_rm,
+        derivative::{
+            elu_derivative_complex, gelu_derivative_complex, leaky_relu_derivative_complex, relu_derivative_complex, selu_derivative_complex, sigmoid_derivative_complex, softplus_derivative_complex,
+            softsign_derivative_complex, tanh_derivative_complex,
+        },
         dtype::{C, ONE, ZERO},
         matrix::RowMajorMatrix,
     },
 };
 
+/// RM counterpart of `derivative::get_gradient_swish`.
 pub fn swish_grad_rm(b: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
-    let mut out = RowMajorMatrix::from_data(b.rows, b.cols, vec![C::new(ZERO, ZERO); b.rows * b.cols]);
     let one = C::new(ONE, ZERO);
-    for i in 0..out.data.len() {
-        let z = b.data[i];
+    map_rm(b, |z| {
         let sigma = sigmoid_complex(&z);
-        out.data[i] = sigma + z * sigma * (one - sigma);
-    }
-    out
+        sigma + z * sigma * (one - sigma)
+    })
 }
 
-pub fn activation_derivative_rm(activated: &RowMajorMatrix<C>, activation: &ActivationType) -> RowMajorMatrix<C> {
-    let mut out = RowMajorMatrix::from_data(activated.rows, activated.cols, vec![C::new(ZERO, ZERO); activated.rows * activated.cols]);
+/// RM counterpart of `derivative::get_gradient_complex`.
+///
+/// `activated_data` is the activation output, `input_data` the raw (pre-activation) values.
+/// Like the Vec version, GELU and SOFTSIGN are derived from the raw values, all others from the activated ones.
+pub fn get_gradient_complex_rm(activated_data: &RowMajorMatrix<C>, input_data: &RowMajorMatrix<C>, activation: &ActivationType) -> RowMajorMatrix<C> {
     match activation {
-        ActivationType::LINEAR => {
-            for v in out.data.iter_mut() {
-                *v = C::new(ONE, ZERO);
-            }
-        }
-        ActivationType::TANH => {
-            for (dst, &z) in out.data.iter_mut().zip(activated.data.iter()) {
-                *dst = C::new(ONE, ZERO) - (z * z);
-            }
-        }
-        ActivationType::SIGMOID => {
-            for (dst, &z) in out.data.iter_mut().zip(activated.data.iter()) {
-                *dst = z * (C::new(ONE, ZERO) - z);
-            }
-        }
-        ActivationType::RELU => {
-            for (dst, &z) in out.data.iter_mut().zip(activated.data.iter()) {
-                *dst = if z.re > ZERO { C::new(ONE, ZERO) } else { C::new(ZERO, ZERO) };
-            }
-        }
-        ActivationType::LEAKYRELU => {
-            for (dst, &z) in out.data.iter_mut().zip(activated.data.iter()) {
-                *dst = if z.re > ZERO { C::new(ONE, ZERO) } else { C::new(0.01, ZERO) };
-            }
-        }
-        _ => {}
+        ActivationType::SIGMOID => map_rm(activated_data, sigmoid_derivative_complex),
+        ActivationType::TANH => map_rm(activated_data, tanh_derivative_complex),
+        ActivationType::LINEAR => map_rm(activated_data, |_| C::new(ONE, ZERO)),
+        ActivationType::RELU => map_rm(activated_data, relu_derivative_complex),
+        ActivationType::LEAKYRELU => map_rm(activated_data, |x| leaky_relu_derivative_complex(x, 0.01)),
+        ActivationType::ELU => map_rm(activated_data, |x| elu_derivative_complex(x, 1.0)),
+        ActivationType::SELU => map_rm(activated_data, selu_derivative_complex),
+        ActivationType::GELU => map_rm(input_data, gelu_derivative_complex),
+        ActivationType::SOFTSIGN => map_rm(input_data, softsign_derivative_complex),
+        ActivationType::SOFTPLUS => map_rm(activated_data, softplus_derivative_complex),
+        ActivationType::PROBIT => map_rm(activated_data, |_| C::new(ONE, ZERO)),
+        ActivationType::RANDOM => activated_data.clone(),
+        _ => RowMajorMatrix::create_empty(0, 0),
     }
-    out
-}
-
-pub fn activation_derivative_from_raw_rm(raw: &RowMajorMatrix<C>, activation: &ActivationType) -> RowMajorMatrix<C> {
-    let mut out = RowMajorMatrix::from_data(raw.rows, raw.cols, vec![C::new(ZERO, ZERO); raw.rows * raw.cols]);
-    match activation {
-        ActivationType::GELU => {
-            for (dst, &z) in out.data.iter_mut().zip(raw.data.iter()) {
-                *dst = gelu_derivative_complex(z);
-            }
-        }
-        _ => {}
-    }
-    out
 }

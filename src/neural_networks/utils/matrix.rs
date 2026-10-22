@@ -56,11 +56,12 @@ impl<T> RowMajorMatrix<T> {
     pub fn idx(&self, row: usize, col: usize) -> usize {
         row * self.cols + col
     }
-    pub fn create_from_batch(batch: &Vec<RowMajorMatrix<C>>) -> Vec<RowMajorMatrix<C>> {
-        (0..batch.len())
-            .into_iter()
-            .map(|ind|  RowMajorMatrix::from_data(batch[ind].rows,batch[ind].cols, vec![C::ZERO; batch[ind].cols * batch[ind].rows]))
-            .collect()
+}
+
+impl RowMajorMatrix<C> {
+    /// Zero matrices with the same shapes as the matrices in `batch`.
+    pub fn create_from_batch(batch: &[RowMajorMatrix<C>]) -> Vec<RowMajorMatrix<C>> {
+        batch.iter().map(|m| RowMajorMatrix::create_empty(m.rows, m.cols)).collect()
     }
     pub fn create_empty(rows: usize, cols: usize) -> RowMajorMatrix<C> {
         RowMajorMatrix::from_data(rows, cols, vec![C::ZERO; rows * cols])

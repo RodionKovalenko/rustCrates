@@ -163,7 +163,7 @@ pub fn tanh_complex(z: Complex<Real>) -> Complex<Real> {
     }
 }
 
-fn relu_complex(z: Complex<Real>) -> Complex<Real> {
+pub fn relu_complex(z: Complex<Real>) -> Complex<Real> {
     // Gate the full complex value based on the real part.
     // This keeps the forward definition consistent with our backward pass,
     // which uses a single complex multiplier as the activation derivative.
@@ -174,7 +174,7 @@ fn relu_complex(z: Complex<Real>) -> Complex<Real> {
     }
 }
 
-fn leaky_relu_complex(z: Complex<Real>, slope: Real) -> Complex<Real> {
+pub fn leaky_relu_complex(z: Complex<Real>, slope: Real) -> Complex<Real> {
     if z.re > 0.0 {
         z
     } else {
@@ -185,14 +185,14 @@ fn leaky_relu_complex(z: Complex<Real>, slope: Real) -> Complex<Real> {
     }
 }
 
-fn elu_complex(z: Complex<Real>, alpha: Real) -> Complex<Real> {
+pub fn elu_complex(z: Complex<Real>, alpha: Real) -> Complex<Real> {
     if z.re > 0.0 {
         z
     } else {
         Complex::new(alpha * (z.exp().re - 1.0), z.im)
     }
 }
-fn selu_complex(z: &Complex<Real>) -> Complex<Real> {
+pub fn selu_complex(z: &Complex<Real>) -> Complex<Real> {
     let lambda = r(LAMBDA);
     let alpha = r(ALPHA);
     if z.re >= ZERO {
@@ -267,7 +267,7 @@ pub fn softsign_complex(z: &Complex<Real>) -> Complex<Real> {
     Complex::new(z.re / (one + z.re.abs()), z.im / (one + z.im.abs()))
 }
 
-fn softplus_complex(z: &Complex<Real>) -> Complex<Real> {
+pub fn softplus_complex(z: &Complex<Real>) -> Complex<Real> {
     (z.exp() + Complex::new(r(1.0), ZERO)).ln()
 }
 
@@ -285,7 +285,7 @@ pub fn swiglu_vector(a: &Vec<C>, b: &Vec<C>) -> Vec<C> {
     a.iter().zip(b.iter()).map(|(a, b)| swiglu(a, b)).collect()
 }
 
-fn swiglu(a: &C, b: &C) -> C {
+pub fn swiglu(a: &C, b: &C) -> C {
     *a * *b * sigmoid_complex(b)
 }
 

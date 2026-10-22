@@ -1,71 +1,53 @@
 use crate::neural_networks::{
     network_layers::layer::ActivationType,
     utils::{
-        activation::{gelu_complex, sigmoid_complex, tanh_complex},
-        dtype::{C, ZERO},
+        activation::{elu_complex, gelu_complex, leaky_relu_complex, relu_complex, selu_complex, sigmoid_complex, softplus_complex, softsign_complex, swiglu, tanh_complex},
+        dtype::{r, C},
         matrix::RowMajorMatrix,
     },
 };
 
-pub fn swish_rm(b: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
-    let mut out = RowMajorMatrix::from_data(b.rows, b.cols, vec![C::new(ZERO, ZERO); b.rows * b.cols]);
-    for i in 0..out.data.len() {
-        let z = b.data[i];
-        out.data[i] = z * sigmoid_complex(&z);
+/// Applies `f` elementwise and returns a new matrix with the same shape.
+#[inline]
+pub fn map_rm<F: Fn(C) -> C>(data: &RowMajorMatrix<C>, f: F) -> RowMajorMatrix<C> {
+    RowMajorMatrix::from_data(data.rows, data.cols, data.data.iter().map(|&x| f(x)).collect())
+}
+
+/// RM counterpart of `activation::swish`.
+pub fn swish_rm(data: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
+    map_rm(data, |x| x * sigmoid_complex(&x))
+}
+
+/// RM counterpart of `activation::swiglu_matrix`: each row is split in half `[a | b]`, output is `a * b * sigmoid(b)`.
+pub fn swiglu_matrix_rm(data: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
+    let half = data.cols / 2;
+    let mut out = RowMajorMatrix::create_empty(data.rows, half);
+    for row in 0..data.rows {
+        let src = data.row_range(row);
+        let dst = out.row_range(row);
+        for col in 0..half {
+            out.data[dst.start + col] = swiglu(&data.data[src.start + col], &data.data[src.start + half + col]);
+        }
     }
     out
 }
 
-pub fn activate_output_complex_rm(mut data: &RowMajorMatrix<C>, activation: &ActivationType) -> RowMajorMatrix<C> {
-    let mut input_data = data.clone();
+/// RM counterpart of `activation::activate_output_complex`.
+pub fn activate_output_complex_rm(data: &RowMajorMatrix<C>, activation: &ActivationType) -> RowMajorMatrix<C> {
     match activation {
-        ActivationType::LINEAR => input_data,
-        ActivationType::TANH => {
-            for v in input_data.data.iter_mut() {
-                *v = tanh_complex(*v);
-            }
-            input_data
-        }
-        ActivationType::RELU => {
-            for v in input_data.data.iter_mut() {
-                *v = if v.re > ZERO { *v } else { C::new(ZERO, ZERO) };
-            }
-            input_data
-        }
-        ActivationType::LEAKYRELU => {
-            for v in input_data.data.iter_mut() {
-                *v = if v.re > ZERO { *v } else { *v * 0.01 };
-            }
-            input_data
-        }
-        ActivationType::SIGMOID => {
-            for v in input_data.data.iter_mut() {
-                *v = sigmoid_complex(v);
-            }
-            input_data
-        }
-        ActivationType::GELU => {
-            for v in input_data.data.iter_mut() {
-                *v = gelu_complex(v);
-            }
-            input_data
-        }
-        ActivationType::SWiGLU => {
-            let cols = data.cols;
-            assert!(cols % 2 == 0, "SWiGLU expects an even column count");
-            let half = cols / 2;
-            let mut out = RowMajorMatrix::from_data(data.rows, half, vec![C::new(ZERO, ZERO); data.rows * half]);
-            for r_i in 0..data.rows {
-                let row = data.row_range(r_i);
-                let out_row = out.row_range(r_i);
-                for c in 0..half {
-                    let a = data.data[row.start + c];
-                    let b = data.data[row.start + half + c];
-                    out.data[out_row.start + c] = a * b * sigmoid_complex(&b);
-                }
-            }
-            out
-        }
-        _ => input_data,
+        ActivationType::SIGMOID => map_rm(data, |x| sigmoid_complex(&x)),
+        ActivationType::TANH => map_rm(data, tanh_complex),
+        ActivationType::LINEAR => data.clone(),
+        ActivationType::RELU => map_rm(data, relu_complex),
+        ActivationType::LEAKYRELU => map_rm(data, |x| leaky_relu_complex(x, r(0.01))),
+        ActivationType::ELU => map_rm(data, |x| elu_complex(x, r(1.0))),
+        ActivationType::SELU => map_rm(data, |x| selu_complex(&x)),
+        ActivationType::GELU => map_rm(data, |x| gelu_complex(&x)),
+        ActivationType::SOFTSIGN => map_rm(data, |x| softsign_complex(&x)),
+        ActivationType::SOFTPLUS => map_rm(data, |x| softplus_complex(&x)),
+        ActivationType::PROBIT => data.clone(),
+        ActivationType::RANDOM => data.clone(),
+        ActivationType::SWiGLU => swiglu_matrix_rm(data),
+        _ => RowMajorMatrix::create_empty(0, 0),
     }
 }

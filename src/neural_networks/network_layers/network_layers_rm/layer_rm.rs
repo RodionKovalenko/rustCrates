@@ -1,14 +1,22 @@
 use crate::neural_networks::{
-    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput}, network_layers::{
+    network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
+    network_layers::{
         default_layer::LayerInterface,
         layer::{ActivationType, LayerType},
-    }, utils::{
-         activation_rm::{activate_output_complex_rm, swish_rm}, adam_w::{calculate_adam_w, calculate_adam_w_bias}, derivative_rm::swish_grad_rm, dtype::{C, Real, ZERO, r}, matrix::{
-            RowMajorMatrix, add_vector_rm, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose_rm, multiply_complex_rm, normalize_bias, normalize_gradients, split_data_by_columns_rm,
-        }, matrix_rm::{add_rm, conjugate_rm, hadamard_rm}, weights_initializer::initialize_weights_complex,
+    },
+    utils::{
+        activation_rm::{activate_output_complex_rm, swish_rm},
+        adam_w::{calculate_adam_w_bias, calculate_adam_w_rm},
+        derivative_rm::{get_gradient_complex_rm, swish_grad_rm},
+        dtype::{r, Real, C, ZERO},
+        matrix::{add_vector_rm, average_vector_by_scalar, conjugate_transpose_rm, multiply_complex_rm, normalize_bias, split_data_by_columns_rm, RowMajorMatrix},
+        matrix_rm::{
+            accumulate_bias_from_rm, add_rm, average_matrix_by_scalar_rm, clip_all_gradients_by_global_norm_rm, concat_columns_rm, conjugate_rm, hadamard_rm, normalize_gradients_rm,
+        },
+        weights_initializer::initialize_weights_complex,
     },
 };
-use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,7 +84,7 @@ impl LayerRm {
         self.input_batch_rm = Some(input_batch.clone());
         self.time_step = input.get_time_step();
 
-        let mut inactivated_batch_output: Vec<RowMajorMatrix<C>> = input_batch
+        let inactivated_batch_output: Vec<RowMajorMatrix<C>> = input_batch
             .par_iter()
             .map(|input| {
                 let mut output: RowMajorMatrix<C> = multiply_complex_rm(input, &self.weights);
@@ -90,7 +98,7 @@ impl LayerRm {
         self.inactivated_input_batch_rm = Some(inactivated_batch_output.clone());
 
         let batch_output: Vec<RowMajorMatrix<C>> = inactivated_batch_output
-            .par_iter_mut()
+            .par_iter()
             .map(|input| {
                 // Apply activation if the layer type is DenseLayer
                 let activated_output = activate_output_complex_rm(input, &self.activation_type);
@@ -107,107 +115,90 @@ impl LayerRm {
         output
     }
 
-    pub fn backward_rm(&mut self, previous_gradient: &Gradient) -> Gradient {
-        let input_batch = self.input_batch_rm.as_ref().expect("Input batch is missing in dense layer");
-        let raw_output_batch = self.inactivated_input_batch_rm.as_ref().expect("Raw output batch is missing in dense layer");
-        let output_batch = self.output_batch_rm.as_ref().expect("Output batch is missing in dense layer");
-        let previous_gradient_batch = previous_gradient.get_gradient_input_batch_rm_ref().expect("No previous gradient input batch found");
+    /// RM counterpart of `Layer::backward`.
+    pub fn backward_rm(&mut self, previous_gradient_batch: &[RowMajorMatrix<C>]) -> Gradient {
+        let input_batch = self.input_batch_rm.as_ref().expect("Input batch is missing in dense RM layer");
+        let raw_output_batch = self.inactivated_input_batch_rm.as_ref().expect("Raw output batch is missing in dense RM layer");
+        let output_batch = self.output_batch_rm.as_ref().expect("Output batch is missing in dense RM layer");
+
+        assert_eq!(previous_gradient_batch.len(), input_batch.len(), "Previous gradient batch size does not match input batch size in dense RM layer");
 
         let mut gradient = Gradient::new_default();
 
-        // Initialize gradients for weights and biases
-        let mut weight_gradients: Vec<RowMajorMatrix<C>> = Vec::with_capacity(input_batch.len());
-        let mut bias_gradients: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); self.bias.len()]; input_batch.len()];
-
-        // Gradient w.r.t input has the input feature dimension (weights rows).
-        let in_features = self.weights.cols;
-
-        let mut input_gradient_batch: Vec<RowMajorMatrix<C>> = RowMajorMatrix::create_from_batch(input_batch);
-
-        match &self.activation_type {
+        let (input_gradient_batch, weight_gradients, bias_gradients): (Vec<RowMajorMatrix<C>>, Vec<RowMajorMatrix<C>>, Vec<Vec<C>>) = match &self.activation_type {
             ActivationType::SWiGLU => {
                 let (weights_1, weights_2) = split_data_by_columns_rm(&self.weights);
-                let mut gradient_weights_1 = vec![RowMajorMatrix::create_empty(weights_1.rows, weights_1.cols); input_batch.len()];
-                let mut gradient_weights_2 =  vec![RowMajorMatrix::create_empty(weights_2.rows, weights_2.cols); input_batch.len()];
+                let weights_1_t = conjugate_transpose_rm(&weights_1);
+                let weights_2_t = conjugate_transpose_rm(&weights_2);
+                let half = self.bias.len() / 2;
 
-                let mut gradient_bias_1 = vec![vec![C::new(ZERO, ZERO); bias_gradients[0].len() / 2]; input_batch.len()];
-                let mut gradient_bias_2 = vec![vec![C::new(ZERO, ZERO); bias_gradients[0].len() / 2]; input_batch.len()];
+                let results: Vec<(RowMajorMatrix<C>, RowMajorMatrix<C>, Vec<C>)> = (0..input_batch.len())
+                    .into_par_iter()
+                    .map(|batch_ind| {
+                        let (a, b) = split_data_by_columns_rm(&raw_output_batch[batch_ind]);
 
-                for batch_ind in 0..input_batch.len() {
-                    let (a, b) = split_data_by_columns_rm(&raw_output_batch[batch_ind]);
+                        let swish_b = swish_rm(&b);
+                        let gradient_b = swish_grad_rm(&b);
+                        let input_t = conjugate_transpose_rm(&input_batch[batch_ind]);
 
-                    let swish_b = swish_rm(&b);
-                    let gradient_b = swish_grad_rm(&b);
+                        //5x10 hadamard 5x10 = 5x10
+                        let dl_da = hadamard_rm(&previous_gradient_batch[batch_ind], &conjugate_rm(&swish_b));
+                        // 16x5 * 5x10 = 16x10
+                        let gradient_weights_1 = multiply_complex_rm(&input_t, &dl_da);
 
-                    //5x10 hadamard 5x10 = 5x10
-                    let dl_da = hadamard_rm(&previous_gradient_batch[batch_ind], &conjugate_rm(&swish_b));
-                    // 16x5 * 5x10 = 16x10
-                    gradient_weights_1[batch_ind] = multiply_complex_rm(&conjugate_transpose_rm(&input_batch[batch_ind]), &dl_da);
+                        // 5x10 hadamard 5x10 = 5x10
+                        let dl_db_1 = hadamard_rm(&previous_gradient_batch[batch_ind], &conjugate_rm(&a));
+                        // 5x10 hadamard 5x10 = 5x10
+                        let dl_db_2 = hadamard_rm(&dl_db_1, &conjugate_rm(&gradient_b));
 
-                    // 5x10 hadamard 5x10 = 5x10
-                    let dl_db_1 = hadamard_rm(&previous_gradient_batch[batch_ind], &conjugate_rm(&a));
-                    // 5x10 hadamard 5x10 = 5x10
-                    let dl_db_2 = hadamard_rm(&dl_db_1, &conjugate_rm(&gradient_b));
+                        // 16x5 * 5x10 = 16x10
+                        let gradient_weights_2 = multiply_complex_rm(&input_t, &dl_db_2);
 
-                    // 16x5 * 5x10 = 16x10
-                    gradient_weights_2[batch_ind] = multiply_complex_rm(&conjugate_transpose_rm(&input_batch[batch_ind]), &dl_db_2);
+                        let mut gradient_bias_1 = vec![C::new(ZERO, ZERO); half];
+                        let mut gradient_bias_2 = vec![C::new(ZERO, ZERO); half];
+                        accumulate_bias_from_rm(&mut gradient_bias_1, &dl_da);
+                        accumulate_bias_from_rm(&mut gradient_bias_2, &dl_db_2);
+                        gradient_bias_1.extend_from_slice(&gradient_bias_2);
 
-                    for grad_row in dl_da.iter() {
-                        for (k, grad_val) in grad_row.iter().enumerate() {
-                            gradient_bias_1[batch_ind][k] += grad_val;
-                        }
-                    }
-                    for grad_row in dl_db_2.iter() {
-                        for (k, grad_val) in grad_row.iter().enumerate() {
-                            gradient_bias_2[batch_ind][k] += grad_val;
-                        }
-                    }
+                        // 5x10 * 10x16 = 5x16
+                        let gradient_input_a = multiply_complex_rm(&dl_da, &weights_1_t);
+                        // 5x10 * 10x16 = 5x16
+                        let gradient_input_b = multiply_complex_rm(&dl_db_2, &weights_2_t);
 
-                    // 5x10 * 10x16 = 5x16
-                    let gradient_input_a = multiply_complex_rm(&dl_da, &conjugate_transpose_rm(&weights_1));
-                    // 5x10 * 10x16 = 5x16
-                    let gradient_input_b = multiply_complex_rm(&dl_db_2, &conjugate_transpose_rm(&weights_2));
-                    input_gradient_batch[batch_ind] = add_rm(&gradient_input_a, &gradient_input_b);
-                }
+                        (add_rm(&gradient_input_a, &gradient_input_b), concat_columns_rm(&gradient_weights_1, &gradient_weights_2), gradient_bias_1)
+                    })
+                    .collect();
 
-                for batch_ind in 0..input_batch.len() {
-                    for (row_ind, row) in gradient_weights_1[batch_ind].iter_mut().enumerate() {
-                        row.extend_from_slice(&gradient_weights_2[batch_ind][row_ind]);
-                    }
-                    gradient_bias_1[batch_ind].extend_from_slice(&gradient_bias_2[batch_ind]);
-                }
-
-                weight_gradients = gradient_weights_1;
-                bias_gradients = gradient_bias_1;
+                unzip_batch(results)
             }
             _ => {
-                for (batch_ind, (input, previous_gradient)) in input_batch.iter().zip(&previous_gradient_batch).enumerate() {
-                    let gradient_output = get_gradient_complex(&output_batch[batch_ind], &raw_output_batch[batch_ind], self.activation_type.clone());
-                    let gradient_output_conj = conjugate(&gradient_output);
+                let weights_t = conjugate_transpose_rm(&self.weights);
 
-                    input_gradient_batch[batch_ind] = hadamard_product_2d_c(previous_gradient, &gradient_output_conj);
-                    weight_gradients[batch_ind] = multiply_complex(&conjugate_transpose(&input), &input_gradient_batch[batch_ind]);
+                let results: Vec<(RowMajorMatrix<C>, RowMajorMatrix<C>, Vec<C>)> = (0..input_batch.len())
+                    .into_par_iter()
+                    .map(|batch_ind| {
+                        let gradient_output = get_gradient_complex_rm(&output_batch[batch_ind], &raw_output_batch[batch_ind], &self.activation_type);
+                        let gradient_output_conj = conjugate_rm(&gradient_output);
 
-                    //Accumulate gradients for biases
-                    for grad_row in input_gradient_batch[batch_ind].iter() {
-                        for (k, grad_val) in grad_row.iter().enumerate() {
-                            bias_gradients[batch_ind][k] += grad_val;
-                        }
-                    }
+                        let delta = hadamard_rm(&previous_gradient_batch[batch_ind], &gradient_output_conj);
+                        let weight_gradient = multiply_complex_rm(&conjugate_transpose_rm(&input_batch[batch_ind]), &delta);
 
-                    input_gradient_batch[batch_ind] = multiply_complex(&input_gradient_batch[batch_ind], &conjugate_transpose(&self.weights));
-                }
+                        //Accumulate gradients for biases
+                        let mut bias_gradient = vec![C::new(ZERO, ZERO); self.bias.len()];
+                        accumulate_bias_from_rm(&mut bias_gradient, &delta);
+
+                        let input_gradient = multiply_complex_rm(&delta, &weights_t);
+
+                        (input_gradient, weight_gradient, bias_gradient)
+                    })
+                    .collect();
+
+                unzip_batch(results)
             }
-        }
+        };
 
-        // if self.gradient.is_some() {
-        //     let previous_gradient = self.gradient.as_ref().expect("");
-        //     weight_gradients = add_matrix_3d(&weight_gradients, &previous_gradient.get_gradient_weight_batch());
-        //     bias_gradients = add_matrix(&bias_gradients, &previous_gradient.get_gradient_bias_batch());
-        // }
-
-        gradient.set_gradient_input_batch(input_gradient_batch);
-        gradient.set_gradient_weight_batch(weight_gradients);
+        gradient.set_gradient_input_batch_rm(input_gradient_batch);
+        gradient.set_gradient_weight_batch_rm(weight_gradients);
         gradient.set_gradient_bias_batch(bias_gradients);
         self.gradient = Some(gradient.clone());
 
@@ -215,75 +206,84 @@ impl LayerRm {
     }
 
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
-        let prev_rm_ref = previous_gradient.get_gradient_input_batch_rm_ref().expect("LayerRm::backward expects RM gradients");
-        self.backward_rm(prev_rm_ref)
+        // Falls back to converting Vec<Vec<C>> gradients if the previous layer is not an RM layer.
+        match previous_gradient.get_gradient_input_batch_rm_ref() {
+            Some(previous_gradient_batch) => self.backward_rm(previous_gradient_batch),
+            None => {
+                let previous_gradient_batch = previous_gradient.get_gradient_input_batch_rm();
+                self.backward_rm(&previous_gradient_batch)
+            }
+        }
     }
 
+    /// RM counterpart of `Layer::update_parameters`.
     pub fn update_parameters(&mut self) {
         let gradient: &mut Gradient = self.gradient.as_mut().expect("No Gradient found in dense RM layer");
 
-        let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
+        let mut weight_gradients = gradient.get_gradient_weights_rm().expect("No weight gradients found in dense RM layer");
+        let mut bias_gradients = gradient.get_gradient_bias();
 
         let total_valid_tokens: Real = r(gradient.get_total_valid_tokens().max(1) as f64);
 
-        clip_all_gradients_by_global_norm_2d(&mut weight_gradients, &mut bias_gradients, self.global_norm, self.max_norm);
+        clip_all_gradients_by_global_norm_rm(&mut weight_gradients, &mut bias_gradients, self.global_norm, self.max_norm);
 
-        weight_gradients = average_matrix_by_scalar(&weight_gradients, total_valid_tokens);
+        weight_gradients = average_matrix_by_scalar_rm(&weight_gradients, total_valid_tokens);
         bias_gradients = average_vector_by_scalar(&bias_gradients, total_valid_tokens);
 
-        normalize_gradients(&mut weight_gradients);
+        normalize_gradients_rm(&mut weight_gradients);
         normalize_bias(&mut bias_gradients);
 
         let learning_rate = self.learning_rate;
         let time_step = self.time_step;
+        let (rows, cols) = (self.weights.rows, self.weights.cols);
 
-        let (mut prev_m_bias, mut prev_v_bias, mut prev_m_weights, mut prev_v_weights, mut prev_v_weights_hat, mut prev_v_bias_hat) = if let Some(previous_gradient) = &mut self.previous_gradient {
-            (
+        let (mut prev_m_bias, mut prev_v_bias, mut prev_v_bias_hat, mut prev_m_weights, mut prev_v_weights, mut prev_v_weights_hat) = match &self.previous_gradient {
+            Some(previous_gradient) => (
                 previous_gradient.get_prev_m_bias(),
                 previous_gradient.get_prev_v_bias(),
-                previous_gradient.get_prev_m_weights(),
-                previous_gradient.get_prev_v_weights(),
-                previous_gradient.get_prev_v_weights_hat(),
                 previous_gradient.get_prev_v_bias_hat(),
-            )
-        } else {
-            (
+                previous_gradient.get_prev_m_weights_rm().unwrap_or_else(|| RowMajorMatrix::create_empty(rows, cols)),
+                previous_gradient.get_prev_v_weights_rm().unwrap_or_else(|| RowMajorMatrix::create_empty(rows, cols)),
+                previous_gradient.get_prev_v_weights_hat_rm().unwrap_or_else(|| RowMajorMatrix::create_empty(rows, cols)),
+            ),
+            None => (
+                // Initialize to zeros on first step
                 vec![C::new(ZERO, ZERO); self.bias.len()],
                 vec![C::new(ZERO, ZERO); self.bias.len()],
-                vec![vec![C::new(ZERO, ZERO); self.weights.cols]; self.weights.rows],
-                vec![vec![C::new(ZERO, ZERO); self.weights.cols]; self.weights.rows],
-                vec![vec![C::new(ZERO, ZERO); self.weights.cols]; self.weights.rows],
                 vec![C::new(ZERO, ZERO); self.bias.len()],
-            )
+                RowMajorMatrix::create_empty(rows, cols),
+                RowMajorMatrix::create_empty(rows, cols),
+                RowMajorMatrix::create_empty(rows, cols),
+            ),
         };
 
         calculate_adam_w_bias(&mut self.bias, &bias_gradients, &mut prev_m_bias, &mut prev_v_bias, &mut prev_v_bias_hat, learning_rate, time_step);
-
-        // Update weights by round-tripping through Vec<Vec<C>> to reuse the existing AdamW.
-        let mut weights_vec = self.weights.to_rows();
-        calculate_adam_w(
-            &mut weights_vec,
-            &weight_gradients,
-            &mut prev_m_weights,
-            &mut prev_v_weights,
-            &mut prev_v_weights_hat,
-            learning_rate,
-            time_step,
-        );
-        self.weights = RowMajorMatrix::from_rows(&weights_vec);
+        calculate_adam_w_rm(&mut self.weights, &weight_gradients, &mut prev_m_weights, &mut prev_v_weights, &mut prev_v_weights_hat, learning_rate, time_step);
 
         gradient.set_prev_m_bias(prev_m_bias);
         gradient.set_prev_v_bias(prev_v_bias);
-        gradient.set_prev_m_weights(prev_m_weights);
-        gradient.set_prev_v_weights(prev_v_weights);
-        gradient.set_prev_v_weights_hat(prev_v_weights_hat);
         gradient.set_prev_v_bias_hat(prev_v_bias_hat);
-        gradient.set_gradient_weights(weight_gradients.clone());
-        gradient.set_gradient_bias(bias_gradients.clone());
+        gradient.set_prev_m_weights_rm(prev_m_weights);
+        gradient.set_prev_v_weights_rm(prev_v_weights);
+        gradient.set_prev_v_weights_hat_rm(prev_v_weights_hat);
+        gradient.set_gradient_weights_rm(weight_gradients);
+        gradient.set_gradient_bias(bias_gradients);
         self.previous_gradient = Some(gradient.clone());
 
         self.gradient = None;
     }
+}
+
+fn unzip_batch(results: Vec<(RowMajorMatrix<C>, RowMajorMatrix<C>, Vec<C>)>) -> (Vec<RowMajorMatrix<C>>, Vec<RowMajorMatrix<C>>, Vec<Vec<C>>) {
+    let mut input_gradients = Vec::with_capacity(results.len());
+    let mut weight_gradients = Vec::with_capacity(results.len());
+    let mut bias_gradients = Vec::with_capacity(results.len());
+    for (input_gradient, weight_gradient, bias_gradient) in results {
+        input_gradients.push(input_gradient);
+        weight_gradients.push(weight_gradient);
+        bias_gradients.push(bias_gradient);
+    }
+    (input_gradients, weight_gradients, bias_gradients)
 }
 
 impl LayerInterface for LayerRm {

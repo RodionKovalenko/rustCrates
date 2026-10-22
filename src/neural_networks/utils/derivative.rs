@@ -10,11 +10,11 @@ pub fn sigmoid_derivative_complex(z: C) -> C {
     z * (Complex::new(1.0, 0.0) - z)
 }
 
-fn tanh_derivative_complex(z: C) -> C {
+pub fn tanh_derivative_complex(z: C) -> C {
     Complex::new(1.0, 0.0) - (z * z) // 1 - tanh^2(z)
 }
 
-fn relu_derivative_complex(z: C) -> C {
+pub fn relu_derivative_complex(z: C) -> C {
     if z.re > 0.0 {
         Complex::new(1.0, 0.0)
     } else {
@@ -22,7 +22,7 @@ fn relu_derivative_complex(z: C) -> C {
     }
 }
 
-fn leaky_relu_derivative_complex(z: C, alpha: Real) -> C {
+pub fn leaky_relu_derivative_complex(z: C, alpha: Real) -> C {
     if z.re > 0.0 {
         Complex::new(1.0, 0.0)
     } else {
@@ -30,7 +30,7 @@ fn leaky_relu_derivative_complex(z: C, alpha: Real) -> C {
     }
 }
 
-fn elu_derivative_complex(z: C, alpha: Real) -> C {
+pub fn elu_derivative_complex(z: C, alpha: Real) -> C {
     if z.re > 0.0 {
         Complex::new(1.0, 0.0)
     } else {
@@ -39,7 +39,7 @@ fn elu_derivative_complex(z: C, alpha: Real) -> C {
 }
 
 // Derivative of SELU for complex numbers
-fn selu_derivative_complex(z: C) -> C {
+pub fn selu_derivative_complex(z: C) -> C {
     if z.re >= 0.0 {
         Complex::new(r(LAMBDA), 0.0)
     } else {
@@ -81,7 +81,7 @@ pub fn softsign_derivative_complex(z: C) -> C {
     Complex::new(real_part.abs() + imag_part.abs(), 0.0)
 }
 
-fn softplus_derivative_complex(z: C) -> C {
+pub fn softplus_derivative_complex(z: C) -> C {
     Complex::new(1.0 / (1.0 + (-z.re).exp()), 0.0)
 }
 

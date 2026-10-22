@@ -2,6 +2,7 @@ use num::Complex;
 use num_traits::Float;
 
 use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
+use crate::neural_networks::utils::matrix::RowMajorMatrix;
 
 pub static B_1: f64 = 0.9;
 pub static B_2: f64 = 0.999;
@@ -24,10 +25,6 @@ pub fn calculate_adam_w(weights: &mut Vec<Vec<C>>, weight_gradients: &Vec<Vec<C>
 
     let t = t.max(1) as i32;
     let current_lr: Real = r(get_current_learning_rate(learning_rate, t as usize));
-    let b1: Real = r(B_1);
-    let b2: Real = r(B_2);
-    let one_minus_b1: Real = r(1.0 - B_1);
-    let one_minus_b2: Real = r(1.0 - B_2);
 
     for i in 0..weights.len() {
         for j in 0..weights[i].len() {
@@ -38,36 +35,67 @@ pub fn calculate_adam_w(weights: &mut Vec<Vec<C>>, weight_gradients: &Vec<Vec<C>
                 panic!("Index out of bounds in adam w weights: i={}, j={}", i, j);
             }
 
-            let g = weight_gradients[i][j];
-
-            if is_nan_or_inf(&g) {
-                panic!("Gradient contains NaN or Inf in adam w weights: {:?}", g);
-            }
-
-            // 1️⃣ First moment (complex)
-            prev_m[i][j] = prev_m[i][j] * b1 + g * one_minus_b1;
-
-            // 2️⃣ Second moment (REAL stored in Complex.re)
-            let g2 = g.norm_sqr(); // |g|² ≥ 0
-            prev_v[i][j] = Complex::new(prev_v[i][j].re * b2 + one_minus_b2 * g2, r(0.0));
-
-            // 3️⃣ AMSGrad (compare REAL parts only)
-            if prev_v_hat[i][j].re < prev_v[i][j].re {
-                prev_v_hat[i][j] = prev_v[i][j];
-            }
-
-            // 4️⃣ Bias correction
-            let m_hat = prev_m[i][j] / r(1.0 - B_1.powi(t));
-            let v_hat_re = prev_v_hat[i][j].re / r(1.0 - B_2.powi(t));
-
-            // 5️⃣ Adaptive step (complex / real)
-            let denom = v_hat_re.sqrt() + r(EPSILON);
-            let adaptive_step = (m_hat * current_lr) / denom;
-
-            // 6️⃣ AdamW update (decoupled weight decay)
-            weights[i][j] = weights[i][j] - weights[i][j] * (current_lr * r(WEIGHT_DECAY)) - adaptive_step;
+            adam_w_step(&mut weights[i][j], weight_gradients[i][j], &mut prev_m[i][j], &mut prev_v[i][j], &mut prev_v_hat[i][j], current_lr, t);
         }
     }
+}
+
+// RM counterpart of `calculate_adam_w`: all matrices share the same row-major layout.
+pub fn calculate_adam_w_rm(
+    weights: &mut RowMajorMatrix<C>,
+    weight_gradients: &RowMajorMatrix<C>,
+    prev_m: &mut RowMajorMatrix<C>,
+    prev_v: &mut RowMajorMatrix<C>,
+    prev_v_hat: &mut RowMajorMatrix<C>,
+    learning_rate: f64,
+    t: usize,
+) {
+    if weight_gradients.data.is_empty() {
+        return;
+    }
+
+    let shape = (weights.rows, weights.cols);
+    if (weight_gradients.rows, weight_gradients.cols) != shape || (prev_m.rows, prev_m.cols) != shape || (prev_v.rows, prev_v.cols) != shape || (prev_v_hat.rows, prev_v_hat.cols) != shape {
+        panic!("Shape mismatch in adam w rm weights: weights {:?}, gradients {:?}", shape, (weight_gradients.rows, weight_gradients.cols));
+    }
+
+    let t = t.max(1) as i32;
+    let current_lr: Real = r(get_current_learning_rate(learning_rate, t as usize));
+
+    for i in 0..weights.data.len() {
+        adam_w_step(&mut weights.data[i], weight_gradients.data[i], &mut prev_m.data[i], &mut prev_v.data[i], &mut prev_v_hat.data[i], current_lr, t);
+    }
+}
+
+// Single AdamW (AMSGrad) update for one complex weight.
+#[inline]
+fn adam_w_step(w: &mut C, g: C, m: &mut C, v: &mut C, v_hat: &mut C, current_lr: Real, t: i32) {
+    if is_nan_or_inf(&g) {
+        panic!("Gradient contains NaN or Inf in adam w weights: {:?}", g);
+    }
+
+    // 1️⃣ First moment (complex)
+    *m = *m * r(B_1) + g * r(1.0 - B_1);
+
+    // 2️⃣ Second moment (REAL stored in Complex.re)
+    let g2 = g.norm_sqr(); // |g|² ≥ 0
+    *v = Complex::new(v.re * r(B_2) + r(1.0 - B_2) * g2, r(0.0));
+
+    // 3️⃣ AMSGrad (compare REAL parts only)
+    if v_hat.re < v.re {
+        *v_hat = *v;
+    }
+
+    // 4️⃣ Bias correction
+    let m_hat = *m / r(1.0 - B_1.powi(t));
+    let v_hat_re = v_hat.re / r(1.0 - B_2.powi(t));
+
+    // 5️⃣ Adaptive step (complex / real)
+    let denom = v_hat_re.sqrt() + r(EPSILON);
+    let adaptive_step = (m_hat * current_lr) / denom;
+
+    // 6️⃣ AdamW update (decoupled weight decay)
+    *w = *w - *w * (current_lr * r(WEIGHT_DECAY)) - adaptive_step;
 }
 
 // AdamW optimizer for complex biases (vector)

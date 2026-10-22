@@ -54,3 +54,5 @@ pub mod test_embedding_layer;
 pub mod test_adaptive_linear_layer;
 #[cfg(feature = "dtype-f64")]
 pub mod test_eml_linear_layer;
+#[cfg(feature = "dtype-f64")]
+pub mod test_dense_layer_rm;
