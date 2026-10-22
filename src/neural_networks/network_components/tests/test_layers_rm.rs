@@ -9,6 +9,7 @@ mod test_layers_rm {
     use crate::neural_networks::{
         network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
         network_layers::{
+            clustering_linear_layer::ClusteringLinearLayer,
             complex_to_linear_layer::ComplexToLinearLayer,
             embedding_layer::EmbeddingLayer,
             feedforward_layer::FeedForwardLayer,
@@ -16,7 +17,7 @@ mod test_layers_rm {
             linear_layer::LinearLayer,
             network_layers_rm::{
                 complex_to_linear_layer_rm::ComplexToLinearLayerRm, embedding_layer_rm::EmbeddingLayerRm, feedforward_layer_rm::FeedForwardLayerRm, linear_layer_rm::LinearLayerRm,
-                norm_layer_rm::NormalNormLayerRm, positional_encoding_layer_rm::PositionalEncodingLayerRm, softmax_output_layer_rm::SoftmaxLayerRm, wavelet_complex_layer_rm::ComplexWaveletLayerRm,
+                norm_layer_rm::NormalNormLayerRm, positional_encoding_layer_rm::PositionalEncodingLayerRm, softmax_output_layer_rm::SoftmaxLayerRm, sparse_linear_layer_rm::SparseLinearLayerRm, wavelet_complex_layer_rm::ComplexWaveletLayerRm,
                 wavelet_discrete_layer_rm::DiscreteWaveletLayerRm,
             },
             norm_layer::NormalNormLayer,
@@ -271,6 +272,54 @@ mod test_layers_rm {
         assert_eq!(accumulated.len(), accumulated_rm.len(), "embedding: different tokens accumulated");
         for (token, grad) in accumulated.iter() {
             assert_close_1d(&format!("embedding tied gradient token {}", token), grad, &accumulated_rm[token]);
+        }
+    }
+
+    #[test]
+    fn test_sparse_linear_layer_rm_matches_clustering_linear_layer() {
+        let (vocab_size, embedding_dim, batch_size, seq_len, k) = (64, 8, 2, 5, 10);
+        let mut layer = ClusteringLinearLayer::new(0.01, embedding_dim, vocab_size);
+
+        // Same weights and k-means index for the RM layer.
+        let mut layer_rm = SparseLinearLayerRm::new(0.01, embedding_dim, vocab_size);
+        layer_rm.weights = SharedF32Matrix::new(layer.weights.read().clone());
+        layer_rm.previous_weights = layer.previous_weights.clone();
+        layer_rm.bias = layer.bias.clone();
+        layer_rm.centroids = layer.centroids.clone();
+        layer_rm.assignments = layer.assignments.clone();
+        layer_rm.cluster_to_tokens = layer.cluster_to_tokens.clone();
+
+        let padding_mask_batch = vec![vec![1; seq_len], vec![1, 1, 1, 1, 0]];
+        let target_batch: Vec<Vec<u32>> = vec![vec![3, 17, 42], vec![5, 60, 9]];
+
+        for step in 1..=2 {
+            let name = format!("SparseLinearLayerRm step {}", step);
+            let input_batch = generate_random_complex_3d(batch_size, seq_len, embedding_dim);
+            let (mut input, mut input_rm) = layer_inputs_with_mask(&input_batch, &padding_mask_batch);
+            for li in [&mut input, &mut input_rm] {
+                li.set_target_batch_ids(target_batch.clone());
+                li.set_top_k_size(k);
+                li.set_time_step(step);
+            }
+
+            let output = layer.forward(&input);
+            let output_rm = layer_rm.forward(&input_rm);
+            assert_eq!(output.get_output_indices(), output_rm.get_output_indices(), "{}: selected vocab indices differ", name);
+            assert_close_3d(&format!("{} output", name), &output.get_output_batch(), output_rm.get_output_batch_rm_ref().unwrap());
+
+            let (upstream, upstream_rm) = upstream_gradients(&generate_random_complex_3d(batch_size, seq_len, k));
+            let gradient = layer.backward(&upstream);
+            let gradient_rm = layer_rm.backward(&upstream_rm);
+            assert_input_gradients_close(&name, &gradient, &gradient_rm);
+            assert_close_1d(&format!("{} bias gradient", name), &gradient.get_gradient_bias(), &gradient_rm.get_gradient_bias());
+            for (row, (g, g_rm)) in gradient.get_gradient_weights().iter().zip(gradient_rm.get_gradient_weights().iter()).enumerate() {
+                assert_close_1d(&format!("{} weight gradient row {}", name, row), g, g_rm);
+            }
+
+            layer.update_parameters();
+            layer_rm.update_parameters();
+            assert_eq!(*layer.weights.read(), *layer_rm.weights.read(), "{}: weights differ after update", name);
+            assert_eq!(layer.bias, layer_rm.bias, "{}: bias differs after update", name);
         }
     }
 }
