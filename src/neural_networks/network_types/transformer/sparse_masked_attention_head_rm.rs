@@ -7,7 +7,8 @@ use crate::neural_networks::{
     utils::{
         adam_w::calculate_adam_w,
         dtype::{r, Real, C, ZERO},
-        matrix::{add_matrix, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_transpose_rm, multiply_complex_rm, normalize_gradients, RowMajorMatrix},
+        matrix::{add_matrix, average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, normalize_gradients, RowMajorMatrix},
+        matrix_rm::{conjugate_transpose_rm, multiply_complex_rm},
         weights_initializer::initialize_weights_complex,
     },
 };

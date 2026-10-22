@@ -1,5 +1,5 @@
 use crate::neural_networks::utils::matrix::transpose;
-use crate::neural_networks::utils::matrix::{transpose_rm, RowMajorMatrix};
+use crate::neural_networks::utils::{matrix::RowMajorMatrix, matrix_rm::transpose_rm};
 use crate::utils::array_complex::{convolve_complex, get_coef_complex, integrate_complex, linspace_complex};
 use crate::utils::convolution_modes::ConvolutionMode;
 use crate::utils::data_converter::{convert_to_c_f64_1d, convert_to_c_f64_2d, convert_to_c_f64_3d, convert_to_c_f64_4d, convert_to_c_f64_5d};

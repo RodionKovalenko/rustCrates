@@ -9,6 +9,7 @@ use crate::neural_networks::{
     utils::{
         dtype::{real_from_f64, C, Real, ZERO},
         matrix::RowMajorMatrix,
+        matrix_rm::{add_assign_rm, scale_rm_in_place},
     },
 };
 use serde::{Deserialize, Serialize};
@@ -70,10 +71,7 @@ impl FeedForwardLayerRm {
     }
 
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
-        let input_rm = input
-            .get_input_batch_rm_ref()
-            .expect("FeedForwardLayerRm::forward expects RM input")
-            .to_vec();
+        let input_rm = input.get_input_batch_rm();
 
         self.batch_size = input.get_batch_size();
         self.time_step = input.get_time_step();
@@ -114,27 +112,22 @@ impl FeedForwardLayerRm {
                         .take_output_batch_rm()
                         .expect("DenseRm forward expected output_batch_rm");
                 }
-                LayerEnum::Linear(linear_layer) => {
+                LayerEnum::LinearRm(linear_layer) => {
                     layer_input.set_input_batch_rm(output_rm);
                     let mut out_linear = linear_layer.forward(&layer_input);
                     output_rm = out_linear
                         .take_output_batch_rm()
-                        .expect("Linear RM forward expected output_batch_rm");
+                        .expect("LinearRm forward expected output_batch_rm");
                 }
                 _ => {}
             }
         }
 
         // Residual: beta * FFN(x) + x
-        let mut output_final: Vec<RowMajorMatrix<C>> = Vec::with_capacity(output_rm.len());
-        for (y, x) in output_rm.into_iter().zip(input_rm.iter()) {
-            assert_eq!(y.rows, x.rows);
-            assert_eq!(y.cols, x.cols);
-            let mut out = y;
-            for i in 0..out.data.len() {
-                out.data[i] = out.data[i] * C::new(self.beta, ZERO) + x.data[i];
-            }
-            output_final.push(out);
+        let mut output_final = output_rm;
+        for (y, x) in output_final.iter_mut().zip(input_rm.iter()) {
+            scale_rm_in_place(y, C::new(self.beta, ZERO));
+            add_assign_rm(y, x);
         }
 
         self.output_batch_rm = Some(output_final.clone());
@@ -145,17 +138,12 @@ impl FeedForwardLayerRm {
     }
 
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
-        let prev_rm_ref = previous_gradient
-            .get_gradient_input_batch_rm_ref()
-            .expect("FeedForwardLayerRm::backward expects RM gradients");
-
-        let mut output_grad_rm: Vec<RowMajorMatrix<C>> = prev_rm_ref.to_vec();
+        let upstream = previous_gradient.get_gradient_input_batch_rm_cow();
 
         // Scale by beta for the FFN path
+        let mut output_grad_rm: Vec<RowMajorMatrix<C>> = upstream.to_vec();
         for g in output_grad_rm.iter_mut() {
-            for v in g.data.iter_mut() {
-                *v = *v * C::new(self.beta, ZERO);
-            }
+            scale_rm_in_place(g, C::new(self.beta, ZERO));
         }
 
         // Backprop through inner layers in reverse
@@ -164,48 +152,32 @@ impl FeedForwardLayerRm {
 
         for layer in self.layers.iter_mut().rev() {
             match layer {
-                LayerEnum::DenseRm(dense_layer) => {
-                    grad = dense_layer.backward(&grad);
-                }
-                LayerEnum::Linear(linear_layer) => {
-                    grad = linear_layer.backward(&grad);
-                }
+                LayerEnum::DenseRm(dense_layer) => grad = dense_layer.backward(&grad),
+                LayerEnum::LinearRm(linear_layer) => grad = linear_layer.backward(&grad),
                 _ => {}
             }
         }
 
-        // Backprop through norm layer (if present)
-        if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
-            match norm_layer_enum {
-                LayerEnum::NormRm(norm_layer) => {
-                    grad = norm_layer.backward(&grad);
-                }
-                _ => {}
-            }
+        if let Some(LayerEnum::NormRm(norm_layer)) = self.norm_layer.as_mut() {
+            grad = norm_layer.backward(&grad);
         }
 
         // Residual adds upstream gradient directly
-        let mut out = grad;
-        let mut combined = out.get_gradient_input_batch_rm();
-        let upstream = prev_rm_ref;
-        if combined.len() == upstream.len() {
-            for (c, u) in combined.iter_mut().zip(upstream.iter()) {
-                for i in 0..c.data.len() {
-                    c.data[i] += u.data[i];
-                }
-            }
+        let mut combined = grad.get_gradient_input_batch_rm();
+        for (c, u) in combined.iter_mut().zip(upstream.iter()) {
+            add_assign_rm(c, u);
         }
-        out.set_gradient_input_batch_rm(combined);
+        grad.set_gradient_input_batch_rm(combined);
 
-        self.gradient = Some(out.clone());
-        out
+        self.gradient = Some(grad.clone());
+        grad
     }
 
     pub fn update_parameters(&mut self) {
         for layer in self.layers.iter_mut() {
             match layer {
                 LayerEnum::DenseRm(dense) => dense.update_parameters(),
-                LayerEnum::Linear(linear) => linear.update_parameters(),
+                LayerEnum::LinearRm(linear) => linear.update_parameters(),
                 _ => {}
             }
         }

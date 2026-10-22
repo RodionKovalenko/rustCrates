@@ -5,7 +5,8 @@ mod test_gpu_matmul {
     use crate::neural_networks::utils::{
         dtype::C,
         gpu_matmul::GpuMatmul,
-        matrix::{multiply_complex_rm, RowMajorMatrix},
+        matrix::RowMajorMatrix,
+        matrix_rm::multiply_complex_rm,
         random_arrays::generate_random_complex_2d,
     };
 

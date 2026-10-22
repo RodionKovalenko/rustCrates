@@ -4,7 +4,10 @@ use serde::{Deserialize, Serialize};
 use crate::neural_networks::network_layers::adaptive_pooling::adaptive_avg_pool1d_layer::CompressionMetadata;
 use crate::neural_networks::utils::dtype::{Real, C, ZERO};
 use crate::neural_networks::utils::matrix::RowMajorMatrix;
+use crate::neural_networks::utils::adam_w::AdamWStateRm;
 use crate::neural_networks::utils::matrix_rm::sum_batch_rm;
+use std::borrow::Cow;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone)]
 pub enum GradientBatch {
@@ -99,17 +102,13 @@ pub struct Gradient {
     time_step: Option<usize>,
     total_valid_tokens: Option<usize>,
 
-    // Row-major counterparts used by the *_rm layers.
+    // Row-major counterparts used by the *_rm layers, keyed by parameter name (e.g. "weights", "weights_2", "w_q").
     #[serde(skip)]
-    gradient_weights_batch_rm: Option<Vec<RowMajorMatrix<C>>>,
+    weight_gradient_batches_rm: BTreeMap<String, Vec<RowMajorMatrix<C>>>,
     #[serde(default)]
-    gradient_weights_rm: Option<RowMajorMatrix<C>>,
+    weight_gradients_rm: BTreeMap<String, RowMajorMatrix<C>>,
     #[serde(default)]
-    prev_m_weights_rm: Option<RowMajorMatrix<C>>,
-    #[serde(default)]
-    prev_v_weights_rm: Option<RowMajorMatrix<C>>,
-    #[serde(default)]
-    prev_v_weights_hat_rm: Option<RowMajorMatrix<C>>,
+    adam_w_states_rm: BTreeMap<String, AdamWStateRm>,
 }
 
 impl Gradient {
@@ -189,48 +188,55 @@ impl Gradient {
             prev_v_weights_v: None,
             pooling_metadata: None,
 
-            gradient_weights_batch_rm: None,
-            gradient_weights_rm: None,
-            prev_m_weights_rm: None,
-            prev_v_weights_rm: None,
-            prev_v_weights_hat_rm: None,
+            weight_gradient_batches_rm: BTreeMap::new(),
+            weight_gradients_rm: BTreeMap::new(),
+            adam_w_states_rm: BTreeMap::new(),
         }
     }
 
-    pub fn set_gradient_weight_batch_rm(&mut self, gradient_weight_batch_rm: Vec<RowMajorMatrix<C>>) {
-        self.gradient_weights_batch_rm = Some(gradient_weight_batch_rm);
+    /// Name of the default weight matrix in the `*_rm` maps.
+    pub const WEIGHTS: &'static str = "weights";
+
+    pub fn set_weight_gradient_batch_rm(&mut self, name: &str, batch: Vec<RowMajorMatrix<C>>) {
+        self.weight_gradient_batches_rm.insert(name.to_string(), batch);
     }
-    pub fn get_gradient_weight_batch_rm_ref(&self) -> Option<&[RowMajorMatrix<C>]> {
-        self.gradient_weights_batch_rm.as_deref()
+    pub fn get_weight_gradient_batch_rm_ref(&self, name: &str) -> Option<&[RowMajorMatrix<C>]> {
+        self.weight_gradient_batches_rm.get(name).map(|b| b.as_slice())
     }
-    pub fn set_gradient_weights_rm(&mut self, gradient_weights_rm: RowMajorMatrix<C>) {
-        self.gradient_weights_rm = Some(gradient_weights_rm);
+    pub fn set_weight_gradient_rm(&mut self, name: &str, gradient: RowMajorMatrix<C>) {
+        self.weight_gradients_rm.insert(name.to_string(), gradient);
     }
     /// RM counterpart of `get_gradient_weights`: sums the batch if present, otherwise returns the grouped gradient.
-    pub fn get_gradient_weights_rm(&self) -> Option<RowMajorMatrix<C>> {
-        if let Some(gradient_weights_batch_rm) = &self.gradient_weights_batch_rm {
-            sum_batch_rm(gradient_weights_batch_rm)
-        } else {
-            self.gradient_weights_rm.clone()
+    pub fn get_weight_gradient_rm(&self, name: &str) -> Option<RowMajorMatrix<C>> {
+        match self.weight_gradient_batches_rm.get(name) {
+            Some(batch) => sum_batch_rm(batch),
+            None => self.weight_gradients_rm.get(name).cloned(),
         }
     }
-    pub fn set_prev_m_weights_rm(&mut self, prev_m_weights_rm: RowMajorMatrix<C>) {
-        self.prev_m_weights_rm = Some(prev_m_weights_rm);
+    pub fn get_adam_w_state_rm(&self, name: &str) -> Option<&AdamWStateRm> {
+        self.adam_w_states_rm.get(name)
     }
-    pub fn set_prev_v_weights_rm(&mut self, prev_v_weights_rm: RowMajorMatrix<C>) {
-        self.prev_v_weights_rm = Some(prev_v_weights_rm);
+    pub fn set_adam_w_state_rm(&mut self, name: &str, state: AdamWStateRm) {
+        self.adam_w_states_rm.insert(name.to_string(), state);
     }
-    pub fn set_prev_v_weights_hat_rm(&mut self, prev_v_weights_hat_rm: RowMajorMatrix<C>) {
-        self.prev_v_weights_hat_rm = Some(prev_v_weights_hat_rm);
+
+    // Shorthands for layers with a single weight matrix.
+    pub fn set_gradient_weight_batch_rm(&mut self, batch: Vec<RowMajorMatrix<C>>) {
+        self.set_weight_gradient_batch_rm(Self::WEIGHTS, batch);
     }
-    pub fn get_prev_m_weights_rm(&self) -> Option<RowMajorMatrix<C>> {
-        self.prev_m_weights_rm.clone()
+    pub fn get_gradient_weight_batch_rm_ref(&self) -> Option<&[RowMajorMatrix<C>]> {
+        self.get_weight_gradient_batch_rm_ref(Self::WEIGHTS)
     }
-    pub fn get_prev_v_weights_rm(&self) -> Option<RowMajorMatrix<C>> {
-        self.prev_v_weights_rm.clone()
+    pub fn get_gradient_weights_rm(&self) -> Option<RowMajorMatrix<C>> {
+        self.get_weight_gradient_rm(Self::WEIGHTS)
     }
-    pub fn get_prev_v_weights_hat_rm(&self) -> Option<RowMajorMatrix<C>> {
-        self.prev_v_weights_hat_rm.clone()
+
+    /// RM input gradients, converting Vec gradients if the previous layer was not an RM layer.
+    pub fn get_gradient_input_batch_rm_cow(&self) -> Cow<'_, [RowMajorMatrix<C>]> {
+        match self.gradient_input_batch_rm.as_deref() {
+            Some(batch) => Cow::Borrowed(batch),
+            None => Cow::Owned(self.get_gradient_input_batch_rm()),
+        }
     }
     pub fn set_gradient_input_batch(&mut self, gradient_input_batch: Vec<Vec<Vec<C>>>) {
         self.gradient_input_batch = Some(gradient_input_batch);

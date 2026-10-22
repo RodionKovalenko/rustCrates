@@ -6,14 +6,10 @@ mod test_dense_layer_rm {
             layer::{ActivationType, Layer, LayerType},
             network_layers_rm::layer_rm::LayerRm,
         },
-        utils::{
-            dtype::C,
-            matrix::RowMajorMatrix,
-            random_arrays::generate_random_complex_3d,
-        },
+        utils::{dtype::C, matrix::RowMajorMatrix, random_arrays::generate_random_complex_3d},
     };
 
-    const TOLERANCE: f64 = 1e-10;
+    use super::super::rm_test_utils::{assert_close_1d, assert_close_2d, assert_close_3d, layer_inputs, upstream_gradients};
 
     const ACTIVATIONS: [ActivationType; 11] = [
         ActivationType::LINEAR,
@@ -54,54 +50,21 @@ mod test_dense_layer_rm {
     }
 
     fn layer_input(input_batch: &Vec<Vec<Vec<C>>>) -> LayerInput {
-        let mut input = LayerInput::new_default();
-        input.set_input_batch(input_batch.clone());
-        input.set_padding_mask_batch(vec![vec![1; input_batch[0].len()]; input_batch.len()]);
-        input.set_batch_size(input_batch.len());
-        input
+        layer_inputs(input_batch).0
     }
 
     fn layer_input_rm(input_batch: &Vec<Vec<Vec<C>>>) -> LayerInput {
-        let mut input = LayerInput::new_default();
-        input.set_input_batch_rm(input_batch.iter().map(|m| RowMajorMatrix::from_rows(m)).collect());
-        input.set_padding_mask_batch(vec![vec![1; input_batch[0].len()]; input_batch.len()]);
-        input.set_batch_size(input_batch.len());
-        input
+        layer_inputs(input_batch).1
     }
 
     fn previous_gradient_rm(previous_gradient_batch: &Vec<Vec<Vec<C>>>) -> Gradient {
-        let mut gradient = Gradient::new_default();
-        gradient.set_gradient_input_batch_rm(previous_gradient_batch.iter().map(|m| RowMajorMatrix::from_rows(m)).collect());
-        gradient
+        upstream_gradients(previous_gradient_batch).1
     }
 
     fn output_cols(output_dim: usize, activation: &ActivationType) -> usize {
         match activation {
             ActivationType::SWiGLU => output_dim / 2,
             _ => output_dim,
-        }
-    }
-
-    fn assert_close_1d(name: &str, expected: &[C], actual: &[C]) {
-        assert_eq!(expected.len(), actual.len(), "{}: length mismatch", name);
-        for (i, (e, a)) in expected.iter().zip(actual.iter()).enumerate() {
-            let diff = (e - a).norm();
-            let scale = e.norm().max(a.norm()).max(1.0);
-            assert!(diff / scale <= TOLERANCE, "{}: mismatch at {}: expected {:?}, actual {:?}", name, i, e, a);
-        }
-    }
-
-    fn assert_close_2d(name: &str, expected: &Vec<Vec<C>>, actual: &RowMajorMatrix<C>) {
-        assert_eq!(expected.len(), actual.rows, "{}: row count mismatch", name);
-        assert_eq!(expected[0].len(), actual.cols, "{}: col count mismatch", name);
-        let flat: Vec<C> = expected.iter().flatten().copied().collect();
-        assert_close_1d(name, &flat, &actual.data);
-    }
-
-    fn assert_close_3d(name: &str, expected: &Vec<Vec<Vec<C>>>, actual: &[RowMajorMatrix<C>]) {
-        assert_eq!(expected.len(), actual.len(), "{}: batch size mismatch", name);
-        for (batch_ind, (e, a)) in expected.iter().zip(actual.iter()).enumerate() {
-            assert_close_2d(&format!("{} [batch {}]", name, batch_ind), e, a);
         }
     }
 

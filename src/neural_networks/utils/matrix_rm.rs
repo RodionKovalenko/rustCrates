@@ -1,8 +1,14 @@
+use num::Complex;
+use rayon::prelude::*;
+
 use crate::neural_networks::utils::{
     adam_w::{MAX_ELEMENT, MAX_NORM},
-    dtype::{r, Real, C, ZERO},
+    dtype::{c_from_f64, c_to_f64, r, Real, C, CF64, ZERO},
     matrix::RowMajorMatrix,
 };
+
+#[cfg(all(feature = "cuda", feature = "dtype-f64"))]
+use crate::neural_networks::utils::matrix::GPU_MATMUL;
 
 /// RM counterpart of `matrix::hadamard_product_2d_c`.
 pub fn hadamard_rm(a: &RowMajorMatrix<C>, b: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
@@ -48,6 +54,86 @@ pub fn split_columns_rm(matrix: &RowMajorMatrix<C>, start_col: usize, end_col: u
         data[dst_row_start..dst_row_start + cols].copy_from_slice(&matrix.data[src_start..src_end]);
     }
     RowMajorMatrix::from_data(matrix.rows, cols, data)
+}
+
+/// In-place `dst += src`.
+pub fn add_assign_rm(dst: &mut RowMajorMatrix<C>, src: &RowMajorMatrix<C>) {
+    assert_eq!((dst.rows, dst.cols), (src.rows, src.cols));
+    for (d, &s) in dst.data.iter_mut().zip(src.data.iter()) {
+        *d += s;
+    }
+}
+
+/// In-place `m *= scalar`.
+pub fn scale_rm_in_place(m: &mut RowMajorMatrix<C>, scalar: C) {
+    m.data.iter_mut().for_each(|v| *v = *v * scalar);
+}
+
+/// Converts to `Complex<f64>` (wavelet transforms run in f64).
+pub fn rm_to_f64(m: &RowMajorMatrix<C>) -> RowMajorMatrix<CF64> {
+    RowMajorMatrix::from_data(m.rows, m.cols, m.data.iter().copied().map(c_to_f64).collect())
+}
+
+/// Converts back from `Complex<f64>`.
+pub fn rm_from_f64(m: &RowMajorMatrix<CF64>) -> RowMajorMatrix<C> {
+    RowMajorMatrix::from_data(m.rows, m.cols, m.data.iter().copied().map(c_from_f64).collect())
+}
+
+/// Dense projection `X * W (+ b)` for every matrix of the batch.
+pub fn linear_forward_batch_rm(input_batch: &[RowMajorMatrix<C>], weights: &RowMajorMatrix<C>, bias: Option<&[C]>) -> Vec<RowMajorMatrix<C>> {
+    input_batch
+        .par_iter()
+        .map(|input| {
+            let mut output = multiply_complex_rm(input, weights);
+            if let Some(bias) = bias {
+                add_vector_rm(&mut output, bias);
+            }
+            output
+        })
+        .collect()
+}
+
+/// Gradients of `Y = X * W + b` for one sample.
+pub struct LinearGradientsRm {
+    /// dL/dX = delta * W^H
+    pub input: RowMajorMatrix<C>,
+    /// dL/dW = X^H * delta
+    pub weights: RowMajorMatrix<C>,
+    /// dL/db = column sums of delta
+    pub bias: Vec<C>,
+}
+
+/// Backward of `Y = X * W + b` given `delta` = dL/dY and the precomputed `weights_h` = W^H.
+pub fn linear_backward_rm(input: &RowMajorMatrix<C>, delta: &RowMajorMatrix<C>, weights_h: &RowMajorMatrix<C>) -> LinearGradientsRm {
+    let weights = multiply_complex_rm(&conjugate_transpose_rm(input), delta);
+    let mut bias = vec![C::new(ZERO, ZERO); delta.cols];
+    accumulate_bias_from_rm(&mut bias, delta);
+    let input = multiply_complex_rm(delta, weights_h);
+    LinearGradientsRm { input, weights, bias }
+}
+
+/// `linear_backward_rm` for every sample of the batch. Returns (input, weight, bias) gradient batches.
+pub fn linear_backward_batch_rm(
+    input_batch: &[RowMajorMatrix<C>],
+    delta_batch: &[RowMajorMatrix<C>],
+    weights: &RowMajorMatrix<C>,
+) -> (Vec<RowMajorMatrix<C>>, Vec<RowMajorMatrix<C>>, Vec<Vec<C>>) {
+    assert_eq!(input_batch.len(), delta_batch.len(), "input and gradient batch size mismatch");
+    let weights_h = conjugate_transpose_rm(weights);
+    let gradients: Vec<LinearGradientsRm> = input_batch.par_iter().zip(delta_batch.par_iter()).map(|(input, delta)| linear_backward_rm(input, delta, &weights_h)).collect();
+    unzip_linear_gradients(gradients)
+}
+
+pub fn unzip_linear_gradients(gradients: Vec<LinearGradientsRm>) -> (Vec<RowMajorMatrix<C>>, Vec<RowMajorMatrix<C>>, Vec<Vec<C>>) {
+    let mut inputs = Vec::with_capacity(gradients.len());
+    let mut weights = Vec::with_capacity(gradients.len());
+    let mut biases = Vec::with_capacity(gradients.len());
+    for g in gradients {
+        inputs.push(g.input);
+        weights.push(g.weights);
+        biases.push(g.bias);
+    }
+    (inputs, weights, biases)
 }
 
 /// Concatenates `left` and `right` column-wise: `[left | right]`. Inverse of `split_data_by_columns_rm`.
@@ -118,4 +204,217 @@ pub fn normalize_gradients_rm(gradients: &mut RowMajorMatrix<C>) {
         let scale = r(MAX_NORM / global_norm);
         gradients.data.iter_mut().for_each(|val| *val *= scale);
     }
+}
+
+pub fn add_vector_rm(matrix: &mut RowMajorMatrix<Complex<Real>>, bias: &[Complex<Real>]) {
+    assert_eq!(matrix.cols, bias.len(), "bias length must match matrix cols");
+    for r in 0..matrix.rows {
+        let row = matrix.row_range(r);
+        for c in 0..matrix.cols {
+            matrix.data[row.start + c] += bias[c];
+        }
+    }
+}
+
+pub fn conjugate_transpose_rm(matrix: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
+    let rows = matrix.rows;
+    let cols = matrix.cols;
+
+    // Output is (cols x rows)
+    let mut data = vec![C::ZERO; rows * cols];
+    for r in 0..rows {
+        for c in 0..cols {
+            data[c * rows + r] = matrix.data[matrix.idx(r, c)].conj();
+        }
+    }
+
+    RowMajorMatrix::from_data(cols, rows, data)
+}
+
+pub fn transpose_rm<T: Copy + Default>(matrix: &RowMajorMatrix<T>) -> RowMajorMatrix<T> {
+    let rows = matrix.rows;
+    let cols = matrix.cols;
+
+    let mut data = vec![T::default(); rows * cols];
+    for r in 0..rows {
+        for c in 0..cols {
+            data[c * rows + r] = matrix.data[matrix.idx(r, c)];
+        }
+    }
+
+    RowMajorMatrix::from_data(cols, rows, data)
+}
+
+pub fn transpose_rm_f64(matrix: &RowMajorMatrix<Real>) -> RowMajorMatrix<Real> {
+    let rows = matrix.rows;
+    let cols = matrix.cols;
+
+    let mut data = vec![ZERO; rows * cols];
+    for r in 0..rows {
+        for c in 0..cols {
+            data[c * rows + r] = matrix.data[r * cols + c];
+        }
+    }
+
+    RowMajorMatrix::from_data(cols, rows, data)
+}
+
+pub fn append_rows_rm<T: Copy>(dst: &mut RowMajorMatrix<T>, src: &RowMajorMatrix<T>) {
+    assert_eq!(dst.cols, src.cols, "column count mismatch");
+    dst.data.extend_from_slice(&src.data);
+    dst.rows += src.rows;
+}
+
+pub fn multiply_f64_complex_rm(a: &RowMajorMatrix<Real>, b: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
+    assert_eq!(a.cols, b.rows, "A's columns must match B's rows");
+    let m = a.rows;
+    let k = a.cols;
+    let n = b.cols;
+    let mut c = vec![C::new(ZERO, ZERO); m * n];
+    for i in 0..m {
+        for kk in 0..k {
+            let a_ik = a.data[i * k + kk];
+            if a_ik == ZERO {
+                continue;
+            }
+            let b_row = kk * n;
+            let c_row = i * n;
+            for j in 0..n {
+                c[c_row + j] += b.data[b_row + j] * C::new(a_ik, ZERO);
+            }
+        }
+    }
+    RowMajorMatrix::from_data(m, n, c)
+}
+
+pub fn multiply_complex_with_f64_rm(a: &RowMajorMatrix<C>, b: &RowMajorMatrix<Real>) -> RowMajorMatrix<C> {
+    assert_eq!(a.cols, b.rows, "A's columns must match B's rows");
+    let m = a.rows;
+    let k = a.cols;
+    let n = b.cols;
+    let mut c = vec![C::new(ZERO, ZERO); m * n];
+    for i in 0..m {
+        for kk in 0..k {
+            let a_ik = a.data[i * k + kk];
+            if a_ik == C::new(ZERO, ZERO) {
+                continue;
+            }
+            let b_row = kk * n;
+            let c_row = i * n;
+            for j in 0..n {
+                c[c_row + j] += a_ik * b.data[b_row + j];
+            }
+        }
+    }
+    RowMajorMatrix::from_data(m, n, c)
+}
+
+pub fn conjugate_transpose_to_rm(matrix: &[Vec<C>]) -> RowMajorMatrix<C> {
+    let rows = matrix.len();
+    assert!(rows > 0, "matrix must not be empty");
+    let cols = matrix[0].len();
+    assert!(cols > 0, "matrix must not be empty");
+    for r in matrix {
+        assert_eq!(r.len(), cols, "all rows must have the same length");
+    }
+
+    // Output is (cols x rows)
+    let mut data = vec![C::new(ZERO, ZERO); rows * cols];
+    for r in 0..rows {
+        for c in 0..cols {
+            data[c * rows + r] = matrix[r][c].conj();
+        }
+    }
+
+    RowMajorMatrix::from_data(cols, rows, data)
+}
+
+pub fn multiply_complex_rm(a: &RowMajorMatrix<C>, b: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
+    assert!(a.rows > 0 && a.cols > 0 && b.rows > 0 && b.cols > 0, "Matrices must not be empty");
+    assert_eq!(a.cols, b.rows, "A's columns must match B's rows");
+
+    let m = a.rows;
+    let k = a.cols;
+    let n = b.cols;
+
+    // Try GPU path first (if cuda feature enabled)
+    #[cfg(feature = "cuda")]
+    {
+        // Keep your existing heuristic gate for now
+        if n >= 50280 {
+            if let Ok(c) = multiply_complex_gpu_rm(&a.data, &b.data, m, k, n) {
+                return RowMajorMatrix::from_data(m, n, c);
+            }
+        }
+    }
+
+    let c = multiply_complex_cpu_rm(&a.data, &b.data, m, k, n);
+    RowMajorMatrix::from_data(m, n, c)
+}
+
+#[cfg(all(feature = "cuda", feature = "dtype-f64"))]
+fn multiply_complex_gpu_rm(a: &[C], b: &[C], m: usize, k: usize, n: usize) -> Result<Vec<C>, Box<dyn std::error::Error>> {
+    // Handle poisoned mutex gracefully
+    let mut gpu_guard = match GPU_MATMUL.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            eprintln!("GPU mutex was poisoned, attempting recovery...");
+            poisoned.into_inner()
+        }
+    };
+
+    let gpu = match gpu_guard.as_mut() {
+        Some(g) => g,
+        None => return Err("GPU not available".into()),
+    };
+
+    let c = gpu.multiply_complex(a, b, m, k, n)?;
+    Ok(c)
+}
+
+#[cfg(all(feature = "cuda", not(feature = "dtype-f64")))]
+fn multiply_complex_gpu_rm(_a: &[C], _b: &[C], _m: usize, _k: usize, _n: usize) -> Result<Vec<C>, Box<dyn std::error::Error>> {
+    Err("GPU matmul currently only enabled for dtype-f64".into())
+}
+
+pub(crate) fn multiply_complex_cpu_rm(a: &[C], b: &[C], m: usize, k: usize, n: usize) -> Vec<C> {
+    assert_eq!(a.len(), m * k);
+    assert_eq!(b.len(), k * n);
+
+    let mut c = vec![C::new(ZERO, ZERO); m * n];
+    for i in 0..m {
+        for p in 0..k {
+            let aip = a[i * k + p];
+            for j in 0..n {
+                c[i * n + j] = c[i * n + j] + aip * b[p * n + j];
+            }
+        }
+    }
+    c
+}
+
+pub fn split_data_by_columns_rm(matrix: &RowMajorMatrix<C>) -> (RowMajorMatrix<C>, RowMajorMatrix<C>) {
+    let half_cols = matrix.cols / 2;
+    let mut left_rm = vec![C::ZERO; matrix.rows * half_cols];
+    let mut right_rm = vec![C::ZERO; matrix.rows * half_cols];
+
+    for row in 0..matrix.rows {
+        for col in 0..matrix.cols {
+            let ind = matrix.idx(row, col);
+            let value = matrix.data[ind];
+
+            let half_ind = row * half_cols + col % half_cols;
+
+            if col < half_cols {
+                left_rm[half_ind] = value;
+            } else {
+                right_rm[half_ind] = value;
+            }
+        }
+    }
+
+    let left = RowMajorMatrix::from_data(matrix.rows, half_cols, left_rm);
+    let right = RowMajorMatrix::from_data(matrix.rows, half_cols, right_rm);
+
+    (left, right)
 }

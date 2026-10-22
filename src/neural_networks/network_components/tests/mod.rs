@@ -58,3 +58,7 @@ pub mod test_eml_linear_layer;
 pub mod test_dense_layer_rm;
 #[cfg(all(feature = "cuda", feature = "dtype-f64"))]
 pub mod test_gpu_matmul;
+#[cfg(feature = "dtype-f64")]
+pub mod rm_test_utils;
+#[cfg(feature = "dtype-f64")]
+pub mod test_layers_rm;

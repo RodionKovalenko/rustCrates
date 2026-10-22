@@ -70,7 +70,7 @@ impl NormalNormLayerRm {
     }
 
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        let input_batch_rm = layer_input.get_input_batch_rm_ref().expect("NormalNormLayerRm::forward expects RM input");
+        let input_batch_rm = layer_input.get_input_batch_rm();
 
         let padding_mask_batch = layer_input.get_padding_mask_batch();
         self.batch_size = layer_input.get_batch_size();
@@ -118,7 +118,7 @@ impl NormalNormLayerRm {
                 let mut variance: C = C::new(ZERO, ZERO);
                 for c in 0..input_matrix.cols {
                     let diff = input_matrix.data[row.start + c] - mean;
-                    variance += diff.powu(2);
+                    variance += diff.powf(2.0);
                 }
                 variance /= len;
 
@@ -139,7 +139,7 @@ impl NormalNormLayerRm {
         }
 
         if layer_input.get_calculate_gradient() {
-            self.input_batch_rm = Some(input_batch_rm.to_vec());
+            self.input_batch_rm = Some(input_batch_rm);
             self.normalized_batch_rm = Some(output_batch_rm.clone());
             self.mean_batch = Some(mean_batch);
             self.var_batch = Some(var_batch);
@@ -165,9 +165,7 @@ impl NormalNormLayerRm {
         let mean_batch = self.mean_batch.as_ref().expect("NormalNormLayerRm: mean_batch missing");
         let var_batch = self.var_batch.as_ref().expect("NormalNormLayerRm: var_batch missing");
 
-        let previous_gradient_rm = previous_gradient
-            .get_gradient_input_batch_rm_ref()
-            .expect("NormalNormLayerRm::backward expects RM gradient_input_batch_rm");
+        let previous_gradient_rm = previous_gradient.get_gradient_input_batch_rm_cow();
 
         let empty_mask = vec![];
         let padding_mask_batch = self.padding_mask_batch.as_ref().unwrap_or(&empty_mask);

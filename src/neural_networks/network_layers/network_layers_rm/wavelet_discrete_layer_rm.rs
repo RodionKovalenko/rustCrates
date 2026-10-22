@@ -8,7 +8,8 @@ use crate::{
         network_layers::{default_layer::LayerInterface, layer::LayerEnum},
         utils::{
             dtype::{c_from_f64, c_to_f64, C, CF64},
-            matrix::{transpose_rm, RowMajorMatrix},
+            matrix::RowMajorMatrix,
+            matrix_rm::transpose_rm,
         },
     },
     wavelet_transform::{
