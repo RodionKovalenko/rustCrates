@@ -595,14 +595,7 @@ impl LayerInterface for LayerEnum {
             }
             LayerEnum::SelfAttention(layer) => layer.backward(previous_gradient),
             LayerEnum::SparseSelfAttention(layer) => layer.backward(previous_gradient),
-            LayerEnum::SparseSelfAttentionRm(layer) => {
-                if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
-                    layer.backward_rm(gr_rm)
-                } else {
-                    let previous_gradient_batch_rm: Vec<RowMajorMatrix<C>> = previous_gradient.get_gradient_input_batch().iter().map(|rows| RowMajorMatrix::from_rows(rows)).collect();
-                    layer.backward_rm(&previous_gradient_batch_rm)
-                }
-            }
+            LayerEnum::SparseSelfAttentionRm(layer) => layer.backward(previous_gradient),
             LayerEnum::SelfAttentionApproximation(layer) => {
                 if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
                     let previous_gradient_batch: Vec<Vec<Vec<C>>> = gr_rm.iter().map(|m| m.to_rows()).collect();
@@ -611,14 +604,7 @@ impl LayerInterface for LayerEnum {
                     layer.backward(&previous_gradient.get_gradient_input_batch())
                 }
             }
-            LayerEnum::SelfAttentionApproximationRm(layer) => {
-                if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
-                    layer.backward_rm(gr_rm)
-                } else {
-                    let previous_gradient_batch_rm: Vec<RowMajorMatrix<C>> = previous_gradient.get_gradient_input_batch().iter().map(|rows| RowMajorMatrix::from_rows(rows)).collect();
-                    layer.backward_rm(&previous_gradient_batch_rm)
-                }
-            }
+            LayerEnum::SelfAttentionApproximationRm(layer) => layer.backward(previous_gradient),
             LayerEnum::Linear(layer) => layer.backward(previous_gradient),
             LayerEnum::LinearRm(layer) => LayerInterface::backward(&mut **layer, previous_gradient),
             LayerEnum::ClusteringLinear(layer) => layer.backward(previous_gradient),
