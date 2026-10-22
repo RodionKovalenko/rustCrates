@@ -418,3 +418,61 @@ pub fn split_data_by_columns_rm(matrix: &RowMajorMatrix<C>) -> (RowMajorMatrix<C
 
     (left, right)
 }
+
+/// Concatenates the per-head outputs column-wise: `[head][batch]` (seq x head_dim) -> `[batch]` (seq x num_heads*head_dim).
+pub fn concat_heads_rm(head_outputs: &[Vec<RowMajorMatrix<C>>]) -> Vec<RowMajorMatrix<C>> {
+    assert!(!head_outputs.is_empty(), "no attention head outputs");
+    let batch_size = head_outputs[0].len();
+
+    (0..batch_size)
+        .map(|b| {
+            let (rows, head_dim) = (head_outputs[0][b].rows, head_outputs[0][b].cols);
+            let total_dim = head_dim * head_outputs.len();
+            let mut data = Vec::with_capacity(rows * total_dim);
+            for row in 0..rows {
+                for head in head_outputs {
+                    assert_eq!((head[b].rows, head[b].cols), (rows, head_dim), "attention heads must have equal output shapes");
+                    data.extend_from_slice(&head[b].data[head[b].row_range(row)]);
+                }
+            }
+            RowMajorMatrix::from_data(rows, total_dim, data)
+        })
+        .collect()
+}
+
+/// Inverse of `concat_heads_rm`: splits every matrix of the batch into `num_heads` equal column blocks, `[head][batch]`.
+pub fn split_heads_rm(batch: &[RowMajorMatrix<C>], num_heads: usize) -> Vec<Vec<RowMajorMatrix<C>>> {
+    assert!(num_heads > 0);
+    (0..num_heads)
+        .map(|head| {
+            batch
+                .iter()
+                .map(|m| {
+                    assert!(m.cols % num_heads == 0, "dim={} must be divisible by num_heads={}", m.cols, num_heads);
+                    let head_dim = m.cols / num_heads;
+                    split_columns_rm(m, head * head_dim, (head + 1) * head_dim)
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Element-wise sum over heads of `[head][batch]` matrices of equal shape -> `[batch]`.
+pub fn sum_heads_rm(head_batches: Vec<Vec<RowMajorMatrix<C>>>) -> Vec<RowMajorMatrix<C>> {
+    let mut heads = head_batches.into_iter();
+    let mut sum = heads.next().expect("no attention head gradients");
+    for head in heads {
+        for (s, h) in sum.iter_mut().zip(head.iter()) {
+            add_assign_rm(s, h);
+        }
+    }
+    sum
+}
+
+/// Last `rows` rows of `m` (all rows if it has fewer).
+pub fn tail_rows_rm(m: &RowMajorMatrix<C>, rows: usize) -> RowMajorMatrix<C> {
+    if m.rows <= rows {
+        return m.clone();
+    }
+    RowMajorMatrix::from_data(rows, m.cols, m.data[(m.rows - rows) * m.cols..].to_vec())
+}

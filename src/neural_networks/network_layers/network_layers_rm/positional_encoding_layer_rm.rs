@@ -34,50 +34,57 @@ impl PositionalEncodingLayerRm {
     /// RM counterpart of `PositionalEncodingLayer::forward`.
     pub fn forward_inner(&mut self, layer_input: &LayerInput) -> Vec<RowMajorMatrix<C>> {
         let input_batch_rm = layer_input.get_input_batch_rm();
-
-        let forward_only = layer_input.get_forward_only();
-        let time_step = layer_input.get_time_step();
-        let base = self.base * SCALING_FAKTOR;
-
-        let output_batch_rm = input_batch_rm
-            .par_iter()
-            .map(|m| {
-                assert_eq!(m.cols, self.embedding_dim, "All token embeddings must match the specified dimension.");
-                let mut out = RowMajorMatrix::create_empty(m.rows, m.cols);
-                for position in 0..m.rows {
-                    let position_t = if forward_only && time_step > 0 { time_step } else { position };
-                    let (row, out_row) = (m.row_range(position), out.row_range(position));
-                    rope_rotate(&m.data[row], &mut out.data[out_row], position_t, base);
-                }
-                out
-            })
-            .collect();
-
+        let output_batch_rm = self.rotate_batch(&input_batch_rm, layer_input.get_forward_only(), layer_input.get_time_step());
         self.input_batch_rm = layer_input.get_calculate_gradient().then_some(input_batch_rm);
         output_batch_rm
     }
 
     /// RM counterpart of `PositionalEncodingLayer::backward`.
     pub fn backward_inner(&mut self, previous_gradient_batch_rm: &[RowMajorMatrix<C>]) -> Gradient {
-        let base = self.base * SCALING_FAKTOR;
+        let mut gradient = Gradient::new_default();
+        gradient.set_gradient_input_batch_rm(self.rotate_batch_backward(previous_gradient_batch_rm));
+        self.gradient = Some(gradient.clone());
+        gradient
+    }
 
-        let input_gradient_batch_rm: Vec<RowMajorMatrix<C>> = previous_gradient_batch_rm
+    /// Applies RoPE to every row (RM counterpart of `apply_rope_to_sequence`). In forward-only mode with
+    /// `time_step > 0` all rows use the angle of `time_step`, otherwise the angle of their row index.
+    pub fn rotate_batch(&self, batch: &[RowMajorMatrix<C>], forward_only: bool, time_step: usize) -> Vec<RowMajorMatrix<C>> {
+        self.rotate_batch_at(batch, |position| if forward_only && time_step > 0 { time_step } else { position })
+    }
+
+    /// Applies RoPE with explicit positions: row `i` is rotated by the angle of `position(i)`.
+    pub fn rotate_batch_at(&self, batch: &[RowMajorMatrix<C>], position: impl Fn(usize) -> usize + Sync) -> Vec<RowMajorMatrix<C>> {
+        let base = self.base * SCALING_FAKTOR;
+        batch
+            .par_iter()
+            .map(|m| {
+                assert_eq!(m.cols, self.embedding_dim, "All token embeddings must match the specified dimension.");
+                let mut out = RowMajorMatrix::create_empty(m.rows, m.cols);
+                for row in 0..m.rows {
+                    let (src, dst) = (m.row_range(row), out.row_range(row));
+                    rope_rotate(&m.data[src], &mut out.data[dst], position(row), base);
+                }
+                out
+            })
+            .collect()
+    }
+
+    /// Backward of `rotate_batch` (always by row index, like `PositionalEncodingLayer::backward_sequences`).
+    pub fn rotate_batch_backward(&self, gradient_batch: &[RowMajorMatrix<C>]) -> Vec<RowMajorMatrix<C>> {
+        let base = self.base * SCALING_FAKTOR;
+        gradient_batch
             .par_iter()
             .map(|g| {
                 assert_eq!(g.cols, self.embedding_dim);
                 let mut out = RowMajorMatrix::create_empty(g.rows, g.cols);
-                for position in 0..g.rows {
-                    let (row, out_row) = (g.row_range(position), out.row_range(position));
-                    rope_rotate_backward(&g.data[row], &mut out.data[out_row], position, base);
+                for row in 0..g.rows {
+                    let (src, dst) = (g.row_range(row), out.row_range(row));
+                    rope_rotate_backward(&g.data[src], &mut out.data[dst], row, base);
                 }
                 out
             })
-            .collect();
-
-        let mut gradient = Gradient::new_default();
-        gradient.set_gradient_input_batch_rm(input_gradient_batch_rm);
-        self.gradient = Some(gradient.clone());
-        gradient
+            .collect()
     }
 
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {

@@ -62,3 +62,5 @@ pub mod test_gpu_matmul;
 pub mod rm_test_utils;
 #[cfg(feature = "dtype-f64")]
 pub mod test_layers_rm;
+#[cfg(feature = "dtype-f64")]
+pub mod test_attention_rm;
