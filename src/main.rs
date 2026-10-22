@@ -43,8 +43,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     #[cfg(feature = "cuda")]
     {
-        let _ctx = cust::quick_init().expect("CUDA init failed");
-        println!("CUDA initialized successfully 🚀");
+        // cudarc loads the CUDA DLLs (nvcuda, cublas64_12, ...) at runtime via PATH,
+        // so no CUDA_PATH / CUDA_LIBRARY_PATH is needed at build time.
+        match cudarc::driver::CudaContext::new(0) {
+            Ok(ctx) => println!("CUDA initialized successfully 🚀 ({})", ctx.name().unwrap_or_default()),
+            Err(e) => println!("CUDA init failed: {:?}. Falling back to CPU", e),
+        }
     }
 
     #[cfg(not(feature = "cuda"))]
