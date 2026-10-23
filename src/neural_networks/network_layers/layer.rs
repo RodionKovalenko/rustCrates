@@ -1,4 +1,5 @@
 use crate::neural_networks::{
+    network_layers::network_layers_rm::adaptive_avg_pool1d_layer_rm::AdaptiveAvgPool1dLayerRm,
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     network_layers::{
         default_layer::LayerInterface,
@@ -97,6 +98,7 @@ impl Default for LayerType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LayerEnum {
     AdaptiveAvgPool1d(Box<AdaptiveAvgPool1dLayer>),
+    AdaptiveAvgPool1dRm(Box<AdaptiveAvgPool1dLayerRm>),
     Embedding(Box<EmbeddingLayer>),
     EmbeddingRm(Box<EmbeddingLayerRm>),
     PositionalEncoding(Box<PositionalEncodingLayer>),
@@ -420,6 +422,7 @@ impl LayerEnum {
     pub fn name(&self) -> &'static str {
         match self {
             LayerEnum::AdaptiveAvgPool1d(_) => "AdaptiveAvgPool1d",
+            LayerEnum::AdaptiveAvgPool1dRm(_) => "AdaptiveAvgPool1dRm",
             LayerEnum::Embedding(_) => "Embedding",
             LayerEnum::EmbeddingRm(_) => "EmbeddingRm",
             LayerEnum::PositionalEncoding(_) => "PositionalEncoding",
@@ -470,6 +473,7 @@ impl LayerInterface for LayerEnum {
 
         match self {
             LayerEnum::AdaptiveAvgPool1d(layer) => layer.forward(layer_input),
+            LayerEnum::AdaptiveAvgPool1dRm(layer) => layer.forward(layer_input),
             LayerEnum::Embedding(layer) => layer.forward(layer_input),
             LayerEnum::EmbeddingRm(layer) => layer.forward(layer_input),
             LayerEnum::PositionalEncoding(layer) => layer.forward(layer_input),
@@ -556,6 +560,7 @@ impl LayerInterface for LayerEnum {
     fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
         match self {
             LayerEnum::AdaptiveAvgPool1d(layer) => layer.backward(previous_gradient),
+            LayerEnum::AdaptiveAvgPool1dRm(layer) => layer.backward(previous_gradient),
             LayerEnum::Embedding(layer) => {
                 let grad_vec: Vec<Vec<Vec<C>>> = if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref().filter(|g| !g.is_empty()) {
                     gr_rm.iter().map(|m| m.to_rows()).collect()
@@ -658,6 +663,7 @@ impl LayerInterface for LayerEnum {
     fn update_parameters(&mut self) {
         match self {
             LayerEnum::AdaptiveAvgPool1d(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::AdaptiveAvgPool1dRm(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::Embedding(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::EmbeddingRm(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::PositionalEncoding(layer) => LayerInterface::update_parameters(&mut **layer),

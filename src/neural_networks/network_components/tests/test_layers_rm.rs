@@ -17,10 +17,12 @@ mod test_layers_rm {
             linear_layer::LinearLayer,
             multi_linear_layer::MultiLinearLayer,
             network_layers_rm::{
+                adaptive_avg_pool1d_layer_rm::AdaptiveAvgPool1dLayerRm,
                 complex_to_linear_layer_rm::ComplexToLinearLayerRm, embedding_layer_rm::EmbeddingLayerRm, feedforward_layer_rm::FeedForwardLayerRm, linear_layer_rm::LinearLayerRm, multi_linear_layer_rm::MultiLinearLayerRm,
                 norm_layer_rm::NormalNormLayerRm, positional_encoding_layer_rm::PositionalEncodingLayerRm, rms_norm_layer_rm::RMSNormLayerRm, softmax_output_layer_rm::SoftmaxLayerRm, sparse_linear_layer_rm::SparseLinearLayerRm, wavelet_complex_layer_rm::ComplexWaveletLayerRm,
                 wavelet_discrete_layer_rm::DiscreteWaveletLayerRm,
             },
+            adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer,
             add_rms_norm_layer::RMSNormLayer,
             norm_layer::NormalNormLayer,
             positional_encoding_layer::PositionalEncodingLayer,
@@ -381,5 +383,26 @@ mod test_layers_rm {
                 assert_close_1d(&format!("{} bias", name), &bias, &bias_rm);
             },
         );
+    }
+
+    #[test]
+    fn test_adaptive_avg_pool1d_layer_rm_matches_adaptive_avg_pool1d_layer() {
+        // seq_len 10 -> 4 windows (pooling) and seq_len 3 -> passthrough
+        for (seq_len, output_size) in [(10, 4), (3, 4)] {
+            let name = format!("AdaptiveAvgPool1dLayerRm {}->{}", seq_len, output_size);
+            let mut layer = AdaptiveAvgPool1dLayer::new(output_size);
+            let mut layer_rm = AdaptiveAvgPool1dLayerRm::new(output_size);
+            compare_training_steps(&name, &mut layer, &mut layer_rm, (2, seq_len, 6), None, 1, |_, _, _| {}, |_, _, _| {});
+            assert_eq!(layer.metadata.window_mappings, layer_rm.metadata.window_mappings);
+
+            // Gradient w.r.t. the decompressed sequence (original length)
+            let (upstream, upstream_rm) = upstream_gradients(&generate_random_complex_3d(2, seq_len, 6));
+            let gradient = layer.backward_through_decompress(&upstream);
+            let gradient_rm = layer_rm.backward_through_decompress(&upstream_rm);
+            assert_input_gradients_close(&format!("{} through decompress", name), &gradient, &gradient_rm);
+
+            let compressed = generate_random_complex_3d(2, layer.metadata.compressed_length, 6);
+            assert_close_3d(&format!("{} decompress", name), &layer.decompress(&compressed), &layer_rm.decompress(&to_rm_batch(&compressed)));
+        }
     }
 }

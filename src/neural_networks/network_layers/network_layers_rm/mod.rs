@@ -11,3 +11,4 @@ pub mod wavelet_discrete_layer_rm;
 pub mod complex_to_linear_layer_rm;
 pub mod rms_norm_layer_rm;
 pub mod multi_linear_layer_rm;
+pub mod adaptive_avg_pool1d_layer_rm;
