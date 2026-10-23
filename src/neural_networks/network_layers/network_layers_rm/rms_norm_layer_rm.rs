@@ -4,13 +4,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
-    network_layers::{
-        add_rms_norm_layer::{rms_norm_backward_row, rms_norm_row, update_rms_norm_gamma},
-        default_layer::LayerInterface,
-    },
+    network_layers::default_layer::LayerInterface,
     utils::{
+        adam_w::calculate_adam_w_bias,
         dtype::{c, r, Real, C},
-        matrix::RowMajorMatrix,
+        matrix::{average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, normalize_bias},
+        matrix_rm::RowMajorMatrix,
         matrix_rm::add_rm,
     },
 };
@@ -141,4 +140,65 @@ impl LayerInterface for RMSNormLayerRm {
     fn update_parameters(&mut self) {
         RMSNormLayerRm::update_parameters(self)
     }
+}
+
+/// sqrt(mean(x * x) + epsilon) of one token embedding (complex, no conjugate).
+fn rms_of(x: &[C], epsilon: Real) -> C {
+    let mean_square = x.iter().map(|x| x * x).sum::<C>() / r(x.len() as f64);
+    (mean_square + epsilon).sqrt()
+}
+
+/// RMSNorm of one row: out = x / rms(x) * gamma.
+fn rms_norm_row(x: &[C], gamma: &[C], epsilon: Real, out: &mut [C]) {
+    let rms = rms_of(x, epsilon);
+    for ((o, &x), &g) in out.iter_mut().zip(x.iter()).zip(gamma.iter()) {
+        *o = (x / rms) * g;
+    }
+}
+
+/// Backward of `rms_norm_row` for one row: accumulates the input gradient into `input_gradient`
+/// and x / rms(x) into `gamma_gradient`.
+fn rms_norm_backward_row(x: &[C], previous_gradient: &[C], epsilon: Real, input_gradient: &mut [C], gamma_gradient: &mut [C]) {
+    let dim_len = x.len();
+    let rms = rms_of(x, epsilon);
+    let rms_cubed = rms * rms * rms;
+    let dim_r = r(dim_len as f64);
+
+    for d_i in 0..dim_len {
+        for d_j in 0..dim_len {
+            let grad = if d_i == d_j {
+                c(1.0, 0.0) / rms - (x[d_i] * x[d_j]) / (rms_cubed * dim_r)
+            } else {
+                -(x[d_i] * x[d_j]) / (rms_cubed * dim_r)
+            };
+            input_gradient[d_j] += grad.conj() * previous_gradient[d_i];
+        }
+        gamma_gradient[d_i] += x[d_i] / rms;
+    }
+}
+
+/// AdamW update of gamma from the stored gradient; returns the gradient to keep as `previous_gradient`.
+fn update_rms_norm_gamma(gamma: &mut Vec<C>, mut gradient: Gradient, previous_gradient: Option<&Gradient>, learning_rate: f64, global_norm: f64, max_norm: f64) -> Gradient {
+    let mut gradient_gamma: Vec<C> = gradient.get_gradient_gamma();
+
+    let total_valid_tokens = r(gradient.get_total_valid_tokens().max(1) as f64);
+    gradient_gamma = average_vector_by_scalar(&gradient_gamma, total_valid_tokens);
+
+    clip_all_gradients_by_global_norm_2d(&mut vec![], &mut gradient_gamma, global_norm, max_norm);
+    normalize_bias(&mut gradient_gamma);
+
+    let (mut prev_m_gamma, mut prev_v_gamma, mut prev_v_gamma_hat) = if let Some(previous_gradient) = previous_gradient {
+        (previous_gradient.get_prev_m_gamma(), previous_gradient.get_prev_v_gamma(), previous_gradient.get_prev_v_gamma_hat())
+    } else {
+        // Initialize to zeros on first step
+        (vec![c(0.0, 0.0); gradient_gamma.len()], vec![c(0.0, 0.0); gradient_gamma.len()], vec![c(0.0, 0.0); gradient_gamma.len()])
+    };
+
+    calculate_adam_w_bias(gamma, &gradient_gamma, &mut prev_m_gamma, &mut prev_v_gamma, &mut prev_v_gamma_hat, learning_rate, gradient.get_time_step());
+
+    gradient.set_prev_m_gamma(prev_m_gamma);
+    gradient.set_prev_v_gamma(prev_v_gamma);
+    gradient.set_prev_v_gamma_hat(prev_v_gamma_hat);
+    gradient.set_gradient_gamma(gradient_gamma);
+    gradient
 }

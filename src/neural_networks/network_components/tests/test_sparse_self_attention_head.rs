@@ -17,7 +17,7 @@ mod test_sparse_self_attention_head {
             derivative::{global_relative_error_2d_l2, numerical_gradient_input, numerical_gradient_weights, test_gradient_error_2d},
             low_rank_approx::transpose,
             matrix::multiply_complex,
-            matrix::RowMajorMatrix,
+            matrix_rm::RowMajorMatrix,
             random_arrays::{generate_random_complex_3d, generate_random_u32_batch},
         },
     };

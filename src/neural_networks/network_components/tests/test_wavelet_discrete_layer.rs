@@ -19,7 +19,7 @@ mod test_wavelet_discrete_layer {
     };
 
     use num::Complex;
-    use crate::neural_networks::utils::matrix::RowMajorMatrix;
+    use crate::neural_networks::utils::matrix_rm::RowMajorMatrix;
 
     #[test]
     fn test_wavelet_discrete_compression() {

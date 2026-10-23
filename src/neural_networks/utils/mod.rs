@@ -18,6 +18,7 @@ pub mod shared_f32_matrix;
 pub mod matrix_rm;
 pub mod derivative_rm;
 pub mod activation_rm;
+pub mod adam_w_rm;
 
 #[cfg(feature = "cuda")]
 pub mod gpu_matmul;

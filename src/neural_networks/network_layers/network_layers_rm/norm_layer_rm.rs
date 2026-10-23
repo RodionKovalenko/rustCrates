@@ -9,7 +9,7 @@ use crate::neural_networks::utils::dtype::{r, Real, C, ONE, ZERO};
 use crate::neural_networks::utils::matrix::normalize_bias;
 use crate::neural_networks::utils::{
     adam_w::calculate_adam_w_bias,
-    matrix::{add_vectors, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_1d, RowMajorMatrix},
+    matrix::{add_vectors, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_1d}, matrix_rm::RowMajorMatrix,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -6,7 +6,7 @@ use crate::neural_networks::{
     network_layers::{default_layer::LayerInterface, layer::LayerType, network_layers_rm::norm_layer_rm::NormalNormLayerRm},
     utils::{
         dtype::{r, Real, C},
-        matrix::RowMajorMatrix,
+        matrix_rm::RowMajorMatrix,
     },
 };
 

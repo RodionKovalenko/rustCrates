@@ -5,7 +5,6 @@ use num_traits::Float;
 use num_traits::NumCast;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
-use serde::{Deserialize, Serialize};
 // use std::ffi::c_void;
 use std::fmt::Debug;
 use std::ops::Div;
@@ -16,7 +15,6 @@ use crate::neural_networks::network_types::transformer::transformer_updater::VER
 use crate::neural_networks::utils::adam_w::MAX_ELEMENT;
 use crate::neural_networks::utils::adam_w::MAX_NORM;
 use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
-use crate::neural_networks::utils::matrix_rm::multiply_complex_cpu_rm;
 
 #[cfg(feature = "cuda")]
 use super::gpu_matmul::GpuMatmul;
@@ -35,93 +33,6 @@ pub static GPU_MATMUL: Lazy<Mutex<Option<GpuMatmul>>> = Lazy::new(|| {
         }
     }
 });
-
-/// Contiguous row-major matrix storage.
-///
-/// This is the layout expected by the GPU path (`GpuMatmul`) and can also be used
-/// efficiently with BLAS by using a transpose/operand-swap trick.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RowMajorMatrix<T> {
-    pub rows: usize,
-    pub cols: usize,
-    pub data: Vec<T>,
-}
-
-impl<T> RowMajorMatrix<T> {
-    pub fn from_data(rows: usize, cols: usize, data: Vec<T>) -> Self {
-        assert_eq!(data.len(), rows * cols, "data length must be rows*cols");
-        Self { rows, cols, data }
-    }
-
-    #[inline]
-    pub fn idx(&self, row: usize, col: usize) -> usize {
-        row * self.cols + col
-    }
-}
-
-impl RowMajorMatrix<C> {
-    /// Zero matrices with the same shapes as the matrices in `batch`.
-    pub fn create_from_batch(batch: &[RowMajorMatrix<C>]) -> Vec<RowMajorMatrix<C>> {
-        batch.iter().map(|m| RowMajorMatrix::create_empty(m.rows, m.cols)).collect()
-    }
-    pub fn create_empty(rows: usize, cols: usize) -> RowMajorMatrix<C> {
-        RowMajorMatrix::from_data(rows, cols, vec![C::ZERO; rows * cols])
-    }
-}
-
-impl<T: Copy> RowMajorMatrix<T> {
-    pub fn from_rows(rows: &[Vec<T>]) -> Self {
-        let m = rows.len();
-        assert!(m > 0, "matrix must not be empty");
-        let n = rows[0].len();
-        assert!(n > 0, "matrix must not be empty");
-        for r in rows {
-            assert_eq!(r.len(), n, "all rows must have the same length");
-        }
-
-        let data: Vec<T> = rows.iter().flat_map(|r| r.iter().copied()).collect();
-        Self { rows: m, cols: n, data }
-    }
-
-    /// Builds a matrix from row vectors, returning `None` when the input is empty or ragged.
-    ///
-    /// This is useful for code paths where inputs may be variable-length (e.g. top-k / sparse
-    /// representations) and we want to keep the Vec-based representation without panicking.
-    pub fn try_from_rows(rows: &[Vec<T>]) -> Option<Self> {
-        let m = rows.len();
-        if m == 0 {
-            return None;
-        }
-
-        let n = rows[0].len();
-        if n == 0 {
-            return None;
-        }
-
-        if rows.iter().any(|r| r.len() != n) {
-            return None;
-        }
-
-        let data: Vec<T> = rows.iter().flat_map(|r| r.iter().copied()).collect();
-        Some(Self { rows: m, cols: n, data })
-    }
-
-    pub fn to_rows(&self) -> Vec<Vec<T>> {
-        let mut out = Vec::with_capacity(self.rows);
-        for i in 0..self.rows {
-            out.push(self.data[i * self.cols..(i + 1) * self.cols].to_vec());
-        }
-        out
-    }
-}
-
-impl<T> RowMajorMatrix<T> {
-    #[inline]
-    pub fn row_range(&self, row: usize) -> std::ops::Range<usize> {
-        let start = row * self.cols;
-        start..start + self.cols
-    }
-}
 
 pub fn multiply_complex(matrix_a: &[Vec<Complex<Real>>], matrix_b: &[Vec<Complex<Real>>]) -> Vec<Vec<Complex<Real>>> {
     // Try GPU path first (if cuda feature enabled)
@@ -225,17 +136,34 @@ fn multiply_complex_cpu(matrix_a: &[Vec<Complex<Real>>], matrix_b: &[Vec<Complex
         assert_eq!(row.len(), n, "All rows of B must have the same length");
     }
 
-    // Build contiguous row-major buffers (cheaper than a column-major re-pack)
-    let a_rm: Vec<Complex<Real>> = matrix_a.iter().flat_map(|r| r.iter().copied()).collect();
-    let b_rm: Vec<Complex<Real>> = matrix_b.iter().flat_map(|r| r.iter().copied()).collect();
+    // Build contiguous buffers (cheaper than a column-major re-pack)
+    let a_flat: Vec<Complex<Real>> = matrix_a.iter().flat_map(|r| r.iter().copied()).collect();
+    let b_flat: Vec<Complex<Real>> = matrix_b.iter().flat_map(|r| r.iter().copied()).collect();
 
-    let c_rm = multiply_complex_cpu_rm(&a_rm, &b_rm, m, k, n);
+    let c_flat = multiply_complex_cpu_flat(&a_flat, &b_flat, m, k, n);
 
     let mut result = Vec::with_capacity(m);
     for i in 0..m {
-        result.push(c_rm[i * n..(i + 1) * n].to_vec());
+        result.push(c_flat[i * n..(i + 1) * n].to_vec());
     }
     result
+}
+
+/// C = A * B on contiguous buffers (A: m x k, B: k x n).
+fn multiply_complex_cpu_flat(a: &[C], b: &[C], m: usize, k: usize, n: usize) -> Vec<C> {
+    assert_eq!(a.len(), m * k);
+    assert_eq!(b.len(), k * n);
+
+    let mut c = vec![C::new(ZERO, ZERO); m * n];
+    for i in 0..m {
+        for p in 0..k {
+            let aip = a[i * k + p];
+            for j in 0..n {
+                c[i * n + j] = c[i * n + j] + aip * b[p * n + j];
+            }
+        }
+    }
+    c
 }
 
 pub fn multiply<T, V>(matrix_a: &Vec<Vec<T>>, matrix_b: &Vec<Vec<V>>) -> Vec<Vec<f64>>

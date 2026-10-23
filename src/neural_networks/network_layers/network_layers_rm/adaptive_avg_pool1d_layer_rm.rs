@@ -3,12 +3,12 @@ use serde::{Deserialize, Serialize};
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     network_layers::{
-        adaptive_pooling::adaptive_avg_pool1d_layer::{average_pool_window, causal_pooling_windows, CompressionMetadata, CompressionType},
+        adaptive_pooling::adaptive_avg_pool1d_layer::{CompressionMetadata, CompressionType},
         default_layer::LayerInterface,
     },
     utils::{
-        dtype::{r, C},
-        matrix::RowMajorMatrix,
+        dtype::{r, Real, C},
+        matrix_rm::RowMajorMatrix,
     },
 };
 
@@ -209,5 +209,49 @@ impl LayerInterface for AdaptiveAvgPool1dLayerRm {
     }
     fn update_parameters(&mut self) {
         AdaptiveAvgPool1dLayerRm::update_parameters(self)
+    }
+}
+
+
+/// Splits `seq_len` positions into `output_size` consecutive, non-overlapping windows (the first
+/// `seq_len % output_size` windows get one extra position). Same windows as `AdaptiveAvgPool1dLayer`.
+pub fn causal_pooling_windows(seq_len: usize, output_size: usize) -> Vec<Vec<usize>> {
+    let mut windows: Vec<Vec<usize>> = Vec::with_capacity(output_size);
+    let base_size = seq_len / output_size;
+    let remainder = seq_len % output_size;
+    let mut current_pos = 0;
+
+    for i in 0..output_size {
+        let window_size = if i < remainder { base_size + 1 } else { base_size };
+        let window: Vec<usize> = (current_pos..current_pos + window_size).filter(|&pos| pos < seq_len).collect();
+
+        // 🔒 CAUSALITY ASSERTION
+        if i > 0 {
+            let prev_max = *windows[i - 1].last().unwrap();
+            let curr_min = *window.first().unwrap();
+            assert!(prev_max < curr_min, "Causal pooling violated: window {} overlaps or looks ahead", i);
+        }
+
+        windows.push(window);
+        current_pos += window_size;
+    }
+
+    windows
+}
+
+/// Average of the tokens `row(pos)` for `pos` in `window` (positions >= `seq_len` are skipped) into `out`.
+pub fn average_pool_window<'a>(row: impl Fn(usize) -> &'a [C], seq_len: usize, window: &[usize], out: &mut [C]) {
+    if window.is_empty() {
+        return;
+    }
+    for &pos in window.iter().filter(|&&pos| pos < seq_len) {
+        let token = row(pos);
+        for dim in 0..token.len().min(out.len()) {
+            out[dim] += token[dim];
+        }
+    }
+    let divisor: Real = r(window.len() as f64);
+    for value in out.iter_mut() {
+        *value /= divisor;
     }
 }

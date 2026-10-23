@@ -16,7 +16,8 @@ use crate::neural_networks::network_components::{gradient_struct::Gradient, laye
 use crate::neural_networks::network_layers::default_layer::LayerInterface;
 use crate::neural_networks::network_layers::wavelet_network::{decompose_in_wavelet_2d_default, DECOMPOSITION_LEVELS};
 use crate::neural_networks::utils::dtype::{c_from_f64, c_to_f64, r, Real, C, ONE, ZERO};
-use crate::neural_networks::utils::matrix::{is_nan_or_inf, RowMajorMatrix};
+use crate::neural_networks::utils::matrix::{is_nan_or_inf};
+use crate::neural_networks::utils::matrix_rm::RowMajorMatrix;
 use crate::neural_networks::utils::matrix_rm::normalize_gradients_rm;
 use crate::neural_networks::utils::shared_f32_matrix::SharedF32Matrix;
 

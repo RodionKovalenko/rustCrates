@@ -6,7 +6,7 @@ mod test_dense_layer_rm {
             layer::{ActivationType, Layer, LayerType},
             network_layers_rm::layer_rm::LayerRm,
         },
-        utils::{dtype::C, matrix::RowMajorMatrix, random_arrays::generate_random_complex_3d},
+        utils::{dtype::C, matrix_rm::RowMajorMatrix, random_arrays::generate_random_complex_3d},
     };
 
     use super::super::rm_test_utils::{assert_close_1d, assert_close_2d, assert_close_3d, layer_inputs, upstream_gradients};

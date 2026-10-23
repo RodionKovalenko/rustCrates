@@ -143,10 +143,6 @@ impl MultiLinearLayer {
 
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
         let input_batch_vec = input.get_input_batch();
-        let rm_ref = input.get_input_batch_rm_ref().filter(|rm| !rm.is_empty());
-        if input_batch_vec.is_empty() && rm_ref.is_some() {
-            panic!("MultiLinearLayer received RM-only input; use a RM-specific MultiLinear layer");
-        }
 
         self.time_step = input.get_time_step();
         self.batch_size = input.get_batch_size();
@@ -179,24 +175,18 @@ impl MultiLinearLayer {
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch(output_batch);
-        layer_output.set_output_batch_rm(vec![]);
         layer_output
     }
 
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
         let total_valid_tokens = previous_gradient.get_total_valid_tokens();
         let previous_input_gradient = previous_gradient.get_gradient_input_batch();
-        let prev_rm_ref = previous_gradient.get_gradient_input_batch_rm_ref().filter(|rm| !rm.is_empty());
-        if previous_input_gradient.is_empty() && prev_rm_ref.is_some() {
-            panic!("MultiLinearLayer received RM-only gradient; use a RM-specific MultiLinear layer");
-        }
 
         let input_batch = match self.input_batch.as_ref() {
             Some(b) if !b.is_empty() => b,
             _ => {
                 let mut gradient = Gradient::new_default();
                 gradient.set_gradient_input_batch(vec![]);
-                gradient.set_gradient_input_batch_rm(vec![]);
                 gradient.set_gradient_weight_batch(vec![]);
                 gradient.set_gradient_weight_2_batch(vec![]);
                 gradient.set_total_valid_tokens(total_valid_tokens);
@@ -221,7 +211,6 @@ impl MultiLinearLayer {
 
             let mut grad_sliced = Gradient::new_default();
             grad_sliced.set_gradient_input_batch(prev_chunk);
-            grad_sliced.set_gradient_input_batch_rm(vec![]);
             grad_sliced.set_total_valid_tokens(total_valid_tokens);
 
             let dx_chunk = lin_layer.backward(&grad_sliced).get_gradient_input_batch();
@@ -236,7 +225,6 @@ impl MultiLinearLayer {
 
         let mut gradient = Gradient::new_default();
         gradient.set_gradient_input_batch(summed_dx);
-        gradient.set_gradient_input_batch_rm(vec![]);
         gradient.set_total_valid_tokens(total_valid_tokens);
 
         self.gradient = Some(gradient.clone());

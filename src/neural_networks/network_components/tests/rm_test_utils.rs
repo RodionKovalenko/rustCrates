@@ -4,12 +4,21 @@
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
     network_layers::default_layer::LayerInterface,
-    utils::{dtype::C, matrix::RowMajorMatrix, random_arrays::{generate_random_complex_2d, generate_random_complex_3d}},
+    utils::{dtype::C, matrix_rm::RowMajorMatrix, random_arrays::{generate_random_complex_2d, generate_random_complex_3d}},
 };
 
 /// Relative tolerance for Vec vs RM comparisons. Both paths run the same arithmetic,
 /// differences only come from a different summation order.
 pub const TOLERANCE: f64 = 1e-10;
+
+/// Builds an RM layer with exactly the parameters of `layer` (same serialized fields, same order).
+/// The round trip must be byte-identical, so a field that differs between the two structs fails here.
+pub fn copy_parameters<A: serde::Serialize, B: serde::Serialize + serde::de::DeserializeOwned>(layer: &A) -> B {
+    let bytes = bincode::serialize(layer).expect("serialize layer");
+    let layer_rm: B = bincode::deserialize(&bytes).expect("RM layer must have the same serialized parameters");
+    assert_eq!(bincode::serialize(&layer_rm).expect("serialize RM layer"), bytes, "parameter layout differs between layer and RM layer");
+    layer_rm
+}
 
 pub fn to_rm_batch(batch: &Vec<Vec<Vec<C>>>) -> Vec<RowMajorMatrix<C>> {
     batch.iter().map(|m| RowMajorMatrix::from_rows(m)).collect()

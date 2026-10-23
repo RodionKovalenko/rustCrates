@@ -6,10 +6,10 @@ use crate::neural_networks::{
     },
     utils::{
         activation_rm::{activate_output_complex_rm, swish_rm},
-        adam_w::{update_bias_adam_w, update_weights_adam_w_rm},
+        adam_w_rm::{update_bias_adam_w, update_weights_adam_w_rm},
         derivative_rm::{get_gradient_complex_rm, swish_grad_rm},
         dtype::{r, Real, C, ZERO},
-        matrix::{average_vector_by_scalar, normalize_bias, RowMajorMatrix},
+        matrix::{average_vector_by_scalar, normalize_bias}, matrix_rm::RowMajorMatrix,
         matrix_rm::{
             average_matrix_by_scalar_rm, clip_all_gradients_by_global_norm_rm, concat_columns_rm, conjugate_rm, hadamard_rm, linear_backward_batch_rm, linear_forward_batch_rm, normalize_gradients_rm,
             split_data_by_columns_rm,

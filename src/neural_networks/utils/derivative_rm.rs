@@ -8,7 +8,7 @@ use crate::neural_networks::{
             softsign_derivative_complex, tanh_derivative_complex,
         },
         dtype::{C, ONE, ZERO},
-        matrix::RowMajorMatrix,
+        matrix_rm::RowMajorMatrix,
     },
 };
 

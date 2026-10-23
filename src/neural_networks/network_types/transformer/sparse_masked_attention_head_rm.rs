@@ -9,9 +9,9 @@ use crate::neural_networks::{
     },
     utils::{
         activation::softmax_row_complex,
-        adam_w::update_weights_adam_w_rm,
+        adam_w_rm::update_weights_adam_w_rm,
         dtype::{r, Real, C, ZERO},
-        matrix::RowMajorMatrix,
+        matrix_rm::RowMajorMatrix,
         matrix_rm::{
             add_rm, append_rows_rm, average_matrix_by_scalar_rm, clip_all_gradients_by_global_norm_rm, conjugate_transpose_rm, linear_forward_batch_rm, multiply_complex_rm, normalize_gradients_rm,
         },

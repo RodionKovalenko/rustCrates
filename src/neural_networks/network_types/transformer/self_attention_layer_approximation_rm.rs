@@ -8,9 +8,9 @@ use crate::neural_networks::{
         layer::{LayerEnum, LayerType},
         network_layers_rm::{norm_layer_rm::NormalNormLayerRm, rms_norm_layer_rm::RMSNormLayerRm},
     },
-    network_types::transformer::masked_attention_head_approximation::MaskedAttentionHeadApproximation,
+    network_types::transformer::masked_attention_head_approximation_rm::MaskedAttentionHeadApproximationRm,
     utils::{
-        matrix::RowMajorMatrix,
+        matrix_rm::RowMajorMatrix,
         matrix_rm::{add_assign_rm, concat_heads_rm, split_heads_rm, sum_heads_rm},
     },
 };
@@ -22,7 +22,7 @@ use crate::neural_networks::utils::dtype::C;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelfAttentionLayerApproximationRm {
-    pub attention_heads: Vec<MaskedAttentionHeadApproximation>,
+    pub attention_heads: Vec<MaskedAttentionHeadApproximationRm>,
     pub activated_output: Vec<Vec<C>>,
     pub norm_layer: Option<LayerEnum>,
 
@@ -36,12 +36,12 @@ pub struct SelfAttentionLayerApproximationRm {
 
 impl SelfAttentionLayerApproximationRm {
     pub fn new(num_heads: usize, rows: usize, cols: usize, learning_rate: f64) -> Self {
-        let mut attention_heads: Vec<MaskedAttentionHeadApproximation> = vec![];
+        let mut attention_heads: Vec<MaskedAttentionHeadApproximationRm> = vec![];
         let head_cols = cols / num_heads;
 
         for _ in 0..num_heads {
             let attention_head =
-                MaskedAttentionHeadApproximation::create_default_attention_layer(rows, head_cols, LayerType::AttentionLayer, learning_rate);
+                MaskedAttentionHeadApproximationRm::create_default_attention_layer(rows, head_cols, LayerType::AttentionLayer, learning_rate);
             attention_heads.push(attention_head);
         }
 

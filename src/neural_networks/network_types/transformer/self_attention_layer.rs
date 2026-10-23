@@ -8,7 +8,7 @@ use crate::neural_networks::{
         norm_layer::NormalNormLayer,
     },
     network_types::transformer::transformer_updater::calculate_alpha,
-    utils::matrix::{add_matrix_3d_in_place, scale_matrix_3d_by_scalar_in_place, RowMajorMatrix},
+    utils::matrix::{add_matrix_3d_in_place, scale_matrix_3d_by_scalar_in_place},
 };
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
@@ -27,11 +27,7 @@ pub struct SelfAttentionLayer {
     #[serde(skip)]
     pub input_batch: Option<Vec<Vec<Vec<C>>>>,
     #[serde(skip)]
-    pub input_batch_rm: Option<Vec<RowMajorMatrix<C>>>,
-    #[serde(skip)]
     pub output_batch: Option<Vec<Vec<Vec<C>>>>,
-    #[serde(skip)]
-    pub output_batch_rm: Option<Vec<RowMajorMatrix<C>>>,
     #[serde(skip)]
     pub gradient: Option<Gradient>,
     #[serde(skip)]
@@ -61,9 +57,7 @@ impl SelfAttentionLayer {
             activated_output: vec![],
             norm_layer: _norm_layer,
             input_batch: None,
-            input_batch_rm: None,
             output_batch: None,
-            output_batch_rm: None,
             gradient: None,
             time_step: 0,
             alpha,

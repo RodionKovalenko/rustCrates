@@ -19,10 +19,7 @@ use crate::neural_networks::{
         activation::{activate_output_complex, swish},
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
         derivative::{get_gradient_complex, get_gradient_swish},
-        matrix::{
-            add_matrix, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate, conjugate_transpose, hadamard_product_2d_c, multiply_complex,
-            normalize_bias, normalize_gradients, split_data_by_columns, RowMajorMatrix,
-        },
+        matrix::{add_matrix, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate, conjugate_transpose, hadamard_product_2d_c, multiply_complex, normalize_bias, normalize_gradients, split_data_by_columns}, matrix_rm::RowMajorMatrix,
         weights_initializer::initialize_weights_complex,
     },
 };

@@ -99,12 +99,6 @@ impl DiscreteWaveletLayer {
     }
 
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        if !layer_input.has_non_empty_input_batch() {
-            if layer_input.get_input_batch_rm_ref().is_some_and(|rm| !rm.is_empty()) {
-                panic!("DiscreteWaveletLayer received RM-only input; use DiscreteWaveletLayerRm instead");
-            }
-        }
-
         let input_batch: Vec<Vec<Vec<C>>> = layer_input.get_input_batch();
         let target_batch_ids: Vec<Vec<u32>> = layer_input.get_target_batch_ids();
         let forward_only = layer_input.get_forward_only();
@@ -195,12 +189,6 @@ impl DiscreteWaveletLayer {
         layer_output
     }
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
-        if previous_gradient.get_gradient_input_batch().is_empty() {
-            if previous_gradient.get_gradient_input_batch_rm_ref().is_some_and(|rm| !rm.is_empty()) {
-                panic!("DiscreteWaveletLayer received RM-only gradients; use DiscreteWaveletLayerRm instead");
-            }
-        }
-
         let input_batch = self.input_batch.as_ref().expect("Input batch not found");
         let mut grad_output_batch = previous_gradient.get_gradient_input_batch();
         let compression_dims = self.compression_dims.as_ref().expect("no compression dwt found").clone();

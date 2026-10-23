@@ -2,13 +2,13 @@ use crate::neural_networks::network_components::gradient_struct::Gradient;
 use crate::neural_networks::network_components::layer_input_struct::LayerInput;
 use crate::neural_networks::network_components::layer_output_struct::LayerOutput;
 use crate::neural_networks::network_layers::default_layer::LayerInterface;
-use crate::neural_networks::utils::dtype::C;
-use crate::neural_networks::utils::matrix::RowMajorMatrix;
+use crate::neural_networks::utils::dtype::{r, Real, C};
+use crate::neural_networks::utils::matrix_rm::RowMajorMatrix;
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::neural_networks::network_layers::positional_encoding_layer::{rope_rotate, rope_rotate_backward, INITIAL_BASE, SCALING_FAKTOR};
+use crate::neural_networks::network_layers::positional_encoding_layer::{INITIAL_BASE, SCALING_FAKTOR};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PositionalEncodingLayerRm {
@@ -111,5 +111,38 @@ impl LayerInterface for PositionalEncodingLayerRm {
     }
     fn update_parameters(&mut self) {
         PositionalEncodingLayerRm::update_parameters(self)
+    }
+}
+
+/// Rotation angle of the pair `i` at `position` (shared by forward and backward).
+#[inline]
+fn rope_sin_cos(position: usize, i: usize, embedding_dim: usize, base: f64) -> (Real, Real) {
+    let mut theta = position as f64 / base.powf(2.0 * i as f64 / embedding_dim as f64);
+    theta = theta.clamp(-1.0, 1.0);
+    let (sin_theta, cos_theta) = theta.sin_cos();
+    (r(sin_theta), r(cos_theta))
+}
+
+/// Applies RoPE to one embedding row: rotates each (even, odd) pair.
+pub fn rope_rotate(embedding: &[C], out: &mut [C], position: usize, base: f64) {
+    let embedding_dim = embedding.len();
+    assert_eq!(embedding_dim % 2, 0, "Embedding dimension must be even for RoPE.");
+    for i in 0..embedding_dim / 2 {
+        let (sin_theta, cos_theta) = rope_sin_cos(position, i, embedding_dim, base);
+        let (even, odd) = (embedding[2 * i], embedding[2 * i + 1]);
+        out[2 * i] = C::new(even.re * cos_theta - odd.re * sin_theta, even.im * cos_theta - odd.im * sin_theta);
+        out[2 * i + 1] = C::new(even.re * sin_theta + odd.re * cos_theta, even.im * sin_theta + odd.im * cos_theta);
+    }
+}
+
+/// Backward of `rope_rotate`: rotates the gradient row by the inverse angle.
+pub fn rope_rotate_backward(grad: &[C], out: &mut [C], position: usize, base: f64) {
+    let embedding_dim = grad.len();
+    assert_eq!(embedding_dim % 2, 0, "Embedding dimension must be even for RoPE.");
+    for i in 0..embedding_dim / 2 {
+        let (sin_theta, cos_theta) = rope_sin_cos(position, i, embedding_dim, base);
+        let (grad_even, grad_odd) = (grad[2 * i], grad[2 * i + 1]);
+        out[2 * i] = C::new(grad_even.re * cos_theta + grad_odd.re * sin_theta, grad_even.im * cos_theta + grad_odd.im * sin_theta);
+        out[2 * i + 1] = C::new(-grad_even.re * sin_theta + grad_odd.re * cos_theta, -grad_even.im * sin_theta + grad_odd.im * cos_theta);
     }
 }

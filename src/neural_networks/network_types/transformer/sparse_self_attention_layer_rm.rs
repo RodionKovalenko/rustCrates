@@ -3,7 +3,7 @@ use crate::neural_networks::{
     network_layers::{network_layers_rm::norm_layer_rm::NormalNormLayerRm},
     utils::{
         dtype::{r, C, Real},
-        matrix::RowMajorMatrix,
+        matrix_rm::RowMajorMatrix,
     },
 };
 use rayon::prelude::*;

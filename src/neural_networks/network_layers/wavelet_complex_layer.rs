@@ -53,12 +53,6 @@ impl ComplexWaveletLayer {
     }
 
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        if !layer_input.has_non_empty_input_batch() {
-            if layer_input.get_input_batch_rm_ref().is_some_and(|rm| !rm.is_empty()) {
-                panic!("ComplexWaveletLayer received RM-only input; use ComplexWaveletLayerRm instead");
-            }
-        }
-
         let input_batch_c: Vec<Vec<Vec<C>>> = layer_input.get_input_batch();
         let input_batch: Vec<Vec<Vec<num::Complex<f64>>>> = input_batch_c
             .iter()
@@ -97,12 +91,6 @@ impl ComplexWaveletLayer {
     }
 
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
-        if previous_gradient.get_gradient_input_batch().is_empty() {
-            if previous_gradient.get_gradient_input_batch_rm_ref().is_some_and(|rm| !rm.is_empty()) {
-                panic!("ComplexWaveletLayer received RM-only gradients; use ComplexWaveletLayerRm instead");
-            }
-        }
-
         let input_batch = self.input_batch.as_ref().expect("Input batch not found");
 
         let wavefun_result: Vec<Vec<num::Complex<f64>>> = wavefun_complex(&10, &self.wavelet);

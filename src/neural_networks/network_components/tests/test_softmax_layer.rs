@@ -22,7 +22,7 @@ mod test_softmax_layer {
                     numerical_gradient_input, numerical_gradient_input_batch, sigmoid_derivative_complex, softmax_derivative_complex_jacobian, softsign_derivative_complex, test_gradient_batch_error,
                     test_gradient_error_1d, test_gradient_error_2d,
                 },
-                matrix::RowMajorMatrix,
+                matrix_rm::RowMajorMatrix,
                 random_arrays::{generate_random_complex_2d, generate_random_complex_3d, generate_random_u32_batch},
             },
         },

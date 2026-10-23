@@ -59,13 +59,32 @@ impl PositionalEncodingLayer {
     }
 
     pub fn backward_sequence(&self, grad_sequence: &Vec<Vec<C>>) -> Vec<Vec<C>> {
+        let half_dim = self.embedding_dim / 2;
+
         grad_sequence
             .iter()
             .enumerate()
             .map(|(position, grad_embedding)| {
                 assert_eq!(grad_embedding.len(), self.embedding_dim);
                 let mut rotated_grad = vec![C::new(ZERO, ZERO); self.embedding_dim];
-                rope_rotate_backward(grad_embedding, &mut rotated_grad, position, self.base * SCALING_FAKTOR);
+
+                for i in 0..half_dim {
+                    let even_idx = 2 * i;
+                    let odd_idx = even_idx + 1;
+
+                    let mut theta = position as f64 / ((self.base * SCALING_FAKTOR).powf(2.0 * i as f64 / self.embedding_dim as f64));
+                    theta = theta.clamp(-1.0, 1.0);
+                    let (sin_theta_f64, cos_theta_f64) = theta.sin_cos();
+                    let sin_theta: Real = r(sin_theta_f64);
+                    let cos_theta: Real = r(cos_theta_f64);
+
+                    let grad_even = grad_embedding[even_idx];
+                    let grad_odd = grad_embedding[odd_idx];
+
+                    rotated_grad[even_idx] = C::new(grad_even.re * cos_theta + grad_odd.re * sin_theta, grad_even.im * cos_theta + grad_odd.im * sin_theta);
+                    rotated_grad[odd_idx] = C::new(-grad_even.re * sin_theta + grad_odd.re * cos_theta, -grad_even.im * sin_theta + grad_odd.im * cos_theta);
+                }
+
                 rotated_grad
             })
             .collect()
@@ -88,42 +107,29 @@ impl PositionalEncodingLayer {
 
     pub fn apply_rotary_positional_encoding(&self, embedding: &[C], position: usize, scaling_factor: f64) -> Vec<C> {
         assert_eq!(embedding.len(), self.embedding_dim);
-        let mut rotated_embedding = vec![C::new(ZERO, ZERO); self.embedding_dim];
-        rope_rotate(embedding, &mut rotated_embedding, position, self.base * scaling_factor);
+        assert_eq!(self.embedding_dim % 2, 0, "Embedding dimension must be even for RoPE.");
+
+        let mut rotated_embedding = Vec::with_capacity(self.embedding_dim);
+        let half_dim = self.embedding_dim / 2;
+
+        for i in 0..half_dim {
+            let mut theta = position as f64 / ((self.base * scaling_factor).powf(2.0 * i as f64 / self.embedding_dim as f64));
+            theta = theta.clamp(-1.0, 1.0);
+
+            let (sin_theta_f64, cos_theta_f64) = theta.sin_cos();
+            let sin_theta: Real = r(sin_theta_f64);
+            let cos_theta: Real = r(cos_theta_f64);
+
+            let even_idx = 2 * i;
+            let odd_idx = even_idx + 1;
+            let even = embedding[even_idx];
+            let odd = embedding[odd_idx];
+
+            rotated_embedding.push(C::new(even.re * cos_theta - odd.re * sin_theta, even.im * cos_theta - odd.im * sin_theta));
+            rotated_embedding.push(C::new(even.re * sin_theta + odd.re * cos_theta, even.im * sin_theta + odd.im * cos_theta));
+        }
+
         rotated_embedding
-    }
-}
-
-/// Rotation angle of the pair `i` at `position` (shared by forward and backward).
-#[inline]
-fn rope_sin_cos(position: usize, i: usize, embedding_dim: usize, base: f64) -> (Real, Real) {
-    let mut theta = position as f64 / base.powf(2.0 * i as f64 / embedding_dim as f64);
-    theta = theta.clamp(-1.0, 1.0);
-    let (sin_theta, cos_theta) = theta.sin_cos();
-    (r(sin_theta), r(cos_theta))
-}
-
-/// Applies RoPE to one embedding row: rotates each (even, odd) pair. Used by the Vec and the RM layer.
-pub fn rope_rotate(embedding: &[C], out: &mut [C], position: usize, base: f64) {
-    let embedding_dim = embedding.len();
-    assert_eq!(embedding_dim % 2, 0, "Embedding dimension must be even for RoPE.");
-    for i in 0..embedding_dim / 2 {
-        let (sin_theta, cos_theta) = rope_sin_cos(position, i, embedding_dim, base);
-        let (even, odd) = (embedding[2 * i], embedding[2 * i + 1]);
-        out[2 * i] = C::new(even.re * cos_theta - odd.re * sin_theta, even.im * cos_theta - odd.im * sin_theta);
-        out[2 * i + 1] = C::new(even.re * sin_theta + odd.re * cos_theta, even.im * sin_theta + odd.im * cos_theta);
-    }
-}
-
-/// Backward of `rope_rotate`: rotates the gradient row by the inverse angle.
-pub fn rope_rotate_backward(grad: &[C], out: &mut [C], position: usize, base: f64) {
-    let embedding_dim = grad.len();
-    assert_eq!(embedding_dim % 2, 0, "Embedding dimension must be even for RoPE.");
-    for i in 0..embedding_dim / 2 {
-        let (sin_theta, cos_theta) = rope_sin_cos(position, i, embedding_dim, base);
-        let (grad_even, grad_odd) = (grad[2 * i], grad[2 * i + 1]);
-        out[2 * i] = C::new(grad_even.re * cos_theta + grad_odd.re * sin_theta, grad_even.im * cos_theta + grad_odd.im * sin_theta);
-        out[2 * i + 1] = C::new(-grad_even.re * sin_theta + grad_odd.re * cos_theta, -grad_even.im * sin_theta + grad_odd.im * cos_theta);
     }
 }
 

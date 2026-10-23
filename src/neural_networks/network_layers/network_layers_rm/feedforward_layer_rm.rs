@@ -8,7 +8,7 @@ use crate::neural_networks::{
     network_types::transformer::transformer_updater::calculate_alpha,
     utils::{
         dtype::{real_from_f64, C, Real, ZERO},
-        matrix::RowMajorMatrix,
+        matrix_rm::RowMajorMatrix,
         matrix_rm::{add_assign_rm, scale_rm_in_place},
     },
 };

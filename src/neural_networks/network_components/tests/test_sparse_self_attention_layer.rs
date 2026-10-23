@@ -17,7 +17,7 @@ mod test_sparse_self_attention_layer {
         },
         utils::{
             derivative::{global_relative_error_2d_l2, numerical_gradient_input_batch, numerical_gradient_weights, test_gradient_error_2d},
-            matrix::{RowMajorMatrix, scale_matrix_3d_by_scalar},
+            matrix::{scale_matrix_3d_by_scalar}, matrix_rm::RowMajorMatrix,
             random_arrays::{generate_random_complex_3d, generate_u32_batch_from_indices},
         },
     };

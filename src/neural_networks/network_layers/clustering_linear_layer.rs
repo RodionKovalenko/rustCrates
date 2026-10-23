@@ -4,19 +4,17 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+use crate::neural_networks::network_types::transformer::transformer_network::TOP_K_SIZE;
+use crate::neural_networks::utils::matrix::{normalize_bias, normalize_gradients};
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
-    network_layers::{
-        clustering_common::{
-            accumulate_sparse_row_gradients, calculate_target_offset, compute_drift, get_target_id, update_centroids, update_sparse_parameters, ClusterIndex, SparseParameters, TopKScorer,
-        },
-        default_layer::LayerInterface,
-        layer::LayerEnum,
-    },
+    network_layers::{default_layer::LayerInterface, layer::LayerEnum},
     network_types::transformer::transformer_updater::VERBOSE,
-    optimization::k_means_clustering::kmeans,
+    optimization::k_means_clustering::{kmeans, query_candidates},
     utils::{
-        dtype::{C, ZERO},
+        adam_w::{calculate_adam_w_bias_f32_sparse, calculate_adam_w_f32_sparse},
+        dtype::{r, Real, C, ZERO},
+        matrix::{average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d},
         shared_f32_matrix::SharedF32Matrix,
         weights_initializer::initialize_weights_f32,
     },
@@ -118,24 +116,93 @@ impl ClusteringLinearLayer {
     }
 
     pub fn update_centroids(&mut self, epoch: usize) {
-        update_centroids(
-            ClusterIndex {
-                weights: &self.weights,
-                previous_weights: &mut self.previous_weights,
-                centroids: &mut self.centroids,
-                assignments: &mut self.assignments,
-                cluster_to_tokens: &mut self.cluster_to_tokens,
-                n_clusters: self.n_clusters,
-                last_cluster_update_step: &mut self.last_cluster_update_step,
-                drift_ema: &mut self.drift_ema,
-                drift_ema_beta: self.drift_ema_beta,
-            },
-            epoch,
-        );
+        let tau = self.tau_schedule(epoch);
+        let max_gap = self.max_update_gap(epoch);
+        let min_gap = self.min_update_gap(epoch);
+
+        let weights_guard = self.weights.read();
+
+        // Compute drift, but smooth it to avoid triggering updates on noisy steps.
+        let drift = self.compute_drift(&weights_guard, &self.previous_weights);
+        self.drift_ema = self.drift_ema_beta * self.drift_ema + (1.0 - self.drift_ema_beta) * drift;
+
+        // Cooldown: don't allow drift-driven updates too frequently.
+        let cooldown_ok = epoch.saturating_sub(self.last_cluster_update_step) >= min_gap;
+        let drifted = cooldown_ok && self.drift_ema > tau;
+
+        // Forced update only after first few epochs
+        let time_forced = epoch > 5 && epoch.saturating_sub(self.last_cluster_update_step) >= max_gap;
+
+        if drifted || time_forced {
+            println!(
+                "Updating centroids (epoch={}, drifted={}, forced={}, last_update={}, drift={:.6}, drift_ema={:.6}, tau={:.6})",
+                epoch, drifted, time_forced, self.last_cluster_update_step, drift, self.drift_ema, tau
+            );
+
+            let threshold = 0.001;
+            drop(weights_guard);
+            let mut w = self.weights.write();
+            let (centroids, assignments, cluster_to_tokens) = kmeans(&mut *w, self.n_clusters, 100, threshold);
+
+            self.centroids = centroids;
+            self.assignments = assignments;
+            self.cluster_to_tokens = cluster_to_tokens;
+
+            // IMPORTANT: avoid deadlock by not acquiring a read-lock while holding the write-lock.
+            self.previous_weights = (*w).clone();
+            self.last_cluster_update_step = epoch;
+        }
     }
 
+    // Drift threshold schedule: adaptive to training stage
+    fn tau_schedule(&self, epoch: usize) -> f32 {
+        match epoch {
+            0..=4 => 0.005,  // very sensitive early training
+            5..=19 => 0.01,  // normal early
+            20..=49 => 0.02, // mid training
+            _ => 0.05,       // late training, embeddings stabilize
+        }
+    }
+
+    // Maximum gap between forced updates: adaptive to training stage
+    fn max_update_gap(&self, epoch: usize) -> usize {
+        match epoch {
+            0..=4 => 5,    // early: only drift-driven, no forced
+            5..=19 => 10,  // mid-early: occasionally force
+            20..=49 => 20, // mid-late: sparse forced updates
+            _ => 50,       // late: force rarely
+        }
+    }
+
+    // Minimum gap between drift-driven updates: prevents k-means from running every epoch early on.
+    fn min_update_gap(&self, epoch: usize) -> usize {
+        match epoch {
+            0..=4 => 3,    // very early: allow a few steps before re-clustering
+            5..=19 => 5,   // early: moderate cooldown
+            20..=49 => 10, // mid: longer cooldown
+            _ => 25,       // late: rarely re-cluster unless forced
+        }
+    }
+
+    fn compute_drift(&self, w: &Vec<Vec<f32>>, w_prev: &Vec<Vec<f32>>) -> f32 {
+        let mut num_sq: f32 = 0.0;
+        let mut denom_sq: f32 = 0.0;
+
+        for (row, row_prev) in w.iter().zip(w_prev.iter()) {
+            for (&x, &x_prev) in row.iter().zip(row_prev.iter()) {
+                let diff = x - x_prev;
+                num_sq += diff * diff;
+                denom_sq += x_prev * x_prev;
+            }
+        }
+
+        let eps: f32 = 1e-8;
+        num_sq.sqrt() / (denom_sq.sqrt() + eps)
+    }
+
+    // Compute drift as before
     pub fn needs_cluster_update(&self, w: &Vec<Vec<f32>>, w_prev: &Vec<Vec<f32>>, tau: f32) -> bool {
-        compute_drift(w, w_prev) > tau
+        self.compute_drift(w, w_prev) > tau
     }
 
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
@@ -187,19 +254,39 @@ impl ClusteringLinearLayer {
         let output_indices_batch: &Vec<Vec<Vec<usize>>> = self.output_indices.as_ref().expect("Output indices missing in linear layer backward pass");
 
         for batch_idx in 0..input_batch.len() {
+            let input_sample = &input_batch[batch_idx]; // seq_len x embedding_d
             let sparse_grad = &previous_gradient_input_batch[batch_idx]; // seq_len x k
             let indices = &output_indices_batch[batch_idx]; // seq_len x k
 
+            // For each position in sequence
             for seq_idx in 0..sparse_grad.len().min(indices.len()) {
-                accumulate_sparse_row_gradients(
-                    &input_batch[batch_idx][seq_idx],
-                    &sparse_grad[seq_idx],
-                    &indices[seq_idx],
-                    &weights_guard,
-                    &mut weight_gradients[batch_idx],
-                    &mut bias_gradients[batch_idx],
-                    &mut gradient_input_batch[batch_idx][seq_idx],
-                );
+                let input_row = &input_sample[seq_idx]; // embedding_d
+                let grad_row = &sparse_grad[seq_idx]; // k gradients
+                let idx_row = &indices[seq_idx]; // k indices
+
+                // For each selected index in top-k
+                for (k_idx, &grad_val) in grad_row.iter().enumerate() {
+                    if k_idx < idx_row.len() {
+                        let vocab_idx = idx_row[k_idx]; // which vocab token
+
+                        if vocab_idx < weights_guard.len() {
+                            // Weight gradient: grad_weight[vocab_idx] += input_row * grad_val
+                            // weights[vocab_idx] is embedding_d dimension
+                            for (emb_idx, &input_val) in input_row.iter().enumerate() {
+                                weight_gradients[batch_idx][vocab_idx][emb_idx] += input_val * grad_val;
+                            }
+
+                            // Bias gradient: grad_bias[vocab_idx] += grad_val
+                            bias_gradients[batch_idx][vocab_idx] += grad_val;
+
+                            // Input gradient: grad_input[seq_idx][emb_idx] += weights[vocab_idx][emb_idx] * grad_val
+                            // For each embedding dimension, accumulate gradients from all k selected vocab tokens
+                            for (emb_idx, &weight_val) in weights_guard[vocab_idx].iter().enumerate() {
+                                gradient_input_batch[batch_idx][seq_idx][emb_idx] += C::new(weight_val as Real, 0.0) * grad_val;
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -213,48 +300,282 @@ impl ClusteringLinearLayer {
         gradient
     }
 
+    // Helper: Calculate target offset for a batch
+    fn calculate_target_offset(batch_idx: usize, target_batch: &[Vec<u32>], padding_mask_batch: &[Vec<u32>]) -> Option<usize> {
+        if batch_idx >= target_batch.len() || target_batch[batch_idx].is_empty() {
+            return None;
+        }
+
+        let seq_len_unpadded = padding_mask_batch[batch_idx].iter().filter(|&&x| x != 0).count();
+        Some(seq_len_unpadded.saturating_sub(target_batch[batch_idx].len()))
+    }
+
+    // Helper: Get target token ID for current row
+    fn get_target_id(row_idx: usize, batch_idx: usize, offset: Option<usize>, target_batch: &[Vec<u32>], padding_mask_batch: &[Vec<u32>]) -> Option<usize> {
+        let offset = offset?;
+
+        if row_idx < offset || padding_mask_batch[batch_idx][row_idx] == 0 {
+            return None;
+        }
+
+        let target_idx = row_idx - offset;
+        target_batch[batch_idx].get(target_idx).map(|&id| id as usize)
+    }
+
+    // Helper: Compute dot product with weights and bias
+    fn compute_output(input_row: &[C], weights_col: &[f32], bias: f32) -> C {
+        let mut sum_re: Real = ZERO;
+        for (i, &input_val) in input_row.iter().enumerate() {
+            sum_re += input_val.re * r(weights_col[i] as f64);
+        }
+        C::new(sum_re + r(bias as f64), ZERO)
+    }
+
+    // Helper: Ensure target is included in candidate indices
+    pub fn ensure_target_in_candidates(selected_indices: &mut Vec<usize>, target_id: Option<usize>, k: usize) {
+        if let Some(tid) = target_id {
+            if !selected_indices.contains(&tid) {
+                if selected_indices.len() < k {
+                    selected_indices.push(tid);
+                } else if !selected_indices.is_empty() {
+                    *selected_indices.last_mut().unwrap() = tid;
+                }
+            }
+        }
+    }
+
+    // Helper: Maintain top-k heap with protected target
+    fn update_topk(top_k: &mut Vec<(Real, C, usize)>, real_value: Real, sum: C, col_idx: usize, is_target: bool, target_pos: &mut Option<usize>, k: usize) {
+        if top_k.len() < k {
+            // Still filling up to k elements
+            top_k.push((real_value, sum, col_idx));
+            if is_target {
+                *target_pos = Some(top_k.len() - 1);
+            }
+        } else if is_target && target_pos.is_none() {
+            // Target must be included; replace minimum non-target
+            let min_idx = (0..top_k.len())
+                .filter(|&i| Some(i) != *target_pos)
+                .min_by(|&a, &b| top_k[a].0.partial_cmp(&top_k[b].0).unwrap())
+                .unwrap();
+
+            top_k[min_idx] = (real_value, sum, col_idx);
+            *target_pos = Some(min_idx);
+        } else {
+            // Replace minimum non-target if new value is higher
+            if let Some(min_idx) = (0..top_k.len()).filter(|&i| Some(i) != *target_pos).min_by(|&a, &b| top_k[a].0.partial_cmp(&top_k[b].0).unwrap()) {
+                if real_value > top_k[min_idx].0 {
+                    top_k[min_idx] = (real_value, sum, col_idx);
+                }
+            }
+        }
+    }
+
     // Multiply and select highest k per row, return k highest values per row and original indices
     pub fn mutliply_hightest_k_per_row(&self, input_batch: &Vec<Vec<Vec<C>>>, layer_input: &LayerInput, weights: &Vec<Vec<f32>>) -> (Vec<Vec<Vec<C>>>, Vec<Vec<Vec<usize>>>) {
         let target_batch = &layer_input.get_target_batch_ids();
+        let k = layer_input.get_top_k_size();
         let padding_mask_batch = layer_input.get_padding_mask_batch();
-        let scorer = TopKScorer {
-            weights,
-            bias: &self.bias,
-            centroids: &self.centroids,
-            cluster_to_tokens: &self.cluster_to_tokens,
-            k: layer_input.get_top_k_size(),
-            is_training: !target_batch.is_empty(),
-        };
+        let is_training = !target_batch.is_empty(); // Training mode if targets are provided
 
-        input_batch
+        let results: Vec<_> = input_batch
             .par_iter()
             .enumerate()
             .map(|(batch_idx, input_sample)| {
-                let offset = calculate_target_offset(batch_idx, target_batch, &padding_mask_batch);
-                let mut input_re_buf: Vec<f32> = vec![0.0; input_sample.first().map(|r| r.len()).unwrap_or(0)];
+                let offset = Self::calculate_target_offset(batch_idx, target_batch, &padding_mask_batch);
+                let mut sample_values = Vec::with_capacity(input_sample.len());
+                let mut sample_indices = Vec::with_capacity(input_sample.len());
 
-                input_sample
-                    .iter()
-                    .enumerate()
-                    .map(|(row_idx, input_row)| scorer.top_k_row(input_row, get_target_id(row_idx, batch_idx, offset, target_batch, &padding_mask_batch), &mut input_re_buf))
-                    .unzip()
+                let embedding_d = input_sample.first().map(|r| r.len()).unwrap_or(0);
+                let mut input_re_buf: Vec<f32> = vec![0.0; embedding_d];
+
+                for (row_idx, input_row) in input_sample.iter().enumerate() {
+                    let target_id = Self::get_target_id(row_idx, batch_idx, offset, target_batch, &padding_mask_batch);
+
+                    // Get candidate indices using k-means clustering
+                    for (dst, src) in input_re_buf.iter_mut().zip(input_row.iter()) {
+                        *dst = src.re as f32;
+                    }
+
+                    let mut selected_indices = query_candidates(
+                        &mut input_re_buf,
+                        &self.centroids,
+                        &self.cluster_to_tokens,
+                        TOP_K_SIZE, // top 8 clusters - high coverage to naturally include targets
+                    );
+
+                    // During TRAINING: Force target inclusion for gradient computation
+                    // During INFERENCE: No targets available, rely on clustering alone
+                    // With 32 clusters, target SHOULD be naturally included most of the time.
+                    // If model learns good embeddings, clustering will find the right tokens.
+                    if is_training {
+                        Self::ensure_target_in_candidates(&mut selected_indices, target_id, k);
+                    }
+
+                    // Compute outputs and maintain top-k
+                    let mut top_k = Vec::with_capacity(k + 1);
+                    let mut target_pos = None;
+
+                    for &col_idx in &selected_indices {
+                        let sum = Self::compute_output(input_row, &weights[col_idx], self.bias[col_idx]);
+                        let is_target = target_id == Some(col_idx);
+
+                        Self::update_topk(&mut top_k, sum.re, sum, col_idx, is_target, &mut target_pos, k);
+                    }
+
+                    top_k.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(core::cmp::Ordering::Equal));
+                    if top_k.len() > k {
+                        top_k.truncate(k);
+                    }
+                    while top_k.len() < k {
+                        top_k.push((Real::NEG_INFINITY, C::new(ZERO, ZERO), 0));
+                    }
+
+                    let values: Vec<C> = top_k.iter().map(|(_, val, _)| *val).collect();
+                    let indices: Vec<usize> = top_k.iter().map(|(_, _, idx)| *idx).collect();
+
+                    sample_values.push(values);
+                    sample_indices.push(indices);
+                }
+
+                (sample_values, sample_indices)
             })
-            .unzip()
+            .collect();
+
+        results.into_iter().unzip()
     }
 
     pub fn update_parameters(&mut self) {
-        let gradient = self.gradient.take().expect("No Gradient found in linear layer");
-        let params = SparseParameters {
-            weights: &self.weights,
-            bias: &mut self.bias,
-            output_indices: self.output_indices.as_ref().expect("Output indices missing"),
-            tied_embedding_grad_by_token: self.tied_embedding_grad_by_token.as_ref(),
-            global_norm: self.global_norm,
-            max_norm: self.max_norm,
-            learning_rate: self.learning_rate,
-            time_step: self.time_step,
+        // Collect all unique indices that were actually used during forward/backward pass
+        let mut used_indices = self.collect_used_indices();
+
+        let gradient: &mut Gradient = self.gradient.as_mut().expect("No Gradient found in linear layer");
+        let (mut weight_gradients, mut bias_gradients) = (gradient.get_gradient_weights(), gradient.get_gradient_bias());
+        let total_valid_tokens = gradient.get_total_valid_tokens();
+
+        // Merge in embedding-side gradients when weights are tied.
+        if let Some(acc) = &self.tied_embedding_grad_by_token {
+            let mut acc_lock = acc.write().expect("tied grad accumulator poisoned");
+            for (token_idx, grad_vec) in acc_lock.drain() {
+                if token_idx >= weight_gradients.len() {
+                    continue;
+                }
+                used_indices.push(token_idx);
+                let row = &mut weight_gradients[token_idx];
+                let n = row.len().min(grad_vec.len());
+                for j in 0..n {
+                    row[j] += grad_vec[j];
+                }
+            }
+        }
+
+        used_indices.sort_unstable();
+        used_indices.dedup();
+
+        let total_valid_tokens: Real = r(total_valid_tokens.max(1) as f64);
+        weight_gradients = average_matrix_by_scalar(&weight_gradients, total_valid_tokens);
+        bias_gradients = average_vector_by_scalar(&bias_gradients, total_valid_tokens);
+
+        clip_all_gradients_by_global_norm_2d(&mut weight_gradients, &mut bias_gradients, self.global_norm, self.max_norm);
+
+        normalize_gradients(&mut weight_gradients);
+        normalize_bias(&mut bias_gradients);
+
+        let learning_rate = self.learning_rate;
+        let time_step = self.time_step;
+        let (mut prev_m_bias, mut prev_v_bias, mut prev_m_weights, mut prev_v_weights, mut prev_v_weights_hat, mut prev_v_bias_hat) = if let Some(previous_gradient) = &mut self.previous_gradient {
+            (
+                previous_gradient.get_prev_m_bias(),
+                previous_gradient.get_prev_v_bias(),
+                previous_gradient.get_prev_m_weights(),
+                previous_gradient.get_prev_v_weights(),
+                previous_gradient.get_prev_v_weights_hat(),
+                previous_gradient.get_prev_v_bias_hat(),
+            )
+        } else {
+            let (rows, cols) = self.weights.dims();
+            // Initialize to zeros on first step
+            (
+                vec![C::new(ZERO, ZERO); self.bias.len()],
+                vec![C::new(ZERO, ZERO); self.bias.len()],
+                vec![vec![C::new(ZERO, ZERO); cols]; rows],
+                vec![vec![C::new(ZERO, ZERO); cols]; rows],
+                vec![vec![C::new(ZERO, ZERO); cols]; rows],
+                vec![C::new(ZERO, ZERO); self.bias.len()],
+            )
         };
-        self.previous_gradient = Some(update_sparse_parameters(params, gradient, self.previous_gradient.as_ref()));
+
+        // Use sparse AdamW optimizers - only update indices that were actually used
+        calculate_adam_w_bias_f32_sparse(
+            &mut self.bias,
+            &bias_gradients,
+            &mut prev_m_bias,
+            &mut prev_v_bias,
+            &mut prev_v_bias_hat,
+            learning_rate,
+            time_step,
+            &used_indices,
+        );
+        let mut w = self.weights.write();
+        calculate_adam_w_f32_sparse(
+            &mut *w,
+            &weight_gradients,
+            &mut prev_m_weights,
+            &mut prev_v_weights,
+            &mut prev_v_weights_hat,
+            learning_rate,
+            time_step,
+            &used_indices,
+        );
+
+        gradient.set_prev_m_bias(prev_m_bias);
+        gradient.set_prev_v_bias(prev_v_bias);
+        gradient.set_prev_m_weights(prev_m_weights);
+        gradient.set_prev_v_weights(prev_v_weights);
+        gradient.set_prev_v_weights_hat(prev_v_weights_hat);
+        gradient.set_prev_v_bias_hat(prev_v_bias_hat);
+        gradient.set_gradient_weights(weight_gradients.clone());
+        gradient.set_gradient_bias(bias_gradients.clone());
+        self.previous_gradient = Some(gradient.clone());
+
+        self.gradient = None;
+    }
+
+    pub fn group_gradient_batch(&self, weight_gradients_batch: &Vec<Vec<Vec<C>>>) -> Vec<Vec<C>> {
+        let mut weight_gradients: Vec<Vec<C>> = vec![vec![C::new(ZERO, ZERO); weight_gradients_batch[0][0].len()]; weight_gradients_batch[0].len()];
+
+        for weight_gradient_batch in weight_gradients_batch {
+            for (row, w_gradient) in weight_gradient_batch.iter().enumerate() {
+                for (col, gradient_value) in w_gradient.iter().enumerate() {
+                    weight_gradients[row][col] += gradient_value;
+                }
+            }
+        }
+
+        weight_gradients
+    }
+
+    /// Collect all unique vocab indices that were used during the forward pass
+    /// This is used for sparse AdamW updates - we only need to update these indices
+    fn collect_used_indices(&self) -> Vec<usize> {
+        let output_indices_batch = self.output_indices.as_ref().expect("Output indices missing");
+
+        let mut indices_set = std::collections::HashSet::new();
+
+        // Iterate through all batches, sequences, and k-selected indices
+        for batch_indices in output_indices_batch {
+            for seq_indices in batch_indices {
+                for &idx in seq_indices {
+                    indices_set.insert(idx);
+                }
+            }
+        }
+
+        // Convert to sorted vector for deterministic behavior
+        let mut indices: Vec<usize> = indices_set.into_iter().collect();
+        indices.sort_unstable();
+
+        indices
     }
 }
 

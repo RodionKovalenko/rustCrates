@@ -1,7 +1,7 @@
 use crate::neural_networks::network_layers::default_layer::LayerInterface;
 use crate::neural_networks::network_layers::layer::LayerEnum;
 use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
-use crate::neural_networks::utils::matrix::RowMajorMatrix;
+use crate::neural_networks::utils::matrix_rm::RowMajorMatrix;
 use colored::*;
 use std::time::Instant;
 

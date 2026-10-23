@@ -1,4 +1,4 @@
-//! Logic shared by `ClusteringLinearLayer` (Vec) and `SparseLinearLayerRm` (row-major):
+//! Clustering logic of `SparseLinearLayerRm` (RM port of `ClusteringLinearLayer`):
 //! k-means candidate selection, top-k output computation, sparse gradients and the sparse AdamW update.
 //!
 //! The weights are an embedding-like matrix N x D (N = vocab size). For each input row only the

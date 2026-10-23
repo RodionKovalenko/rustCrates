@@ -7,6 +7,7 @@ mod test_attention_rm {
         network_types::transformer::{
             masked_attention_head::MaskedAttentionHead,
             masked_attention_head_approximation::MaskedAttentionHeadApproximation,
+            masked_attention_head_approximation_rm::MaskedAttentionHeadApproximationRm,
             masked_attention_head_rm::MaskedAttentionHeadRm,
             self_attention_layer::SelfAttentionLayer,
             self_attention_layer_rm::SelfAttentionLayerRm,
@@ -18,12 +19,12 @@ mod test_attention_rm {
         network_layers::complex_to_linear_layer::ComplexToLinearLayer,
         utils::{
             dtype::C,
-            matrix::RowMajorMatrix,
+            matrix_rm::RowMajorMatrix,
             random_arrays::{generate_random_complex_2d, generate_random_complex_3d},
         },
     };
 
-    use super::super::rm_test_utils::{assert_close_1d, assert_close_2d, assert_close_3d, assert_input_gradients_close, layer_inputs, layer_inputs_with_mask, to_rm_batch, upstream_gradients};
+    use super::super::rm_test_utils::{assert_close_1d, assert_close_2d, assert_close_3d, assert_input_gradients_close, copy_parameters, layer_inputs, layer_inputs_with_mask, to_rm_batch, upstream_gradients};
 
     fn copy_ctl(ctl: &Option<ComplexToLinearLayer>, ctl_rm: &mut Option<ComplexToLinearLayerRm>) {
         match (ctl, ctl_rm) {
@@ -161,7 +162,7 @@ mod test_attention_rm {
         // seq_len and head dim must stay <= 5 (size of bias_pos).
         let (batch_size, seq_len, dim, head_dim) = (2, 5, 6, 4);
         let mut head = MaskedAttentionHeadApproximation::new(dim, head_dim, 0.01);
-        let mut head_rm = head.clone();
+        let mut head_rm: MaskedAttentionHeadApproximationRm = copy_parameters(&head);
         let padding_mask_batch = vec![vec![1; seq_len], vec![1, 1, 1, 1, 0]];
 
         for step in 1..=3 {
@@ -200,8 +201,7 @@ mod test_attention_rm {
         let (batch_size, seq_len, dim, num_heads) = (2, 5, 8, 2);
         let mut layer = SelfAttentionLayerApproximation::new(num_heads, dim, dim, 0.01);
         let mut layer_rm = SelfAttentionLayerApproximationRm::new(num_heads, dim, dim, 0.01);
-        // Both layers use the same head type.
-        layer_rm.attention_heads = layer.attention_heads.clone();
+        layer_rm.attention_heads = layer.attention_heads.iter().map(copy_parameters).collect();
 
         let padding_mask_batch = vec![vec![1; seq_len]; batch_size];
 

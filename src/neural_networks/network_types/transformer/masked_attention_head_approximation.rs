@@ -9,7 +9,7 @@ use crate::neural_networks::{
     utils::{
         adam_w::calculate_adam_w,
         dtype::{r, Real, C, ONE, ZERO},
-        matrix::{average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, normalize_gradients, RowMajorMatrix},
+        matrix::{average_matrix_by_scalar, clip_all_gradients_by_global_norm_2d, normalize_gradients},
         weights_initializer::initialize_weights_complex,
     },
 };
@@ -49,11 +49,7 @@ pub struct MaskedAttentionHeadApproximation {
     #[serde(skip)]
     pub input_batch: Vec<Vec<Vec<C>>>,
     #[serde(skip)]
-    pub input_batch_rm: Option<Vec<RowMajorMatrix<C>>>,
-    #[serde(skip)]
     pub output_batch: Option<Vec<Vec<Vec<C>>>>,
-    #[serde(skip)]
-    pub output_batch_rm: Option<Vec<RowMajorMatrix<C>>>,
     #[serde(skip)]
     pub padding_mask: Vec<Vec<u32>>,
     #[serde(skip)]
@@ -111,9 +107,7 @@ impl MaskedAttentionHeadApproximation {
             previous_gradient: None,
             time_step: 0,
             input_batch: vec![],
-            input_batch_rm: None,
             output_batch: None,
-            output_batch_rm: None,
             padding_mask: vec![],
             q_scaled: vec![],
             k_scaled: vec![],
@@ -144,64 +138,32 @@ impl MaskedAttentionHeadApproximation {
         (dot - C::new(norm_sq / r(2.0), ZERO)).exp()
     }
 
-    /// Forward for Vec and RM input; both run the same row-major implementation.
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        let input_rm_given = layer_input.get_input_batch_rm_ref().filter(|b| !b.is_empty()).map(|b| b.to_vec());
-        let is_rm = input_rm_given.is_some();
-        let input_rm: Vec<RowMajorMatrix<C>> = input_rm_given.unwrap_or_else(|| layer_input.get_input_batch().iter().map(|m| RowMajorMatrix::from_rows(m)).collect());
-
-        self.padding_mask = layer_input.get_padding_mask_batch();
-        self.batch_size = input_rm.len();
+        let input = layer_input.get_input_batch();
+        let pad = layer_input.get_padding_mask_batch();
+        let bsz = input.len();
+        let seq = input[0].len();
+        let d_model = input[0][0].len();
+        let d_k = self.weights_k[0].len();
+        self.input_batch = input.clone();
+        self.padding_mask = pad.clone();
+        self.batch_size = bsz;
         self.total_valid_tokens = layer_input.get_total_valid_tokens();
         self.time_step = layer_input.get_time_step();
-
-        let out_rm = self.forward_rm(&input_rm);
-
-        self.input_batch = if is_rm { vec![] } else { input_rm.iter().map(|m| m.to_rows()).collect() };
-        self.input_batch_rm = Some(input_rm);
-
-        let mut lo = LayerOutput::new_default();
-        if is_rm {
-            self.output_batch = None;
-            self.output_batch_rm = Some(out_rm.clone());
-            lo.set_output_batch_rm(out_rm);
-        } else {
-            let out: Vec<Vec<Vec<C>>> = out_rm.iter().map(|m| m.to_rows()).collect();
-            self.output_batch_rm = None;
-            self.output_batch = Some(out.clone());
-            lo.set_output_batch(out);
-        }
-        lo
-    }
-
-    /// Linear-attention forward on row-major input; caches everything needed for backward.
-    fn forward_rm(&mut self, input_rm: &[RowMajorMatrix<C>]) -> Vec<RowMajorMatrix<C>> {
-        let pad = self.padding_mask.clone();
-        let bsz = input_rm.len();
-        let seq = input_rm[0].rows;
-        let d_model = input_rm[0].cols;
-        let d_k = self.weights_k[0].len();
-
         let mut q = vec![vec![vec![C::new(ZERO, ZERO); d_k]; seq]; bsz];
         let mut k = q.clone();
         let mut v = q.clone();
-
         for b in 0..bsz {
-            assert_eq!(input_rm[b].rows, seq);
-            assert_eq!(input_rm[b].cols, d_model);
             for t in 0..seq {
-                let in_row = input_rm[b].row_range(t);
                 for i in 0..d_model {
-                    let x = input_rm[b].data[in_row.start + i];
                     for j in 0..d_k {
-                        q[b][t][j] += x * self.weights_q[i][j];
-                        k[b][t][j] += x * self.weights_k[i][j];
-                        v[b][t][j] += x * self.weights_v[i][j];
+                        q[b][t][j] += input[b][t][i] * self.weights_q[i][j];
+                        k[b][t][j] += input[b][t][i] * self.weights_k[i][j];
+                        v[b][t][j] += input[b][t][i] * self.weights_v[i][j];
                     }
                 }
             }
         }
-
         self.q_scaled = q.clone();
         self.k_scaled = k.clone();
         self.v_batch = v.clone();
@@ -209,12 +171,11 @@ impl MaskedAttentionHeadApproximation {
         for b in 0..bsz {
             for t in 0..seq {
                 for j in 0..d_k {
-                    self.q_scaled[b][t][j] = (q[b][t][j] + self.bias_pos[t % self.bias_pos.len()][j % self.bias_pos[0].len()]) * scale;
-                    self.k_scaled[b][t][j] = (k[b][t][j] + self.bias_pos[t % self.bias_pos.len()][j % self.bias_pos[0].len()]) * scale;
+                    self.q_scaled[b][t][j] = (q[b][t][j] + self.bias_pos[t][j]) * scale;
+                    self.k_scaled[b][t][j] = (k[b][t][j] + self.bias_pos[t][j]) * scale;
                 }
             }
         }
-
         self.phi_q = vec![vec![vec![C::new(ZERO, ZERO); self.w.len()]; seq]; bsz];
         self.phi_k = self.phi_q.clone();
         for b in 0..bsz {
@@ -225,7 +186,6 @@ impl MaskedAttentionHeadApproximation {
                 }
             }
         }
-
         self.prefix_phi_k = self.phi_k.clone();
         self.prefix_phi_kv = vec![vec![vec![vec![C::new(ZERO, ZERO); d_k]; self.w.len()]; seq]; bsz];
         for b in 0..bsz {
@@ -246,10 +206,8 @@ impl MaskedAttentionHeadApproximation {
                 }
             }
         }
-
-        let mut out_rm: Vec<RowMajorMatrix<C>> = Vec::with_capacity(bsz);
+        let mut out = vec![vec![vec![C::new(ZERO, ZERO); d_k]; seq]; bsz];
         for b in 0..bsz {
-            let mut out = RowMajorMatrix::from_data(seq, d_k, vec![C::new(ZERO, ZERO); seq * d_k]);
             for t in 0..seq {
                 if pad[b][t] == 0 {
                     continue;
@@ -263,142 +221,21 @@ impl MaskedAttentionHeadApproximation {
                     den += self.prefix_phi_k[b][t][r] * self.phi_q[b][t][r];
                 }
                 if den.abs() < r(1e-8) {
-                    den += C::new(r(1e-8), ZERO);
+                    den += C::new(r(1e-8), ZERO)
                 }
-                let row = out.row_range(t);
                 for dv in 0..d_k {
-                    out.data[row.start + dv] = num[dv] / den;
+                    out[b][t][dv] = num[dv] / den;
                 }
             }
-            out_rm.push(out);
         }
-        out_rm
-    }
-
-    pub fn backward_rm(&mut self, grad_output_rm: &[RowMajorMatrix<C>]) -> Gradient {
-        let input_batch_rm = self.input_batch_rm.as_ref().expect("RM input batch missing in attention head approximation backward_rm");
-        if grad_output_rm.is_empty() {
-            let mut gradient = Gradient::new_default();
-            gradient.set_gradient_input_batch_rm(vec![]);
-            self.gradient = Some(gradient.clone());
-            return gradient;
-        }
-
-        let bsz = input_batch_rm.len();
-        let seq = input_batch_rm[0].rows;
-        let d_model = input_batch_rm[0].cols;
-        let d_k = self.weights_k[0].len();
-        let scale: Real = ONE / r(d_k as f64).sqrt();
-
-        let pg = self.precompute_gradients(bsz, seq, grad_output_rm);
-
-        let mut grad_in_rm: Vec<RowMajorMatrix<C>> = vec![RowMajorMatrix::from_data(seq, d_model, vec![C::new(ZERO, ZERO); seq * d_model]); bsz];
-        let mut grad_wq = vec![vec![vec![C::new(ZERO, ZERO); d_k]; d_model]; bsz];
-        let mut grad_wk = grad_wq.clone();
-        let mut grad_wv = grad_wq.clone();
-
-        let scratch: Vec<_> = (0..bsz)
-            .into_par_iter()
-            .map(|b| {
-                let mut local_wq = vec![vec![C::new(ZERO, ZERO); d_k]; d_model];
-                let mut local_wk = vec![vec![C::new(ZERO, ZERO); d_k]; d_model];
-                let mut local_wv = vec![vec![C::new(ZERO, ZERO); d_k]; d_model];
-                let mut local_in = RowMajorMatrix::from_data(seq, d_model, vec![C::new(ZERO, ZERO); seq * d_model]);
-
-                // Q path
-                for t in 0..seq {
-                    if self.padding_mask[b][t] == 0 {
-                        continue;
-                    }
-                    let in_row = input_batch_rm[b].row_range(t);
-                    for r in 0..self.w.len() {
-                        let phi = self.phi_q[b][t][r];
-                        for i in 0..d_k {
-                            let dphi = phi * (self.w[r][i].conj() - self.q_scaled[b][t][i]);
-                            let gq = pg.grad_phi_q[b][t][r] * dphi * scale;
-                            for j in 0..d_model {
-                                let x = input_batch_rm[b].data[in_row.start + j];
-                                local_wq[j][i] += (gq * x).conj();
-                                let idx = local_in.idx(t, j);
-                                local_in.data[idx] += (gq * self.weights_q[j][i]).conj();
-                            }
-                        }
-                    }
-                    // V path
-                    for tau in 0..=t {
-                        let in_row_tau = input_batch_rm[b].row_range(tau);
-                        for dv in 0..d_k {
-                            let mut gv = C::new(ZERO, ZERO);
-                            for r in 0..self.w.len() {
-                                gv += pg.grad_numerator[b][t][dv] * self.phi_q[b][t][r] * self.phi_k[b][tau][r];
-                            }
-                            for j in 0..d_model {
-                                let x = input_batch_rm[b].data[in_row_tau.start + j];
-                                local_wv[j][dv] += (gv * x).conj();
-                                let idx = local_in.idx(tau, j);
-                                local_in.data[idx] += (gv * self.weights_v[j][dv]).conj();
-                            }
-                        }
-                    }
-                }
-
-                // K path
-                for tau in 0..seq {
-                    let in_row_tau = input_batch_rm[b].row_range(tau);
-                    for r in 0..self.w.len() {
-                        let phi = self.phi_k[b][tau][r];
-                        for i in 0..d_k {
-                            let dphi = phi * (self.w[r][i].conj() - self.k_scaled[b][tau][i]);
-                            let mut gk = C::new(ZERO, ZERO);
-                            for t in tau..seq {
-                                if self.padding_mask[b][t] == 0 {
-                                    continue;
-                                }
-                                let mut gp = C::new(ZERO, ZERO);
-                                for dv in 0..d_k {
-                                    gp += pg.grad_numerator[b][t][dv] * self.phi_q[b][t][r] * self.v_batch[b][tau][dv];
-                                }
-                                gp += pg.grad_denominator[b][t] * self.phi_q[b][t][r];
-                                gk += gp * dphi * scale;
-                            }
-                            for j in 0..d_model {
-                                let x = input_batch_rm[b].data[in_row_tau.start + j];
-                                local_wk[j][i] += (gk * x).conj();
-                                let idx = local_in.idx(tau, j);
-                                local_in.data[idx] += (gk * self.weights_k[j][i]).conj();
-                            }
-                        }
-                    }
-                }
-
-                (local_wq, local_wk, local_wv, local_in)
-            })
-            .collect();
-
-        for (b, (lwq, lwk, lwv, lin)) in scratch.into_iter().enumerate() {
-            for j in 0..d_model {
-                for i in 0..d_k {
-                    grad_wq[b][j][i] += lwq[j][i];
-                    grad_wk[b][j][i] += lwk[j][i];
-                    grad_wv[b][j][i] += lwv[j][i];
-                }
-            }
-            for idx in 0..lin.data.len() {
-                grad_in_rm[b].data[idx] += lin.data[idx];
-            }
-        }
-
-        let mut grad = Gradient::new_default();
-        grad.set_gradient_weights_q_batch(grad_wq);
-        grad.set_gradient_weights_k_batch(grad_wk);
-        grad.set_gradient_weights_v_batch(grad_wv);
-        grad.set_gradient_input_batch_rm(grad_in_rm);
-        self.gradient = Some(grad.clone());
-        grad
+        self.output_batch = Some(out.clone());
+        let mut lo = LayerOutput::new_default();
+        lo.set_output_batch(out);
+        lo
     }
 
     /// Precompute numerator, denominator, and local gradient components for all (b,t)
-    fn precompute_gradients(&self, batch_size: usize, seq_len: usize, grad_output: &[RowMajorMatrix<C>]) -> PrecomputedGradients {
+    fn precompute_gradients(&self, batch_size: usize, seq_len: usize, grad_output: &Vec<Vec<Vec<C>>>) -> PrecomputedGradients {
         let d_v = self.weights_v[0].len();
         let mut pg = PrecomputedGradients {
             numerator: vec![vec![vec![C::new(ZERO, ZERO); d_v]; seq_len]; batch_size],
@@ -426,7 +263,7 @@ impl MaskedAttentionHeadApproximation {
                 }
                 // Compute grad_numerator & grad_denominator
                 for dv in 0..d_v {
-                    let go = grad_output[b].data[grad_output[b].idx(t, dv)];
+                    let go = grad_output[b][t][dv];
                     pg.grad_numerator[b][t][dv] = go / pg.denominator[b][t];
                     pg.grad_denominator[b][t] += -go * pg.numerator[b][t][dv] / (pg.denominator[b][t] * pg.denominator[b][t]);
                 }
@@ -443,14 +280,117 @@ impl MaskedAttentionHeadApproximation {
         pg
     }
 
-    /// Vec counterpart of `backward_rm`.
     pub fn backward(&mut self, grad_output: &Vec<Vec<Vec<C>>>) -> Gradient {
-        let grad_output_rm: Vec<RowMajorMatrix<C>> = grad_output.iter().map(|m| RowMajorMatrix::from_rows(m)).collect();
-        let mut grad = self.backward_rm(&grad_output_rm);
-        let grad_in: Vec<Vec<Vec<C>>> = grad.get_gradient_input_batch_rm().iter().map(|m| m.to_rows()).collect();
+        let bsz = self.input_batch.len();
+        let seq = self.input_batch[0].len();
+        let d_model = self.input_batch[0][0].len();
+        let d_k = self.weights_k[0].len();
+        let scale: Real = ONE / r(d_k as f64).sqrt();
+
+        // Precompute shared gradient terms
+        let pg = self.precompute_gradients(bsz, seq, grad_output);
+
+        // Global accumulators
+        let mut grad_in = vec![vec![vec![C::new(ZERO, ZERO); d_model]; seq]; bsz];
+        let mut grad_wq = vec![vec![vec![C::new(ZERO, ZERO); d_k]; d_model]; bsz];
+        let mut grad_wk = grad_wq.clone();
+        let mut grad_wv = grad_wq.clone();
+
+        // Per-batch scratch buffers in parallel
+        let scratch: Vec<_> = (0..bsz)
+            .into_par_iter()
+            .map(|b| {
+                let mut local_wq = vec![vec![C::new(ZERO, ZERO); d_k]; d_model];
+                let mut local_wk = vec![vec![C::new(ZERO, ZERO); d_k]; d_model];
+                let mut local_wv = vec![vec![C::new(ZERO, ZERO); d_k]; d_model];
+                let mut local_in = vec![vec![C::new(ZERO, ZERO); d_model]; seq];
+
+                // Q path
+                for t in 0..seq {
+                    if self.padding_mask[b][t] == 0 {
+                        continue;
+                    }
+                    for r in 0..self.w.len() {
+                        let phi = self.phi_q[b][t][r];
+                        for i in 0..d_k {
+                            let dphi = phi * (self.w[r][i].conj() - self.q_scaled[b][t][i]);
+                            let gq = pg.grad_phi_q[b][t][r] * dphi * scale;
+                            for j in 0..d_model {
+                                local_wq[j][i] += (gq * self.input_batch[b][t][j]).conj();
+                                local_in[t][j] += (gq * self.weights_q[j][i]).conj();
+                            }
+                        }
+                    }
+                    // V path
+                    for tau in 0..=t {
+                        for dv in 0..d_k {
+                            let mut gv = C::new(ZERO, ZERO);
+                            for r in 0..self.w.len() {
+                                gv += pg.grad_numerator[b][t][dv] * self.phi_q[b][t][r] * self.phi_k[b][tau][r];
+                            }
+                            for j in 0..d_model {
+                                local_wv[j][dv] += (gv * self.input_batch[b][tau][j]).conj();
+                                local_in[tau][j] += (gv * self.weights_v[j][dv]).conj();
+                            }
+                        }
+                    }
+                }
+
+                // K path
+                for tau in 0..seq {
+                    for r in 0..self.w.len() {
+                        let phi = self.phi_k[b][tau][r];
+                        for i in 0..d_k {
+                            let dphi = phi * (self.w[r][i].conj() - self.k_scaled[b][tau][i]);
+                            let mut gk = C::new(ZERO, ZERO);
+                            for t in tau..seq {
+                                if self.padding_mask[b][t] == 0 {
+                                    continue;
+                                }
+                                let mut gp = C::new(ZERO, ZERO);
+                                for dv in 0..d_k {
+                                    gp += pg.grad_numerator[b][t][dv] * self.phi_q[b][t][r] * self.v_batch[b][tau][dv];
+                                }
+                                gp += pg.grad_denominator[b][t] * self.phi_q[b][t][r];
+                                gk += gp * dphi * scale;
+                            }
+                            for j in 0..d_model {
+                                local_wk[j][i] += (gk * self.input_batch[b][tau][j]).conj();
+                                local_in[tau][j] += (gk * self.weights_k[j][i]).conj();
+                            }
+                        }
+                    }
+                }
+
+                (local_wq, local_wk, local_wv, local_in)
+            })
+            .collect();
+
+        // Merge scratch into global
+        for (b, (lwq, lwk, lwv, lin)) in scratch.into_iter().enumerate() {
+            for j in 0..d_model {
+                for i in 0..d_k {
+                    grad_wq[b][j][i] += lwq[j][i];
+                    grad_wk[b][j][i] += lwk[j][i];
+                    grad_wv[b][j][i] += lwv[j][i];
+                }
+            }
+            for t in 0..seq {
+                for j in 0..d_model {
+                    grad_in[b][t][j] += lin[t][j];
+                }
+            }
+        }
+
+        // Build and return gradient struct
+        let mut grad = Gradient::new_default();
+        grad.set_gradient_weights_q_batch(grad_wq);
+        grad.set_gradient_weights_k_batch(grad_wk);
+        grad.set_gradient_weights_v_batch(grad_wv);
         grad.set_gradient_input_batch(grad_in);
-        grad.clear_gradient_input_batch_rm();
+
         self.gradient = Some(grad.clone());
+
         grad
     }
 

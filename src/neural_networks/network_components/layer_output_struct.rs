@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::network_layers::adaptive_pooling::adaptive_avg_pool1d_layer::CompressionMetadata;
 use crate::neural_networks::utils::dtype::{C, Real};
-use crate::neural_networks::utils::matrix::RowMajorMatrix;
+use crate::neural_networks::utils::matrix_rm::RowMajorMatrix;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LayerOutput {

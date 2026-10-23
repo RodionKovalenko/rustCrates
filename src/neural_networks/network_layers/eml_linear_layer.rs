@@ -31,7 +31,6 @@ use crate::neural_networks::{
     utils::{
         adam_w::get_current_learning_rate,
         dtype::{r, Real, C, ONE, ZERO},
-        matrix::RowMajorMatrix,
     },
 };
 
@@ -278,27 +277,9 @@ impl EmlLinearLayer {
     /// so the backward pass can reuse them — the same contract `AdaptiveLinearLayer` uses.
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
         let input_batch = input.get_input_batch();
-        let input_rm: Vec<RowMajorMatrix<C>> = input_batch.iter().map(|m| RowMajorMatrix::from_rows(m)).collect();
-        self.input_batch = Some(input_batch);
-
-        let layer_output = self.forward_rm(&input_rm, input);
-
-        // Vec API: Vec input gradients.
-        if let Some(gradient) = self.gradient.as_mut() {
-            let grad_input: Vec<Vec<Vec<C>>> = gradient.get_gradient_input_batch_rm().iter().map(|m| m.to_rows()).collect();
-            gradient.set_gradient_input_batch(grad_input);
-            gradient.clear_gradient_input_batch_rm();
-        }
-        layer_output
-    }
-
-    /// Forward pass on row-major input, shared by `EmlLinearLayer` and `EmlLinearLayerRm`.
-    ///
-    /// Training: CE loss per position and the RM input gradient (stored in `self.gradient`).
-    /// Inference: top-k token scores and indices per position (`output_batch` / `output_indices`, rows may be shorter than k).
-    pub fn forward_rm(&mut self, input_batch: &[RowMajorMatrix<C>], input: &LayerInput) -> LayerOutput {
         self.time_step = input.get_time_step();
         self.batch_size = input.get_batch_size();
+        self.input_batch = Some(input_batch.clone());
 
         let target_tokens = input.get_target_batch_ids();
         let padding_mask_batch = input.get_padding_mask_batch();
@@ -309,23 +290,20 @@ impl EmlLinearLayer {
         self.grads = None;
 
         let batch_len = input_batch.len();
-        let seq_len = if batch_len > 0 { input_batch[0].rows } else { 0 };
+        let seq_len = if batch_len > 0 { input_batch[0].len() } else { 0 };
         let d_model = self.d_model;
-        let hidden = |m: &RowMajorMatrix<C>, row: usize| -> Vec<Real> { m.data[m.row_range(row)].iter().map(|c| c.re).collect() };
 
-        let mut layer_output = LayerOutput::new_default();
+        let zero_c = C::new(ZERO, ZERO);
+        let mut ce_loss_batch = vec![vec![vec![zero_c]; seq_len]; batch_len];
+        let mut grad_input = vec![vec![vec![zero_c; d_model]; seq_len]; batch_len];
+        let mut grads = self.zero_param_grads();
 
         if is_training {
-            let zero_c = C::new(ZERO, ZERO);
-            let mut ce_loss_batch = vec![vec![vec![zero_c]; seq_len]; batch_len];
-            let mut grad_input: Vec<RowMajorMatrix<C>> = input_batch.iter().map(|m| RowMajorMatrix::create_empty(m.rows, d_model)).collect();
-            let mut grads = self.zero_param_grads();
-
             for batch_idx in 0..batch_len {
                 let offset = Self::target_offset(batch_idx, &target_tokens, &padding_mask_batch);
                 let input_seq = &input_batch[batch_idx];
 
-                for row_idx in 0..input_seq.rows {
+                for (row_idx, input_row) in input_seq.iter().enumerate() {
                     let target_id = Self::target_id(row_idx, batch_idx, offset, &target_tokens, &padding_mask_batch);
                     let Some(v_star) = target_id else { continue };
                     if v_star >= self.vocab_size {
@@ -333,22 +311,27 @@ impl EmlLinearLayer {
                     }
 
                     // Hidden state h = Re(input_row).
-                    let (loss, dh) = self.token_forward_backward(&hidden(input_seq, row_idx), v_star, &mut grads);
+                    let h: Vec<Real> = input_row.iter().map(|c| c.re).collect();
+
+                    let (loss, dh) = self.token_forward_backward(&h, v_star, &mut grads);
 
                     ce_loss_batch[batch_idx][row_idx][0] = C::new(loss, ZERO);
-                    let row = grad_input[batch_idx].row_range(row_idx);
                     for d in 0..d_model.min(dh.len()) {
-                        grad_input[batch_idx].data[row.start + d] = C::new(dh[d], ZERO);
+                        grad_input[batch_idx][row_idx][d] = C::new(dh[d], ZERO);
                     }
                 }
             }
+        }
 
+        let mut layer_output = LayerOutput::new_default();
+
+        if is_training {
             // Dense logits are not materialized on the training path (teacher-forced only).
             layer_output.set_output_batch(vec![]);
             layer_output.set_cross_entropy_loss_batch(ce_loss_batch);
 
             let mut gradient = Gradient::new_default();
-            gradient.set_gradient_input_batch_rm(grad_input);
+            gradient.set_gradient_input_batch(grad_input);
             gradient.set_total_valid_tokens(total_valid_tokens);
             self.gradient = Some(gradient);
             self.grads = Some(grads);
@@ -360,12 +343,16 @@ impl EmlLinearLayer {
             let mut indices_batch: Vec<Vec<Vec<usize>>> = Vec::with_capacity(batch_len);
 
             for input_seq in input_batch.iter() {
-                let (seq_values, seq_indices): (Vec<Vec<C>>, Vec<Vec<usize>>) = (0..input_seq.rows)
-                    .map(|row| {
-                        let cands = self.predict_token(&hidden(input_seq, row), top_k);
-                        (cands.iter().map(|&(_, s)| C::new(s, ZERO)).collect(), cands.iter().map(|&(id, _)| id).collect())
-                    })
-                    .unzip();
+                let mut seq_values: Vec<Vec<C>> = Vec::with_capacity(input_seq.len());
+                let mut seq_indices: Vec<Vec<usize>> = Vec::with_capacity(input_seq.len());
+
+                for input_row in input_seq.iter() {
+                    let h: Vec<Real> = input_row.iter().map(|c| c.re).collect();
+                    let cands = self.predict_token(&h, top_k);
+                    seq_values.push(cands.iter().map(|&(_, s)| C::new(s, ZERO)).collect());
+                    seq_indices.push(cands.iter().map(|&(id, _)| id).collect());
+                }
+
                 values_batch.push(seq_values);
                 indices_batch.push(seq_indices);
             }

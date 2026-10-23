@@ -14,3 +14,4 @@ pub mod multi_linear_layer_rm;
 pub mod adaptive_avg_pool1d_layer_rm;
 pub mod adaptive_linear_layer_rm;
 pub mod eml_linear_layer_rm;
+pub mod clustering_common_rm;

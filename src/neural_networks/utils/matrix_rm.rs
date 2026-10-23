@@ -4,11 +4,98 @@ use rayon::prelude::*;
 use crate::neural_networks::utils::{
     adam_w::{MAX_ELEMENT, MAX_NORM},
     dtype::{c_from_f64, c_to_f64, r, Real, C, CF64, ZERO},
-    matrix::RowMajorMatrix,
 };
+use serde::{Deserialize, Serialize};
 
 #[cfg(all(feature = "cuda", feature = "dtype-f64"))]
 use crate::neural_networks::utils::matrix::GPU_MATMUL;
+
+/// Contiguous row-major matrix storage.
+///
+/// This is the layout expected by the GPU path (`GpuMatmul`) and can also be used
+/// efficiently with BLAS by using a transpose/operand-swap trick.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RowMajorMatrix<T> {
+    pub rows: usize,
+    pub cols: usize,
+    pub data: Vec<T>,
+}
+
+impl<T> RowMajorMatrix<T> {
+    pub fn from_data(rows: usize, cols: usize, data: Vec<T>) -> Self {
+        assert_eq!(data.len(), rows * cols, "data length must be rows*cols");
+        Self { rows, cols, data }
+    }
+
+    #[inline]
+    pub fn idx(&self, row: usize, col: usize) -> usize {
+        row * self.cols + col
+    }
+}
+
+impl RowMajorMatrix<C> {
+    /// Zero matrices with the same shapes as the matrices in `batch`.
+    pub fn create_from_batch(batch: &[RowMajorMatrix<C>]) -> Vec<RowMajorMatrix<C>> {
+        batch.iter().map(|m| RowMajorMatrix::create_empty(m.rows, m.cols)).collect()
+    }
+    pub fn create_empty(rows: usize, cols: usize) -> RowMajorMatrix<C> {
+        RowMajorMatrix::from_data(rows, cols, vec![C::ZERO; rows * cols])
+    }
+}
+
+impl<T: Copy> RowMajorMatrix<T> {
+    pub fn from_rows(rows: &[Vec<T>]) -> Self {
+        let m = rows.len();
+        assert!(m > 0, "matrix must not be empty");
+        let n = rows[0].len();
+        assert!(n > 0, "matrix must not be empty");
+        for r in rows {
+            assert_eq!(r.len(), n, "all rows must have the same length");
+        }
+
+        let data: Vec<T> = rows.iter().flat_map(|r| r.iter().copied()).collect();
+        Self { rows: m, cols: n, data }
+    }
+
+    /// Builds a matrix from row vectors, returning `None` when the input is empty or ragged.
+    ///
+    /// This is useful for code paths where inputs may be variable-length (e.g. top-k / sparse
+    /// representations) and we want to keep the Vec-based representation without panicking.
+    pub fn try_from_rows(rows: &[Vec<T>]) -> Option<Self> {
+        let m = rows.len();
+        if m == 0 {
+            return None;
+        }
+
+        let n = rows[0].len();
+        if n == 0 {
+            return None;
+        }
+
+        if rows.iter().any(|r| r.len() != n) {
+            return None;
+        }
+
+        let data: Vec<T> = rows.iter().flat_map(|r| r.iter().copied()).collect();
+        Some(Self { rows: m, cols: n, data })
+    }
+
+    pub fn to_rows(&self) -> Vec<Vec<T>> {
+        let mut out = Vec::with_capacity(self.rows);
+        for i in 0..self.rows {
+            out.push(self.data[i * self.cols..(i + 1) * self.cols].to_vec());
+        }
+        out
+    }
+}
+
+impl<T> RowMajorMatrix<T> {
+    #[inline]
+    pub fn row_range(&self, row: usize) -> std::ops::Range<usize> {
+        let start = row * self.cols;
+        start..start + self.cols
+    }
+}
 
 /// RM counterpart of `matrix::hadamard_product_2d_c`.
 pub fn hadamard_rm(a: &RowMajorMatrix<C>, b: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
@@ -377,7 +464,7 @@ fn multiply_complex_gpu_rm(_a: &[C], _b: &[C], _m: usize, _k: usize, _n: usize) 
     Err("GPU matmul currently only enabled for dtype-f64".into())
 }
 
-pub(crate) fn multiply_complex_cpu_rm(a: &[C], b: &[C], m: usize, k: usize, n: usize) -> Vec<C> {
+fn multiply_complex_cpu_rm(a: &[C], b: &[C], m: usize, k: usize, n: usize) -> Vec<C> {
     assert_eq!(a.len(), m * k);
     assert_eq!(b.len(), k * n);
 

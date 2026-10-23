@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::neural_networks::network_layers::adaptive_pooling::adaptive_avg_pool1d_layer::CompressionMetadata;
 use crate::neural_networks::utils::dtype::{Real, C, ZERO};
-use crate::neural_networks::utils::matrix::RowMajorMatrix;
-use crate::neural_networks::utils::adam_w::AdamWStateRm;
+use crate::neural_networks::utils::matrix_rm::RowMajorMatrix;
+use crate::neural_networks::utils::adam_w_rm::AdamWStateRm;
 use crate::neural_networks::utils::matrix_rm::sum_batch_rm;
 use std::borrow::Cow;
 use std::collections::BTreeMap;

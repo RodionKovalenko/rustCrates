@@ -8,7 +8,7 @@ use crate::{
         network_layers::{default_layer::LayerInterface, layer::LayerEnum},
         utils::{
             dtype::{C, CF64},
-            matrix::RowMajorMatrix,
+            matrix_rm::RowMajorMatrix,
             matrix_rm::{rm_from_f64, rm_to_f64, transpose_rm},
         },
     },

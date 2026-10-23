@@ -1,7 +1,7 @@
 use crate::wavelet_transform::dwt_type_resolver::{get_high_pass_filter, get_inverse_high_pass_filter, get_inverse_low_pass_filter, get_low_pass_filter};
 use crate::wavelet_transform::dwt_types::DiscreteWaveletType;
 use crate::wavelet_transform::modes::WaveletMode;
-use crate::neural_networks::utils::matrix::RowMajorMatrix;
+use crate::neural_networks::utils::matrix_rm::RowMajorMatrix;
 use num_traits::Num;
 use std::fmt::Debug;
 use std::ops::{Add, Mul, Neg, Sub};

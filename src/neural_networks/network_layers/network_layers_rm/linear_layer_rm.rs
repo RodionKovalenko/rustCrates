@@ -4,9 +4,9 @@ use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     network_layers::default_layer::LayerInterface,
     utils::{
-        adam_w::{update_bias_adam_w, update_weights_adam_w_rm},
+        adam_w_rm::{update_bias_adam_w, update_weights_adam_w_rm},
         dtype::{r, C, ZERO},
-        matrix::{average_vector_by_scalar, normalize_bias, RowMajorMatrix},
+        matrix::{average_vector_by_scalar, normalize_bias}, matrix_rm::RowMajorMatrix,
         matrix_rm::{average_matrix_by_scalar_rm, clip_all_gradients_by_global_norm_rm, linear_backward_batch_rm, linear_forward_batch_rm, normalize_gradients_rm},
         weights_initializer::initialize_weights_complex,
     },

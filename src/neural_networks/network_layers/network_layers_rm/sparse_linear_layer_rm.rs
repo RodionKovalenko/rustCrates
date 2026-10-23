@@ -7,14 +7,14 @@ use std::sync::{Arc, RwLock};
 use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     network_layers::{
-        clustering_common::{accumulate_sparse_row_gradients, calculate_target_offset, get_target_id, update_centroids, update_sparse_parameters, ClusterIndex, SparseParameters, TopKScorer},
+        network_layers_rm::clustering_common_rm::{accumulate_sparse_row_gradients, calculate_target_offset, get_target_id, update_centroids, update_sparse_parameters, ClusterIndex, SparseParameters, TopKScorer},
         default_layer::LayerInterface,
     },
     network_types::transformer::transformer_updater::VERBOSE,
     optimization::k_means_clustering::kmeans,
     utils::{
         dtype::{C, ZERO},
-        matrix::RowMajorMatrix,
+        matrix_rm::RowMajorMatrix,
         shared_f32_matrix::SharedF32Matrix,
         weights_initializer::initialize_weights_f32,
     },

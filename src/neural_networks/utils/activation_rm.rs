@@ -6,7 +6,7 @@ use crate::neural_networks::{
             softsign_complex, swiglu, tanh_complex, target_offset,
         },
         dtype::{r, Real, C, ZERO},
-        matrix::RowMajorMatrix,
+        matrix_rm::RowMajorMatrix,
     },
 };
 

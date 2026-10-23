@@ -7,7 +7,7 @@ mod test_rms_norm_layer {
         utils::derivative::{global_relative_error_l2, numerical_gradient_input_batch_sum_without_loss, test_gradient_batch_error},
     };
 
-    use crate::neural_networks::utils::matrix::RowMajorMatrix;
+    use crate::neural_networks::utils::matrix_rm::RowMajorMatrix;
 
     use num::Complex;
 

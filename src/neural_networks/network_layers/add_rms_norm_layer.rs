@@ -138,13 +138,13 @@ impl RMSNormLayer {
 }
 
 /// sqrt(mean(x * x) + epsilon) of one token embedding (complex, no conjugate).
-pub fn rms_of(x: &[C], epsilon: Real) -> C {
+fn rms_of(x: &[C], epsilon: Real) -> C {
     let mean_square = x.iter().map(|x| x * x).sum::<C>() / r(x.len() as f64);
     (mean_square + epsilon).sqrt()
 }
 
-/// RMSNorm of one row: out = x / rms(x) * gamma. Shared by `RMSNormLayer` and `RMSNormLayerRm`.
-pub fn rms_norm_row(x: &[C], gamma: &[C], epsilon: Real, out: &mut [C]) {
+/// RMSNorm of one row: out = x / rms(x) * gamma.
+fn rms_norm_row(x: &[C], gamma: &[C], epsilon: Real, out: &mut [C]) {
     let rms = rms_of(x, epsilon);
     for ((o, &x), &g) in out.iter_mut().zip(x.iter()).zip(gamma.iter()) {
         *o = (x / rms) * g;
@@ -153,7 +153,7 @@ pub fn rms_norm_row(x: &[C], gamma: &[C], epsilon: Real, out: &mut [C]) {
 
 /// Backward of `rms_norm_row` for one row: accumulates the input gradient into `input_gradient`
 /// and x / rms(x) into `gamma_gradient`.
-pub fn rms_norm_backward_row(x: &[C], previous_gradient: &[C], epsilon: Real, input_gradient: &mut [C], gamma_gradient: &mut [C]) {
+fn rms_norm_backward_row(x: &[C], previous_gradient: &[C], epsilon: Real, input_gradient: &mut [C], gamma_gradient: &mut [C]) {
     let dim_len = x.len();
     let rms = rms_of(x, epsilon);
     let rms_cubed = rms * rms * rms;
@@ -173,7 +173,7 @@ pub fn rms_norm_backward_row(x: &[C], previous_gradient: &[C], epsilon: Real, in
 }
 
 /// AdamW update of gamma from the stored gradient; returns the gradient to keep as `previous_gradient`.
-pub fn update_rms_norm_gamma(gamma: &mut Vec<C>, mut gradient: Gradient, previous_gradient: Option<&Gradient>, learning_rate: f64, global_norm: f64, max_norm: f64) -> Gradient {
+fn update_rms_norm_gamma(gamma: &mut Vec<C>, mut gradient: Gradient, previous_gradient: Option<&Gradient>, learning_rate: f64, global_norm: f64, max_norm: f64) -> Gradient {
     let mut gradient_gamma: Vec<C> = gradient.get_gradient_gamma();
 
     let total_valid_tokens = r(gradient.get_total_valid_tokens().max(1) as f64);

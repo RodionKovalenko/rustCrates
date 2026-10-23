@@ -38,13 +38,13 @@ mod test_layers_rm {
         network_types::neural_network_generic::OperationMode,
         utils::{
             dtype::C,
-            matrix::RowMajorMatrix,
+            matrix_rm::RowMajorMatrix,
             random_arrays::{generate_random_complex_2d, generate_random_complex_3d},
             shared_f32_matrix::SharedF32Matrix,
         },
     };
 
-    use super::super::rm_test_utils::{assert_close_1d, assert_close_2d, assert_close_3d, assert_input_gradients_close, compare_training_steps, layer_inputs, layer_inputs_with_mask, to_rm_batch, upstream_gradients};
+    use super::super::rm_test_utils::{assert_close_1d, assert_close_2d, assert_close_3d, assert_input_gradients_close, compare_training_steps, copy_parameters, layer_inputs, layer_inputs_with_mask, to_rm_batch, upstream_gradients};
 
     const STEPS: usize = 3;
 
@@ -436,7 +436,7 @@ mod test_layers_rm {
     fn test_adaptive_linear_layer_rm_matches_adaptive_linear_layer() {
         let (hidden, vocab) = (8, 40);
         let mut layer = AdaptiveLinearLayer::new(0.01, hidden, vocab);
-        let mut layer_rm = AdaptiveLinearLayerRm { layer: layer.clone() };
+        let mut layer_rm: AdaptiveLinearLayerRm = copy_parameters(&layer);
 
         for step in 1..=3 {
             let name = format!("AdaptiveLinearLayerRm step {}", step);
@@ -451,8 +451,8 @@ mod test_layers_rm {
 
             layer.update_parameters();
             layer_rm.update_parameters();
-            assert_eq!(layer.weights, layer_rm.layer.weights, "{}: routing weights", name);
-            assert_eq!(layer.cluster_word_weights, layer_rm.layer.cluster_word_weights, "{}: word table", name);
+            assert_eq!(layer.weights, layer_rm.weights, "{}: routing weights", name);
+            assert_eq!(layer.cluster_word_weights, layer_rm.cluster_word_weights, "{}: word table", name);
         }
 
         // Inference (no targets)
@@ -471,7 +471,7 @@ mod test_layers_rm {
     fn test_eml_linear_layer_rm_matches_eml_linear_layer() {
         let (d_model, vocab) = (8, 40);
         let mut layer = EmlLinearLayer::new(0.01, d_model, vocab);
-        let mut layer_rm = EmlLinearLayerRm { layer: layer.clone() };
+        let mut layer_rm: EmlLinearLayerRm = copy_parameters(&layer);
 
         for step in 1..=3 {
             let name = format!("EmlLinearLayerRm step {}", step);
@@ -484,7 +484,7 @@ mod test_layers_rm {
 
             layer.update_parameters();
             layer_rm.update_parameters();
-            assert_eq!(bincode::serialize(&layer).unwrap(), bincode::serialize(&layer_rm.layer).unwrap(), "{}: parameters", name);
+            assert_eq!(bincode::serialize(&layer).unwrap(), bincode::serialize(&layer_rm).unwrap(), "{}: parameters", name);
         }
 
         // Inference (no targets)
