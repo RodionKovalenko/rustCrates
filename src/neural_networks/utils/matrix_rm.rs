@@ -7,8 +7,8 @@ use crate::neural_networks::utils::{
 };
 use serde::{Deserialize, Serialize};
 
-#[cfg(all(feature = "cuda", feature = "dtype-f64"))]
-use crate::neural_networks::utils::matrix::GPU_MATMUL;
+#[cfg(feature = "cuda")]
+use crate::neural_networks::utils::gpu_matmul::try_multiply_complex_gpu;
 
 /// Contiguous row-major matrix storage.
 ///
@@ -424,44 +424,16 @@ pub fn multiply_complex_rm(a: &RowMajorMatrix<C>, b: &RowMajorMatrix<C>) -> RowM
     let k = a.cols;
     let n = b.cols;
 
-    // Try GPU path first (if cuda feature enabled)
+    // With the cuda feature every complex matmul runs on the GPU; the CPU is only the fallback.
     #[cfg(feature = "cuda")]
     {
-        // Keep your existing heuristic gate for now
-        if n >= 50280 {
-            if let Ok(c) = multiply_complex_gpu_rm(&a.data, &b.data, m, k, n) {
-                return RowMajorMatrix::from_data(m, n, c);
-            }
+        if let Some(c) = try_multiply_complex_gpu(&a.data, &b.data, m, k, n) {
+            return RowMajorMatrix::from_data(m, n, c);
         }
     }
 
     let c = multiply_complex_cpu_rm(&a.data, &b.data, m, k, n);
     RowMajorMatrix::from_data(m, n, c)
-}
-
-#[cfg(all(feature = "cuda", feature = "dtype-f64"))]
-fn multiply_complex_gpu_rm(a: &[C], b: &[C], m: usize, k: usize, n: usize) -> Result<Vec<C>, Box<dyn std::error::Error>> {
-    // Handle poisoned mutex gracefully
-    let mut gpu_guard = match GPU_MATMUL.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => {
-            eprintln!("GPU mutex was poisoned, attempting recovery...");
-            poisoned.into_inner()
-        }
-    };
-
-    let gpu = match gpu_guard.as_mut() {
-        Some(g) => g,
-        None => return Err("GPU not available".into()),
-    };
-
-    let c = gpu.multiply_complex(a, b, m, k, n)?;
-    Ok(c)
-}
-
-#[cfg(all(feature = "cuda", not(feature = "dtype-f64")))]
-fn multiply_complex_gpu_rm(_a: &[C], _b: &[C], _m: usize, _k: usize, _n: usize) -> Result<Vec<C>, Box<dyn std::error::Error>> {
-    Err("GPU matmul currently only enabled for dtype-f64".into())
 }
 
 fn multiply_complex_cpu_rm(a: &[C], b: &[C], m: usize, k: usize, n: usize) -> Vec<C> {

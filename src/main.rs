@@ -45,9 +45,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         // cudarc loads the CUDA DLLs (nvcuda, cublas64_12, ...) at runtime via PATH,
         // so no CUDA_PATH / CUDA_LIBRARY_PATH is needed at build time.
-        match cudarc::driver::CudaContext::new(0) {
-            Ok(ctx) => println!("CUDA initialized successfully 🚀 ({})", ctx.name().unwrap_or_default()),
-            Err(e) => println!("CUDA init failed: {:?}. Falling back to CPU", e),
+        // Initializes the GPU used by every complex matmul (prints the reason if it falls back to CPU).
+        let gpu_available = neural_networks::neural_networks::utils::gpu_matmul::GPU_MATMUL.lock().map(|gpu| gpu.is_some()).unwrap_or(false);
+        if gpu_available {
+            println!("CUDA initialized successfully 🚀 - all complex matmuls run on the GPU");
+        } else {
+            println!("CUDA not available. Falling back to CPU");
         }
     }
 

@@ -5,6 +5,7 @@ mod test_gpu_matmul {
     use crate::neural_networks::utils::{
         dtype::C,
         gpu_matmul::GpuMatmul,
+        matrix::multiply_complex,
         matrix_rm::RowMajorMatrix,
         matrix_rm::multiply_complex_rm,
         random_arrays::generate_random_complex_2d,
@@ -55,7 +56,7 @@ mod test_gpu_matmul {
         let a = flat(m, k);
         let b = flat(k, n);
 
-        let mut gpu = GpuMatmul::new(m, k, n).expect("Failed to initialize GPU");
+        let mut gpu = GpuMatmul::new().expect("Failed to initialize GPU");
         let result = gpu.multiply_complex(&a, &b, m, k, n).expect("GPU matmul failed");
 
         assert_close(&reference_matmul(&a, &b, m, k, n), &result);
@@ -66,13 +67,10 @@ mod test_gpu_matmul {
         if !gpu_available() {
             return;
         }
-        // n >= 50280 is the threshold at which multiply_complex_rm switches to the GPU.
-        // NOTE: for this size GpuMatmul::multiply_complex currently only multiplies the real parts,
-        // so the inputs are kept real here to make the result comparable with the CPU reference.
+        // Output projection to the vocabulary, full complex inputs.
         let (m, k, n) = (16, 64, 50280);
-        let real = |v: Vec<C>| v.into_iter().map(|z| C::new(z.re, 0.0)).collect::<Vec<C>>();
-        let a = RowMajorMatrix::from_data(m, k, real(flat(m, k)));
-        let b = RowMajorMatrix::from_data(k, n, real(flat(k, n)));
+        let a = RowMajorMatrix::from_data(m, k, flat(m, k));
+        let b = RowMajorMatrix::from_data(k, n, flat(k, n));
 
         let start = Instant::now();
         let expected = reference_matmul(&a.data, &b.data, m, k, n);
@@ -89,5 +87,25 @@ mod test_gpu_matmul {
 
         println!("[{}x{}] * [{}x{}]: cpu {:?}, gpu first call {:?}, gpu {:?}", m, k, k, n, cpu_time, gpu_first_time, gpu_time);
         assert_close(&expected, &result.data);
+    }
+
+    /// Every size goes through the GPU (no size gate); the result must equal the CPU reference.
+    #[test]
+    fn test_gpu_matmul_small_sizes_through_multiply_complex_rm_and_vec() {
+        if !gpu_available() {
+            return;
+        }
+        for (m, k, n) in [(1, 1, 1), (3, 5, 2), (7, 16, 8), (32, 64, 64)] {
+            let a = flat(m, k);
+            let b = flat(k, n);
+            let expected = reference_matmul(&a, &b, m, k, n);
+
+            let result_rm = multiply_complex_rm(&RowMajorMatrix::from_data(m, k, a.clone()), &RowMajorMatrix::from_data(k, n, b.clone()));
+            assert_close(&expected, &result_rm.data);
+
+            let to_rows = |v: &[C], cols: usize| v.chunks(cols).map(|row| row.to_vec()).collect::<Vec<Vec<C>>>();
+            let result = multiply_complex(&to_rows(&a, k), &to_rows(&b, n));
+            assert_close(&expected, &result.into_iter().flatten().collect::<Vec<C>>());
+        }
     }
 }

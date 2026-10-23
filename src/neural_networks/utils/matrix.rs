@@ -17,37 +17,14 @@ use crate::neural_networks::utils::adam_w::MAX_NORM;
 use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
 
 #[cfg(feature = "cuda")]
-use super::gpu_matmul::GpuMatmul;
-
-#[cfg(feature = "cuda")]
-use once_cell::sync::Lazy;
-
-#[cfg(feature = "cuda")]
-pub static GPU_MATMUL: Lazy<Mutex<Option<GpuMatmul>>> = Lazy::new(|| {
-    // Try to initialize GPU, but don't panic if it fails
-    match GpuMatmul::new(1024, 1024, 1024) {
-        Ok(gpu) => Mutex::new(Some(gpu)),
-        Err(e) => {
-            eprintln!("Failed to initialize GPU: {}. Will use CPU fallback.", e);
-            Mutex::new(None)
-        }
-    }
-});
+use super::gpu_matmul::try_multiply_complex_gpu;
 
 pub fn multiply_complex(matrix_a: &[Vec<Complex<Real>>], matrix_b: &[Vec<Complex<Real>>]) -> Vec<Vec<Complex<Real>>> {
-    // Try GPU path first (if cuda feature enabled)
-    #[cfg(all(feature = "cuda", feature = "dtype-f64"))]
+    // With the cuda feature every complex matmul runs on the GPU; the CPU is only the fallback.
+    #[cfg(feature = "cuda")]
     {
-        let m = matrix_a.len();
-        let k = matrix_a[0].len();
-        let n = matrix_b[0].len();
-        // Attempt GPU acceleration for any size
-        if n >= 50280 {
-            if let Ok(result) = multiply_complex_gpu(matrix_a, matrix_b, m, k, n) {
-                return result;
-            } else {
-                println!("Falling back to CPU complex matmul due to GPU error.");
-            }
+        if let Some(result) = multiply_complex_gpu(matrix_a, matrix_b) {
+            return result;
         }
     }
 
@@ -89,37 +66,24 @@ pub fn multiply_complex_f32(matrix_a: &[Vec<Complex<Real>>], matrix_b: &[Vec<f32
     result_matrix
 }
 
-#[cfg(all(feature = "cuda", feature = "dtype-f64"))]
-fn multiply_complex_gpu(matrix_a: &[Vec<Complex<Real>>], matrix_b: &[Vec<Complex<Real>>], m: usize, k: usize, n: usize) -> Result<Vec<Vec<Complex<Real>>>, Box<dyn std::error::Error>> {
-    // Handle poisoned mutex gracefully
-    let mut gpu_guard = match GPU_MATMUL.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => {
-            eprintln!("GPU mutex was poisoned, attempting recovery...");
-            poisoned.into_inner()
-        }
-    };
-
-    // Check if GPU is available
-    let gpu = match gpu_guard.as_mut() {
-        Some(g) => g,
-        None => return Err("GPU not available".into()),
-    };
+#[cfg(feature = "cuda")]
+fn multiply_complex_gpu(matrix_a: &[Vec<Complex<Real>>], matrix_b: &[Vec<Complex<Real>>]) -> Option<Vec<Vec<Complex<Real>>>> {
+    let (m, k, n) = (matrix_a.len(), matrix_a.first()?.len(), matrix_b.first()?.len());
+    if m == 0 || k == 0 || n == 0 || matrix_b.len() != k {
+        return None;
+    }
 
     // Flatten 2D -> 1D (row-major)
     let a_flat: Vec<Complex<Real>> = matrix_a.iter().flatten().copied().collect();
     let b_flat: Vec<Complex<Real>> = matrix_b.iter().flatten().copied().collect();
-
-    // GPU multiply
-    let c_flat = gpu.multiply_complex(&a_flat, &b_flat, m, k, n)?;
-
-    // Reshape 1D -> 2D
-    let mut result = Vec::with_capacity(m);
-    for i in 0..m {
-        result.push(c_flat[i * n..(i + 1) * n].to_vec());
+    if a_flat.len() != m * k || b_flat.len() != k * n {
+        return None; // ragged rows: let the CPU path report it
     }
 
-    Ok(result)
+    let c_flat = try_multiply_complex_gpu(&a_flat, &b_flat, m, k, n)?;
+
+    // Reshape 1D -> 2D
+    Some(c_flat.chunks(n).map(|row| row.to_vec()).collect())
 }
 
 fn multiply_complex_cpu(matrix_a: &[Vec<Complex<Real>>], matrix_b: &[Vec<Complex<Real>>]) -> Vec<Vec<Complex<Real>>> {
