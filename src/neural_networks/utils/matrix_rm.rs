@@ -166,64 +166,36 @@ pub fn rm_from_f64(m: &RowMajorMatrix<CF64>) -> RowMajorMatrix<C> {
     RowMajorMatrix::from_data(m.rows, m.cols, m.data.iter().copied().map(c_from_f64).collect())
 }
 
-/// Dense projection `X * W (+ b)` for every matrix of the batch.
+/// Dense projection `X * W (+ b)` for every matrix of the batch (one GEMM for the whole batch on the GPU).
 pub fn linear_forward_batch_rm(input_batch: &[RowMajorMatrix<C>], weights: &RowMajorMatrix<C>, bias: Option<&[C]>) -> Vec<RowMajorMatrix<C>> {
-    input_batch
-        .par_iter()
-        .map(|input| {
-            let mut output = multiply_complex_rm(input, weights);
-            if let Some(bias) = bias {
-                add_vector_rm(&mut output, bias);
-            }
-            output
-        })
-        .collect()
+    let mut output_batch = multiply_batch_with_weights_rm(input_batch, weights, MatOp::None);
+    if let Some(bias) = bias {
+        output_batch.par_iter_mut().for_each(|output| add_vector_rm(output, bias));
+    }
+    output_batch
 }
 
-/// Gradients of `Y = X * W + b` for one sample.
-pub struct LinearGradientsRm {
-    /// dL/dX = delta * W^H
-    pub input: RowMajorMatrix<C>,
-    /// dL/dW = X^H * delta
-    pub weights: RowMajorMatrix<C>,
-    /// dL/db = column sums of delta
-    pub bias: Vec<C>,
-}
-
-/// Backward of `Y = X * W + b` given `delta` = dL/dY and the precomputed `weights_h` = W^H.
-pub fn linear_backward_rm(input: &RowMajorMatrix<C>, delta: &RowMajorMatrix<C>, weights_h: &RowMajorMatrix<C>) -> LinearGradientsRm {
-    let weights = multiply_complex_rm(&conjugate_transpose_rm(input), delta);
-    let mut bias = vec![C::new(ZERO, ZERO); delta.cols];
-    accumulate_bias_from_rm(&mut bias, delta);
-    let input = multiply_complex_rm(delta, weights_h);
-    LinearGradientsRm { input, weights, bias }
-}
-
-/// `linear_backward_rm` for every sample of the batch. Returns (input, weight, bias) gradient batches.
+/// Backward of `Y = X * W + b` for every sample, given `delta_batch` = dL/dY.
+/// Returns the batches of input gradients (delta * W^H), weight gradients (X^H * delta) and bias gradients.
 pub fn linear_backward_batch_rm(
     input_batch: &[RowMajorMatrix<C>],
     delta_batch: &[RowMajorMatrix<C>],
     weights: &RowMajorMatrix<C>,
 ) -> (Vec<RowMajorMatrix<C>>, Vec<RowMajorMatrix<C>>, Vec<Vec<C>>) {
     assert_eq!(input_batch.len(), delta_batch.len(), "input and gradient batch size mismatch");
-    let weights_h = conjugate_transpose_rm(weights);
-    let gradients: Vec<LinearGradientsRm> = input_batch.par_iter().zip(delta_batch.par_iter()).map(|(input, delta)| linear_backward_rm(input, delta, &weights_h)).collect();
-    unzip_linear_gradients(gradients)
+    let input_gradients = multiply_batch_with_weights_rm(delta_batch, weights, MatOp::ConjTranspose);
+    let (weight_gradients, bias_gradients): (Vec<RowMajorMatrix<C>>, Vec<Vec<C>>) = input_batch
+        .par_iter()
+        .zip(delta_batch.par_iter())
+        .map(|(input, delta)| {
+            let mut bias = vec![C::new(ZERO, ZERO); delta.cols];
+            accumulate_bias_from_rm(&mut bias, delta);
+            (multiply_complex_rm_op(input, MatOp::ConjTranspose, delta, MatOp::None), bias)
+        })
+        .unzip();
+    (input_gradients, weight_gradients, bias_gradients)
 }
 
-pub fn unzip_linear_gradients(gradients: Vec<LinearGradientsRm>) -> (Vec<RowMajorMatrix<C>>, Vec<RowMajorMatrix<C>>, Vec<Vec<C>>) {
-    let mut inputs = Vec::with_capacity(gradients.len());
-    let mut weights = Vec::with_capacity(gradients.len());
-    let mut biases = Vec::with_capacity(gradients.len());
-    for g in gradients {
-        inputs.push(g.input);
-        weights.push(g.weights);
-        biases.push(g.bias);
-    }
-    (inputs, weights, biases)
-}
-
-/// Concatenates `left` and `right` column-wise: `[left | right]`. Inverse of `split_data_by_columns_rm`.
 pub fn concat_columns_rm(left: &RowMajorMatrix<C>, right: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
     assert_eq!(left.rows, right.rows);
     let cols = left.cols + right.cols;
@@ -416,24 +388,96 @@ pub fn conjugate_transpose_to_rm(matrix: &[Vec<C>]) -> RowMajorMatrix<C> {
     RowMajorMatrix::from_data(cols, rows, data)
 }
 
-pub fn multiply_complex_rm(a: &RowMajorMatrix<C>, b: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
-    assert!(a.rows > 0 && a.cols > 0 && b.rows > 0 && b.cols > 0, "Matrices must not be empty");
-    assert_eq!(a.cols, b.rows, "A's columns must match B's rows");
+/// Operation applied to a matrix operand before it is multiplied (as in BLAS).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatOp {
+    None,
+    Transpose,
+    ConjTranspose,
+}
 
-    let m = a.rows;
-    let k = a.cols;
-    let n = b.cols;
-
-    // With the cuda feature every complex matmul runs on the GPU; the CPU is only the fallback.
-    #[cfg(feature = "cuda")]
-    {
-        if let Some(c) = try_multiply_complex_gpu(&a.data, &b.data, m, k, n) {
-            return RowMajorMatrix::from_data(m, n, c);
+impl MatOp {
+    /// (rows, cols) of op(matrix).
+    fn shape(self, matrix: &RowMajorMatrix<C>) -> (usize, usize) {
+        match self {
+            MatOp::None => (matrix.rows, matrix.cols),
+            MatOp::Transpose | MatOp::ConjTranspose => (matrix.cols, matrix.rows),
         }
     }
 
-    let c = multiply_complex_cpu_rm(&a.data, &b.data, m, k, n);
-    RowMajorMatrix::from_data(m, n, c)
+    /// op(matrix) materialized on the CPU.
+    fn apply(self, matrix: &RowMajorMatrix<C>) -> std::borrow::Cow<'_, RowMajorMatrix<C>> {
+        match self {
+            MatOp::None => std::borrow::Cow::Borrowed(matrix),
+            MatOp::Transpose => std::borrow::Cow::Owned(transpose_rm(matrix)),
+            MatOp::ConjTranspose => std::borrow::Cow::Owned(conjugate_transpose_rm(matrix)),
+        }
+    }
+}
+
+/// A × B. With the cuda feature every complex matmul runs on the GPU; the CPU is only the fallback.
+pub fn multiply_complex_rm(a: &RowMajorMatrix<C>, b: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
+    multiply_rm(a, MatOp::None, b, MatOp::None, false)
+}
+
+/// op_a(A) × op_b(B). On the GPU the (conjugate) transposes are done by cuBLAS, not materialized.
+pub fn multiply_complex_rm_op(a: &RowMajorMatrix<C>, op_a: MatOp, b: &RowMajorMatrix<C>, op_b: MatOp) -> RowMajorMatrix<C> {
+    multiply_rm(a, op_a, b, op_b, false)
+}
+
+/// X × op(W) for a weight matrix W. On the GPU, W stays in device memory and is only uploaded again
+/// after it changed.
+pub fn multiply_complex_rm_weights(x: &RowMajorMatrix<C>, weights: &RowMajorMatrix<C>, op_w: MatOp) -> RowMajorMatrix<C> {
+    multiply_rm(x, MatOp::None, weights, op_w, true)
+}
+
+/// X_i × op(W) for every matrix of the batch. On the GPU the batch is stacked into one matrix, so a
+/// single GEMM uses the (cached) weights; on the CPU the samples are multiplied in parallel.
+pub fn multiply_batch_with_weights_rm(batch: &[RowMajorMatrix<C>], weights: &RowMajorMatrix<C>, op_w: MatOp) -> Vec<RowMajorMatrix<C>> {
+    let (k, n) = op_w.shape(weights);
+    assert!(batch.iter().all(|x| x.cols == k), "batch columns must match the weight rows");
+
+    #[cfg(feature = "cuda")]
+    {
+        let rows: Vec<usize> = batch.iter().map(|x| x.rows).collect();
+        let total_rows: usize = rows.iter().sum();
+        if total_rows > 0 && k > 0 && n > 0 {
+            let stacked: Vec<C> = batch.iter().flat_map(|x| x.data.iter().copied()).collect();
+            if let Some(c) = try_multiply_complex_gpu(&stacked, MatOp::None, &weights.data, op_w, total_rows, k, n, true) {
+                let mut offset = 0;
+                return rows
+                    .iter()
+                    .map(|&r| {
+                        let out = RowMajorMatrix::from_data(r, n, c[offset * n..(offset + r) * n].to_vec());
+                        offset += r;
+                        out
+                    })
+                    .collect();
+            }
+        }
+    }
+
+    let weights = op_w.apply(weights);
+    batch.par_iter().map(|x| RowMajorMatrix::from_data(x.rows, n, multiply_complex_cpu_rm(&x.data, &weights.data, x.rows, k, n))).collect()
+}
+
+fn multiply_rm(a: &RowMajorMatrix<C>, op_a: MatOp, b: &RowMajorMatrix<C>, op_b: MatOp, cache_b: bool) -> RowMajorMatrix<C> {
+    let (m, k) = op_a.shape(a);
+    let (k_b, n) = op_b.shape(b);
+    assert!(m > 0 && k > 0 && n > 0, "Matrices must not be empty");
+    assert_eq!(k, k_b, "A's columns must match B's rows");
+
+    #[cfg(feature = "cuda")]
+    {
+        if let Some(c) = try_multiply_complex_gpu(&a.data, op_a, &b.data, op_b, m, k, n, cache_b) {
+            return RowMajorMatrix::from_data(m, n, c);
+        }
+    }
+    #[cfg(not(feature = "cuda"))]
+    let _ = cache_b;
+
+    let (a, b) = (op_a.apply(a), op_b.apply(b));
+    RowMajorMatrix::from_data(m, n, multiply_complex_cpu_rm(&a.data, &b.data, m, k, n))
 }
 
 fn multiply_complex_cpu_rm(a: &[C], b: &[C], m: usize, k: usize, n: usize) -> Vec<C> {

@@ -17,7 +17,7 @@ use crate::neural_networks::utils::adam_w::MAX_NORM;
 use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
 
 #[cfg(feature = "cuda")]
-use super::gpu_matmul::try_multiply_complex_gpu;
+use super::{gpu_matmul::try_multiply_complex_gpu, matrix_rm::MatOp};
 
 pub fn multiply_complex(matrix_a: &[Vec<Complex<Real>>], matrix_b: &[Vec<Complex<Real>>]) -> Vec<Vec<Complex<Real>>> {
     // With the cuda feature every complex matmul runs on the GPU; the CPU is only the fallback.
@@ -80,7 +80,7 @@ fn multiply_complex_gpu(matrix_a: &[Vec<Complex<Real>>], matrix_b: &[Vec<Complex
         return None; // ragged rows: let the CPU path report it
     }
 
-    let c_flat = try_multiply_complex_gpu(&a_flat, &b_flat, m, k, n)?;
+    let c_flat = try_multiply_complex_gpu(&a_flat, MatOp::None, &b_flat, MatOp::None, m, k, n, false)?;
 
     // Reshape 1D -> 2D
     Some(c_flat.chunks(n).map(|row| row.to_vec()).collect())

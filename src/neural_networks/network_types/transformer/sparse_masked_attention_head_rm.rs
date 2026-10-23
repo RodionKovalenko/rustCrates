@@ -13,13 +13,13 @@ use crate::neural_networks::{
         dtype::{r, Real, C, ZERO},
         matrix_rm::RowMajorMatrix,
         matrix_rm::{
-            add_rm, append_rows_rm, average_matrix_by_scalar_rm, clip_all_gradients_by_global_norm_rm, conjugate_transpose_rm, linear_forward_batch_rm, multiply_complex_rm, normalize_gradients_rm,
+            append_rows_rm, average_matrix_by_scalar_rm, clip_all_gradients_by_global_norm_rm, linear_forward_batch_rm, multiply_complex_rm, normalize_gradients_rm,
         },
         weights_initializer::initialize_weights_complex,
     },
 };
 
-use super::{attention_rm_common::AttentionHeadRm, sparse_masked_attention_head::calculate_start_end_indices};
+use super::attention_rm_common::{qkv_projection_backward_rm, AttentionHeadRm};
 
 const W_Q: &str = "w_q";
 const W_K: &str = "w_k";
@@ -432,28 +432,8 @@ impl SparseMaskedAttentionHeadRm {
         let dl_dq_batch = self.positional_encoding_layer.rotate_batch_backward(&Self::ctl_backward(self.ctl_q.as_mut(), dl_dq_ctl_batch));
         let dl_dk_batch = self.positional_encoding_layer.rotate_batch_backward(&Self::ctl_backward(self.ctl_k.as_mut(), dl_dk_ctl_batch));
 
-        let (wq_h, wk_h, wv_h) = (conjugate_transpose_rm(&self.weights_q_rm), conjugate_transpose_rm(&self.weights_k_rm), conjugate_transpose_rm(&self.weights_v_rm));
-
-        let per_batch: Vec<(RowMajorMatrix<C>, RowMajorMatrix<C>, RowMajorMatrix<C>, RowMajorMatrix<C>)> = (0..batch_size)
-            .into_par_iter()
-            .map(|b| {
-                let x_h = conjugate_transpose_rm(&input_batch[b]);
-                let (dq, dk, dv) = (&dl_dq_batch[b], &dl_dk_batch[b], &dl_dv_batch[b]);
-                let input_gradient = add_rm(&add_rm(&multiply_complex_rm(dq, &wq_h), &multiply_complex_rm(dk, &wk_h)), &multiply_complex_rm(dv, &wv_h));
-                (multiply_complex_rm(&x_h, dq), multiply_complex_rm(&x_h, dk), multiply_complex_rm(&x_h, dv), input_gradient)
-            })
-            .collect();
-
-        let mut gradient_q_batch = Vec::with_capacity(batch_size);
-        let mut gradient_k_batch = Vec::with_capacity(batch_size);
-        let mut gradient_v_batch = Vec::with_capacity(batch_size);
-        let mut gradient_input_batch = Vec::with_capacity(batch_size);
-        for (gq, gk, gv, gi) in per_batch {
-            gradient_q_batch.push(gq);
-            gradient_k_batch.push(gk);
-            gradient_v_batch.push(gv);
-            gradient_input_batch.push(gi);
-        }
+        let [gradient_q_batch, gradient_k_batch, gradient_v_batch, gradient_input_batch] =
+            qkv_projection_backward_rm(input_batch, [&dl_dq_batch, &dl_dk_batch, &dl_dv_batch], [&self.weights_q_rm, &self.weights_k_rm, &self.weights_v_rm]);
 
         let mut gradient = Gradient::new_default();
         gradient.set_weight_gradient_batch_rm(W_Q, gradient_q_batch);
@@ -512,4 +492,12 @@ impl AttentionHeadRm for SparseMaskedAttentionHeadRm {
     fn update_parameters(&mut self) {
         SparseMaskedAttentionHeadRm::update_parameters(self)
     }
+}
+
+/// Attention window [start, end) of `token_index` (same window as `SparseMaskedAttentionHead`).
+fn calculate_start_end_indices(token_index: usize, window_size: usize, seq_len: usize) -> (usize, usize) {
+    let start_ind = if token_index >= window_size { token_index - window_size } else { 0 };
+    let end_ind = if token_index + window_size + 1 <= seq_len { token_index + window_size + 1 } else { seq_len };
+
+    (start_ind, end_ind)
 }

@@ -1,5 +1,5 @@
-//! Multi-head residual attention shared by the RM self-attention layers:
-//! `out = beta * concat(heads(Norm(x))) + x`.
+//! Shared by the RM attention structs: multi-head residual attention
+//! `out = beta * concat(heads(Norm(x))) + x` and the backward of the Q/K/V projections.
 
 use rayon::prelude::*;
 
@@ -9,7 +9,9 @@ use crate::neural_networks::{
     utils::{
         dtype::{Real, C, ZERO},
         matrix_rm::RowMajorMatrix,
-        matrix_rm::{add_assign_rm, concat_heads_rm, scale_rm_in_place, split_heads_rm, sum_heads_rm, tail_rows_rm},
+        matrix_rm::{
+            add_assign_rm, add_rm, concat_heads_rm, multiply_batch_with_weights_rm, multiply_complex_rm_op, scale_rm_in_place, split_heads_rm, sum_heads_rm, tail_rows_rm, MatOp,
+        },
     },
 };
 
@@ -66,4 +68,17 @@ pub fn residual_attention_backward_rm<H: AttentionHeadRm>(heads: &mut [H], norm_
         add_assign_rm(c, u);
     }
     combined
+}
+
+/// Backward of the projections `Q = X W_q`, `K = X W_k`, `V = X W_v` for every sample, given the gradients
+/// `deltas` = [dQ, dK, dV]. Returns [X^H dQ, X^H dK, X^H dV, dQ W_q^H + dK W_k^H + dV W_v^H].
+/// The (conjugate) transposes are GEMM operations, the input gradients one GEMM per weight for the whole batch.
+pub fn qkv_projection_backward_rm(input_batch: &[RowMajorMatrix<C>], deltas: [&[RowMajorMatrix<C>]; 3], weights: [&RowMajorMatrix<C>; 3]) -> [Vec<RowMajorMatrix<C>>; 4] {
+    let [gradient_q, gradient_k, gradient_v] = deltas.map(|delta_batch| {
+        assert_eq!(input_batch.len(), delta_batch.len(), "input and gradient batch size mismatch");
+        input_batch.par_iter().zip(delta_batch.par_iter()).map(|(x, delta)| multiply_complex_rm_op(x, MatOp::ConjTranspose, delta, MatOp::None)).collect::<Vec<_>>()
+    });
+    let [input_q, input_k, input_v] = [0, 1, 2].map(|i| multiply_batch_with_weights_rm(deltas[i], weights[i], MatOp::ConjTranspose));
+    let gradient_input = input_q.iter().zip(input_k.iter()).zip(input_v.iter()).map(|((q, k), v)| add_rm(&add_rm(q, k), v)).collect();
+    [gradient_q, gradient_k, gradient_v, gradient_input]
 }

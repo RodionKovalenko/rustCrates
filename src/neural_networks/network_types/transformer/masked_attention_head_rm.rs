@@ -15,14 +15,14 @@ use crate::neural_networks::{
         dtype::{r, Real, C, ONE, ZERO},
         matrix_rm::RowMajorMatrix,
         matrix_rm::{
-            add_rm, append_rows_rm, average_matrix_by_scalar_rm, clip_all_gradients_by_global_norm_rm, conjugate_rm, conjugate_transpose_rm, linear_forward_batch_rm, multiply_complex_rm,
+            append_rows_rm, average_matrix_by_scalar_rm, clip_all_gradients_by_global_norm_rm, conjugate_rm, conjugate_transpose_rm, linear_forward_batch_rm, multiply_complex_rm,
             normalize_gradients_rm, scale_rm_in_place, transpose_rm,
         },
         weights_initializer::initialize_weights_complex,
     },
 };
 
-use super::attention_rm_common::AttentionHeadRm;
+use super::attention_rm_common::{qkv_projection_backward_rm, AttentionHeadRm};
 
 const W_Q: &str = "w_q";
 const W_K: &str = "w_k";
@@ -281,25 +281,9 @@ impl MaskedAttentionHeadRm {
         let dl_dk_norm = self.norm_layer_k.backward(&gradient_k).get_gradient_input_batch_rm();
         let dl_dk = self.positional_encoding_layer.rotate_batch_backward(&dl_dk_norm);
 
-        let (wq_h, wk_h, wv_h) = (conjugate_transpose_rm(&self.weights_q), conjugate_transpose_rm(&self.weights_k), conjugate_transpose_rm(&self.weights_v));
-        let per_batch: Vec<(RowMajorMatrix<C>, RowMajorMatrix<C>, RowMajorMatrix<C>, RowMajorMatrix<C>)> = (0..input_batch.len())
-            .into_par_iter()
-            .map(|b| {
-                let x_h = conjugate_transpose_rm(&input_batch[b]);
-                let input_gradient = add_rm(&add_rm(&multiply_complex_rm(&dl_dq[b], &wq_h), &multiply_complex_rm(&dl_dk[b], &wk_h)), &multiply_complex_rm(&dl_dv_input[b], &wv_h));
-                (multiply_complex_rm(&x_h, &dl_dq[b]), multiply_complex_rm(&x_h, &dl_dk[b]), multiply_complex_rm(&x_h, &dl_dv_input[b]), input_gradient)
-            })
-            .collect();
+        let [gq, gk, gv, gi] = qkv_projection_backward_rm(&input_batch, [&dl_dq, &dl_dk, &dl_dv_input], [&self.weights_q, &self.weights_k, &self.weights_v]);
 
         let mut gradient = Gradient::new_default();
-        let mut gradients: [Vec<RowMajorMatrix<C>>; 4] = Default::default();
-        for (gq, gk, gv, gi) in per_batch {
-            gradients[0].push(gq);
-            gradients[1].push(gk);
-            gradients[2].push(gv);
-            gradients[3].push(gi);
-        }
-        let [gq, gk, gv, gi] = gradients;
         gradient.set_weight_gradient_batch_rm(W_Q, gq);
         gradient.set_weight_gradient_batch_rm(W_K, gk);
         gradient.set_weight_gradient_batch_rm(W_V, gv);
