@@ -33,7 +33,7 @@ use super::{
     add_rms_norm_layer::RMSNormLayer,
     embedding_layer::EmbeddingLayer,
     linear_layer::LinearLayer,
-    network_layers_rm::{norm_layer_rm::NormalNormLayerRm, positional_encoding_layer_rm::PositionalEncodingLayerRm, softmax_output_layer_rm::SoftmaxLayerRm},
+    network_layers_rm::{norm_layer_rm::NormalNormLayerRm, positional_encoding_layer_rm::PositionalEncodingLayerRm, rms_norm_layer_rm::RMSNormLayerRm, softmax_output_layer_rm::SoftmaxLayerRm},
     norm_layer::NormalNormLayer,
     positional_encoding_layer::PositionalEncodingLayer,
     softmax_output_layer::SoftmaxLayer,
@@ -106,6 +106,7 @@ pub enum LayerEnum {
     FeedForward(Box<FeedForwardLayer>),
     FeedForwardRm(Box<FeedForwardLayerRm>),
     RMSNorm(Box<RMSNormLayer>),
+    RMSNormRm(Box<RMSNormLayerRm>),
     Norm(Box<NormalNormLayer>),
     NormRm(Box<NormalNormLayerRm>),
     SelfAttention(Box<SelfAttentionLayer>),
@@ -426,6 +427,7 @@ impl LayerEnum {
             LayerEnum::FeedForward(_) => "FeedForward",
             LayerEnum::FeedForwardRm(_) => "FeedForwardRm",
             LayerEnum::RMSNorm(_) => "RMSNorm",
+            LayerEnum::RMSNormRm(_) => "RMSNormRm",
             LayerEnum::Norm(_) => "Norm",
             LayerEnum::NormRm(_) => "NormRm",
             LayerEnum::SelfAttention(_) => "SelfAttention",
@@ -473,6 +475,7 @@ impl LayerInterface for LayerEnum {
             LayerEnum::FeedForward(layer) => layer.forward(layer_input),
             LayerEnum::FeedForwardRm(layer) => layer.forward(layer_input),
             LayerEnum::RMSNorm(layer) => LayerInterface::forward(&mut **layer, layer_input),
+            LayerEnum::RMSNormRm(layer) => LayerInterface::forward(&mut **layer, layer_input),
             LayerEnum::Norm(layer) => layer.forward(layer_input),
             LayerEnum::NormRm(layer) => layer.forward(layer_input),
             LayerEnum::SelfAttention(layer) => layer.forward(layer_input),
@@ -573,6 +576,7 @@ impl LayerInterface for LayerEnum {
             LayerEnum::FeedForward(layer) => layer.backward(previous_gradient),
             LayerEnum::FeedForwardRm(layer) => layer.backward(previous_gradient),
             LayerEnum::RMSNorm(layer) => LayerInterface::backward(&mut **layer, previous_gradient),
+            LayerEnum::RMSNormRm(layer) => LayerInterface::backward(&mut **layer, previous_gradient),
             LayerEnum::Norm(layer) => {
                 if let Some(gr_rm) = previous_gradient.get_gradient_input_batch_rm_ref() {
                     let mut pg = previous_gradient.clone();
@@ -655,6 +659,7 @@ impl LayerInterface for LayerEnum {
             LayerEnum::FeedForward(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::FeedForwardRm(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::RMSNorm(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::RMSNormRm(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::Norm(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::NormRm(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::SelfAttention(layer) => LayerInterface::update_parameters(&mut **layer),

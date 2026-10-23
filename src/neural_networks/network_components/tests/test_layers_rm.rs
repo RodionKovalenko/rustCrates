@@ -17,9 +17,10 @@ mod test_layers_rm {
             linear_layer::LinearLayer,
             network_layers_rm::{
                 complex_to_linear_layer_rm::ComplexToLinearLayerRm, embedding_layer_rm::EmbeddingLayerRm, feedforward_layer_rm::FeedForwardLayerRm, linear_layer_rm::LinearLayerRm,
-                norm_layer_rm::NormalNormLayerRm, positional_encoding_layer_rm::PositionalEncodingLayerRm, softmax_output_layer_rm::SoftmaxLayerRm, sparse_linear_layer_rm::SparseLinearLayerRm, wavelet_complex_layer_rm::ComplexWaveletLayerRm,
+                norm_layer_rm::NormalNormLayerRm, positional_encoding_layer_rm::PositionalEncodingLayerRm, rms_norm_layer_rm::RMSNormLayerRm, softmax_output_layer_rm::SoftmaxLayerRm, sparse_linear_layer_rm::SparseLinearLayerRm, wavelet_complex_layer_rm::ComplexWaveletLayerRm,
                 wavelet_discrete_layer_rm::DiscreteWaveletLayerRm,
             },
+            add_rms_norm_layer::RMSNormLayer,
             norm_layer::NormalNormLayer,
             positional_encoding_layer::PositionalEncodingLayer,
             softmax_output_layer::SoftmaxLayer,
@@ -36,7 +37,7 @@ mod test_layers_rm {
         },
     };
 
-    use super::super::rm_test_utils::{assert_close_1d, assert_close_2d, assert_close_3d, assert_input_gradients_close, compare_training_steps, layer_inputs_with_mask, upstream_gradients};
+    use super::super::rm_test_utils::{assert_close_1d, assert_close_2d, assert_close_3d, assert_input_gradients_close, compare_training_steps, layer_inputs, layer_inputs_with_mask, to_rm_batch, upstream_gradients};
 
     const STEPS: usize = 3;
 
@@ -320,6 +321,36 @@ mod test_layers_rm {
             layer_rm.update_parameters();
             assert_eq!(*layer.weights.read(), *layer_rm.weights.read(), "{}: weights differ after update", name);
             assert_eq!(layer.bias, layer_rm.bias, "{}: bias differs after update", name);
+        }
+    }
+
+    #[test]
+    fn test_rms_norm_layer_rm_matches_rms_norm_layer() {
+        let (batch_size, seq_len, dim) = (2, 4, 6);
+        let mut layer = RMSNormLayer::new(dim, 1e-8, 0.01);
+        let mut layer_rm = RMSNormLayerRm::new(dim, 1e-8, 0.01);
+
+        for step in 1..=3 {
+            let name = format!("RMSNormLayerRm step {}", step);
+            let input_batch = generate_random_complex_3d(batch_size, seq_len, dim);
+            let residual_batch = generate_random_complex_3d(batch_size, seq_len, dim);
+            let (mut input, mut input_rm) = layer_inputs(&input_batch);
+            input.set_input_batch_before(residual_batch.clone());
+            input_rm.set_input_batch_before_rm(to_rm_batch(&residual_batch));
+
+            let output = layer.forward(&input).get_output_batch();
+            let output_rm = layer_rm.forward(&input_rm);
+            assert_close_3d(&format!("{} output", name), &output, output_rm.get_output_batch_rm_ref().unwrap());
+
+            let (upstream, upstream_rm) = upstream_gradients(&generate_random_complex_3d(batch_size, seq_len, dim));
+            let gradient = layer.backward(&upstream);
+            let gradient_rm = layer_rm.backward(&upstream_rm);
+            assert_input_gradients_close(&name, &gradient, &gradient_rm);
+            assert_close_1d(&format!("{} gamma gradient", name), &gradient.get_gradient_gamma(), &gradient_rm.get_gradient_gamma());
+
+            layer.update_parameters();
+            layer_rm.update_parameters();
+            assert_close_1d(&format!("{} gamma", name), &layer.gamma, &layer_rm.gamma);
         }
     }
 }

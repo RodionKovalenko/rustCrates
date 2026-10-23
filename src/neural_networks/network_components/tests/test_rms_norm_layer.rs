@@ -2,7 +2,7 @@
 mod test_rms_norm_layer {
     use crate::neural_networks::{
         network_components::{layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
-        network_layers::add_rms_norm_layer::RMSNormLayer,
+        network_layers::{add_rms_norm_layer::RMSNormLayer, network_layers_rm::rms_norm_layer_rm::RMSNormLayerRm},
         network_types::neural_network_generic::OperationMode,
         utils::derivative::{global_relative_error_l2, numerical_gradient_input_batch_sum_without_loss, test_gradient_batch_error},
     };
@@ -98,7 +98,7 @@ mod test_rms_norm_layer {
         let input_batch_rm: Vec<RowMajorMatrix<Complex<f64>>> = input_batch_vec.iter().map(|m| RowMajorMatrix::from_rows(m)).collect();
         let input_before_rm: Vec<RowMajorMatrix<Complex<f64>>> = input_before_vec.iter().map(|m| RowMajorMatrix::from_rows(m)).collect();
 
-        let mut rms_norm_layer = RMSNormLayer::new(input_dim, epsilon, learning_rate);
+        let mut rms_norm_layer = RMSNormLayerRm::new(input_dim, epsilon, learning_rate);
         let mut li = LayerInput::new_default();
         li.set_input_batch_rm(input_batch_rm);
         li.set_input_batch_before_rm(input_before_rm);

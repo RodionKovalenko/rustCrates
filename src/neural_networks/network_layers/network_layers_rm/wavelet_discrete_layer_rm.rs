@@ -109,7 +109,7 @@ impl DiscreteWaveletLayerRm {
 
             if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
                 match norm_layer_enum {
-                    LayerEnum::RMSNorm(rms_norm_layer) => {
+                    LayerEnum::RMSNormRm(rms_norm_layer) => {
                         let out = rms_norm_layer.forward(&li_norm);
                         trend_batch_rm_normed = out.get_output_batch_rm();
                     }
@@ -159,7 +159,7 @@ impl DiscreteWaveletLayerRm {
         // Apply norm backward if present
         if let Some(norm_layer) = &mut self.norm_layer {
             match norm_layer {
-                LayerEnum::RMSNorm(rms_norm_layer) => {
+                LayerEnum::RMSNormRm(rms_norm_layer) => {
                     let norm_gradient = rms_norm_layer.backward_rm(&grad_output_batch_rm);
                     grad_output_batch_rm = norm_gradient.get_gradient_input_batch_rm();
                 }

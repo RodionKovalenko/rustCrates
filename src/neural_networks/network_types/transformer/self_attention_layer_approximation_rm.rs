@@ -5,9 +5,8 @@ use crate::neural_networks::{
         layer_output_struct::LayerOutput,
     },
     network_layers::{
-        add_rms_norm_layer::RMSNormLayer,
         layer::{LayerEnum, LayerType},
-        network_layers_rm::norm_layer_rm::NormalNormLayerRm,
+        network_layers_rm::{norm_layer_rm::NormalNormLayerRm, rms_norm_layer_rm::RMSNormLayerRm},
     },
     network_types::transformer::masked_attention_head_approximation::MaskedAttentionHeadApproximation,
     utils::{
@@ -48,7 +47,7 @@ impl SelfAttentionLayerApproximationRm {
 
         let epsilon: f64 = 0.000000000001;
         let norm_layer = Some(LayerEnum::NormRm(Box::new(NormalNormLayerRm::new(cols, epsilon, learning_rate))));
-        let _norm_layer_rms = Some(LayerEnum::RMSNorm(Box::new(RMSNormLayer::new(cols, epsilon, learning_rate))));
+        let _norm_layer_rms = Some(LayerEnum::RMSNormRm(Box::new(RMSNormLayerRm::new(cols, epsilon, learning_rate))));
 
         Self {
             attention_heads,
@@ -80,7 +79,7 @@ impl SelfAttentionLayerApproximationRm {
         li.set_input_batch_before_rm(input_batch_rm.clone());
 
         match self.norm_layer.as_mut() {
-            Some(LayerEnum::RMSNorm(rms_norm_layer)) => output = rms_norm_layer.forward(&li).get_output_batch_rm(),
+            Some(LayerEnum::RMSNormRm(rms_norm_layer)) => output = rms_norm_layer.forward(&li).get_output_batch_rm(),
             Some(LayerEnum::NormRm(norm_layer)) => output = norm_layer.forward(&li).take_output_batch_rm().expect("NormRm did not return RM output"),
             Some(LayerEnum::Norm(_)) => panic!("SelfAttentionLayerApproximationRm requires NormRm (Vec Norm not allowed)"),
             _ => {}
@@ -100,7 +99,7 @@ impl SelfAttentionLayerApproximationRm {
         let mut output_gradient_norm_rm: Option<Vec<RowMajorMatrix<C>>> = None;
 
         match self.norm_layer.as_mut() {
-            Some(LayerEnum::RMSNorm(rms_norm_layer)) => {
+            Some(LayerEnum::RMSNormRm(rms_norm_layer)) => {
                 gradient_input_rm = rms_norm_layer.backward_rm(&gradient_input_rm).get_gradient_input_batch_rm();
                 output_gradient_norm_rm = Some(gradient_input_rm.clone());
             }
@@ -143,7 +142,7 @@ impl SelfAttentionLayerApproximationRm {
     pub fn update_parameters(&mut self) {
         if let Some(norm_layer_enum) = self.norm_layer.as_mut() {
             match norm_layer_enum {
-                LayerEnum::RMSNorm(rms_norm_layer) => {
+                LayerEnum::RMSNormRm(rms_norm_layer) => {
                     rms_norm_layer.update_parameters();
                 }
                 LayerEnum::NormRm(norm_layer) => {

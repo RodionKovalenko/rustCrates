@@ -253,6 +253,9 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
             LayerEnum::RMSNorm(norm_layer) => {
                 norm_layer.learning_rate = learning_rate;
             }
+            LayerEnum::RMSNormRm(norm_layer) => {
+                norm_layer.learning_rate = learning_rate;
+            }
             LayerEnum::Dense(dense_layer) => {
                 dense_layer.learning_rate = learning_rate;
             }
@@ -330,7 +333,7 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
                 }
                 if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
                     match norm_layer {
-                        LayerEnum::RMSNorm(rms_norm_layer) => {
+                        LayerEnum::RMSNormRm(rms_norm_layer) => {
                             rms_norm_layer.learning_rate = learning_rate;
                         }
                         LayerEnum::NormRm(norm_layer) => {
@@ -470,6 +473,11 @@ pub fn reset_previous_gradient(transformer: &mut NeuralNetwork) {
                 _norm_layer.gradient = None;
                 _norm_layer.batch_size = 0;
             }
+            LayerEnum::RMSNormRm(_norm_layer) => {
+                // _norm_layer.previous_gradient = None;
+                _norm_layer.gradient = None;
+                _norm_layer.batch_size = 0;
+            }
             LayerEnum::Dense(dense_layer) => {
                 // dense_layer.previous_gradient = None;
                 dense_layer.gradient = None;
@@ -561,7 +569,7 @@ pub fn reset_previous_gradient(transformer: &mut NeuralNetwork) {
                 }
                 if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
                     match norm_layer {
-                        LayerEnum::RMSNorm(_norm_layer) => {
+                        LayerEnum::RMSNormRm(_norm_layer) => {
                             _norm_layer.gradient = None;
                             _norm_layer.batch_size = 0;
                         }
@@ -737,6 +745,9 @@ pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
             LayerEnum::RMSNorm(norm_layer) => {
                 println!("rms norm layer: {:?}", &norm_layer.learning_rate);
             }
+            LayerEnum::RMSNormRm(norm_layer) => {
+                println!("rms norm layer: {:?}", &norm_layer.learning_rate);
+            }
             LayerEnum::Dense(dense_layer) => {
                 println!("dense_layer layer: {:?}", &dense_layer.learning_rate);
             }
@@ -797,7 +808,7 @@ pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
                 }
                 if let Some(norm_layer) = self_attention_layer.norm_layer.as_mut() {
                     match norm_layer {
-                        LayerEnum::RMSNorm(rms_norm_layer) => {
+                        LayerEnum::RMSNormRm(rms_norm_layer) => {
                             println!("rms_norm_layer in ffn layer: {:?}", &rms_norm_layer.learning_rate);
                         }
                         LayerEnum::NormRm(norm_layer) => {
