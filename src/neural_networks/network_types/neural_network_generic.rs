@@ -97,7 +97,8 @@ impl NeuralNetwork {
         for (idx, layer) in self.layers.iter().enumerate() {
             match layer {
                 LayerEnum::Embedding(_) => embedding_idx = Some(idx),
-                LayerEnum::ClusteringLinear(_) => sparse_linear_idx = Some(idx),
+                LayerEnum::EmbeddingRm(_) => embedding_idx = Some(idx),
+                LayerEnum::ClusteringLinear(_) | LayerEnum::SparseLinearRm(_) => sparse_linear_idx = Some(idx),
                 LayerEnum::Linear(_) => linear_idx = Some(idx),
                 _ => {}
             }
@@ -135,6 +136,15 @@ impl NeuralNetwork {
                 // SparseLinear owns the optimizer update; it needs access to embedding-side accumulated grads.
                 sparse_linear_layer.tied_embedding_grad_by_token = Some(tied.grad_by_token.clone());
                 embedding_layer.set_tied_weights(table, tied.grad_by_token.clone());
+
+                self.tied_sparse_embeddings = Some(tied);
+            }
+            (LayerEnum::EmbeddingRm(embedding_layer), LayerEnum::SparseLinearRm(sparse_linear_layer))
+            | (LayerEnum::SparseLinearRm(sparse_linear_layer), LayerEnum::EmbeddingRm(embedding_layer)) => {
+                // The RM embedding reads the shared f32 table directly, so no snapshot copy is needed.
+                let tied = TiedSparseEmbeddings::new(sparse_linear_layer.weights.clone());
+                sparse_linear_layer.tied_embedding_grad_by_token = Some(tied.grad_by_token.clone());
+                embedding_layer.set_tied_weights(tied.weights.clone(), tied.grad_by_token.clone());
 
                 self.tied_sparse_embeddings = Some(tied);
             }
