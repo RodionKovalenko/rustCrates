@@ -8,7 +8,7 @@ use crate::neural_networks::{
         }, wavelet_complex_layer::ComplexWaveletLayer, wavelet_discrete_layer::DiscreteWaveletLayer
     },
     network_types::transformer::{
-        self_attention_layer::SelfAttentionLayer, self_attention_layer_approximation::SelfAttentionLayerApproximation, self_attention_layer_approximation_rm::SelfAttentionLayerApproximationRm,
+        self_attention_layer::SelfAttentionLayer, self_attention_layer_rm::SelfAttentionLayerRm, self_attention_layer_approximation::SelfAttentionLayerApproximation, self_attention_layer_approximation_rm::SelfAttentionLayerApproximationRm,
         sparse_self_attention_layer::SparseSelfAttentionLayer, sparse_self_attention_layer_rm::SparseSelfAttentionLayerRm,
     },
     network_types::neural_network_generic::OperationMode,
@@ -110,6 +110,7 @@ pub enum LayerEnum {
     Norm(Box<NormalNormLayer>),
     NormRm(Box<NormalNormLayerRm>),
     SelfAttention(Box<SelfAttentionLayer>),
+    SelfAttentionRm(Box<SelfAttentionLayerRm>),
     SparseSelfAttention(Box<SparseSelfAttentionLayer>),
     SparseSelfAttentionRm(Box<SparseSelfAttentionLayerRm>),
     SelfAttentionApproximation(Box<SelfAttentionLayerApproximation>),
@@ -432,6 +433,7 @@ impl LayerEnum {
             LayerEnum::Norm(_) => "Norm",
             LayerEnum::NormRm(_) => "NormRm",
             LayerEnum::SelfAttention(_) => "SelfAttention",
+            LayerEnum::SelfAttentionRm(_) => "SelfAttentionRm",
             LayerEnum::SparseSelfAttention(_) => "SparseSelfAttention",
             LayerEnum::SparseSelfAttentionRm(_) => "SparseSelfAttentionRm",
             LayerEnum::SelfAttentionApproximation(_) => "SelfAttentionApproximation",
@@ -481,6 +483,7 @@ impl LayerInterface for LayerEnum {
             LayerEnum::Norm(layer) => layer.forward(layer_input),
             LayerEnum::NormRm(layer) => layer.forward(layer_input),
             LayerEnum::SelfAttention(layer) => layer.forward(layer_input),
+            LayerEnum::SelfAttentionRm(layer) => layer.forward(layer_input),
             LayerEnum::SparseSelfAttention(layer) => layer.forward(layer_input),
             LayerEnum::SparseSelfAttentionRm(layer) => layer.forward(layer_input),
             LayerEnum::SelfAttentionApproximation(layer) => layer.forward(layer_input),
@@ -601,6 +604,7 @@ impl LayerInterface for LayerEnum {
                 }
             }
             LayerEnum::SelfAttention(layer) => layer.backward(previous_gradient),
+            LayerEnum::SelfAttentionRm(layer) => layer.backward(previous_gradient),
             LayerEnum::SparseSelfAttention(layer) => layer.backward(previous_gradient),
             LayerEnum::SparseSelfAttentionRm(layer) => layer.backward(previous_gradient),
             LayerEnum::SelfAttentionApproximation(layer) => {
@@ -667,6 +671,7 @@ impl LayerInterface for LayerEnum {
             LayerEnum::Norm(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::NormRm(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::SelfAttention(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::SelfAttentionRm(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::SparseSelfAttention(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::SparseSelfAttentionRm(layer) => layer.update_parameters(),
             LayerEnum::SelfAttentionApproximation(layer) => layer.update_parameters(),

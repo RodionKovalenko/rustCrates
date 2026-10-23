@@ -311,6 +311,14 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
                 }
                 self_attention_layer_rm.norm_layer.learning_rate = learning_rate;
             }
+            LayerEnum::SelfAttentionRm(self_attention_layer_rm) => {
+                for attention_head in self_attention_layer_rm.attention_heads.iter_mut() {
+                    attention_head.gradient = None;
+                    attention_head.batch_size = 0;
+                    attention_head.learning_rate = learning_rate;
+                }
+                self_attention_layer_rm.norm_layer.learning_rate = learning_rate;
+            }
             LayerEnum::SelfAttentionApproximation(self_attention_layer) => {
                 for attention_head in self_attention_layer.attention_heads.iter_mut() {
                     attention_head.learning_rate = learning_rate;
@@ -535,6 +543,15 @@ pub fn reset_previous_gradient(transformer: &mut NeuralNetwork) {
                 }
             }
             LayerEnum::SparseSelfAttentionRm(self_attention_layer_rm) => {
+                self_attention_layer_rm.gradient = None;
+                for attention_head in self_attention_layer_rm.attention_heads.iter_mut() {
+                    attention_head.gradient = None;
+                    attention_head.batch_size = 0;
+                }
+                self_attention_layer_rm.norm_layer.gradient = None;
+                self_attention_layer_rm.norm_layer.batch_size = 0;
+            }
+            LayerEnum::SelfAttentionRm(self_attention_layer_rm) => {
                 self_attention_layer_rm.gradient = None;
                 for attention_head in self_attention_layer_rm.attention_heads.iter_mut() {
                     attention_head.gradient = None;

@@ -19,7 +19,7 @@ use crate::neural_networks::{
     },
 };
 
-use super::sparse_masked_attention_head::calculate_start_end_indices;
+use super::{attention_rm_common::AttentionHeadRm, sparse_masked_attention_head::calculate_start_end_indices};
 
 const W_Q: &str = "w_q";
 const W_K: &str = "w_k";
@@ -499,5 +499,17 @@ impl SparseMaskedAttentionHeadRm {
         update_weights_adam_w_rm(W_V, &mut self.weights_v_rm, &weight_gradients[1], previous_gradient, &mut gradient, learning_rate, time_step);
 
         self.previous_gradient = Some(gradient);
+    }
+}
+
+impl AttentionHeadRm for SparseMaskedAttentionHeadRm {
+    fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
+        SparseMaskedAttentionHeadRm::forward(self, layer_input)
+    }
+    fn backward_rm(&mut self, previous_gradient_batch: &[RowMajorMatrix<C>]) -> Gradient {
+        SparseMaskedAttentionHeadRm::backward_rm(self, previous_gradient_batch)
+    }
+    fn update_parameters(&mut self) {
+        SparseMaskedAttentionHeadRm::update_parameters(self)
     }
 }

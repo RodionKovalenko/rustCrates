@@ -1,7 +1,10 @@
 pub mod transformer_builder;
 pub mod transformer_network;
 pub mod self_attention_layer;
+pub mod self_attention_layer_rm;
 pub mod masked_attention_head;
+pub mod masked_attention_head_rm;
+pub mod attention_rm_common;
 pub mod masked_attention_head_approximation;
 pub mod self_attention_layer_approximation;
 pub mod self_attention_layer_approximation_rm;

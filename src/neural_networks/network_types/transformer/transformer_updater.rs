@@ -46,6 +46,9 @@ pub fn update_transformer(transformer_network: &mut NeuralNetwork, target_batch_
             LayerEnum::SparseSelfAttentionRm(attention_layer) => {
                 attention_layer.update_parameters();
             }
+            LayerEnum::SelfAttentionRm(attention_layer) => {
+                attention_layer.update_parameters();
+            }
             LayerEnum::SelfAttentionApproximation(attention_layer) => {
                 attention_layer.update_parameters();
             }

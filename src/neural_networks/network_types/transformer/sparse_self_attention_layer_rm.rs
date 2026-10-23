@@ -2,15 +2,15 @@ use crate::neural_networks::{
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     network_layers::{network_layers_rm::norm_layer_rm::NormalNormLayerRm},
     utils::{
-        dtype::{r, C, Real, ZERO},
+        dtype::{r, C, Real},
         matrix::RowMajorMatrix,
-        matrix_rm::{add_assign_rm, concat_heads_rm, scale_rm_in_place, split_heads_rm, sum_heads_rm, tail_rows_rm},
     },
 };
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::{
+    attention_rm_common::{residual_attention_backward_rm, residual_attention_forward_rm},
     sparse_masked_attention_head_rm::SparseMaskedAttentionHeadRm,
     transformer_updater::calculate_alpha,
 };
@@ -60,68 +60,22 @@ impl SparseSelfAttentionLayerRm {
 
     /// RM counterpart of `SparseSelfAttentionLayer::forward`: norm -> heads -> concat -> beta * out + input.
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
-        let input_batch_rm = layer_input.get_input_batch_rm();
-        let padding_mask_batch = layer_input.get_padding_mask_batch();
+        let output = residual_attention_forward_rm(&mut self.attention_heads, &mut self.norm_layer, layer_input, self.beta);
 
-        let mut local_input = layer_input.clone();
-        local_input.clear_input_batch();
-        local_input.set_input_batch_rm(input_batch_rm.clone());
-        local_input.set_padding_mask_batch(padding_mask_batch.clone());
-
-        let normed = self.norm_layer.forward(&local_input).take_output_batch_rm().expect("NormRm did not return RM output");
-        local_input.set_input_batch_rm(normed);
-
-        let head_outputs: Vec<Vec<RowMajorMatrix<C>>> = self
-            .attention_heads
-            .par_iter_mut()
-            .map(|head| head.forward(&local_input).take_output_batch_rm().expect("SparseMaskedAttentionHeadRm did not return RM output"))
-            .collect();
-
-        // Residual: beta * out + input (in forward-only mode the output may only cover the last rows)
-        let mut output = concat_heads_rm(&head_outputs);
-        for (out, input) in output.iter_mut().zip(input_batch_rm.iter()) {
-            scale_rm_in_place(out, C::new(self.beta, ZERO));
-            if layer_input.get_forward_only() {
-                add_assign_rm(out, &tail_rows_rm(input, out.rows));
-            } else {
-                add_assign_rm(out, input);
-            }
-        }
-
-        self.input_batch_rm = Some(input_batch_rm);
+        self.input_batch_rm = Some(layer_input.get_input_batch_rm());
         self.output_batch_rm = Some(output.clone());
         self.time_step = layer_input.get_time_step();
 
         let mut layer_output = LayerOutput::new_default();
         layer_output.set_output_batch_rm(output);
-        layer_output.set_padding_mask_batch(padding_mask_batch);
+        layer_output.set_padding_mask_batch(layer_input.get_padding_mask_batch());
         layer_output
     }
 
     /// RM counterpart of `SparseSelfAttentionLayer::backward`.
     pub fn backward_rm(&mut self, previous_gradient_batch_rm: &[RowMajorMatrix<C>]) -> Gradient {
-        let mut scaled_upstream: Vec<RowMajorMatrix<C>> = previous_gradient_batch_rm.to_vec();
-        scaled_upstream.iter_mut().for_each(|m| scale_rm_in_place(m, C::new(self.beta, ZERO)));
-
-        let head_gradients = split_heads_rm(&scaled_upstream, self.attention_heads.len());
-        let head_input_gradients: Vec<Vec<RowMajorMatrix<C>>> = self
-            .attention_heads
-            .par_iter_mut()
-            .zip(head_gradients.par_iter())
-            .map(|(head, gradient)| head.backward_rm(gradient).get_gradient_input_batch_rm())
-            .collect();
-
-        let mut gradient = Gradient::new_default();
-        gradient.set_gradient_input_batch_rm(sum_heads_rm(head_input_gradients));
-        let mut combined = self.norm_layer.backward(&gradient).get_gradient_input_batch_rm();
-
-        // Residual: add unscaled upstream
-        for (c, u) in combined.iter_mut().zip(previous_gradient_batch_rm.iter()) {
-            add_assign_rm(c, u);
-        }
-
         let mut out = Gradient::new_default();
-        out.set_gradient_input_batch_rm(combined);
+        out.set_gradient_input_batch_rm(residual_attention_backward_rm(&mut self.attention_heads, &mut self.norm_layer, previous_gradient_batch_rm, self.beta));
         self.gradient = Some(out.clone());
         out
     }

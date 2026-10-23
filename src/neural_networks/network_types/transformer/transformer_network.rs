@@ -786,6 +786,8 @@ fn clear_network_caches(transformer_network: &mut NeuralNetwork) {
                     head.clear_cache();
                 }
             }
+            LayerEnum::SparseSelfAttentionRm(attention_layer) => attention_layer.clear_cache(),
+            LayerEnum::SelfAttentionRm(attention_layer) => attention_layer.clear_cache(),
             _ => {}
         }
     }
