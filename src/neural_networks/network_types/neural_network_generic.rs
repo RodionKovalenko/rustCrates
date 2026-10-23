@@ -427,8 +427,14 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
             LayerEnum::AdaptiveLinear(adaptive_linear_layer) => {
                 adaptive_linear_layer.learning_rate = learning_rate;
             }
+            LayerEnum::AdaptiveLinearRm(adaptive_linear_layer) => {
+                adaptive_linear_layer.layer.learning_rate = learning_rate;
+            }
             LayerEnum::Eml(eml_linear_layer) => {
                 eml_linear_layer.learning_rate = learning_rate;
+            }
+            LayerEnum::EmlRm(eml_linear_layer) => {
+                eml_linear_layer.layer.learning_rate = learning_rate;
             }
             LayerEnum::SparseLinearRm(sparse_linear_layer) => {
                 sparse_linear_layer.learning_rate = learning_rate;
@@ -701,9 +707,18 @@ pub fn reset_previous_gradient(transformer: &mut NeuralNetwork) {
                 adaptive_linear_layer.gradient = None;
                 adaptive_linear_layer.batch_size = 0;
             }
+            LayerEnum::AdaptiveLinearRm(adaptive_linear_layer) => {
+                // adaptive_linear_layer.layer.previous_gradient = None;
+                adaptive_linear_layer.layer.gradient = None;
+                adaptive_linear_layer.layer.batch_size = 0;
+            }
             LayerEnum::Eml(eml_linear_layer) => {
                 eml_linear_layer.gradient = None;
                 eml_linear_layer.batch_size = 0;
+            }
+            LayerEnum::EmlRm(eml_linear_layer) => {
+                eml_linear_layer.layer.gradient = None;
+                eml_linear_layer.layer.batch_size = 0;
             }
             LayerEnum::SparseLinearRm(sparse_linear_layer) => {
                 sparse_linear_layer.gradient = None;
@@ -925,6 +940,10 @@ pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
             }
             LayerEnum::AdaptiveLinear(adaptive_linear_layer) => {
                 let (r, c) = (adaptive_linear_layer.weights.len(), adaptive_linear_layer.weights[0].len());
+                println!("adaptive linear layer weigths: {}x{}", r, c);
+            }
+            LayerEnum::AdaptiveLinearRm(adaptive_linear_layer) => {
+                let (r, c) = (adaptive_linear_layer.layer.weights.len(), adaptive_linear_layer.layer.weights[0].len());
                 println!("adaptive linear layer weigths: {}x{}", r, c);
             }
             LayerEnum::SparseLinearRm(sparse_linear_layer) => {

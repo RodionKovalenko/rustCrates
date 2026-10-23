@@ -11,6 +11,7 @@ mod test_layers_rm {
         network_layers::{
             clustering_linear_layer::ClusteringLinearLayer,
             complex_to_linear_layer::ComplexToLinearLayer,
+            eml_linear_layer::EmlLinearLayer,
             embedding_layer::EmbeddingLayer,
             feedforward_layer::FeedForwardLayer,
             layer::LayerEnum,
@@ -18,10 +19,13 @@ mod test_layers_rm {
             multi_linear_layer::MultiLinearLayer,
             network_layers_rm::{
                 adaptive_avg_pool1d_layer_rm::AdaptiveAvgPool1dLayerRm,
+                adaptive_linear_layer_rm::AdaptiveLinearLayerRm,
+                eml_linear_layer_rm::EmlLinearLayerRm,
                 complex_to_linear_layer_rm::ComplexToLinearLayerRm, embedding_layer_rm::EmbeddingLayerRm, feedforward_layer_rm::FeedForwardLayerRm, linear_layer_rm::LinearLayerRm, multi_linear_layer_rm::MultiLinearLayerRm,
                 norm_layer_rm::NormalNormLayerRm, positional_encoding_layer_rm::PositionalEncodingLayerRm, rms_norm_layer_rm::RMSNormLayerRm, softmax_output_layer_rm::SoftmaxLayerRm, sparse_linear_layer_rm::SparseLinearLayerRm, wavelet_complex_layer_rm::ComplexWaveletLayerRm,
                 wavelet_discrete_layer_rm::DiscreteWaveletLayerRm,
             },
+            adaptive_linear_layer::AdaptiveLinearLayer,
             adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer,
             add_rms_norm_layer::RMSNormLayer,
             norm_layer::NormalNormLayer,
@@ -404,5 +408,94 @@ mod test_layers_rm {
             let compressed = generate_random_complex_3d(2, layer.metadata.compressed_length, 6);
             assert_close_3d(&format!("{} decompress", name), &layer.decompress(&compressed), &layer_rm.decompress(&to_rm_batch(&compressed)));
         }
+    }
+
+    /// Training input for the output heads: targets cover the last unpadded positions.
+    fn output_head_inputs(input_batch: &Vec<Vec<Vec<C>>>, step: usize) -> (LayerInput, LayerInput) {
+        let padding_mask_batch = vec![vec![1; 5], vec![1, 1, 1, 1, 0]];
+        let (mut input, mut input_rm) = layer_inputs_with_mask(input_batch, &padding_mask_batch);
+        for li in [&mut input, &mut input_rm] {
+            li.set_target_batch_ids(vec![vec![3, 17, 25], vec![5, 30, 9]]);
+            li.set_top_k_size(6);
+            li.set_time_step(step);
+            li.set_total_valid_tokens(6);
+        }
+        (input, input_rm)
+    }
+
+    fn assert_losses_close(name: &str, losses: &Vec<Vec<Vec<C>>>, losses_rm: &Vec<Vec<Vec<C>>>) {
+        assert_eq!(losses.len(), losses_rm.len(), "{}: loss batch size", name);
+        for (b, (l, l_rm)) in losses.iter().zip(losses_rm.iter()).enumerate() {
+            let flat: Vec<C> = l.iter().flatten().copied().collect();
+            let flat_rm: Vec<C> = l_rm.iter().flatten().copied().collect();
+            assert_close_1d(&format!("{} loss [batch {}]", name, b), &flat, &flat_rm);
+        }
+    }
+
+    #[test]
+    fn test_adaptive_linear_layer_rm_matches_adaptive_linear_layer() {
+        let (hidden, vocab) = (8, 40);
+        let mut layer = AdaptiveLinearLayer::new(0.01, hidden, vocab);
+        let mut layer_rm = AdaptiveLinearLayerRm { layer: layer.clone() };
+
+        for step in 1..=3 {
+            let name = format!("AdaptiveLinearLayerRm step {}", step);
+            let (input, input_rm) = output_head_inputs(&generate_random_complex_3d(2, 5, hidden), step);
+
+            let output = layer.forward(&input);
+            let output_rm = layer_rm.forward(&input_rm);
+            assert_close_3d(&format!("{} logits", name), &output.get_output_batch(), output_rm.get_output_batch_rm_ref().unwrap());
+            assert_eq!(output.get_output_indices(), output_rm.get_output_indices(), "{}: indices", name);
+            assert_losses_close(&name, &output.get_cross_entropy_loss_batch(), &output_rm.get_cross_entropy_loss_batch());
+            assert_input_gradients_close(&name, layer.gradient.as_ref().unwrap(), layer_rm.gradient().unwrap());
+
+            layer.update_parameters();
+            layer_rm.update_parameters();
+            assert_eq!(layer.weights, layer_rm.layer.weights, "{}: routing weights", name);
+            assert_eq!(layer.cluster_word_weights, layer_rm.layer.cluster_word_weights, "{}: word table", name);
+        }
+
+        // Inference (no targets)
+        let mut input = LayerInput::new_default();
+        input.set_top_k_size(6);
+        let mut input_rm = input.clone();
+        let input_batch = generate_random_complex_3d(2, 5, hidden);
+        input.set_input_batch(input_batch.clone());
+        input_rm.set_input_batch_rm(to_rm_batch(&input_batch));
+        let (output, output_rm) = (layer.forward(&input), layer_rm.forward(&input_rm));
+        assert_close_3d("AdaptiveLinearLayerRm inference", &output.get_output_batch(), output_rm.get_output_batch_rm_ref().unwrap());
+        assert_eq!(output.get_output_indices(), output_rm.get_output_indices());
+    }
+
+    #[test]
+    fn test_eml_linear_layer_rm_matches_eml_linear_layer() {
+        let (d_model, vocab) = (8, 40);
+        let mut layer = EmlLinearLayer::new(0.01, d_model, vocab);
+        let mut layer_rm = EmlLinearLayerRm { layer: layer.clone() };
+
+        for step in 1..=3 {
+            let name = format!("EmlLinearLayerRm step {}", step);
+            let (input, input_rm) = output_head_inputs(&generate_random_complex_3d(2, 5, d_model), step);
+
+            let output = layer.forward(&input);
+            let output_rm = layer_rm.forward(&input_rm);
+            assert_losses_close(&name, &output.get_cross_entropy_loss_batch(), &output_rm.get_cross_entropy_loss_batch());
+            assert_input_gradients_close(&name, layer.gradient.as_ref().unwrap(), layer_rm.gradient().unwrap());
+
+            layer.update_parameters();
+            layer_rm.update_parameters();
+            assert_eq!(bincode::serialize(&layer).unwrap(), bincode::serialize(&layer_rm.layer).unwrap(), "{}: parameters", name);
+        }
+
+        // Inference (no targets)
+        let mut input = LayerInput::new_default();
+        input.set_top_k_size(4);
+        let mut input_rm = input.clone();
+        let input_batch = generate_random_complex_3d(2, 5, d_model);
+        input.set_input_batch(input_batch.clone());
+        input_rm.set_input_batch_rm(to_rm_batch(&input_batch));
+        let (output, output_rm) = (layer.forward(&input), layer_rm.forward(&input_rm));
+        assert_close_3d("EmlLinearLayerRm inference", &output.get_output_batch(), output_rm.get_output_batch_rm_ref().unwrap());
+        assert_eq!(output.get_output_indices(), output_rm.get_output_indices());
     }
 }

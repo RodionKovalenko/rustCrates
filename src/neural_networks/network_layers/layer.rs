@@ -1,4 +1,6 @@
 use crate::neural_networks::{
+    network_layers::network_layers_rm::eml_linear_layer_rm::EmlLinearLayerRm,
+    network_layers::network_layers_rm::adaptive_linear_layer_rm::AdaptiveLinearLayerRm,
     network_layers::network_layers_rm::adaptive_avg_pool1d_layer_rm::AdaptiveAvgPool1dLayerRm,
     network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput, layer_output_struct::LayerOutput},
     network_layers::{
@@ -121,7 +123,9 @@ pub enum LayerEnum {
     LinearRm(Box<LinearLayerRm>),
     ClusteringLinear(Box<ClusteringLinearLayer>),
     AdaptiveLinear(Box<AdaptiveLinearLayer>),
+    AdaptiveLinearRm(Box<AdaptiveLinearLayerRm>),
     Eml(Box<EmlLinearLayer>),
+    EmlRm(Box<EmlLinearLayerRm>),
     SparseLinearRm(Box<SparseLinearLayerRm>),
     MultiLinear(Box<MultiLinearLayer>),
     MultiLinearRm(Box<MultiLinearLayerRm>),
@@ -445,7 +449,9 @@ impl LayerEnum {
             LayerEnum::LinearRm(_) => "LinearRm",
             LayerEnum::ClusteringLinear(_) => "ClusteringLinear",
             LayerEnum::AdaptiveLinear(_) => "AdaptiveLinear",
+            LayerEnum::AdaptiveLinearRm(_) => "AdaptiveLinearRm",
             LayerEnum::Eml(_) => "Eml",
+            LayerEnum::EmlRm(_) => "EmlRm",
             LayerEnum::SparseLinearRm(_) => "SparseLinearRm",
             LayerEnum::MultiLinear(_) => "MultiLinear",
             LayerEnum::MultiLinearRm(_) => "MultiLinearRm",
@@ -514,6 +520,26 @@ impl LayerInterface for LayerEnum {
                     // Terminal teacher-forced head on the training path: no dense logits, so
                     // pass the hidden states through unchanged for any downstream consumer.
                     output.set_output_batch(layer_input.get_input_batch());
+                }
+                output
+            }
+            LayerEnum::AdaptiveLinearRm(layer) => {
+                let mut output = layer.forward(layer_input);
+                if forward_only {
+                    let logits = output.get_output_batch_rm();
+                    output.set_output_batch_real(complex_batch_to_real_batch_rm(&logits));
+                }
+                output
+            }
+            LayerEnum::EmlRm(layer) => {
+                let mut output = layer.forward(layer_input);
+                if forward_only {
+                    // Inference: sparse top-k token scores + indices (see Eml).
+                    let logits = output.get_output_batch_rm();
+                    output.set_output_batch_real(complex_batch_to_real_batch_rm(&logits));
+                } else {
+                    // Terminal teacher-forced head on the training path: pass the hidden states through.
+                    output.set_output_batch_rm(layer_input.get_input_batch_rm());
                 }
                 output
             }
@@ -625,7 +651,9 @@ impl LayerInterface for LayerEnum {
             LayerEnum::LinearRm(layer) => LayerInterface::backward(&mut **layer, previous_gradient),
             LayerEnum::ClusteringLinear(layer) => layer.backward(previous_gradient),
             LayerEnum::AdaptiveLinear(layer) => layer.backward(previous_gradient),
+            LayerEnum::AdaptiveLinearRm(layer) => layer.backward(previous_gradient),
             LayerEnum::Eml(layer) => layer.backward(previous_gradient),
+            LayerEnum::EmlRm(layer) => layer.backward(previous_gradient),
             LayerEnum::SparseLinearRm(layer) => layer.backward(previous_gradient),
             LayerEnum::MultiLinear(layer) => layer.backward(previous_gradient),
             LayerEnum::MultiLinearRm(layer) => layer.backward(previous_gradient),
@@ -686,7 +714,9 @@ impl LayerInterface for LayerEnum {
             LayerEnum::LinearRm(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::ClusteringLinear(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::AdaptiveLinear(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::AdaptiveLinearRm(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::Eml(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::EmlRm(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::SparseLinearRm(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::MultiLinear(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::MultiLinearRm(layer) => LayerInterface::update_parameters(&mut **layer),

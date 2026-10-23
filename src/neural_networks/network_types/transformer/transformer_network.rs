@@ -628,10 +628,24 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
                     println!("No stored gradient in Eml Linear Layer");
                 }
             }
+            LayerEnum::EmlRm(eml_linear_layer) => {
+                if let Some(stored_gradient) = eml_linear_layer.gradient() {
+                    gradient = Some(stored_gradient.clone());
+                } else {
+                    println!("No stored gradient in Eml Linear Layer");
+                }
+            }
             // AdaptiveLinear acts as a terminal head only when nothing above it produced a
             // gradient; otherwise it backpropagates like any other layer below.
             LayerEnum::AdaptiveLinear(adaptive_linear_layer) if gradient.is_none() => {
                 if let Some(stored_gradient) = adaptive_linear_layer.gradient.as_ref() {
+                    gradient = Some(stored_gradient.clone());
+                } else {
+                    println!("No previous gradient in Adaptive Linear Layer");
+                }
+            }
+            LayerEnum::AdaptiveLinearRm(adaptive_linear_layer) if gradient.is_none() => {
+                if let Some(stored_gradient) = adaptive_linear_layer.gradient() {
                     gradient = Some(stored_gradient.clone());
                 } else {
                     println!("No previous gradient in Adaptive Linear Layer");
