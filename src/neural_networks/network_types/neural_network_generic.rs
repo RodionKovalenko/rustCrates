@@ -425,6 +425,9 @@ pub fn update_learning_rate(transformer: &mut NeuralNetwork, learning_rate: f64)
             LayerEnum::MultiLinear(linear_layer) => {
                 linear_layer.learning_rate = learning_rate;
             }
+            LayerEnum::MultiLinearRm(linear_layer) => {
+                linear_layer.learning_rate = learning_rate;
+            }
             LayerEnum::Wavelet(_wavelet_layer) => {}
             LayerEnum::WaveletRm(_wavelet_layer) => {}
             LayerEnum::DiscreteWavelet(_wavelet_layer) => {}
@@ -688,6 +691,11 @@ pub fn reset_previous_gradient(transformer: &mut NeuralNetwork) {
                 _linear_layer.gradient = None;
                 _linear_layer.batch_size = 0;
             }
+            LayerEnum::MultiLinearRm(_linear_layer) => {
+                // _linear_layer.previous_gradient = None;
+                _linear_layer.gradient = None;
+                _linear_layer.batch_size = 0;
+            }
             LayerEnum::Wavelet(_wavelet_layer) => {
                 _wavelet_layer.gradient = None;
             }
@@ -898,6 +906,9 @@ pub fn print_networt_structure(transformer: &mut NeuralNetwork) {
                 println!("sparse linear_rm layer weigths: {}x{}", r, c);
             }
             LayerEnum::MultiLinear(multilinear_layer) => {
+                println!("multilinear layers: {} ", multilinear_layer.layers.len());
+            }
+            LayerEnum::MultiLinearRm(multilinear_layer) => {
                 println!("multilinear layers: {} ", multilinear_layer.layers.len());
             }
             LayerEnum::Wavelet(_wavelet_layer) => {

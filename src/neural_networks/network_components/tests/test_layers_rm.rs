@@ -15,8 +15,9 @@ mod test_layers_rm {
             feedforward_layer::FeedForwardLayer,
             layer::LayerEnum,
             linear_layer::LinearLayer,
+            multi_linear_layer::MultiLinearLayer,
             network_layers_rm::{
-                complex_to_linear_layer_rm::ComplexToLinearLayerRm, embedding_layer_rm::EmbeddingLayerRm, feedforward_layer_rm::FeedForwardLayerRm, linear_layer_rm::LinearLayerRm,
+                complex_to_linear_layer_rm::ComplexToLinearLayerRm, embedding_layer_rm::EmbeddingLayerRm, feedforward_layer_rm::FeedForwardLayerRm, linear_layer_rm::LinearLayerRm, multi_linear_layer_rm::MultiLinearLayerRm,
                 norm_layer_rm::NormalNormLayerRm, positional_encoding_layer_rm::PositionalEncodingLayerRm, rms_norm_layer_rm::RMSNormLayerRm, softmax_output_layer_rm::SoftmaxLayerRm, sparse_linear_layer_rm::SparseLinearLayerRm, wavelet_complex_layer_rm::ComplexWaveletLayerRm,
                 wavelet_discrete_layer_rm::DiscreteWaveletLayerRm,
             },
@@ -352,5 +353,33 @@ mod test_layers_rm {
             layer_rm.update_parameters();
             assert_close_1d(&format!("{} gamma", name), &layer.gamma, &layer_rm.gamma);
         }
+    }
+
+    #[test]
+    fn test_multi_linear_layer_rm_matches_multi_linear_layer() {
+        let (input_dim, output_dim, num_layers) = (8, 7, 3);
+        let mut layer = MultiLinearLayer::new(0.01, input_dim, output_dim, num_layers);
+        let mut layer_rm = MultiLinearLayerRm::new(0.01, input_dim, output_dim, num_layers);
+        assert_eq!(layer.col_ranges, layer_rm.col_ranges);
+        for (sub, sub_rm) in layer.layers.iter().zip(layer_rm.layers.iter_mut()) {
+            sub_rm.weights = RowMajorMatrix::from_rows(&sub.weights);
+            sub_rm.bias = sub.bias.clone();
+        }
+
+        compare_training_steps(
+            "MultiLinearLayerRm",
+            &mut layer,
+            &mut layer_rm,
+            (3, 5, input_dim),
+            None,
+            STEPS,
+            |_, _, _| {},
+            |layer, layer_rm, name| {
+                let (weights, bias) = layer.get_combined_weights();
+                let (weights_rm, bias_rm) = layer_rm.get_combined_weights();
+                assert_close_2d(&format!("{} weights", name), &weights, &weights_rm);
+                assert_close_1d(&format!("{} bias", name), &bias, &bias_rm);
+            },
+        );
     }
 }

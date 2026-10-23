@@ -3,7 +3,7 @@ use crate::neural_networks::{
     network_layers::{
         default_layer::LayerInterface,
         adaptive_linear_layer::AdaptiveLinearLayer, adaptive_pooling::adaptive_avg_pool1d_layer::AdaptiveAvgPool1dLayer, clustering_linear_layer::ClusteringLinearLayer, complex_to_linear_layer::ComplexToLinearLayer, eml_linear_layer::EmlLinearLayer, feedforward_layer::FeedForwardLayer, multi_linear_layer::MultiLinearLayer, network_layers_rm::{
-            complex_to_linear_layer_rm::ComplexToLinearLayerRm, embedding_layer_rm::EmbeddingLayerRm, feedforward_layer_rm::FeedForwardLayerRm, layer_rm::LayerRm, linear_layer_rm::LinearLayerRm,
+            complex_to_linear_layer_rm::ComplexToLinearLayerRm, embedding_layer_rm::EmbeddingLayerRm, feedforward_layer_rm::FeedForwardLayerRm, layer_rm::LayerRm, linear_layer_rm::LinearLayerRm, multi_linear_layer_rm::MultiLinearLayerRm,
             sparse_linear_layer_rm::SparseLinearLayerRm, wavelet_complex_layer_rm::ComplexWaveletLayerRm, wavelet_discrete_layer_rm::DiscreteWaveletLayerRm,
         }, wavelet_complex_layer::ComplexWaveletLayer, wavelet_discrete_layer::DiscreteWaveletLayer
     },
@@ -121,6 +121,7 @@ pub enum LayerEnum {
     Eml(Box<EmlLinearLayer>),
     SparseLinearRm(Box<SparseLinearLayerRm>),
     MultiLinear(Box<MultiLinearLayer>),
+    MultiLinearRm(Box<MultiLinearLayerRm>),
     DiscreteWavelet(Box<DiscreteWaveletLayer>),
     DiscreteWaveletRm(Box<DiscreteWaveletLayerRm>),
     ComplexToLinear(Box<ComplexToLinearLayer>),
@@ -442,6 +443,7 @@ impl LayerEnum {
             LayerEnum::Eml(_) => "Eml",
             LayerEnum::SparseLinearRm(_) => "SparseLinearRm",
             LayerEnum::MultiLinear(_) => "MultiLinear",
+            LayerEnum::MultiLinearRm(_) => "MultiLinearRm",
             LayerEnum::DiscreteWavelet(_) => "DiscreteWavelet",
             LayerEnum::DiscreteWaveletRm(_) => "DiscreteWaveletRm",
             LayerEnum::ComplexToLinear(_) => "ComplexToLinear",
@@ -510,6 +512,7 @@ impl LayerInterface for LayerEnum {
             }
             LayerEnum::SparseLinearRm(layer) => layer.forward(layer_input),
             LayerEnum::MultiLinear(layer) => layer.forward(layer_input),
+            LayerEnum::MultiLinearRm(layer) => layer.forward(layer_input),
             LayerEnum::DiscreteWavelet(layer) => layer.forward(layer_input),
             LayerEnum::DiscreteWaveletRm(layer) => layer.forward(layer_input),
             LayerEnum::ComplexToLinear(layer) => layer.forward(layer_input),
@@ -616,6 +619,7 @@ impl LayerInterface for LayerEnum {
             LayerEnum::Eml(layer) => layer.backward(previous_gradient),
             LayerEnum::SparseLinearRm(layer) => layer.backward(previous_gradient),
             LayerEnum::MultiLinear(layer) => layer.backward(previous_gradient),
+            LayerEnum::MultiLinearRm(layer) => layer.backward(previous_gradient),
             LayerEnum::DiscreteWavelet(layer) => layer.backward(previous_gradient),
             LayerEnum::DiscreteWaveletRm(layer) => {
                 if previous_gradient.get_gradient_input_batch_rm_ref().is_some() {
@@ -674,6 +678,7 @@ impl LayerInterface for LayerEnum {
             LayerEnum::Eml(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::SparseLinearRm(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::MultiLinear(layer) => LayerInterface::update_parameters(&mut **layer),
+            LayerEnum::MultiLinearRm(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::DiscreteWavelet(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::DiscreteWaveletRm(layer) => LayerInterface::update_parameters(&mut **layer),
             LayerEnum::ComplexToLinear(layer) => LayerInterface::update_parameters(&mut **layer),

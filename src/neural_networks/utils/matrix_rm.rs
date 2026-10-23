@@ -419,23 +419,24 @@ pub fn split_data_by_columns_rm(matrix: &RowMajorMatrix<C>) -> (RowMajorMatrix<C
     (left, right)
 }
 
-/// Concatenates the per-head outputs column-wise: `[head][batch]` (seq x head_dim) -> `[batch]` (seq x num_heads*head_dim).
+/// Concatenates column blocks: `[block][batch]` (seq x cols_block) -> `[batch]` (seq x sum of cols).
+/// Used for attention heads and for the column chunks of `MultiLinearLayerRm`.
 pub fn concat_heads_rm(head_outputs: &[Vec<RowMajorMatrix<C>>]) -> Vec<RowMajorMatrix<C>> {
-    assert!(!head_outputs.is_empty(), "no attention head outputs");
+    assert!(!head_outputs.is_empty(), "no column blocks to concatenate");
     let batch_size = head_outputs[0].len();
 
     (0..batch_size)
         .map(|b| {
-            let (rows, head_dim) = (head_outputs[0][b].rows, head_outputs[0][b].cols);
-            let total_dim = head_dim * head_outputs.len();
-            let mut data = Vec::with_capacity(rows * total_dim);
+            let rows = head_outputs[0][b].rows;
+            let total_cols: usize = head_outputs.iter().map(|block| block[b].cols).sum();
+            let mut data = Vec::with_capacity(rows * total_cols);
             for row in 0..rows {
-                for head in head_outputs {
-                    assert_eq!((head[b].rows, head[b].cols), (rows, head_dim), "attention heads must have equal output shapes");
-                    data.extend_from_slice(&head[b].data[head[b].row_range(row)]);
+                for block in head_outputs {
+                    assert_eq!(block[b].rows, rows, "column blocks must have the same number of rows");
+                    data.extend_from_slice(&block[b].data[block[b].row_range(row)]);
                 }
             }
-            RowMajorMatrix::from_data(rows, total_dim, data)
+            RowMajorMatrix::from_data(rows, total_cols, data)
         })
         .collect()
 }
