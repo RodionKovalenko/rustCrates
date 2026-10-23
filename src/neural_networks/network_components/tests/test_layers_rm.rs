@@ -44,7 +44,9 @@ mod test_layers_rm {
         },
     };
 
-    use super::super::rm_test_utils::{assert_close_1d, assert_close_2d, assert_close_3d, assert_input_gradients_close, compare_training_steps, copy_parameters, layer_inputs, layer_inputs_with_mask, to_rm_batch, upstream_gradients};
+    use super::super::rm_test_utils::{
+        assert_close_1d, assert_close_2d, assert_close_3d, assert_close_real_2d, assert_dense_gradients_close, assert_input_gradients_close, assert_linear_gradients_close, assert_norm_gradients_close, compare_training_steps, copy_parameters, layer_inputs, layer_inputs_with_mask, to_rm_batch, upstream_gradients,
+    };
 
     const STEPS: usize = 3;
 
@@ -63,7 +65,7 @@ mod test_layers_rm {
             (3, 5, input_dim),
             None,
             STEPS,
-            |gradient, gradient_rm, name| {
+            |_, _, gradient, gradient_rm, name| {
                 assert_close_2d(&format!("{} weight gradient", name), &gradient.get_gradient_weights(), &gradient_rm.get_gradient_weights_rm().unwrap());
                 assert_close_1d(&format!("{} bias gradient", name), &gradient.get_gradient_bias(), &gradient_rm.get_gradient_bias());
             },
@@ -90,7 +92,7 @@ mod test_layers_rm {
             (3, 5, feature_dim),
             Some(padding_mask_batch),
             STEPS,
-            |gradient, gradient_rm, name| {
+            |_, _, gradient, gradient_rm, name| {
                 assert_close_1d(&format!("{} gamma gradient", name), &gradient.get_gradient_gamma(), &gradient_rm.get_gradient_gamma());
                 assert_close_1d(&format!("{} beta gradient", name), &gradient.get_gradient_beta(), &gradient_rm.get_gradient_beta());
             },
@@ -107,7 +109,7 @@ mod test_layers_rm {
         let mut layer = PositionalEncodingLayer::new(embedding_dim);
         let mut layer_rm = PositionalEncodingLayerRm::new(embedding_dim);
 
-        compare_training_steps("PositionalEncodingLayerRm", &mut layer, &mut layer_rm, (2, 6, embedding_dim), None, STEPS, |_, _, _| {}, |_, _, _| {});
+        compare_training_steps("PositionalEncodingLayerRm", &mut layer, &mut layer_rm, (2, 6, embedding_dim), None, STEPS, |_, _, _, _, _| {}, |_, _, _| {});
     }
 
     #[test]
@@ -135,7 +137,18 @@ mod test_layers_rm {
             (2, 5, rows),
             None,
             STEPS,
-            |_, _, _| {},
+            |layer, layer_rm, _, _, name| {
+                for (i, (dense, dense_rm)) in layer.layers.iter().zip(layer_rm.layers.iter()).enumerate() {
+                    match (dense, dense_rm) {
+                        (LayerEnum::Dense(dense), LayerEnum::DenseRm(dense_rm)) => assert_dense_gradients_close(&format!("{} dense {}", name, i), dense, dense_rm),
+                        _ => panic!("unexpected FFN layer layout"),
+                    }
+                }
+                match (&layer.norm_layer, &layer_rm.norm_layer) {
+                    (Some(LayerEnum::Norm(norm)), Some(LayerEnum::NormRm(norm_rm))) => assert_norm_gradients_close(&format!("{} norm", name), norm, norm_rm),
+                    _ => panic!("both FFN layers must have a norm layer"),
+                }
+            },
             |layer, layer_rm, name| {
                 for (i, (dense, dense_rm)) in layer.layers.iter().zip(layer_rm.layers.iter()).enumerate() {
                     if let (LayerEnum::Dense(dense), LayerEnum::DenseRm(dense_rm)) = (dense, dense_rm) {
@@ -168,7 +181,7 @@ mod test_layers_rm {
             (3, 5, input_dim),
             None,
             STEPS,
-            |gradient, gradient_rm, name| {
+            |_, _, gradient, gradient_rm, name| {
                 assert_close_2d(&format!("{} weights_1 gradient", name), &gradient.get_gradient_weights(), &gradient_rm.get_weight_gradient_rm("weights").unwrap());
                 assert_close_2d(&format!("{} weights_2 gradient", name), &gradient.get_gradient_weights_2(), &gradient_rm.get_weight_gradient_rm("weights_2").unwrap());
             },
@@ -187,7 +200,7 @@ mod test_layers_rm {
             layer.is_full_mode = is_full_mode;
             layer_rm.is_full_mode = is_full_mode;
 
-            compare_training_steps(&format!("ComplexWaveletLayerRm full={}", is_full_mode), &mut layer, &mut layer_rm, (2, 6, 8), None, 1, |_, _, _| {}, |_, _, _| {});
+            compare_training_steps(&format!("ComplexWaveletLayerRm full={}", is_full_mode), &mut layer, &mut layer_rm, (2, 6, 8), None, 1, |_, _, _, _, _| {}, |_, _, _| {});
         }
     }
 
@@ -199,7 +212,7 @@ mod test_layers_rm {
             layer.add_details = add_details;
             layer_rm.add_details = add_details;
 
-            compare_training_steps(&format!("DiscreteWaveletLayerRm add_details={}", add_details), &mut layer, &mut layer_rm, (2, 32, 8), None, 1, |_, _, _| {}, |_, _, _| {});
+            compare_training_steps(&format!("DiscreteWaveletLayerRm add_details={}", add_details), &mut layer, &mut layer_rm, (2, 32, 8), None, 1, |_, _, _, _, _| {}, |_, _, _| {});
         }
     }
 
@@ -379,7 +392,11 @@ mod test_layers_rm {
             (3, 5, input_dim),
             None,
             STEPS,
-            |_, _, _| {},
+            |layer, layer_rm, _, _, name| {
+                for (i, (sub, sub_rm)) in layer.layers.iter().zip(layer_rm.layers.iter()).enumerate() {
+                    assert_linear_gradients_close(&format!("{} sub-layer {}", name, i), sub, sub_rm);
+                }
+            },
             |layer, layer_rm, name| {
                 let (weights, bias) = layer.get_combined_weights();
                 let (weights_rm, bias_rm) = layer_rm.get_combined_weights();
@@ -396,7 +413,7 @@ mod test_layers_rm {
             let name = format!("AdaptiveAvgPool1dLayerRm {}->{}", seq_len, output_size);
             let mut layer = AdaptiveAvgPool1dLayer::new(output_size);
             let mut layer_rm = AdaptiveAvgPool1dLayerRm::new(output_size);
-            compare_training_steps(&name, &mut layer, &mut layer_rm, (2, seq_len, 6), None, 1, |_, _, _| {}, |_, _, _| {});
+            compare_training_steps(&name, &mut layer, &mut layer_rm, (2, seq_len, 6), None, 1, |_, _, _, _, _| {}, |_, _, _| {});
             assert_eq!(layer.metadata.window_mappings, layer_rm.metadata.window_mappings);
 
             // Gradient w.r.t. the decompressed sequence (original length)
@@ -411,16 +428,26 @@ mod test_layers_rm {
     }
 
     /// Training input for the output heads: targets cover the last unpadded positions.
+    const OUTPUT_HEAD_TARGETS: [[u32; 3]; 2] = [[3, 17, 25], [5, 30, 9]];
+
     fn output_head_inputs(input_batch: &Vec<Vec<Vec<C>>>, step: usize) -> (LayerInput, LayerInput) {
+        output_head_inputs_with_targets(input_batch, step, OUTPUT_HEAD_TARGETS.iter().map(|t| t.to_vec()).collect())
+    }
+
+    fn output_head_inputs_with_targets(input_batch: &Vec<Vec<Vec<C>>>, step: usize, target_batch_ids: Vec<Vec<u32>>) -> (LayerInput, LayerInput) {
         let padding_mask_batch = vec![vec![1; 5], vec![1, 1, 1, 1, 0]];
         let (mut input, mut input_rm) = layer_inputs_with_mask(input_batch, &padding_mask_batch);
         for li in [&mut input, &mut input_rm] {
-            li.set_target_batch_ids(vec![vec![3, 17, 25], vec![5, 30, 9]]);
+            li.set_target_batch_ids(target_batch_ids.clone());
             li.set_top_k_size(6);
             li.set_time_step(step);
             li.set_total_valid_tokens(6);
         }
         (input, input_rm)
+    }
+
+    fn flatten(rows: &Vec<Vec<C>>) -> Vec<C> {
+        rows.iter().flatten().copied().collect()
     }
 
     fn assert_losses_close(name: &str, losses: &Vec<Vec<Vec<C>>>, losses_rm: &Vec<Vec<Vec<C>>>) {
@@ -434,13 +461,27 @@ mod test_layers_rm {
 
     #[test]
     fn test_adaptive_linear_layer_rm_matches_adaptive_linear_layer() {
-        let (hidden, vocab) = (8, 40);
+        // vocab 40: every token is in the head cluster. vocab 2048 + 64: tail clusters exist, so the
+        // routing weights get gradients (the targets mix head and tail tokens).
+        for vocab in [40, 2048 + 64] {
+            check_adaptive_linear_layer_rm(8, vocab);
+        }
+    }
+
+    fn check_adaptive_linear_layer_rm(hidden: usize, vocab: usize) {
         let mut layer = AdaptiveLinearLayer::new(0.01, hidden, vocab);
         let mut layer_rm: AdaptiveLinearLayerRm = copy_parameters(&layer);
+        let target_batch_ids: Vec<Vec<u32>> = if layer.frequency_clusters.len() > 1 {
+            let tail = |cluster: usize, i: usize| layer.frequency_clusters[cluster][i] as u32;
+            vec![vec![3, tail(1, 0), tail(2, 1)], vec![tail(1, 2), 30, tail(3, 0)]]
+        } else {
+            OUTPUT_HEAD_TARGETS.iter().map(|t| t.to_vec()).collect()
+        };
+        assert!(layer.frequency_clusters.len() == 1 || !layer.weights.is_empty(), "vocab {}: expected routing weights", vocab);
 
         for step in 1..=3 {
-            let name = format!("AdaptiveLinearLayerRm step {}", step);
-            let (input, input_rm) = output_head_inputs(&generate_random_complex_3d(2, 5, hidden), step);
+            let name = format!("AdaptiveLinearLayerRm vocab {} step {}", vocab, step);
+            let (input, input_rm) = output_head_inputs_with_targets(&generate_random_complex_3d(2, 5, hidden), step, target_batch_ids.clone());
 
             let output = layer.forward(&input);
             let output_rm = layer_rm.forward(&input_rm);
@@ -448,6 +489,15 @@ mod test_layers_rm {
             assert_eq!(output.get_output_indices(), output_rm.get_output_indices(), "{}: indices", name);
             assert_losses_close(&name, &output.get_cross_entropy_loss_batch(), &output_rm.get_cross_entropy_loss_batch());
             assert_input_gradients_close(&name, layer.gradient.as_ref().unwrap(), layer_rm.gradient().unwrap());
+            let (gradient, gradient_rm) = (layer.gradient.as_ref().unwrap(), layer_rm.gradient().unwrap());
+            assert_close_1d(&format!("{} routing weight gradient", name), &flatten(&gradient.get_gradient_weights()), &flatten(&gradient_rm.get_gradient_weights()));
+            assert_close_1d(&format!("{} routing bias gradient", name), &gradient.get_gradient_bias(), &gradient_rm.get_gradient_bias());
+            let (word_w, word_w_rm) = (layer.cluster_word_weight_gradients().unwrap(), layer_rm.cluster_word_weight_gradients().unwrap());
+            assert_eq!(word_w.len(), word_w_rm.len(), "{}: cluster count", name);
+            for (cluster, (g, g_rm)) in word_w.iter().zip(word_w_rm.iter()).enumerate() {
+                assert_close_1d(&format!("{} word weight gradient [cluster {}]", name, cluster), &flatten(g), &flatten(g_rm));
+            }
+            assert_close_1d(&format!("{} word bias gradient", name), &flatten(layer.cluster_word_bias_gradients().unwrap()), &flatten(layer_rm.cluster_word_bias_gradients().unwrap()));
 
             layer.update_parameters();
             layer_rm.update_parameters();
@@ -481,6 +531,16 @@ mod test_layers_rm {
             let output_rm = layer_rm.forward(&input_rm);
             assert_losses_close(&name, &output.get_cross_entropy_loss_batch(), &output_rm.get_cross_entropy_loss_batch());
             assert_input_gradients_close(&name, layer.gradient.as_ref().unwrap(), layer_rm.gradient().unwrap());
+            for (which, g, g_rm) in [
+                ("w_uc", layer.grad_w_uc(), layer_rm.grad_w_uc()),
+                ("w_vc", layer.grad_w_vc(), layer_rm.grad_w_vc()),
+                ("w_uw", layer.grad_w_uw(), layer_rm.grad_w_uw()),
+                ("w_vw", layer.grad_w_vw(), layer_rm.grad_w_vw()),
+            ] {
+                assert_close_real_2d(&format!("{} {} gradient", name, which), g.unwrap(), g_rm.unwrap());
+            }
+            let (scalars, scalars_rm) = (layer.grad_scalars().unwrap(), layer_rm.grad_scalars().unwrap());
+            assert_close_real_2d(&format!("{} alpha/beta gradients", name), &vec![vec![scalars.0, scalars.1, scalars.2, scalars.3]], &vec![vec![scalars_rm.0, scalars_rm.1, scalars_rm.2, scalars_rm.3]]);
 
             layer.update_parameters();
             layer_rm.update_parameters();

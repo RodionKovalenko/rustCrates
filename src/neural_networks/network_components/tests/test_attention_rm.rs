@@ -2,8 +2,11 @@
 #[cfg(test)]
 mod test_attention_rm {
     use crate::neural_networks::{
-        network_components::layer_input_struct::LayerInput,
-        network_layers::{layer::LayerEnum, network_layers_rm::complex_to_linear_layer_rm::ComplexToLinearLayerRm},
+        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
+        network_layers::{
+            layer::LayerEnum,
+            network_layers_rm::{complex_to_linear_layer_rm::ComplexToLinearLayerRm, norm_layer_rm::NormalNormLayerRm},
+        },
         network_types::transformer::{
             masked_attention_head::MaskedAttentionHead,
             masked_attention_head_approximation::MaskedAttentionHeadApproximation,
@@ -24,7 +27,9 @@ mod test_attention_rm {
         },
     };
 
-    use super::super::rm_test_utils::{assert_close_1d, assert_close_2d, assert_close_3d, assert_input_gradients_close, copy_parameters, layer_inputs, layer_inputs_with_mask, to_rm_batch, upstream_gradients};
+    use super::super::rm_test_utils::{
+        assert_close_1d, assert_close_2d, assert_close_3d, assert_ctl_gradients_close, assert_input_gradients_close, assert_linear_gradients_close, assert_norm_gradients_close, copy_parameters, stored_gradients, layer_inputs, layer_inputs_with_mask, to_rm_batch, upstream_gradients,
+    };
 
     fn copy_ctl(ctl: &Option<ComplexToLinearLayer>, ctl_rm: &mut Option<ComplexToLinearLayerRm>) {
         match (ctl, ctl_rm) {
@@ -55,6 +60,60 @@ mod test_attention_rm {
             assert_close_2d(&format!("{} {} weights_1", name, which), &ctl.weights_1, &ctl_rm.weights_1);
             assert_close_2d(&format!("{} {} weights_2", name, which), &ctl.weights_2, &ctl_rm.weights_2);
         }
+    }
+
+    /// Gradients of the optional ComplexToLinear layers of a head (only compared when they are present).
+    fn assert_optional_ctl_gradients_close(name: &str, ctl: &Option<ComplexToLinearLayer>, ctl_rm: &Option<ComplexToLinearLayerRm>) {
+        match (ctl, ctl_rm) {
+            (Some(ctl), Some(ctl_rm)) if stored_gradients(name, ctl.gradient.as_ref(), ctl_rm.gradient.as_ref()).is_some() => assert_ctl_gradients_close(name, ctl, ctl_rm),
+            (Some(_), Some(_)) | (None, None) => {}
+            _ => panic!("{}: CTL layout differs", name),
+        }
+    }
+
+    /// w_q, w_k and w_v gradients of a head: Vec gradient vs named RM weight gradients.
+    fn assert_qkv_gradients_close(name: &str, gradient: &Gradient, gradient_rm: &Gradient) {
+        assert_close_2d(&format!("{} w_q gradient", name), &gradient.get_gradient_weights_q(), &gradient_rm.get_weight_gradient_rm("w_q").expect("RM w_q gradient"));
+        assert_close_2d(&format!("{} w_k gradient", name), &gradient.get_gradient_weights_k(), &gradient_rm.get_weight_gradient_rm("w_k").expect("RM w_k gradient"));
+        assert_close_2d(&format!("{} w_v gradient", name), &gradient.get_gradient_weights_v(), &gradient_rm.get_weight_gradient_rm("w_v").expect("RM w_v gradient"));
+    }
+
+    /// All weight gradients a sparse head stored in its backward pass.
+    fn assert_sparse_head_gradients_close(name: &str, head: &SparseMaskedAttentionHead, head_rm: &SparseMaskedAttentionHeadRm) {
+        let (g, g_rm) = stored_gradients(name, head.gradient.as_ref(), head_rm.gradient.as_ref()).expect("sparse head must store its gradient");
+        assert_qkv_gradients_close(name, g, g_rm);
+        assert_optional_ctl_gradients_close(&format!("{} ctl_q", name), &head.ctl_q, &head_rm.ctl_q);
+        assert_optional_ctl_gradients_close(&format!("{} ctl_k", name), &head.ctl_k, &head_rm.ctl_k);
+    }
+
+    /// All weight gradients a masked head (and its sub-layers) stored in its backward pass.
+    fn assert_masked_head_gradients_close(name: &str, head: &MaskedAttentionHead, head_rm: &MaskedAttentionHeadRm) {
+        let (g, g_rm) = stored_gradients(name, head.gradient.as_ref(), head_rm.gradient.as_ref()).expect("masked head must store its gradient");
+        assert_qkv_gradients_close(name, g, g_rm);
+        if stored_gradients(name, head.linear_v.gradient.as_ref(), head_rm.linear_v.gradient.as_ref()).is_some() {
+            assert_linear_gradients_close(&format!("{} linear_v", name), &head.linear_v, &head_rm.linear_v);
+        }
+        for (norm, norm_rm, which) in [(&head.norm_layer_k, &head_rm.norm_layer_k, "norm_k"), (&head.norm_layer_v, &head_rm.norm_layer_v, "norm_v")] {
+            if stored_gradients(name, norm.gradient.as_ref(), norm_rm.gradient.as_ref()).is_some() {
+                assert_norm_gradients_close(&format!("{} {}", name, which), norm, norm_rm);
+            }
+        }
+        assert_optional_ctl_gradients_close(&format!("{} ctl_q", name), &head.ctl_q, &head_rm.ctl_q);
+        assert_optional_ctl_gradients_close(&format!("{} ctl_k", name), &head.ctl_k, &head_rm.ctl_k);
+    }
+
+    /// w_q, w_k and w_v gradients of an approximation head (both store them as Vec gradients).
+    fn assert_approximation_head_gradients_close(name: &str, head: &MaskedAttentionHeadApproximation, head_rm: &MaskedAttentionHeadApproximationRm) {
+        let (g, g_rm) = stored_gradients(name, head.gradient.as_ref(), head_rm.gradient.as_ref()).expect("approximation head must store its gradient");
+        assert_close_2d(&format!("{} w_q gradient", name), &g.get_gradient_weights_q(), &RowMajorMatrix::from_rows(&g_rm.get_gradient_weights_q()));
+        assert_close_2d(&format!("{} w_k gradient", name), &g.get_gradient_weights_k(), &RowMajorMatrix::from_rows(&g_rm.get_gradient_weights_k()));
+        assert_close_2d(&format!("{} w_v gradient", name), &g.get_gradient_weights_v(), &RowMajorMatrix::from_rows(&g_rm.get_gradient_weights_v()));
+    }
+
+    /// Gamma/beta gradients of the residual norm of an attention layer (Vec `Norm` vs RM norm).
+    fn assert_layer_norm_gradients_close(name: &str, norm_layer: &Option<LayerEnum>, norm_layer_rm: &NormalNormLayerRm) {
+        let Some(LayerEnum::Norm(norm)) = norm_layer else { panic!("{}: Vec layer is expected to use a Norm layer", name) };
+        assert_norm_gradients_close(&format!("{} norm", name), norm, norm_layer_rm);
     }
 
     #[test]
@@ -148,6 +207,10 @@ mod test_attention_rm {
             let gradient = layer.backward(&upstream);
             let gradient_rm = layer_rm.backward(&upstream_rm);
             assert_input_gradients_close(&name, &gradient, &gradient_rm);
+            for (h, (head, head_rm)) in layer.attention_heads.iter().zip(layer_rm.attention_heads.iter()).enumerate() {
+                assert_sparse_head_gradients_close(&format!("{} head {}", name, h), head, head_rm);
+            }
+            assert_layer_norm_gradients_close(&name, &layer.norm_layer, &layer_rm.norm_layer);
 
             layer.update_parameters();
             layer_rm.update_parameters();
@@ -220,6 +283,14 @@ mod test_attention_rm {
             let gradient = layer.backward(&upstream_batch);
             let gradient_rm = layer_rm.backward_rm(&to_rm_batch(&upstream_batch));
             assert_input_gradients_close(&name, &gradient, &gradient_rm);
+            for (h, (head, head_rm)) in layer.attention_heads.iter().zip(layer_rm.attention_heads.iter()).enumerate() {
+                assert_approximation_head_gradients_close(&format!("{} head {}", name, h), head, head_rm);
+            }
+            match (&layer.norm_layer, &layer_rm.norm_layer) {
+                (Some(LayerEnum::Norm(norm)), Some(LayerEnum::NormRm(norm_rm))) => assert_norm_gradients_close(&format!("{} norm", name), norm, norm_rm),
+                (None, None) => {}
+                _ => panic!("{}: norm layer layout differs", name),
+            }
 
             layer.update_parameters();
             layer_rm.update_parameters();
@@ -344,6 +415,10 @@ mod test_attention_rm {
             let gradient = layer.backward(&upstream);
             let gradient_rm = layer_rm.backward(&upstream_rm);
             assert_input_gradients_close(&name, &gradient, &gradient_rm);
+            for (h, (head, head_rm)) in layer.attention_heads.iter().zip(layer_rm.attention_heads.iter()).enumerate() {
+                assert_masked_head_gradients_close(&format!("{} head {}", name, h), head, head_rm);
+            }
+            assert_layer_norm_gradients_close(&name, &layer.norm_layer, &layer_rm.norm_layer);
 
             layer.update_parameters();
             layer_rm.update_parameters();
