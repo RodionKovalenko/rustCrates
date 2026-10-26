@@ -185,6 +185,31 @@ mod test_transformer_rm {
         assert_close_2d("embedding table after the update", &embedding.tied_weights, &embedding_rm.weights);
     }
 
+    /// Validation runs the forward pass without gradients: the loss must be the same as in training (not 0), and the
+    /// output head must not store a gradient.
+    #[test]
+    fn test_validation_forward_computes_the_training_loss() {
+        for mut network in [create_transformer(OperationMode::TRAINING), create_transformer_rm(OperationMode::TRAINING)] {
+            let name = if network.is_row_major() { "RM transformer" } else { "transformer" };
+            let (mut layer_input, _) = training_input(1);
+
+            layer_input.set_calculate_gradient(false);
+            let losses_validation = flat_losses(&predict(&mut network, &layer_input).get_cross_entropy_loss_batch());
+            let stored_gradient = match network.layers.last() {
+                Some(LayerEnum::Eml(eml)) => eml.gradient.is_some(),
+                Some(LayerEnum::EmlRm(eml_rm)) => eml_rm.gradient().is_some(),
+                _ => panic!("{}: expected an EML head", name),
+            };
+            assert!(!stored_gradient, "{}: no gradient may be stored without calculate_gradient", name);
+
+            layer_input.set_calculate_gradient(true);
+            let losses_training = flat_losses(&predict(&mut network, &layer_input).get_cross_entropy_loss_batch());
+
+            assert!(losses_validation.iter().any(|loss| loss.re > 0.0), "{}: validation loss must not be 0", name);
+            assert_close_1d(&format!("{} validation vs training loss", name), &losses_training, &losses_validation);
+        }
+    }
+
     /// `save_to_sled` / `get_from_db` store the network with bincode: an RM network must survive the round trip.
     #[test]
     fn test_transformer_rm_survives_serialization() {

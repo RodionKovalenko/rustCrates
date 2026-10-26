@@ -271,10 +271,10 @@ impl EmlLinearLayer {
 
     /// Forward pass.
     ///
-    /// In training mode (`target_batch_ids` set and `calculate_gradient` true) this
-    /// also computes the teacher-forced cross-entropy loss and the full analytical
-    /// gradient (w.r.t. the hidden input and every trainable parameter), stashing them
-    /// so the backward pass can reuse them — the same contract `AdaptiveLinearLayer` uses.
+    /// With `target_batch_ids` set (training and validation) this
+    /// also computes the teacher-forced cross-entropy loss; with `calculate_gradient` also the
+    /// full analytical gradient (w.r.t. the hidden input and every trainable parameter), stashing it
+    /// so the backward pass can reuse it — the same contract `AdaptiveLinearLayer` uses.
     pub fn forward(&mut self, input: &LayerInput) -> LayerOutput {
         let input_batch = input.get_input_batch();
         self.time_step = input.get_time_step();
@@ -284,7 +284,9 @@ impl EmlLinearLayer {
         let target_tokens = input.get_target_batch_ids();
         let padding_mask_batch = input.get_padding_mask_batch();
         let total_valid_tokens = input.get_total_valid_tokens();
-        let is_training = !target_tokens.is_empty() && input.get_calculate_gradient();
+        // The loss is computed whenever targets are given (training and validation); gradients only with calculate_gradient.
+        let is_training = !target_tokens.is_empty();
+        let calculate_gradient = input.get_calculate_gradient();
 
         self.gradient = None;
         self.grads = None;
@@ -333,8 +335,10 @@ impl EmlLinearLayer {
             let mut gradient = Gradient::new_default();
             gradient.set_gradient_input_batch(grad_input);
             gradient.set_total_valid_tokens(total_valid_tokens);
-            self.gradient = Some(gradient);
-            self.grads = Some(grads);
+            if calculate_gradient {
+                self.gradient = Some(gradient);
+                self.grads = Some(grads);
+            }
         } else {
             // Inference: emit sparse top-k token scores per position in the same
             // `(values, indices)` layout the greedy decoder expects from the other heads.

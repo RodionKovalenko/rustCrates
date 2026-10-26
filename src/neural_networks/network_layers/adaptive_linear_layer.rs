@@ -192,7 +192,9 @@ impl AdaptiveLinearLayer {
         let padding_mask_batch = input.get_padding_mask_batch();
         let top_k = input.get_top_k_size().max(1);
         let total_valid_tokens = input.get_total_valid_tokens();
-        let is_training = !target_tokens.is_empty() && input.get_calculate_gradient();
+        // The loss is computed whenever targets are given (training and validation); gradients only with calculate_gradient.
+        let is_training = !target_tokens.is_empty();
+        let calculate_gradient = input.get_calculate_gradient();
 
         self.target_batch_ids = Some(target_tokens.clone());
         self.gradient = None;
@@ -377,6 +379,9 @@ impl AdaptiveLinearLayer {
 
             layer_output.set_cross_entropy_loss_batch(ce_losses_batch.clone());
             self.cross_entropy_loss_batch = Some(ce_losses_batch);
+            if !calculate_gradient {
+                return layer_output;
+            }
 
             // Propagate sparse gradient → gradient_input_batch + weight gradients
             let zero_c = C::new(ZERO, ZERO);
