@@ -3,14 +3,18 @@ mod test_gpu_matmul {
     use std::time::Instant;
 
     use crate::neural_networks::utils::{
-        dtype::C,
+        dtype::{r, C},
         gpu_matmul::GpuMatmul,
         matrix::multiply_complex,
         matrix_rm::{conjugate_transpose_rm, multiply_batch_with_weights_rm, multiply_complex_rm, multiply_complex_rm_op, multiply_complex_rm_weights, transpose_rm, MatOp, RowMajorMatrix},
         random_arrays::generate_random_complex_2d,
     };
 
+    /// Relative tolerance against the CPU reference: cuBLAS sums in a different order, which f32 shows more.
+    #[cfg(feature = "dtype-f64")]
     const TOLERANCE: f64 = 1e-9;
+    #[cfg(not(feature = "dtype-f64"))]
+    const TOLERANCE: f64 = 1e-4;
 
     /// Returns false (and prints why) if the CUDA driver or cuBLAS DLLs cannot be loaded, so the tests skip instead of panicking.
     fn gpu_available() -> bool {
@@ -22,7 +26,7 @@ mod test_gpu_matmul {
     }
 
     fn reference_matmul(a: &[C], b: &[C], m: usize, k: usize, n: usize) -> Vec<C> {
-        let mut c = vec![C::new(0.0, 0.0); m * n];
+        let mut c = vec![C::new(r(0.0), r(0.0)); m * n];
         for i in 0..m {
             for p in 0..k {
                 let aip = a[i * k + p];
@@ -51,7 +55,7 @@ mod test_gpu_matmul {
         assert_eq!(expected.len(), actual.len());
         for (i, (e, a)) in expected.iter().zip(actual.iter()).enumerate() {
             let diff = (e - a).norm();
-            assert!(diff <= TOLERANCE * e.norm().max(1.0), "mismatch at {}: expected {:?}, gpu {:?}", i, e, a);
+            assert!(diff <= r(TOLERANCE) * e.norm().max(r(1.0)), "mismatch at {}: expected {:?}, gpu {:?}", i, e, a);
         }
     }
 
@@ -116,7 +120,7 @@ mod test_gpu_matmul {
 
             // Simulates an update: change the weights in place (same allocation, so the same cache key).
             for (i, w) in weights.data.iter_mut().enumerate() {
-                *w += C::new(0.01 * (step + 1) as f64, -0.02 * i as f64);
+                *w += C::new(r(0.01 * (step + 1) as f64), r(-0.02 * i as f64));
             }
         }
     }
