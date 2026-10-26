@@ -1,6 +1,6 @@
 use crate::neural_networks::{
     network_layers::{
-        adaptive_linear_layer::AdaptiveLinearLayer, complex_to_linear_layer::ComplexToLinearLayer, embedding_layer::EmbeddingLayer, eml_linear_layer::EmlLinearLayer, feedforward_layer::FeedForwardLayer, layer::LayerEnum, linear_layer::LinearLayer, norm_layer::NormalNormLayer, softmax_output_layer::SoftmaxLayer, wavelet_network::DECOMPOSITION_LEVELS
+        adaptive_linear_layer::AdaptiveLinearLayer, complex_to_linear_layer::ComplexToLinearLayer, embedding_layer::EmbeddingLayer, eml_linear_layer::EmlLinearLayer, feedforward_layer::FeedForwardLayer, layer::LayerEnum, norm_layer::NormalNormLayer, wavelet_network::DECOMPOSITION_LEVELS
     },
     network_types::{
         neural_network_generic::{NeuralNetwork, OperationMode, create},

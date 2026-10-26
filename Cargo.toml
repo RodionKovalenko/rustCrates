@@ -37,7 +37,9 @@ cast = "0.3.0"
 image = "0.25.10"
 serde-big-array = "0.5.1"
 sled = "0.34.7"
-tokenizers = "0.23.1"
+# Only loads tokenizer.json. Without the default "esaxx_fast" feature (needed only to train Unigram tokenizers)
+# the C++ crate esaxx-rs is not built: it links the static C runtime and caused LNK4098 (LIBCMT conflict) on MSVC.
+tokenizers = { version = "0.23.1", default-features = false, features = ["onig"] }
 rand_distr = "0.6.0"
 plotters = "0.3.7"
 yahoo_finance_api = "4.2.0"
@@ -63,6 +65,11 @@ cudarc = { version = "0.19.9", optional = true, features = ["cublas"] }
 cublas-sys = { version = "0.1.0", optional = true }
 cc = "1.4.4"
 ndarray = { version = "0.17.2" }
+
+[lints.rust]
+# MSVC prints "Creating library X.lib and object X.exp" (localized, e.g. German) for the cdylib and the test binary;
+# rustc reports every linker message as a warning. Real link errors still fail the build.
+linker_messages = "allow"
 
 [package.metadata.maturin]
 name = "neural_networks"
