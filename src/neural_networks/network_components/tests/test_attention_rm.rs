@@ -2,11 +2,8 @@
 #[cfg(test)]
 mod test_attention_rm {
     use crate::neural_networks::{
-        network_components::{gradient_struct::Gradient, layer_input_struct::LayerInput},
-        network_layers::{
-            layer::LayerEnum,
-            network_layers_rm::{complex_to_linear_layer_rm::ComplexToLinearLayerRm, norm_layer_rm::NormalNormLayerRm},
-        },
+        network_components::layer_input_struct::LayerInput,
+        network_layers::layer::LayerEnum,
         network_types::transformer::{
             masked_attention_head::MaskedAttentionHead,
             masked_attention_head_approximation::MaskedAttentionHeadApproximation,
@@ -19,7 +16,6 @@ mod test_attention_rm {
             sparse_masked_attention_head::SparseMaskedAttentionHead, sparse_masked_attention_head_rm::SparseMaskedAttentionHeadRm, sparse_self_attention_layer::SparseSelfAttentionLayer,
             sparse_self_attention_layer_rm::SparseSelfAttentionLayerRm,
         },
-        network_layers::complex_to_linear_layer::ComplexToLinearLayer,
         utils::{
             dtype::C,
             matrix_rm::RowMajorMatrix,
@@ -28,63 +24,10 @@ mod test_attention_rm {
     };
 
     use super::super::rm_test_utils::{
-        assert_close_1d, assert_close_2d, assert_close_3d, assert_ctl_gradients_close, assert_input_gradients_close, assert_linear_gradients_close, assert_norm_gradients_close, copy_parameters, stored_gradients, layer_inputs, layer_inputs_with_mask, to_rm_batch, upstream_gradients,
+        assert_close_1d, assert_close_2d, assert_close_3d, assert_input_gradients_close, assert_layer_norm_gradients_close, assert_linear_gradients_close, assert_norm_gradients_close,
+        assert_optional_ctl_gradients_close, assert_qkv_gradients_close, assert_sparse_head_gradients_close, assert_sparse_head_parameters_close, copy_ctl, copy_parameters, copy_sparse_head,
+        stored_gradients, layer_inputs, layer_inputs_with_mask, to_rm_batch, upstream_gradients,
     };
-
-    fn copy_ctl(ctl: &Option<ComplexToLinearLayer>, ctl_rm: &mut Option<ComplexToLinearLayerRm>) {
-        match (ctl, ctl_rm) {
-            (Some(ctl), Some(ctl_rm)) => {
-                ctl_rm.weights_1 = RowMajorMatrix::from_rows(&ctl.weights_1);
-                ctl_rm.weights_2 = RowMajorMatrix::from_rows(&ctl.weights_2);
-            }
-            (None, ctl_rm) => *ctl_rm = None,
-            _ => panic!("CTL layout differs"),
-        }
-    }
-
-    fn copy_sparse_head(head: &SparseMaskedAttentionHead, head_rm: &mut SparseMaskedAttentionHeadRm) {
-        head_rm.weights_q_rm = RowMajorMatrix::from_rows(&head.weights_q);
-        head_rm.weights_k_rm = RowMajorMatrix::from_rows(&head.weights_k);
-        head_rm.weights_v_rm = RowMajorMatrix::from_rows(&head.weights_v);
-        head_rm.positional_encoding_layer.base = head.positional_encoding_layer.base;
-        copy_ctl(&head.ctl_q, &mut head_rm.ctl_q);
-        copy_ctl(&head.ctl_k, &mut head_rm.ctl_k);
-    }
-
-    fn assert_sparse_head_parameters_close(name: &str, head: &SparseMaskedAttentionHead, head_rm: &SparseMaskedAttentionHeadRm) {
-        assert_close_2d(&format!("{} w_q", name), &head.weights_q, &head_rm.weights_q_rm);
-        assert_close_2d(&format!("{} w_k", name), &head.weights_k, &head_rm.weights_k_rm);
-        assert_close_2d(&format!("{} w_v", name), &head.weights_v, &head_rm.weights_v_rm);
-        for (ctl, ctl_rm, which) in [(&head.ctl_q, &head_rm.ctl_q, "ctl_q"), (&head.ctl_k, &head_rm.ctl_k, "ctl_k")] {
-            let (ctl, ctl_rm) = (ctl.as_ref().unwrap(), ctl_rm.as_ref().unwrap());
-            assert_close_2d(&format!("{} {} weights_1", name, which), &ctl.weights_1, &ctl_rm.weights_1);
-            assert_close_2d(&format!("{} {} weights_2", name, which), &ctl.weights_2, &ctl_rm.weights_2);
-        }
-    }
-
-    /// Gradients of the optional ComplexToLinear layers of a head (only compared when they are present).
-    fn assert_optional_ctl_gradients_close(name: &str, ctl: &Option<ComplexToLinearLayer>, ctl_rm: &Option<ComplexToLinearLayerRm>) {
-        match (ctl, ctl_rm) {
-            (Some(ctl), Some(ctl_rm)) if stored_gradients(name, ctl.gradient.as_ref(), ctl_rm.gradient.as_ref()).is_some() => assert_ctl_gradients_close(name, ctl, ctl_rm),
-            (Some(_), Some(_)) | (None, None) => {}
-            _ => panic!("{}: CTL layout differs", name),
-        }
-    }
-
-    /// w_q, w_k and w_v gradients of a head: Vec gradient vs named RM weight gradients.
-    fn assert_qkv_gradients_close(name: &str, gradient: &Gradient, gradient_rm: &Gradient) {
-        assert_close_2d(&format!("{} w_q gradient", name), &gradient.get_gradient_weights_q(), &gradient_rm.get_weight_gradient_rm("w_q").expect("RM w_q gradient"));
-        assert_close_2d(&format!("{} w_k gradient", name), &gradient.get_gradient_weights_k(), &gradient_rm.get_weight_gradient_rm("w_k").expect("RM w_k gradient"));
-        assert_close_2d(&format!("{} w_v gradient", name), &gradient.get_gradient_weights_v(), &gradient_rm.get_weight_gradient_rm("w_v").expect("RM w_v gradient"));
-    }
-
-    /// All weight gradients a sparse head stored in its backward pass.
-    fn assert_sparse_head_gradients_close(name: &str, head: &SparseMaskedAttentionHead, head_rm: &SparseMaskedAttentionHeadRm) {
-        let (g, g_rm) = stored_gradients(name, head.gradient.as_ref(), head_rm.gradient.as_ref()).expect("sparse head must store its gradient");
-        assert_qkv_gradients_close(name, g, g_rm);
-        assert_optional_ctl_gradients_close(&format!("{} ctl_q", name), &head.ctl_q, &head_rm.ctl_q);
-        assert_optional_ctl_gradients_close(&format!("{} ctl_k", name), &head.ctl_k, &head_rm.ctl_k);
-    }
 
     /// All weight gradients a masked head (and its sub-layers) stored in its backward pass.
     fn assert_masked_head_gradients_close(name: &str, head: &MaskedAttentionHead, head_rm: &MaskedAttentionHeadRm) {
@@ -108,12 +51,6 @@ mod test_attention_rm {
         assert_close_2d(&format!("{} w_q gradient", name), &g.get_gradient_weights_q(), &RowMajorMatrix::from_rows(&g_rm.get_gradient_weights_q()));
         assert_close_2d(&format!("{} w_k gradient", name), &g.get_gradient_weights_k(), &RowMajorMatrix::from_rows(&g_rm.get_gradient_weights_k()));
         assert_close_2d(&format!("{} w_v gradient", name), &g.get_gradient_weights_v(), &RowMajorMatrix::from_rows(&g_rm.get_gradient_weights_v()));
-    }
-
-    /// Gamma/beta gradients of the residual norm of an attention layer (Vec `Norm` vs RM norm).
-    fn assert_layer_norm_gradients_close(name: &str, norm_layer: &Option<LayerEnum>, norm_layer_rm: &NormalNormLayerRm) {
-        let Some(LayerEnum::Norm(norm)) = norm_layer else { panic!("{}: Vec layer is expected to use a Norm layer", name) };
-        assert_norm_gradients_close(&format!("{} norm", name), norm, norm_layer_rm);
     }
 
     #[test]

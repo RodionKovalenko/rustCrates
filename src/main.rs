@@ -15,7 +15,7 @@ use neural_networks::neural_networks::spectral_model::sample::{
 use neural_networks::neural_networks::spectral_model::train::Checkpoint as SpectralCheckpoint;
 use neural_networks::neural_networks::spectral_model::spectral::SpectralPrep;
 use neural_networks::neural_networks::spectral_model::train::{train_spectral_flow, TrainConfig};
-use neural_networks::neural_networks::training::train_transformer::train_transformer_from_dataset;
+use neural_networks::neural_networks::training::train_transformer::{train_transformer_from_dataset, train_transformer_rm_from_dataset};
 use neural_networks::utils::string::maybe_fix_encoding;
 use serde::Deserialize;
 use tera::{Context, Tera};
@@ -64,6 +64,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match arg1.as_str() {
             "train" => {
                 train_transformer_from_dataset(5000, 4, 2);
+            }
+            // Row-major transformer: all matmuls on the GPU with `--features cuda`.
+            "train-rm" => {
+                train_transformer_rm_from_dataset(5000, 4, 2);
             }
             "predict" => {
                 let input = read_input("Enter input text for prediction: ")?;

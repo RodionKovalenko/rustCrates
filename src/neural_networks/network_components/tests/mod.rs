@@ -64,3 +64,5 @@ pub mod rm_test_utils;
 pub mod test_layers_rm;
 #[cfg(feature = "dtype-f64")]
 pub mod test_attention_rm;
+#[cfg(feature = "dtype-f64")]
+pub mod test_transformer_rm;

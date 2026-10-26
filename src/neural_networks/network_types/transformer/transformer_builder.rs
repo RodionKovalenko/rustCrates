@@ -11,25 +11,44 @@ use crate::neural_networks::{
 pub const NUM_SELF_ATT_LAYERS: usize = 7;
 pub const SPARSE_WINDOW_SIZE: usize = 2;
 
-pub fn create_transformer(_operation_mode: OperationMode) -> NeuralNetwork {
+// Architecture shared by `create_transformer` and `create_transformer_rm`, so both build the same network.
+pub const VOCAB_SIZE: usize = 50280;
+pub const EMBEDDING_DIM_ORIGINAL: usize = 512;
+pub const NUM_ATTENTION_HEADS: usize = 4;
+pub const FFN_HIDDEN_DIM: usize = 256;
+pub const LEARNING_RATE: f64 = 0.001;
+pub const NORM_EPSILON: f64 = 1e-8;
+
+/// Embedding dimension after the wavelet decomposition of the embedding (512 / 2^DECOMPOSITION_LEVELS = 64).
+pub fn embedding_dim_compressed() -> usize {
+    let base_2: i32 = 2;
+    (EMBEDDING_DIM_ORIGINAL as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize
+}
+
+/// Empty network with the training settings shared by both transformer builders.
+pub fn create_transformer_network() -> NeuralNetwork {
     let number_inputs: usize = 32;
     let number_outputs = 32;
     let number_of_hidden_layers: usize = 1;
     let number_of_hidden_neurons: usize = 32;
     let minibatch_size: usize = 50;
-    let learning_rate: f64 = 0.001;
 
-    let mut transformer_network: NeuralNetwork = create(number_inputs, number_outputs, number_of_hidden_layers, number_of_hidden_neurons, minibatch_size, learning_rate);
+    create(number_inputs, number_outputs, number_of_hidden_layers, number_of_hidden_neurons, minibatch_size, LEARNING_RATE)
+}
+
+pub fn create_transformer(_operation_mode: OperationMode) -> NeuralNetwork {
+    let learning_rate: f64 = LEARNING_RATE;
+
+    let mut transformer_network: NeuralNetwork = create_transformer_network();
 
     //Add layers to the network
     let mut layers = transformer_network.layers;
 
-    let embedding_dim_original: usize = 512;
-    let base_2: i32 = 2;
+    let embedding_dim_original: usize = EMBEDDING_DIM_ORIGINAL;
     // embedding_dim_compressed  = 64
-    let embedding_dim_compressed = (embedding_dim_original as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize;
-    let vocab_size: usize = 50280;
-    let epsilon: f64 = 1e-8;
+    let embedding_dim_compressed = embedding_dim_compressed();
+    let vocab_size: usize = VOCAB_SIZE;
+    let epsilon: f64 = NORM_EPSILON;
     let embedding_layer: EmbeddingLayer = EmbeddingLayer::get_or_create(vocab_size, embedding_dim_original);
 
     layers.push(LayerEnum::Embedding(Box::new(embedding_layer)));
@@ -40,9 +59,9 @@ pub fn create_transformer(_operation_mode: OperationMode) -> NeuralNetwork {
     // Transformer block start
     let num_self_attention_layer: usize = NUM_SELF_ATT_LAYERS;
     // let origin_hidden_dim = 512;
-    let hidden_dim = 256;
+    let hidden_dim = FFN_HIDDEN_DIM;
     for _i in 0..num_self_attention_layer {
-        let num_attention_heads: usize = 4;
+        let num_attention_heads: usize = NUM_ATTENTION_HEADS;
 
         // Colums are divided into number of heads
         let cols: usize = embedding_dim_compressed;

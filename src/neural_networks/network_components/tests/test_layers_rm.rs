@@ -265,7 +265,7 @@ mod test_layers_rm {
         let accumulator = Arc::new(RwLock::new(HashMap::new()));
         layer.set_tied_weights(weights_f32.iter().map(|row| row.iter().map(|&w| C::new(w as f64, 0.0)).collect()).collect(), accumulator.clone());
 
-        let mut layer_rm = EmbeddingLayerRm::load(vocab_size, embedding_dim);
+        let mut layer_rm = EmbeddingLayerRm::load(vocab_size, embedding_dim * 2usize.pow(DECOMPOSITION_LEVELS));
         let accumulator_rm = Arc::new(RwLock::new(HashMap::new()));
         layer_rm.set_tied_weights(SharedF32Matrix::new(weights_f32), accumulator_rm.clone());
 
@@ -293,6 +293,39 @@ mod test_layers_rm {
         assert_eq!(accumulated.len(), accumulated_rm.len(), "embedding: different tokens accumulated");
         for (token, grad) in accumulated.iter() {
             assert_close_1d(&format!("embedding tied gradient token {}", token), grad, &accumulated_rm[token]);
+        }
+    }
+
+    /// Untied: both layers keep the embedding table in the layer and train it in place.
+    #[test]
+    fn test_embedding_layer_rm_matches_embedding_layer() {
+        let (vocab_size, embedding_dim) = (12, 8);
+        let mut layer = EmbeddingLayer::new(vocab_size, embedding_dim * 2usize.pow(DECOMPOSITION_LEVELS));
+        let mut layer_rm = EmbeddingLayerRm::new(vocab_size, embedding_dim * 2usize.pow(DECOMPOSITION_LEVELS));
+        assert_eq!((layer.embedding_dim, layer_rm.embedding_dim), (embedding_dim, embedding_dim));
+        layer_rm.weights = RowMajorMatrix::from_rows(&layer.tied_weights);
+
+        // Ragged batch -> padded with token id 1; token 3 appears twice.
+        let batch_ids: Vec<Vec<u32>> = vec![vec![2, 5, 7, 11], vec![3, 3, 9]];
+        for step in 1..=STEPS {
+            let name = format!("EmbeddingLayerRm step {}", step);
+            let mut input = LayerInput::new_default();
+            input.set_batch_ids(batch_ids.clone());
+
+            let output = layer.forward(&input);
+            let output_rm = layer_rm.forward(&input);
+            assert_close_3d(&format!("{} output", name), &output.get_output_batch(), output_rm.get_output_batch_rm_ref().unwrap());
+            assert_eq!(output.get_padding_mask_batch(), output_rm.get_padding_mask_batch());
+
+            let upstream_batch: Vec<Vec<Vec<C>>> = output.get_output_batch().iter().map(|m| generate_random_complex_2d(m.len(), embedding_dim)).collect();
+            let (upstream, upstream_rm) = upstream_gradients(&upstream_batch);
+            let gradient = layer.backward(&upstream);
+            let gradient_rm = layer_rm.backward(&upstream_rm);
+            assert_input_gradients_close(&name, &gradient, &gradient_rm);
+
+            layer.update_parameters();
+            layer_rm.update_parameters();
+            assert_close_2d(&format!("{} embedding table", name), &layer.tied_weights, &layer_rm.weights);
         }
     }
 

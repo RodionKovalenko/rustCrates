@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, path::Path};
 
 use crate::{
-    database::sled_db::get_storage_path_transformer_db,
+    database::sled_db::{get_storage_path_transformer_db, SLED_DB_TRANSFORMER_RM_V1, SLED_DB_TRANSFORMER_V1},
     neural_networks::{
         network_layers::layer::LayerEnum,
         network_layers::tied_sparse_embeddings::TiedSparseEmbeddings,
@@ -11,7 +11,7 @@ use crate::{
     },
 };
 
-use super::transformer::transformer_builder::create_transformer;
+use super::transformer::{transformer_builder::create_transformer, transformer_builder_rm::create_transformer_rm};
 
 pub const FILE_NAME: &str = "feedforward_network.json";
 
@@ -44,6 +44,20 @@ pub struct NeuralNetwork {
 
 // Provide more flexible methods for getting properties of the network
 impl NeuralNetwork {
+    /// True for a network built from row-major layers (`create_transformer_rm`).
+    pub fn is_row_major(&self) -> bool {
+        self.layers.iter().any(|layer| layer.name().ends_with("Rm"))
+    }
+
+    /// File the trained model is saved to: the RM and the Vec transformer never share a model file.
+    pub fn model_file(&self) -> &'static str {
+        if self.is_row_major() {
+            SLED_DB_TRANSFORMER_RM_V1
+        } else {
+            SLED_DB_TRANSFORMER_V1
+        }
+    }
+
     pub fn get_number_of_input_neurons(&self) -> usize {
         self.number_of_input_neurons
     }
@@ -224,7 +238,7 @@ pub fn get_from_db(filename: &str) -> Result<NeuralNetwork, String> {
 
     if !Path::new(filepath).exists() {
         println!("Transfomer model file does not exist, creating new model ....");
-        let mut network = create_transformer(OperationMode::TRAINING);
+        let mut network = if filename == SLED_DB_TRANSFORMER_RM_V1 { create_transformer_rm(OperationMode::TRAINING) } else { create_transformer(OperationMode::TRAINING) };
         network.post_load_init();
         return Ok(network);
     }

@@ -237,7 +237,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
         }
 
         if epoch % 10 == 0 {
-            save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
+            save_to_sled(transformer_network.model_file(), &transformer_network);
         }
 
         update_k_mean_clusters(transformer_network, epoch);
@@ -281,7 +281,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
                     epoch,
                     improvement.to_string().green()
                 );
-                save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
+                save_to_sled(transformer_network.model_file(), &transformer_network);
             } else {
                 epochs_without_improvement += 1;
 
@@ -293,7 +293,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
                     println!("⛔ Early stopping triggered! No improvement for {} epochs.", patience);
                     println!("â›” Early stopping triggered! No improvement for {} epochs.", patience);
                     println!("Best validation loss: {} at epoch {}", best_val_loss, best_epoch);
-                    save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
+                    save_to_sled(transformer_network.model_file(), &transformer_network);
                     break 'outer;
                 }
             }
@@ -304,7 +304,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
             println!("WARNING: epoch {} had 0 valid target tokens across all batches; skipping early-stop on loss threshold.", epoch);
         } else if train_loss <= loss_threshold {
             println!("loss is smaller than {loss_threshold} Break the training: {:?}", &train_loss);
-            save_to_sled(SLED_DB_TRANSFORMER_V1, &transformer_network);
+            save_to_sled(transformer_network.model_file(), &transformer_network);
             break 'outer;
         }
     }

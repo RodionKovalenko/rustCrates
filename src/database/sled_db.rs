@@ -7,6 +7,8 @@ pub const STORAGE_DIR: &str = "STORAGE";
 
 pub const SLED_DB_EMBEDDING: &str = "SLED_EMBEDDING";
 pub const SLED_DB_TRANSFORMER_V1: &str = "transformer_01.04.2025";
+/// Row-major (GPU) transformer: own model file, so training it never overwrites the Vec model.
+pub const SLED_DB_TRANSFORMER_RM_V1: &str = "transformer_rm_v1";
 
 pub fn get_storage_path_embedding_db(filename: &str) -> PathBuf {
     let path = Path::new(STORAGE_DIR).join(filename);

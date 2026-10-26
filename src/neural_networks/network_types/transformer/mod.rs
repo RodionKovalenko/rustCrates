@@ -16,3 +16,5 @@ pub mod transformer_updater;
 pub mod tests;
 pub mod test_transformer;
 pub mod masked_attention_head_approximation_rm;
+
+pub mod transformer_builder_rm;

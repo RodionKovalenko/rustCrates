@@ -1,35 +1,45 @@
 use std::time::Instant;
 
 use crate::{
-    database::sled_db::SLED_DB_TRANSFORMER_V1,
+    database::sled_db::{SLED_DB_TRANSFORMER_RM_V1, SLED_DB_TRANSFORMER_V1},
     neural_networks::{
         network_components::input::{load_data_xquad_de_as_dataset, DataTrait, Dataset},
         network_types::{
             neural_network_generic::{get_from_db, print_networt_structure, update_learning_rate, NeuralNetwork, OperationMode},
-            transformer::{transformer_builder::create_transformer, transformer_network::train},
+            transformer::{transformer_builder::create_transformer, transformer_builder_rm::create_transformer_rm, transformer_network::train},
         },
     },
 };
 
 pub fn train_transformer_from_dataset(num_epochs: usize, num_records: usize, batch_size: usize) -> bool {
+    train_from_dataset(SLED_DB_TRANSFORMER_V1, create_transformer, num_epochs, num_records, batch_size)
+}
+
+/// Same training with the row-major transformer (`create_transformer_rm`): with the `cuda` feature its
+/// matrix multiplications run on the GPU. Saved to its own model file (`SLED_DB_TRANSFORMER_RM_V1`).
+pub fn train_transformer_rm_from_dataset(num_epochs: usize, num_records: usize, batch_size: usize) -> bool {
+    train_from_dataset(SLED_DB_TRANSFORMER_RM_V1, create_transformer_rm, num_epochs, num_records, batch_size)
+}
+
+fn train_from_dataset(model_file: &str, create_network: fn(OperationMode) -> NeuralNetwork, num_epochs: usize, num_records: usize, batch_size: usize) -> bool {
     let now = Instant::now();
     const REUSE_SAVED_MODEL: bool = false;
 
     let mut transformer = if REUSE_SAVED_MODEL {
-        match get_from_db(SLED_DB_TRANSFORMER_V1) {
+        match get_from_db(model_file) {
             Ok(transformer) => {
                 println!("Loaded transformer from the database!");
                 transformer
             }
             Err(e) => {
                 println!("error: {:?}", e);
-                let transformer: NeuralNetwork = create_transformer(OperationMode::TRAINING);
+                let transformer: NeuralNetwork = create_network(OperationMode::TRAINING);
                 println!("Created a new transformer for training.");
                 transformer
             }
         }
     } else {
-        let transformer: NeuralNetwork = create_transformer(OperationMode::TRAINING);
+        let transformer: NeuralNetwork = create_network(OperationMode::TRAINING);
         println!("Created a new transformer for training (checkpoint loading disabled).");
         transformer
     };
