@@ -258,7 +258,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
             println!("Epoch: {}, TRAINING LOSS: {}", epoch.to_string().blue().bold(), train_loss.to_string().red().bold());
         }
 
-        if dataset.total_validation_records_size > 120 {
+        if dataset.total_validation_records_size > 0 {
             // ========== VALIDATION PHASE (NO GRADIENT UPDATES) ==========
             let val_loss = evaluate_validation(transformer_network, &dataset, batch_size, &mut layer_input);
 

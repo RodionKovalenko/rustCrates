@@ -11,6 +11,9 @@ use crate::{
     },
 };
 
+/// `num_records` value that selects every batch of the dataset.
+pub const ALL_RECORDS: usize = usize::MAX;
+
 pub fn train_transformer_from_dataset(num_epochs: usize, num_records: usize, batch_size: usize) -> bool {
     train_from_dataset(SLED_DB_TRANSFORMER_V1, create_transformer, num_epochs, num_records, batch_size)
 }
@@ -54,26 +57,8 @@ fn train_from_dataset(model_file: &str, create_network: fn(OperationMode) -> Neu
     println!("time elapsed in seconds: {:?}", &seconds_elapsed);
 
     let dataset: Dataset<String, String> = load_data_xquad_de_as_dataset().unwrap();
-    let data_batches: Vec<Dataset<String, String>> = dataset.split_into_batches(batch_size);
-
-    let mut input_batch: Vec<String> = Vec::new();
-    let mut target_batch: Vec<String> = Vec::new();
-
-    // select only num_records from data_batches
-    for i in 0..num_records {
-        if i >= data_batches.len() {
-            break;
-        }
-        let dataset_batch = data_batches[i].get_batch(0, batch_size).unwrap();
-        let (inputs, targets) = (dataset_batch.0, dataset_batch.1);
-
-        input_batch.extend(inputs);
-        target_batch.extend(targets);
-    }
-
-    println!("input batch: {:?}", input_batch);
-    println!("target batch: {:?}", target_batch);
-    let dataset_small = Dataset::new(input_batch.clone(), target_batch.clone());
+    let dataset_small = select_records(&dataset, num_records, batch_size);
+    println!("selected records: {} (train() keeps 10% of them for validation)", dataset_small.input.len());
 
     train(&mut transformer, dataset_small, num_epochs, batch_size);
     let seconds_elapsed_end = now.elapsed();
@@ -82,4 +67,25 @@ fn train_from_dataset(model_file: &str, create_network: fn(OperationMode) -> Neu
 
     println!("done");
     true
+}
+
+/// Shuffles all records of the dataset and keeps the first `num_batches` batches of `batch_size` records
+/// (`ALL_RECORDS` keeps every record). `train()` then splits the selection 90/10 into training and validation.
+pub fn select_records(dataset: &Dataset<String, String>, num_batches: usize, batch_size: usize) -> Dataset<String, String> {
+    // `Dataset::new` already split the loaded dataset 80/10/10 and `split_into_batches` would only pick from its
+    // training part; select from all records instead.
+    let mut all_records = dataset.clone();
+    all_records.total_training_records_size = 0;
+    all_records.total_validation_records_size = 0;
+
+    let mut input_batch: Vec<String> = Vec::new();
+    let mut target_batch: Vec<String> = Vec::new();
+
+    for data_batch in all_records.split_into_batches(batch_size).iter().take(num_batches) {
+        let (inputs, targets) = data_batch.get_batch(0, batch_size).unwrap();
+        input_batch.extend(inputs);
+        target_batch.extend(targets);
+    }
+
+    Dataset::new(input_batch, target_batch)
 }

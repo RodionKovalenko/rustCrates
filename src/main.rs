@@ -15,7 +15,7 @@ use neural_networks::neural_networks::spectral_model::sample::{
 use neural_networks::neural_networks::spectral_model::train::Checkpoint as SpectralCheckpoint;
 use neural_networks::neural_networks::spectral_model::spectral::SpectralPrep;
 use neural_networks::neural_networks::spectral_model::train::{train_spectral_flow, TrainConfig};
-use neural_networks::neural_networks::training::train_transformer::{train_transformer_from_dataset, train_transformer_rm_from_dataset};
+use neural_networks::neural_networks::training::train_transformer::{train_transformer_from_dataset, train_transformer_rm_from_dataset, ALL_RECORDS};
 use neural_networks::utils::string::maybe_fix_encoding;
 use serde::Deserialize;
 use tera::{Context, Tera};
@@ -66,8 +66,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 train_transformer_from_dataset(5000, 4, 2);
             }
             // Row-major transformer: all matmuls on the GPU with `--features cuda`.
+            // train-rm [epochs] [batches|all] [batch_size]; default: 5000 epochs on all records, batch size 2
             "train-rm" => {
-                train_transformer_rm_from_dataset(5000, 4, 2);
+                let epochs: usize = args.get(2).map(|a| a.parse().expect("epochs must be a number")).unwrap_or(5000);
+                let num_batches: usize = match args.get(3).map(String::as_str) {
+                    None | Some("all") => ALL_RECORDS,
+                    Some(n) => n.parse().expect("batches must be a number or 'all'"),
+                };
+                let batch_size: usize = args.get(4).map(|a| a.parse().expect("batch_size must be a number")).unwrap_or(2);
+                train_transformer_rm_from_dataset(epochs, num_batches, batch_size);
             }
             "predict" => {
                 let input = read_input("Enter input text for prediction: ")?;

@@ -66,3 +66,4 @@ pub mod test_layers_rm;
 pub mod test_attention_rm;
 #[cfg(feature = "dtype-f64")]
 pub mod test_transformer_rm;
+pub mod test_training_split;
