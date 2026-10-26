@@ -1,31 +1,113 @@
+BUILD, RUN AND TEST
+===================
+All commands run from the project folder (C:\Users\rkovalenko\Projects\rustCrates).
+The binary finds STORAGE\, the tokenizer and the training data through relative paths.
+
+Features
+--------
+(none)       f32, CPU only (default)
+cuda         every complex matmul on the GPU (cuBLAS); CPU fallback if CUDA is not found
+dtype-f64    whole crate in f64 (exact equivalence tests; f64 is ~64x slower than f32 on the RTX 3060)
+
+
+1. Production build
+-------------------
+// CPU, f32
 cargo build --release
+
+// GPU, f32 (recommended for training on the laptop)
+cargo build --release --features cuda
+
+// GPU, f64
+cargo build --release --features "cuda dtype-f64"
+
+// optional: optimized for this CPU (binary then only runs on CPUs with the same instruction set)
+$env:RUSTFLAGS="-C target-cpu=native"; cargo build --release --features cuda
+
+// faster build (no LTO, a few percent slower at runtime), e.g. for short tool runs
+cargo build --profile quick --features cuda
+-> binary in .\target\quick\
 
 [profile.release]
 opt-level = 3  -> for speed, e.g. better performance, more binary files
 opt-level = "z" for size, e.g. smaller size
 
+build and run in one go (rebuilds first if the code changed):
+cargo run --release --features cuda -- train-rm
 
-or 
 
-build and run in one go:
-cargo run --release
+2. Run the binary
+-----------------
+.\target\release\wav-transformer.exe <command>
 
-// build with cuda
-cargo build --release --features cuda
+Windows locks a running .exe, so `cargo build` fails while training runs. To keep working during a
+long training, start a copy:
+copy target\release\wav-transformer.exe train-rm.exe
+.\train-rm.exe train-rm
 
-after build: 
-run binary directly
-./target/release/your_binary_name
+CUDA: nvcuda.dll and cublas64_12.dll must be on the PATH. At startup the program prints
+"CUDA initialized successfully" or "CUDA not available. Falling back to CPU".
 
-run specific test under release version: 
+
+3. Training
+-----------
+// RM transformer (GPU with --features cuda), saved to STORAGE\transformer_rm_v1
+// train-rm [epochs] [batches|all] [batch_size]; default: 5000 epochs, all records, batch size 2
+// all records: 1071 training, 119 validation
+.\target\release\wav-transformer.exe train-rm
+.\target\release\wav-transformer.exe train-rm 300 all 16
+.\target\release\wav-transformer.exe train-rm 50 4 2        // only 4 batches (8 records), quick check
+
+// Vec transformer (CPU), saved to STORAGE\transformer_01.04.2025
+.\target\release\wav-transformer.exe train
+
+// other commands
+.\target\release\wav-transformer.exe predict
+.\target\release\wav-transformer.exe test
+.\target\release\wav-transformer.exe server
+
+// is the GPU used? (second terminal: process with type C, GPU-Util > 0 %)
+nvidia-smi -l 1
+
+
+4. Tests
+--------
+Most layer and equivalence tests only exist with dtype-f64 (they compare at 1e-10).
+Use --release: the debug build is much slower.
+
+// all tests, f64 (~4 min)
+cargo test --release --features dtype-f64
+
+// all tests, f32 (the dtype-f64-only tests are skipped)
+cargo test --release
+
+// RM layers vs normal layers (forward, backward, weight gradients, updates)
+cargo test --release --features dtype-f64 rm
+
+// whole RM transformer vs normal transformer (one training step, serialization, learning)
+cargo test --release --features dtype-f64 test_transformer_rm -- --nocapture
+
+// same RM tests with the GPU matmul (on a machine with CUDA)
+cargo test --release --features "cuda dtype-f64" rm
+
+// GPU matmul tests with timings (skipped when CUDA is not found)
+cargo test --release --features cuda test_gpu_matmul -- --nocapture
+cargo test --release --features "cuda dtype-f64" test_gpu_matmul -- --nocapture
+
+// one test after the other (shows which test hangs)
+cargo test --release --features "cuda dtype-f64" test_gpu_matmul -- --nocapture --test-threads=1
+
+// training data split (1071 training / 119 validation)
+cargo test --release test_all_records_split
+
+// run specific test under release version (incl. tests marked #[ignore]):
 cargo test --release test_train_transformer -- --nocapture --ignored
 
-cargo test --no-default-features 
+cargo test --no-default-features
 
 // test for f64
 cargo test --features dtype-f64 -- --nocapture
 cargo test --features dtype-f64
 
-
-// test in prod build 
-.\target\release\wav-transformer.exe test  
+// test in prod build
+.\target\release\wav-transformer.exe test
