@@ -63,6 +63,12 @@ Two models with the same architecture, each with its own model file:
 .\target\release\wav-transformer.exe train 50 4 2              // only 4 batches (8 records), quick check
 .\target\release\wav-transformer.exe train-vec 300 all 16      // same for the Vec transformer
 
+Learning rate: warmup (at most 200 steps, 10 % of the run) and cosine decay over epochs x batches per epoch;
+it reaches its minimum (5 %) with the last batch, so choose the number of epochs you really want to train.
+'resume' starts a new warmup + cosine over the given epochs.
+Saved model: with validation records always the network of the best validation loss (also after Stop and
+early stopping: 100 epochs without improvement).
+
 // generate an answer (asks for the text if none is given)
 .\target\release\wav-transformer.exe predict Was ist die Hauptstadt von Frankreich?
 .\target\release\wav-transformer.exe predict-vec

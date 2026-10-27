@@ -29,6 +29,8 @@ pub struct TrainingProgress {
     pub validation_records: usize,
     /// Loss per target token of the last batch.
     pub batch_loss: Option<f64>,
+    /// Learning rate of the last batch (warmup + cosine schedule of this run).
+    pub learning_rate: Option<f64>,
     pub elapsed_seconds: f64,
     pub history: Vec<EpochStats>,
     pub best_validation_loss: Option<f64>,
@@ -51,7 +53,7 @@ pub fn update_training_progress(update: impl FnOnce(&mut TrainingProgress)) {
     }
 }
 
-/// Asks the running training to save the model and stop after the current batch.
+/// Asks the running training to stop after the current batch (the best or, without validation, the current model is saved).
 pub fn request_training_stop() {
     STOP_REQUESTED.store(true, Ordering::SeqCst);
 }

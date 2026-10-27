@@ -1036,7 +1036,7 @@
             $("progress-label").textContent = t.model ? `${modelLabel(t.model)} — ${t.message || ""}${records}` : "No training yet";
 
             $("stat-epoch").textContent = started ? `${Math.min(t.epoch + 1, t.num_epochs)} / ${t.num_epochs}` : "–";
-            $("stat-batch").textContent = started && t.num_batches ? `Batch ${t.batch} / ${t.num_batches}` : " ";
+            $("stat-batch").textContent = started && t.num_batches ? `Batch ${t.batch} / ${t.num_batches}` + (t.learning_rate != null ? ` · LR ${t.learning_rate.toExponential(1)}` : "") : " ";
             $("stat-batch-loss").textContent = fmt(t.batch_loss);
             const last = (t.history || [])[t.history.length - 1];
             $("stat-train-loss").textContent = last ? `Epoch ${last.epoch + 1} training: ${fmt(last.training_loss)}` : " ";

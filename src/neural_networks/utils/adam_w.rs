@@ -1,3 +1,5 @@
+use std::sync::RwLock;
+
 use num::Complex;
 use num_traits::Float;
 
@@ -218,21 +220,62 @@ pub fn calculate_adam_w_bias(bias: &mut Vec<C>, gradient: &Vec<C>, prev_m: &mut 
 /// never collapses to 0 (which would freeze training) and never ramps back up.
 pub static MIN_LR_RATIO: f64 = 0.05;
 
-pub fn get_current_learning_rate(base_lr: f64, step: usize) -> f64 {
-    if step < WARMUP_STEPS {
-        // Linear warmup
-        base_lr * (step as f64) / (WARMUP_STEPS as f64)
-    } else {
-        let total_steps = 2000;
-        // Clamp progress to [0, 1] so the cosine monotonically decays and then HOLDS
-        // at the floor. Without the clamp, step > total_steps makes cos() climb back
-        // toward +1, ramping the LR back up to base_lr and re-introducing oscillation.
-        let raw = (step - WARMUP_STEPS) as f64 / (total_steps - WARMUP_STEPS) as f64;
-        let progress = raw.clamp(0.0, 1.0);
-        let cosine = 0.5 * (1.0 + (std::f64::consts::PI * progress).cos());
-        // Decay from base_lr down to MIN_LR_RATIO * base_lr.
-        base_lr * (MIN_LR_RATIO + (1.0 - MIN_LR_RATIO) * cosine)
+/// Length of the default schedule, used when no training run set one (tests, single steps).
+pub const DEFAULT_SCHEDULE_STEPS: usize = 2000;
+
+/// Warmup + cosine learning-rate schedule. Steps are the optimizer time steps; the schedule counts from `start_step`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LearningRateSchedule {
+    /// Time step before the first step of the schedule (0 for a new network).
+    pub start_step: usize,
+    pub warmup_steps: usize,
+    /// Steps from `start_step` until the floor `MIN_LR_RATIO * base_lr` is reached.
+    pub total_steps: usize,
+}
+
+impl LearningRateSchedule {
+    pub const DEFAULT: LearningRateSchedule = LearningRateSchedule { start_step: 0, warmup_steps: WARMUP_STEPS, total_steps: DEFAULT_SCHEDULE_STEPS };
+
+    /// Schedule for a training run of `run_steps` steps after `start_step`: the warmup takes at most 10 % of the
+    /// run and the cosine reaches the floor with the last step.
+    pub fn for_run(start_step: usize, run_steps: usize) -> Self {
+        let total_steps = run_steps.max(1);
+        LearningRateSchedule { start_step, warmup_steps: WARMUP_STEPS.min(total_steps / 10), total_steps }
     }
+
+    pub fn learning_rate(&self, base_lr: f64, step: usize) -> f64 {
+        let step = step.saturating_sub(self.start_step);
+        if step < self.warmup_steps {
+            // Linear warmup
+            base_lr * (step as f64) / (self.warmup_steps as f64)
+        } else {
+            // Clamp progress to [0, 1] so the cosine monotonically decays and then HOLDS
+            // at the floor. Without the clamp, step > total_steps makes cos() climb back
+            // toward +1, ramping the LR back up to base_lr and re-introducing oscillation.
+            let decay_steps = self.total_steps.saturating_sub(self.warmup_steps).max(1);
+            let raw = (step - self.warmup_steps) as f64 / decay_steps as f64;
+            let progress = raw.clamp(0.0, 1.0);
+            let cosine = 0.5 * (1.0 + (std::f64::consts::PI * progress).cos());
+            // Decay from base_lr down to MIN_LR_RATIO * base_lr.
+            base_lr * (MIN_LR_RATIO + (1.0 - MIN_LR_RATIO) * cosine)
+        }
+    }
+}
+
+/// Schedule of the running training (`set_learning_rate_schedule`); every AdamW step reads it.
+static SCHEDULE: RwLock<LearningRateSchedule> = RwLock::new(LearningRateSchedule::DEFAULT);
+
+/// Sets the schedule for the following optimizer steps (`train()` sets one per training run).
+pub fn set_learning_rate_schedule(schedule: LearningRateSchedule) {
+    *SCHEDULE.write().unwrap_or_else(|poisoned| poisoned.into_inner()) = schedule;
+}
+
+pub fn learning_rate_schedule() -> LearningRateSchedule {
+    *SCHEDULE.read().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+pub fn get_current_learning_rate(base_lr: f64, step: usize) -> f64 {
+    learning_rate_schedule().learning_rate(base_lr, step)
 }
 
 pub fn sgd_weights(weights: &mut Vec<Vec<Complex<f64>>>, weight_gradients: &Vec<Vec<Complex<f64>>>, learning_rate: f64) -> Vec<Vec<Complex<f64>>> {

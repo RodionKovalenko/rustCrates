@@ -2,6 +2,7 @@ use crate::neural_networks::network_layers::default_layer::LayerInterface;
 use crate::neural_networks::network_layers::layer::LayerEnum;
 use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
 use crate::neural_networks::training::training_progress::{training_stop_requested, update_training_progress, EpochStats};
+use crate::neural_networks::utils::adam_w::{get_current_learning_rate, set_learning_rate_schedule, LearningRateSchedule, MIN_LR_RATIO};
 use crate::neural_networks::utils::matrix_rm::RowMajorMatrix;
 use colored::*;
 use std::time::Instant;
@@ -117,10 +118,8 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
     let mut total_loss_exp_ma: Real = ZERO;
     let alpha: Real = r(0.2);
     let mut layer_input = LayerInput::new_default();
-    // Resume the optimizer schedule from the persisted step instead of restarting at 1.
-    // Restarting re-runs the LR warmup (up to base_lr) on an already-converged checkpoint,
-    // which knocks it out of its minimum and leaves the loss oscillating. A fresh model
-    // has time_step == 0, so warmup still applies exactly once.
+    // The optimizer time step continues from the persisted step (AdamW bias correction); the learning-rate
+    // schedule is set for this run below.
     let mut timestep = transformer_network.time_step + 1;
     let mut total_valid_target_tokens_epoch: usize;
 
@@ -129,6 +128,20 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
     let mut best_epoch = 0;
     let patience = 100; // Stop if no improvement for 100 epochs
     let mut epochs_without_improvement = 0;
+
+    // Warmup + cosine over this run: the learning rate reaches its floor with the last batch of the last epoch.
+    let training_records = if dataset.total_training_records_size > 0 { dataset.total_training_records_size } else { dataset.input.len() };
+    let steps_per_epoch = training_records.div_ceil(batch_size.max(1));
+    let schedule = LearningRateSchedule::for_run(transformer_network.time_step, num_epochs * steps_per_epoch);
+    set_learning_rate_schedule(schedule);
+    println!(
+        "Learning rate: warmup {} steps, cosine to {} x {} over {} steps ({} epochs x {} batches)",
+        schedule.warmup_steps, MIN_LR_RATIO, transformer_network.learning_rate, schedule.total_steps, num_epochs, steps_per_epoch
+    );
+
+    // With validation the model file always holds the network of the best validation loss (saved when it improves).
+    // Without validation the current network is saved.
+    let has_validation = dataset.total_validation_records_size > 0;
 
     update_training_progress(|progress| {
         progress.num_epochs = num_epochs;
@@ -238,12 +251,18 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
             update_training_progress(|progress| {
                 progress.batch = batch_ind + 1;
                 progress.batch_loss = Some(batch_loss_per_token);
+                progress.learning_rate = Some(get_current_learning_rate(transformer_network.learning_rate, timestep));
                 progress.elapsed_seconds = now.elapsed().as_secs_f64();
             });
             if training_stop_requested() {
                 println!("⏹ Training stopped on request (epoch {}, batch {}).", epoch, batch_ind + 1);
-                save_to_sled(transformer_network.model_file(), &transformer_network);
-                update_training_progress(|progress| progress.message = format!("Stopped in epoch {} after batch {}; model saved.", epoch, batch_ind + 1));
+                let message = if has_validation && best_val_loss.is_finite() {
+                    format!("Stopped in epoch {} after batch {}; the model of epoch {} (best validation) is saved.", epoch + 1, batch_ind + 1, best_epoch + 1)
+                } else {
+                    save_to_sled(transformer_network.model_file(), &transformer_network);
+                    format!("Stopped in epoch {} after batch {}; model saved.", epoch + 1, batch_ind + 1)
+                };
+                update_training_progress(|progress| progress.message = message);
                 break 'outer;
             }
 
@@ -262,7 +281,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
             // of the erratic effective LR and loss oscillation.
         }
 
-        if epoch % 10 == 0 {
+        if !has_validation && epoch % 10 == 0 {
             save_to_sled(transformer_network.model_file(), &transformer_network);
         }
 
@@ -330,9 +349,12 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
                 }
 
                 if epochs_without_improvement >= patience {
+                    // The model file already holds the network of the best epoch.
                     println!("⛔ Early stopping triggered! No improvement for {} epochs.", patience);
                     println!("Best validation loss: {} at epoch {}", best_val_loss, best_epoch);
-                    save_to_sled(transformer_network.model_file(), &transformer_network);
+                    update_training_progress(|progress| {
+                        progress.message = format!("Early stopping: no improvement for {} epochs; the model of epoch {} is saved.", patience, best_epoch + 1)
+                    });
                     break 'outer;
                 }
             }
@@ -343,10 +365,18 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
             println!("WARNING: epoch {} had 0 valid target tokens across all batches; skipping early-stop on loss threshold.", epoch);
         } else if train_loss <= loss_threshold {
             println!("loss is smaller than {loss_threshold} Break the training: {:?}", &train_loss);
-            save_to_sled(transformer_network.model_file(), &transformer_network);
+            if !has_validation {
+                save_to_sled(transformer_network.model_file(), &transformer_network);
+            }
             break 'outer;
         }
+
+        if !has_validation && epoch + 1 == num_epochs {
+            save_to_sled(transformer_network.model_file(), &transformer_network);
+        }
     }
+
+    set_learning_rate_schedule(LearningRateSchedule::DEFAULT);
 }
 
 /// Default number of tokens generated after the prompt.

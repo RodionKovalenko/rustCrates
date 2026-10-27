@@ -1,4 +1,4 @@
-//! `train-rm` with all records: 1071 training and 119 validation records, the two parts disjoint.
+//! `train` with all records: 1071 training and 119 validation records, the two parts disjoint.
 #[cfg(test)]
 mod test_training_split {
     use crate::neural_networks::{
