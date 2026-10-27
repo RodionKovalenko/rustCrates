@@ -179,8 +179,6 @@ mod test_transformer {
         let input_str1: &str = "Hallo, wie geht es dir?";
         let input_batch_str: Vec<String> = vec![input_str1.to_string()];
 
-        let target_str1: &str = "Mir geht es gut";
-        let target_batch_str: Vec<String> = vec![target_str1.to_string()];
 
         let (_tokens, batch_ids) = tokenize_batch(&input_batch_str, false).unwrap();
 
@@ -189,8 +187,7 @@ mod test_transformer {
 
         let network_output = predict(&mut transformer_network, &layer_input);
         let output_batch = network_output.get_output_batch();
-        let (_tokens, target_ids) = tokenize_batch(&target_batch_str, true).unwrap();
-        backward(&mut transformer_network, &target_ids, false);
+        backward(&mut transformer_network, false);
 
         println!("\n\n output batch {:?}", &output_batch[0][0][0..100]);
         println!("\n output_batch dim {:?}, {}, {}", output_batch.len(), output_batch[0].len(), output_batch[0][0].len());

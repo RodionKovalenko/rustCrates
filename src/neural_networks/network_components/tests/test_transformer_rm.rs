@@ -2,6 +2,8 @@
 //! and train the same way: same loss and same weight gradients for the same parameters and batch.
 #[cfg(test)]
 mod test_transformer_rm {
+    use std::collections::HashSet;
+
     use crate::{
         neural_networks::{
             network_components::{
@@ -23,7 +25,7 @@ mod test_transformer_rm {
                     transformer_updater::update_transformer,
                 },
             },
-            utils::{adam_w::WARMUP_STEPS, dtype::Real, matrix_rm::RowMajorMatrix, tokenizer::tokenize_batch},
+            utils::{adam_w::WARMUP_STEPS, dtype::{Real, C}, matrix_rm::RowMajorMatrix, tokenizer::tokenize_batch},
         },
     };
 
@@ -173,16 +175,47 @@ mod test_transformer_rm {
         assert!(!losses.is_empty(), "training forward must produce a loss");
         assert_close_1d("cross-entropy loss per position", &flat_losses(&losses), &flat_losses(&losses_rm));
 
-        backward(&mut network, &target_ids, false);
-        backward(&mut network_rm, &target_ids, false);
+        backward(&mut network, false);
+        backward(&mut network_rm, false);
         assert_network_gradients_close(&network, &network_rm);
 
-        update_transformer(&mut network, &target_ids);
-        update_transformer(&mut network_rm, &target_ids);
+        update_transformer(&mut network);
+        update_transformer(&mut network_rm);
         let (Some(LayerEnum::Embedding(embedding)), Some(LayerEnum::EmbeddingRm(embedding_rm))) = (network.layers.first(), network_rm.layers.first()) else {
             panic!("both networks must start with the embedding")
         };
         assert_close_2d("embedding table after the update", &embedding.tied_weights, &embedding_rm.weights);
+    }
+
+    /// The embedding gradient of position t belongs to the token read at position t: an update changes exactly the
+    /// embedding rows of the input tokens. Tokens that only appear as targets (`<eos>` is never read) keep their rows.
+    #[test]
+    fn test_embedding_update_changes_the_rows_of_the_input_tokens() {
+        for mut network in [create_transformer(OperationMode::TRAINING), create_transformer_rm(OperationMode::TRAINING)] {
+            let name = if network.is_row_major() { "RM transformer" } else { "transformer" };
+            let (layer_input, target_ids) = training_input(1);
+            network.minibatch_size = target_ids.len();
+            predict(&mut network, &layer_input);
+            backward(&mut network, false);
+
+            let embedding_table = |network: &NeuralNetwork| -> Vec<Vec<C>> {
+                match network.layers.first() {
+                    Some(LayerEnum::Embedding(embedding)) => embedding.tied_weights.clone(),
+                    Some(LayerEnum::EmbeddingRm(embedding)) => (0..embedding.weights.rows).map(|row| embedding.weights.data[embedding.weights.row_range(row)].to_vec()).collect(),
+                    _ => panic!("{}: the network must start with the embedding", name),
+                }
+            };
+            let before = embedding_table(&network);
+            update_transformer(&mut network);
+            let after = embedding_table(&network);
+
+            let input_tokens: HashSet<usize> = layer_input.get_batch_ids().iter().flatten().map(|&id| id as usize).collect();
+            let target_only: Vec<usize> = target_ids.iter().flatten().map(|&id| id as usize).filter(|id| !input_tokens.contains(id)).collect();
+            assert!(!target_only.is_empty(), "the targets must contain a token that is not read (<eos>)");
+
+            let changed: HashSet<usize> = (0..before.len()).filter(|&row| before[row] != after[row]).collect();
+            assert_eq!(changed, input_tokens, "{}: the update must change exactly the embedding rows of the input tokens", name);
+        }
     }
 
     /// Validation runs the forward pass without gradients: the loss must be the same as in training (not 0), and the
@@ -227,7 +260,7 @@ mod test_transformer_rm {
                 net.minibatch_size = target_ids.len();
                 net.time_step = time_step;
                 predict(net, &layer_input);
-                backward(net, &target_ids, true);
+                backward(net, true);
             }
         }
 
@@ -297,7 +330,7 @@ mod test_transformer_rm {
             network_rm.time_step = time_step;
             let output = predict(&mut network_rm, &layer_input);
             losses.push(cross_entropy_sum_batch(&output.get_cross_entropy_loss_batch(), &target_ids).re);
-            backward(&mut network_rm, &target_ids, true);
+            backward(&mut network_rm, true);
         }
         println!("RM transformer losses: {:?}", losses);
         assert!(losses.iter().all(|loss| loss.is_finite()), "loss must stay finite: {:?}", losses);

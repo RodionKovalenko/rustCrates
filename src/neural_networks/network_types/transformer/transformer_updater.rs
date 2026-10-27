@@ -7,18 +7,21 @@ use crate::neural_networks::{
 pub const VERBOSE: bool = false;
 pub const SHOW_MAX_PARAMS: bool = false;
 
-pub fn update_transformer(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<Vec<u32>>) {
+pub fn update_transformer(transformer_network: &mut NeuralNetwork) {
     // IMPORTANT for weight tying:
     // Embedding layers accumulate per-token gradients into a shared accumulator that is consumed
     // by SparseLinearLayer::update_parameters(). Therefore accumulation must happen BEFORE the
     // SparseLinear optimizer step.
+    //
+    // The embedding gradient of position t belongs to the token read at position t, so the embedding
+    // layers update the rows of the input ids of their forward pass (not the target ids).
     for layer in transformer_network.layers.iter_mut() {
         match layer {
             LayerEnum::Embedding(embedding_layer) => {
-                embedding_layer.update_parameters_inner(target_batch_ids);
+                embedding_layer.update_parameters();
             }
             LayerEnum::EmbeddingRm(embedding_layer) => {
-                embedding_layer.update_parameters_inner(target_batch_ids);
+                embedding_layer.update_parameters();
             }
             _ => {}
         }

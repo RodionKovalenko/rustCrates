@@ -229,7 +229,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
                 println!("time elapsed for forward pass in seconds: {:?}", seconds);
             }
 
-            backward(transformer_network, &target_ids, true);
+            backward(transformer_network, true);
 
             // time step is incremented after each batch update
             timestep += 1;
@@ -654,7 +654,7 @@ pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput
     layer_output
 }
 
-pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<Vec<u32>>, update_params: bool) -> Option<Gradient> {
+pub fn backward(transformer_network: &mut NeuralNetwork, update_params: bool) -> Option<Gradient> {
     // Backward pass
 
     let mut gradient: Option<Gradient> = None;
@@ -722,7 +722,7 @@ pub fn backward(transformer_network: &mut NeuralNetwork, target_batch_ids: &Vec<
 
     if update_gradients {
         let start = Instant::now();
-        update_transformer(transformer_network, &target_batch_ids);
+        update_transformer(transformer_network);
         // reset_previous_gradient(transformer_network);
         if VERBOSE {
             println!("time elapsed in seconds in update transformer: {}", start.elapsed().as_secs_f64().to_string().green().bold());
