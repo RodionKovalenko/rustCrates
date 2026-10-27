@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Transformer Studio</title>
+    <title>Model Studio</title>
     <style>
         :root {
             --bg: #f5f6fa;
@@ -349,6 +349,8 @@
         }
 
         input[type="number"],
+        input[type="text"],
+        select,
         textarea {
             width: 100%;
             font: inherit;
@@ -362,14 +364,132 @@
         }
 
         input[type="number"]:focus,
+        input[type="text"]:focus,
+        select:focus,
         textarea:focus {
             border-color: var(--accent);
             box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
         }
 
         input:disabled,
+        select:disabled,
         textarea:disabled {
             opacity: .55;
+        }
+
+        select {
+            appearance: none;
+            background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+            background-position: calc(100% - 17px) 55%, calc(100% - 12px) 55%;
+            background-size: 5px 5px;
+            background-repeat: no-repeat;
+            padding-right: 30px;
+            cursor: pointer;
+        }
+
+        .field.wide {
+            grid-column: 1 / -1;
+        }
+
+        .data-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .fields .data-row .segmented {
+            display: inline-grid;
+            width: auto;
+            flex: none;
+        }
+
+        .data-row input {
+            flex: 1 1 160px;
+            min-width: 0;
+        }
+
+        .data-row #max-images {
+            flex: 0 0 110px;
+        }
+
+        .model .meta {
+            overflow-wrap: anywhere;
+        }
+
+        #image-gen-form .gen-row label.field {
+            width: 112px;
+        }
+
+        .field-note {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--muted);
+        }
+
+        /* Images */
+        .image-frame {
+            margin-top: 16px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .image-frame .answer-head {
+            border-bottom: 1px solid var(--border);
+        }
+
+        .image-frame .canvas {
+            display: grid;
+            place-items: center;
+            min-height: 180px;
+            padding: 12px;
+            background: repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface) 0% 50%) 50% / 20px 20px;
+        }
+
+        .image-frame img {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            image-rendering: pixelated;
+            border-radius: 6px;
+        }
+
+        .image-frame .placeholder {
+            color: var(--muted);
+            font-size: 13.5px;
+            background: var(--surface);
+            padding: 6px 10px;
+            border-radius: 8px;
+        }
+
+        .thumbs {
+            margin-top: 12px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+            gap: 8px;
+        }
+
+        .thumbs button {
+            padding: 0;
+            border: 1.5px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: pointer;
+            background: var(--surface-2);
+            aspect-ratio: 1;
+        }
+
+        .thumbs button:hover {
+            border-color: var(--accent);
+        }
+
+        .thumbs img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            image-rendering: pixelated;
+            display: block;
         }
 
         .segmented {
@@ -750,8 +870,8 @@
 <body>
     <header>
         <div class="bar">
-            <div class="logo">T</div>
-            <h1>Transformer Studio</h1>
+            <div class="logo">M</div>
+            <h1>Model Studio</h1>
             <div class="spacer"></div>
             <span class="pill device" id="device-pill"><span class="dot"></span><span id="device">…</span></span>
             <span class="pill" id="training-pill"><span class="dot"></span><span id="training-pill-text">Idle</span></span>
@@ -779,11 +899,11 @@
                 <div class="card-head">
                     <span class="step">2</span>
                     <h2 id="train-title">Training</h2>
-                    <span class="hint">XQuAD (de): 90 % training, 10 % validation</span>
+                    <span class="hint" id="train-hint-head">XQuAD (de): 90 % training, 10 % validation</span>
                 </div>
 
                 <form id="train-form" novalidate>
-                    <div class="fields">
+                    <div class="fields" id="text-fields">
                         <label class="field">Epochs
                             <input type="number" id="epochs" min="1" step="1" value="100" required />
                         </label>
@@ -800,6 +920,44 @@
                                 <input type="number" id="batches" min="1" step="1" value="4" aria-label="Number of batches" hidden />
                             </div>
                         </div>
+                    </div>
+                    <div class="fields" id="image-fields" hidden>
+                        <label class="field">Steps
+                            <input type="number" id="steps" min="1" step="100" value="20000" required />
+                        </label>
+                        <label class="field">Images per step
+                            <input type="number" id="image-batch" min="1" step="1" placeholder="auto" />
+                        </label>
+                        <label class="field">Image size
+                            <select id="image-size">
+                                <option value="32">32 × 32</option>
+                                <option value="64">64 × 64</option>
+                                <option value="128">128 × 128</option>
+                                <option value="256">256 × 256</option>
+                                <option value="512">512 × 512</option>
+                            </select>
+                        </label>
+                        <div class="field" style="display:grid;gap:6px">
+                            <span class="field-label">Colour</span>
+                            <div class="segmented" id="colour-mode">
+                                <button type="button" data-value="1" aria-pressed="true">Grayscale</button>
+                                <button type="button" data-value="3" aria-pressed="false">RGB</button>
+                            </div>
+                        </div>
+                        <div class="field wide" style="display:grid;gap:6px">
+                            <span class="field-label">Training images</span>
+                            <div class="data-row">
+                                <div class="segmented" id="data-mode">
+                                    <button type="button" data-value="mnist" aria-pressed="true">MNIST</button>
+                                    <button type="button" data-value="folder" aria-pressed="false">Folder</button>
+                                </div>
+                                <input type="text" id="data-path" placeholder="Folder with PNG / JPG images, e.g. C:\Images\faces" aria-label="Image folder" hidden />
+                                <input type="number" id="max-images" min="1" step="1" placeholder="limit: all" aria-label="Maximum number of images" title="Load at most this many images" />
+                            </div>
+                            <span class="field-note" id="image-note"></span>
+                        </div>
+                    </div>
+                    <div class="fields">
                         <div class="field" style="display:grid;gap:6px">
                             <span class="field-label">Start</span>
                             <div class="segmented" id="start-mode">
@@ -827,17 +985,17 @@
 
                     <div class="stats">
                         <div class="stat">
-                            <div class="k">Epoch</div>
+                            <div class="k" id="stat-epoch-k">Epoch</div>
                             <div class="v" id="stat-epoch">–</div>
                             <div class="s" id="stat-batch">&nbsp;</div>
                         </div>
                         <div class="stat">
-                            <div class="k">Batch loss / token</div>
+                            <div class="k" id="stat-loss-k">Batch loss / token</div>
                             <div class="v" id="stat-batch-loss">–</div>
                             <div class="s" id="stat-train-loss">&nbsp;</div>
                         </div>
                         <div class="stat">
-                            <div class="k">Best validation</div>
+                            <div class="k" id="stat-best-k">Best validation</div>
                             <div class="v" id="stat-best">–</div>
                             <div class="s" id="stat-best-epoch">&nbsp;</div>
                         </div>
@@ -849,16 +1007,20 @@
                     </div>
 
                     <div class="chart-head">
-                        <span class="hint">Loss per token</span>
+                        <span class="hint" id="chart-title">Loss per token</span>
                         <div class="legend">
                             <span style="--c: var(--accent)">Training</span>
-                            <span style="--c: var(--validation)">Validation</span>
+                            <span style="--c: var(--validation)" id="legend-validation">Validation</span>
                         </div>
                     </div>
                     <div class="chart" id="chart">
                         <svg id="chart-svg" role="img" aria-label="Training and validation loss per epoch"></svg>
                         <div class="empty" id="chart-empty">The loss curve appears after the first epoch.</div>
                         <div class="tooltip" id="tooltip"></div>
+                    </div>
+                    <div class="image-frame" id="preview-frame" hidden>
+                        <div class="answer-head"><span>Training preview (EMA weights)</span><span id="preview-step"></span></div>
+                        <div class="canvas"><img id="preview" alt="Images sampled during training" /></div>
                     </div>
                 </div>
             </section>
@@ -869,6 +1031,28 @@
                     <h2 id="gen-title">Generate</h2>
                     <span class="hint" id="gen-model-hint"></span>
                 </div>
+                <form id="image-gen-form" novalidate hidden>
+                    <div class="gen-row" style="margin-top:0">
+                        <label class="field">Images
+                            <select id="image-count">
+                                <option value="1">1</option>
+                                <option value="4">4</option>
+                                <option value="9">9</option>
+                                <option value="16" selected>16</option>
+                                <option value="36">36</option>
+                                <option value="64">64</option>
+                            </select>
+                        </label>
+                        <label class="field">Sampling steps
+                            <input type="number" id="sample-steps" min="4" max="512" step="1" value="64" />
+                        </label>
+                        <label class="field">Seed
+                            <input type="number" id="seed" min="0" step="1" placeholder="random" />
+                        </label>
+                        <div class="spacer"></div>
+                        <button class="btn primary" type="submit" id="image-gen-btn">✦ Generate</button>
+                    </div>
+                </form>
                 <form id="gen-form" novalidate>
                     <label class="field" for="prompt">Question or text
                         <textarea id="prompt" placeholder="Was ist die Hauptstadt von Frankreich?"></textarea>
@@ -883,12 +1067,19 @@
                     </div>
                 </form>
                 <div class="notice error" id="gen-notice" hidden></div>
-                <div class="answer">
+                <div class="answer" id="answer-box">
                     <div class="answer-head"><span id="answer-model">Answer</span><span id="answer-time"></span></div>
                     <div class="answer-body placeholder" id="answer">The generated answer appears here.</div>
                 </div>
                 <div class="history" id="history" hidden>
                     <h3>Recent</h3>
+                </div>
+                <div id="image-output" hidden>
+                    <div class="image-frame">
+                        <div class="answer-head"><span id="image-info">Images</span><span id="image-time"></span></div>
+                        <div class="canvas"><span class="placeholder" id="image-placeholder">The generated images appear here.</span><img id="generated" alt="Generated images" hidden /></div>
+                    </div>
+                    <div class="thumbs" id="thumbs"></div>
                 </div>
             </section>
         </div>
@@ -896,7 +1087,10 @@
 
     <script>
         const $ = (id) => document.getElementById(id);
-        const state = { status: null, model: null, recordsMode: "all", startMode: "new", history: [], busyGenerating: false };
+        const state = { status: null, model: null, recordsMode: "all", startMode: "new", colourMode: "1", dataMode: "mnist", history: [], images: [], busyGenerating: false, previewPath: null };
+        const SPECTRAL = "spectral";
+        const defaultImagesPerStep = (size) => ({ 32: 64, 64: 32, 128: 16, 256: 8, 512: 4 })[size] || 4;
+        const geometry = (s) => `${s.size} × ${s.size} ${s.channels === 3 ? "RGB" : "grayscale"}`;
 
         // ── theme ───────────────────────────────────────────────
         (function initTheme() {
@@ -962,6 +1156,9 @@
             return m ? m.label : id;
         }
 
+        const currentModel = () => state.status.models.find((x) => x.id === state.model);
+        const isImageModel = (m) => !!m && m.kind === "image";
+
         // ── models ──────────────────────────────────────────────
         function renderModels() {
             const { models, training } = state.status;
@@ -995,7 +1192,8 @@
                 p.textContent = m.description;
                 const meta = document.createElement("div");
                 meta.className = "meta";
-                meta.textContent = m.trained ? `Saved ${formatDate(m.modified)} · ${formatBytes(m.size_bytes)}` : "No saved model yet";
+                const details = m.spectral ? `${geometry(m.spectral)} · ${m.spectral.data} · ${m.spectral.step.toLocaleString()} steps · ` : "";
+                meta.textContent = m.trained ? `${details}Saved ${formatDate(m.modified)} · ${formatBytes(m.size_bytes)}` : "No saved model yet";
                 card.append(input, title, p, meta);
                 container.append(card);
             }
@@ -1003,13 +1201,42 @@
         }
 
         function renderModelDependent() {
-            const m = state.status.models.find((x) => x.id === state.model);
+            const m = currentModel();
+            const image = isImageModel(m);
+            const running = state.status.training.running;
             $("gen-model-hint").textContent = m.trained ? m.label : `${m.label} · not trained yet`;
+            $("train-hint-head").textContent = image ? "MNIST or your own images, 32 to 512 pixels" : "XQuAD (de): 90 % training, 10 % validation";
+            $("text-fields").hidden = image;
+            $("image-fields").hidden = !image;
+            $("gen-form").hidden = image;
+            $("answer-box").hidden = image;
+            $("history").hidden = image || state.history.length === 0;
+            $("image-gen-form").hidden = !image;
+            $("image-output").hidden = !image;
+
             const resume = $("start-mode").querySelector('[data-value="resume"]');
-            resume.disabled = !m.trained;
+            resume.disabled = running || !m.trained;
             if (!m.trained && state.startMode === "resume") { state.startMode = "new"; setSegmented("start-mode", "new"); }
             $("gen-btn").disabled = state.busyGenerating || !m.trained;
-            $("train-hint").textContent = state.status.training.running ? "" : (m.trained && state.startMode === "new" ? "A new model replaces the saved one." : "");
+            $("image-gen-btn").disabled = state.busyGenerating || !m.trained;
+            $("train-hint").textContent = running ? "" : (m.trained && state.startMode === "new" ? "A new model replaces the saved one." : "");
+
+            if (image) {
+                // A continued model keeps the size and colour it was trained with.
+                const continuing = state.startMode === "resume" && m.spectral;
+                $("image-size").disabled = running || !!continuing;
+                for (const b of $("colour-mode").querySelectorAll("button")) b.disabled = running || !!continuing;
+                if (continuing) {
+                    $("image-size").value = String(m.spectral.size);
+                    state.colourMode = String(m.spectral.channels);
+                    setSegmented("colour-mode", state.colourMode);
+                }
+                const size = parseInt($("image-size").value, 10);
+                $("image-batch").placeholder = `auto (${defaultImagesPerStep(size)})`;
+                $("image-note").textContent = continuing
+                    ? `Continues the saved ${geometry(m.spectral)} model after ${m.spectral.step.toLocaleString()} steps.`
+                    : (size >= 256 ? "Large images need a lot of memory per step; a GPU build (--features cuda) is strongly recommended." : "Images are centre-cropped to a square and resized.");
+            }
         }
 
         // ── training ────────────────────────────────────────────
@@ -1021,34 +1248,66 @@
             pill.className = "pill " + (running ? "busy" : "");
             $("training-pill-text").textContent = running ? `Training ${modelLabel(t.model)}` : "Idle";
 
-            for (const id of ["epochs", "batch-size", "batches"]) $(id).disabled = running;
-            for (const b of document.querySelectorAll("#records-mode button, #start-mode button")) b.disabled = running || (b.dataset.value === "resume" && !(state.status.models.find((x) => x.id === state.model) || {}).trained);
+            for (const id of ["epochs", "batch-size", "batches", "steps", "image-batch", "max-images", "data-path"]) $(id).disabled = running;
+            for (const b of document.querySelectorAll("#records-mode button, #data-mode button")) b.disabled = running;
+            for (const b of $("start-mode").querySelectorAll("button")) b.disabled = running || (b.dataset.value === "resume" && !(currentModel() || {}).trained);
             $("train-btn").disabled = running;
             $("stop-btn").disabled = !running;
 
-            const started = t.num_epochs > 0;
-            const done = t.epoch + (t.num_batches ? t.batch / t.num_batches : 0);
-            const fraction = started ? Math.min(1, done / t.num_epochs) : 0;
+            const image = t.model === SPECTRAL;
+            $("stat-epoch-k").textContent = image ? "Step" : "Epoch";
+            $("stat-loss-k").textContent = image ? "Loss" : "Batch loss / token";
+            $("stat-best-k").textContent = image ? "Images" : "Best validation";
+            $("chart-title").textContent = image ? "Loss (mean per logging interval)" : "Loss per token";
+            $("legend-validation").hidden = image;
+
+            const started = image ? t.num_steps > 0 : t.num_epochs > 0;
+            const done = image ? t.step : t.epoch + (t.num_batches ? t.batch / t.num_batches : 0);
+            const total = image ? t.num_steps : t.num_epochs;
+            const fraction = started ? Math.min(1, done / total) : 0;
             $("progress-fill").style.width = (fraction * 100).toFixed(1) + "%";
             $("progress-bar").setAttribute("aria-valuenow", (fraction * 100).toFixed(0));
             $("progress-percent").textContent = started ? (fraction * 100).toFixed(1) + " %" : "";
-            const records = t.training_records ? ` · ${t.training_records} training / ${t.validation_records} validation records` : "";
+            const records = image ? "" : (t.training_records ? ` · ${t.training_records} training / ${t.validation_records} validation records` : "");
             $("progress-label").textContent = t.model ? `${modelLabel(t.model)} — ${t.message || ""}${records}` : "No training yet";
 
-            $("stat-epoch").textContent = started ? `${Math.min(t.epoch + 1, t.num_epochs)} / ${t.num_epochs}` : "–";
-            $("stat-batch").textContent = started && t.num_batches ? `Batch ${t.batch} / ${t.num_batches}` + (t.learning_rate != null ? ` · LR ${t.learning_rate.toExponential(1)}` : "") : " ";
-            $("stat-batch-loss").textContent = fmt(t.batch_loss);
+            const lr = t.learning_rate != null ? `LR ${t.learning_rate.toExponential(1)}` : "";
             const last = (t.history || [])[t.history.length - 1];
-            $("stat-train-loss").textContent = last ? `Epoch ${last.epoch + 1} training: ${fmt(last.training_loss)}` : " ";
-            $("stat-best").textContent = fmt(t.best_validation_loss);
-            $("stat-best-epoch").textContent = t.best_epoch != null ? `Epoch ${t.best_epoch + 1} (saved)` : " ";
+            if (image) {
+                $("stat-epoch").textContent = started ? `${t.step.toLocaleString()} / ${t.num_steps.toLocaleString()}` : "–";
+                $("stat-batch").textContent = lr || " ";
+                $("stat-batch-loss").textContent = fmt(t.batch_loss, 4);
+                $("stat-train-loss").textContent = last ? `Mean to step ${last.epoch.toLocaleString()}: ${fmt(last.training_loss, 4)}` : " ";
+                $("stat-best").textContent = t.training_records ? t.training_records.toLocaleString() : "–";
+                $("stat-best-epoch").textContent = " ";
+            } else {
+                $("stat-epoch").textContent = started ? `${Math.min(t.epoch + 1, t.num_epochs)} / ${t.num_epochs}` : "–";
+                $("stat-batch").textContent = started && t.num_batches ? `Batch ${t.batch} / ${t.num_batches}` + (lr ? ` · ${lr}` : "") : " ";
+                $("stat-batch-loss").textContent = fmt(t.batch_loss);
+                $("stat-train-loss").textContent = last ? `Epoch ${last.epoch + 1} training: ${fmt(last.training_loss)}` : " ";
+                $("stat-best").textContent = fmt(t.best_validation_loss);
+                $("stat-best-epoch").textContent = t.best_epoch != null ? `Epoch ${t.best_epoch + 1} (saved)` : " ";
+            }
             $("stat-elapsed").textContent = started ? formatDuration(t.elapsed_seconds) : "–";
             let eta = " ";
             if (running && fraction > 0.002) eta = "≈ " + formatDuration(t.elapsed_seconds * (1 - fraction) / fraction) + " left";
             $("stat-eta").textContent = eta;
 
+            // Training preview of the spectral model, reloaded when a new one is written.
+            const preview = image && t.sample_image;
+            $("preview-frame").hidden = !preview;
+            if (preview && state.previewPath !== t.sample_image) {
+                state.previewPath = t.sample_image;
+                $("preview").src = "/api/spectral/preview?t=" + Date.now();
+                const match = /step_0*(\d+)/.exec(t.sample_image);
+                $("preview-step").textContent = match ? `step ${Number(match[1]).toLocaleString()}` : "";
+            }
+
             drawChart(t.history || []);
         }
+
+        /// x-axis value of a history entry: epochs are counted from 1, spectral entries already hold the step.
+        const historyX = (e) => (state.status && state.status.training.model === SPECTRAL ? e.epoch : e.epoch + 1);
 
         function niceTicks(min, max, count) {
             const span = max - min || 1;
@@ -1091,7 +1350,7 @@
             for (let k = 0; k < xTicks; k++) {
                 const i = xTicks === 1 ? 0 : Math.round((k / (xTicks - 1)) * (n - 1));
                 const label = el("text", { x: x(i), y: H - 6, "text-anchor": "middle", "font-size": 11, fill: colors.muted });
-                label.textContent = history[i].epoch + 1;
+                label.textContent = historyX(history[i]).toLocaleString();
             }
 
             const line = (key, color) => {
@@ -1111,7 +1370,9 @@
                 const i = Math.max(0, Math.min(n - 1, Math.round(((px - pad.l) / (W - pad.l - pad.r)) * (n - 1))));
                 const e = history[i];
                 cursor.setAttribute("x1", x(i)); cursor.setAttribute("x2", x(i)); cursor.setAttribute("opacity", 1);
-                tooltip.textContent = `Epoch ${e.epoch + 1} · training ${fmt(e.training_loss)} · validation ${fmt(e.validation_loss)}`;
+                tooltip.textContent = state.status.training.model === SPECTRAL
+                    ? `Step ${historyX(e).toLocaleString()} · loss ${fmt(e.training_loss, 4)}`
+                    : `Epoch ${historyX(e)} · training ${fmt(e.training_loss)} · validation ${fmt(e.validation_loss)}`;
                 tooltip.style.left = Math.min(Math.max(x(i), 110), W - 110) + "px";
                 tooltip.style.top = y(e.training_loss) + "px";
                 tooltip.style.opacity = 1;
@@ -1127,6 +1388,24 @@
             $("batches").hidden = v !== "batches";
         });
 
+        $("colour-mode").addEventListener("click", (ev) => {
+            const v = ev.target.dataset && ev.target.dataset.value;
+            if (!v || ev.target.disabled) return;
+            state.colourMode = v;
+            setSegmented("colour-mode", v);
+        });
+
+        $("data-mode").addEventListener("click", (ev) => {
+            const v = ev.target.dataset && ev.target.dataset.value;
+            if (!v || ev.target.disabled) return;
+            state.dataMode = v;
+            setSegmented("data-mode", v);
+            $("data-path").hidden = v !== "folder";
+            if (v === "folder") $("data-path").focus();
+        });
+
+        $("image-size").addEventListener("change", renderModelDependent);
+
         $("start-mode").addEventListener("click", (ev) => {
             const v = ev.target.dataset && ev.target.dataset.value;
             if (!v || ev.target.disabled) return;
@@ -1135,8 +1414,43 @@
             renderModelDependent();
         });
 
+        function imageTrainRequest() {
+            const steps = parseInt($("steps").value, 10);
+            const batch = $("image-batch").value.trim() ? parseInt($("image-batch").value, 10) : null;
+            const maxImages = $("max-images").value.trim() ? parseInt($("max-images").value, 10) : null;
+            if (!(steps > 0) || (batch !== null && !(batch > 0)) || (maxImages !== null && !(maxImages > 0))) throw new Error("Steps, images per step and the image limit must be positive whole numbers.");
+            const path = $("data-path").value.trim();
+            if (state.dataMode === "folder" && !path) throw new Error("Please enter the folder with your training images.");
+            return {
+                steps,
+                size: parseInt($("image-size").value, 10),
+                channels: parseInt(state.colourMode, 10),
+                data: state.dataMode === "folder" ? { kind: "folder", path } : { kind: "mnist" },
+                batch_size: batch,
+                max_images: maxImages,
+                resume: state.startMode === "resume",
+            };
+        }
+
         $("train-form").addEventListener("submit", async (ev) => {
             ev.preventDefault();
+            const m = currentModel();
+            if (isImageModel(m)) {
+                let body;
+                try { body = imageTrainRequest(); } catch (e) { notice("train-notice", e.message, true); return; }
+                if (m.trained && state.startMode === "new" && !confirm(`Start a new ${m.label} model? The saved model will be replaced when the training saves.`)) return;
+                notice("train-notice", "");
+                $("train-btn").disabled = true;
+                try {
+                    await api("/api/spectral/train", { method: "POST", body: JSON.stringify(body) });
+                    state.previewPath = null;
+                    await refresh();
+                } catch (e) {
+                    notice("train-notice", e.message, true);
+                    $("train-btn").disabled = false;
+                }
+                return;
+            }
             const epochs = parseInt($("epochs").value, 10);
             const batchSize = parseInt($("batch-size").value, 10);
             const batches = state.recordsMode === "all" ? null : parseInt($("batches").value, 10);
@@ -1144,7 +1458,6 @@
                 notice("train-notice", "Epochs, batch size and batches must be positive whole numbers.", true);
                 return;
             }
-            const m = state.status.models.find((x) => x.id === state.model);
             if (m.trained && state.startMode === "new" && !confirm(`Start a new ${m.label}? The saved model will be replaced when the training saves.`)) return;
             notice("train-notice", "");
             $("train-btn").disabled = true;
@@ -1161,7 +1474,7 @@
             $("stop-btn").disabled = true;
             try {
                 await api("/api/train/stop", { method: "POST" });
-                notice("train-notice", "Stopping after the current batch — the model will be saved.");
+                notice("train-notice", state.status.training.model === SPECTRAL ? "Stopping after the current step — the model will be saved." : "Stopping after the current batch — the best model is kept.");
             } catch (e) {
                 notice("train-notice", e.message, true);
             }
@@ -1216,6 +1529,61 @@
         }
 
         $("gen-form").addEventListener("submit", (ev) => { ev.preventDefault(); generate(); });
+
+        // ── image generation ────────────────────────────────────
+        function showImage(entry) {
+            const img = $("generated");
+            img.src = entry.url;
+            img.hidden = false;
+            $("image-placeholder").hidden = true;
+            $("image-info").textContent = `${entry.count} image${entry.count > 1 ? "s" : ""} · seed ${entry.seed} · ${entry.steps} steps`;
+            $("image-time").textContent = entry.seconds != null ? entry.seconds.toFixed(2) + " s" : "";
+        }
+
+        function renderThumbs() {
+            const box = $("thumbs");
+            box.replaceChildren();
+            for (const entry of state.images) {
+                const b = document.createElement("button");
+                b.type = "button";
+                b.title = `seed ${entry.seed}`;
+                b.append(Object.assign(document.createElement("img"), { src: entry.url, alt: `Generated images, seed ${entry.seed}` }));
+                b.addEventListener("click", () => showImage(entry));
+                box.append(b);
+            }
+        }
+
+        $("image-gen-form").addEventListener("submit", async (ev) => {
+            ev.preventDefault();
+            const count = parseInt($("image-count").value, 10);
+            const steps = Math.min(512, Math.max(4, parseInt($("sample-steps").value, 10) || 64));
+            const seed = $("seed").value.trim() ? parseInt($("seed").value, 10) : null;
+            notice("gen-notice", "");
+            state.busyGenerating = true;
+            const btn = $("image-gen-btn");
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Generating…';
+            try {
+                const res = await fetch("/api/spectral/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ count, steps, seed }) });
+                if (!res.ok) {
+                    let message = res.status + " " + res.statusText;
+                    try { message = (await res.json()).error || message; } catch (e) { /* no JSON body */ }
+                    throw new Error(message);
+                }
+                const entry = { url: URL.createObjectURL(await res.blob()), count, steps, seed: res.headers.get("X-Seed"), seconds: parseFloat(res.headers.get("X-Seconds")) };
+                showImage(entry);
+                state.images = [entry, ...state.images];
+                for (const old of state.images.slice(12)) URL.revokeObjectURL(old.url);
+                state.images = state.images.slice(0, 12);
+                renderThumbs();
+            } catch (e) {
+                notice("gen-notice", e.message, true);
+            } finally {
+                state.busyGenerating = false;
+                btn.textContent = "✦ Generate";
+                renderModelDependent();
+            }
+        });
         $("prompt").addEventListener("keydown", (ev) => { if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); generate(); } });
 
         // ── polling ─────────────────────────────────────────────

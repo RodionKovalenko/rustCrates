@@ -1284,3 +1284,44 @@ fn rgb_64_checkpoint_keeps_the_geometry_and_samples_rgb() {
 
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// With a GPU, the four spectral GEMMs (forward, accumulate, and both conjugate-transpose adjoints) give the
+/// CPU kernels' result. Skipped without CUDA.
+#[cfg(feature = "cuda")]
+#[test]
+fn gpu_gemms_match_the_cpu_kernels() {
+    use crate::neural_networks::spectral_model::gemm::{gemm_acc, gemm_acc_cpu, gemm_grad_a, gemm_grad_a_cpu, gemm_grad_b, gemm_grad_b_cpu, GPU_MIN_MACS};
+
+    if crate::neural_networks::utils::gpu_matmul::GPU_MATMUL.lock().map(|gpu| gpu.is_none()).unwrap_or(true) {
+        println!("no GPU: skipped");
+        return;
+    }
+    let mut rng = SmallRng::seed_from_u64(61);
+    let mut random = |len: usize| -> Vec<C> { (0..len).map(|_| Complex::new(rng.random_range(-1.0f64..1.0) as Real, rng.random_range(-1.0f64..1.0) as Real)).collect() };
+    let (m, k, n) = (4096, 48, 40);
+    assert!(m * k * n >= GPU_MIN_MACS);
+    let (a, b, d_out) = (random(m * k), random(k * n), random(m * n));
+    let close = |x: &[C], y: &[C], label: &str| {
+        let scale = y.iter().map(|v| v.norm()).fold(0.0 as Real, Real::max);
+        let err = x.iter().zip(y.iter()).map(|(p, q)| (*p - *q).norm()).fold(0.0 as Real, Real::max);
+        assert!(err <= 1e-4 * scale.max(1.0), "{label}: max error {err}");
+    };
+
+    let start = random(m * n);
+    let (mut gpu, mut cpu) = (start.clone(), start);
+    gemm_acc(&a, &b, &mut gpu, m, k, n);
+    gemm_acc_cpu(&a, &b, &mut cpu, m, k, n);
+    close(&gpu, &cpu, "gemm_acc");
+
+    let start = random(m * k);
+    let (mut gpu, mut cpu) = (start.clone(), start);
+    gemm_grad_a(&d_out, &b, &mut gpu, m, k, n);
+    gemm_grad_a_cpu(&d_out, &b, &mut cpu, m, k, n);
+    close(&gpu, &cpu, "gemm_grad_a");
+
+    let start = random(k * n);
+    let (mut gpu, mut cpu) = (start.clone(), start);
+    gemm_grad_b(&a, &d_out, &mut gpu, m, k, n);
+    gemm_grad_b_cpu(&a, &d_out, &mut cpu, m, k, n);
+    close(&gpu, &cpu, "gemm_grad_b");
+}

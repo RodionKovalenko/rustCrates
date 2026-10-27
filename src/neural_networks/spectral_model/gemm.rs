@@ -8,8 +8,38 @@
 //!
 //! All three variants accumulate into `out` rather than overwriting, which is
 //! what gradient accumulation across the weight-shared stages needs.
+//!
+//! With the `cuda` feature every product of at least [`GPU_MIN_MACS`] multiply-adds runs on the GPU (cuBLAS,
+//! the conjugate transposes of the backward pass included); smaller ones and every product without a GPU use
+//! the blocked CPU kernels below.
 
 use crate::neural_networks::utils::dtype::C;
+use crate::neural_networks::utils::matrix_rm::MatOp;
+
+/// Smallest GEMM (complex multiply-adds `m*k*n`) sent to the GPU. Below it, copying the operands costs more than
+/// the product: the band-summary matrices (`group x d x 16`, ~16k) stay on the CPU, every S-block and R-block
+/// projection (`group * coefficients x d x d`, millions) goes to the GPU.
+pub const GPU_MIN_MACS: usize = 1 << 16;
+
+/// `op_a(A) (m x k) * op_b(B) (k x n)` on the GPU, or `None` (too small, no GPU, or the GPU call failed).
+#[cfg(feature = "cuda")]
+fn gpu_product(a: &[C], op_a: MatOp, b: &[C], op_b: MatOp, m: usize, k: usize, n: usize) -> Option<Vec<C>> {
+    if m * k * n < GPU_MIN_MACS {
+        return None;
+    }
+    crate::neural_networks::utils::gpu_matmul::try_multiply_complex_gpu(a, op_a, b, op_b, m, k, n, false)
+}
+
+#[cfg(not(feature = "cuda"))]
+fn gpu_product(_a: &[C], _op_a: MatOp, _b: &[C], _op_b: MatOp, _m: usize, _k: usize, _n: usize) -> Option<Vec<C>> {
+    None
+}
+
+fn add_into(out: &mut [C], product: &[C]) {
+    for (o, p) in out.iter_mut().zip(product.iter()) {
+        *o += *p;
+    }
+}
 
 /// Rows of A processed per tile.
 const MC: usize = 64;
@@ -24,7 +54,15 @@ pub fn gemm_acc(a: &[C], b: &[C], out: &mut [C], m: usize, k: usize, n: usize) {
     debug_assert_eq!(a.len(), m * k);
     debug_assert_eq!(b.len(), k * n);
     debug_assert_eq!(out.len(), m * n);
+    if let Some(product) = gpu_product(a, MatOp::None, b, MatOp::None, m, k, n) {
+        add_into(out, &product);
+        return;
+    }
+    gemm_acc_cpu(a, b, out, m, k, n);
+}
 
+/// CPU kernel of [`gemm_acc`].
+pub fn gemm_acc_cpu(a: &[C], b: &[C], out: &mut [C], m: usize, k: usize, n: usize) {
     let mut i0 = 0;
     while i0 < m {
         let i1 = (i0 + MC).min(m);
@@ -58,10 +96,14 @@ pub fn gemm_acc(a: &[C], b: &[C], out: &mut [C], m: usize, k: usize, n: usize) {
 
 /// `out[m, n] = a[m, k] * b[k, n]`, overwriting `out`.
 pub fn gemm(a: &[C], b: &[C], out: &mut [C], m: usize, k: usize, n: usize) {
+    if let Some(product) = gpu_product(a, MatOp::None, b, MatOp::None, m, k, n) {
+        out.copy_from_slice(&product);
+        return;
+    }
     for v in out.iter_mut() {
         *v = C::new(0.0, 0.0);
     }
-    gemm_acc(a, b, out, m, k, n);
+    gemm_acc_cpu(a, b, out, m, k, n);
 }
 
 /// `d_a[m, k] += d_out[m, n] * conj(b[k, n])^T`.
@@ -72,7 +114,16 @@ pub fn gemm_grad_a(d_out: &[C], b: &[C], d_a: &mut [C], m: usize, k: usize, n: u
     debug_assert_eq!(d_out.len(), m * n);
     debug_assert_eq!(b.len(), k * n);
     debug_assert_eq!(d_a.len(), m * k);
+    // d_out (m x n) * b^H (n x k)
+    if let Some(product) = gpu_product(d_out, MatOp::None, b, MatOp::ConjTranspose, m, n, k) {
+        add_into(d_a, &product);
+        return;
+    }
+    gemm_grad_a_cpu(d_out, b, d_a, m, k, n);
+}
 
+/// CPU kernel of [`gemm_grad_a`].
+pub fn gemm_grad_a_cpu(d_out: &[C], b: &[C], d_a: &mut [C], m: usize, k: usize, n: usize) {
     let mut i0 = 0;
     while i0 < m {
         let i1 = (i0 + MC).min(m);
@@ -100,7 +151,16 @@ pub fn gemm_grad_b(a: &[C], d_out: &[C], d_b: &mut [C], m: usize, k: usize, n: u
     debug_assert_eq!(a.len(), m * k);
     debug_assert_eq!(d_out.len(), m * n);
     debug_assert_eq!(d_b.len(), k * n);
+    // a^H (k x m) * d_out (m x n)
+    if let Some(product) = gpu_product(a, MatOp::ConjTranspose, d_out, MatOp::None, k, m, n) {
+        add_into(d_b, &product);
+        return;
+    }
+    gemm_grad_b_cpu(a, d_out, d_b, m, k, n);
+}
 
+/// CPU kernel of [`gemm_grad_b`].
+pub fn gemm_grad_b_cpu(a: &[C], d_out: &[C], d_b: &mut [C], m: usize, k: usize, n: usize) {
     for i in 0..m {
         let g_row = &d_out[i * n..(i + 1) * n];
         for p in 0..k {

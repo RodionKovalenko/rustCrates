@@ -70,17 +70,21 @@ impl ModelKind {
     }
 }
 
-/// Saved model of a `ModelKind` (for listing; the model itself is not loaded).
+/// Saved model (for listing; the model itself is not loaded).
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelInfo {
     pub id: &'static str,
     pub label: &'static str,
     pub description: &'static str,
+    /// "text" (transformers) or "image" (spectral flow).
+    pub kind: &'static str,
     pub file: String,
     pub trained: bool,
     pub size_bytes: u64,
     /// Last modification as unix seconds.
     pub modified: Option<u64>,
+    /// Geometry and steps of the spectral model.
+    pub spectral: Option<crate::neural_networks::training::train_spectral::SpectralSummary>,
 }
 
 pub fn model_info(kind: ModelKind) -> ModelInfo {
@@ -90,10 +94,12 @@ pub fn model_info(kind: ModelKind) -> ModelInfo {
         id: kind.id(),
         label: kind.label(),
         description: kind.description(),
+        kind: "text",
         file: path.to_string_lossy().to_string(),
         trained: metadata.is_some(),
         size_bytes: metadata.as_ref().map(|m| m.len()).unwrap_or(0),
         modified: metadata.and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_secs()),
+        spectral: None,
     }
 }
 

@@ -406,6 +406,36 @@ impl Checkpoint {
     }
 }
 
+/// Geometry and progress of a saved checkpoint.
+#[derive(Debug, Clone)]
+pub struct CheckpointSummary {
+    pub layout: ImageLayout,
+    pub step: usize,
+    pub data: String,
+}
+
+/// Reads only the metadata of the checkpoint at `path` (not its weights), e.g. to list the model.
+pub fn read_checkpoint_summary(path: &str) -> std::io::Result<CheckpointSummary> {
+    use std::io::Read;
+
+    let mut file = std::fs::File::open(path)?;
+    let mut head = [0u8; 12];
+    if file.read_exact(&mut head).is_ok() && &head[..8] == CKPT_MAGIC {
+        let meta_len = u32::from_le_bytes([head[8], head[9], head[10], head[11]]) as usize;
+        let mut meta_json = vec![0u8; meta_len];
+        file.read_exact(&mut meta_json)?;
+        let meta: CheckpointMeta = serde_json::from_slice(&meta_json)?;
+        return Ok(CheckpointSummary {
+            layout: ImageLayout { size: meta.size, channels: meta.channels, content_side: meta.content_side },
+            step: meta.step,
+            data: meta.data,
+        });
+    }
+    // Pre-envelope checkpoints have no separate metadata.
+    let ckpt = Checkpoint::load(path)?;
+    Ok(CheckpointSummary { layout: ckpt.layout, step: ckpt.step, data: ckpt.data })
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct StepStats {
     pub loss: Real,

@@ -5,8 +5,10 @@ use std::sync::Mutex;
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use neural_networks::neural_networks::network_types::neural_network_generic::NeuralNetwork;
 use neural_networks::neural_networks::network_types::transformer::transformer_network::MAX_GENERATED_TOKENS;
+use neural_networks::neural_networks::spectral_model::data::DataSource;
 use neural_networks::neural_networks::spectral_model::sample::{sample_from_checkpoint, DEFAULT_SAMPLE_STEPS};
-use neural_networks::neural_networks::spectral_model::train::{train_spectral_flow, TrainConfig};
+use neural_networks::neural_networks::spectral_model::train::SPECTRAL_CHECKPOINT;
+use neural_networks::neural_networks::training::train_spectral::{generate_spectral_png, spectral_model_info, train_spectral, SpectralTrainSettings};
 use neural_networks::neural_networks::training::train_transformer::{
     compute_device, generate, generate_with, load_model, model_info, train_model, ModelKind, TrainSettings, ALL_RECORDS,
 };
@@ -25,7 +27,9 @@ Language model (RM transformer; Vec transformer with the -vec commands):
   predict-vec [text]
 
 Spectral flow (image model):
-  spectral-train [steps]
+  spectral-train [steps] [size] [gray|rgb] [mnist|<image folder>] [new]
+                                                       train (default: 100000 32 gray mnist; continues the saved
+                                                       model unless 'new', a continued model keeps its size/colour)
   spectral-sample [ckpt] [out.png] [count] [seed] [steps] [scale]
 
 Web UI:
@@ -62,11 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("predict-vec") => predict(ModelKind::Vec, &args)?,
         // Spectral Flow: see documentation/spectral_transformer.txt
         Some("spectral-train") => {
-            let mut cfg = TrainConfig::default();
-            if let Some(s) = args.get(2).and_then(|s| s.parse::<usize>().ok()) {
-                cfg.steps = s;
-            }
-            train_spectral_flow(cfg)?;
+            train_spectral(spectral_train_settings(&args)?)?;
         }
         // spectral-sample [ckpt] [out.png] [count] [seed] [steps] [scale]
         //
@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // is unconditional, so which digit appears is decided by the noise.
         // `count 1` gives a single 28x28 digit.
         Some("spectral-sample") => {
-            let ckpt = args.get(2).cloned().unwrap_or_else(|| TrainConfig::default().ckpt_path);
+            let ckpt = args.get(2).cloned().unwrap_or_else(|| SPECTRAL_CHECKPOINT.to_string());
             let out = args.get(3).cloned().unwrap_or_else(|| "STORAGE/spectral_flow/sample.png".to_string());
             let count: usize = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(64);
             // Default seed: fresh digits on every run; the seed is printed so a sample can be reproduced.
@@ -108,6 +108,26 @@ fn train_settings(args: &[String]) -> Result<TrainSettings, String> {
     let batch_size: usize = args.get(4).map(|a| a.parse().map_err(|_| format!("batch_size must be a number: {}", a))).transpose()?.unwrap_or(2);
     let resume = args.get(5).is_some_and(|a| a == "resume");
     Ok(TrainSettings { epochs, num_batches, batch_size, resume })
+}
+
+/// `[steps] [size] [gray|rgb] [mnist|<image folder>] [new]` after `spectral-train`.
+fn spectral_train_settings(args: &[String]) -> Result<SpectralTrainSettings, String> {
+    let steps: usize = args.get(2).map(|a| a.parse().map_err(|_| format!("steps must be a number: {}", a))).transpose()?.unwrap_or(100_000);
+    let size: usize = args.get(3).map(|a| a.parse().map_err(|_| format!("size must be a number: {}", a))).transpose()?.unwrap_or(32);
+    if !size.is_power_of_two() || !(32..=512).contains(&size) {
+        return Err(format!("size must be 32, 64, 128, 256 or 512: {}", size));
+    }
+    let channels = match args.get(4).map(String::as_str) {
+        None | Some("gray") | Some("grey") => 1,
+        Some("rgb") => 3,
+        Some(other) => return Err(format!("colour must be 'gray' or 'rgb': {}", other)),
+    };
+    let data = match args.get(5).map(String::as_str) {
+        None | Some("mnist") => DataSource::Mnist,
+        Some(folder) => DataSource::Folder(folder.to_string()),
+    };
+    let resume = args.get(6).map(String::as_str) != Some("new");
+    Ok(SpectralTrainSettings { steps, size, channels, data, batch_size: None, max_images: None, resume })
 }
 
 /// Generates an answer for the text after the command, or for a text read from the terminal.
@@ -165,6 +185,13 @@ struct TrainRequest {
 }
 
 #[derive(Deserialize)]
+struct SpectralGenerateRequest {
+    count: usize,
+    steps: Option<usize>,
+    seed: Option<u64>,
+}
+
+#[derive(Deserialize)]
 struct GenerateRequest {
     model: ModelKind,
     prompt: String,
@@ -188,6 +215,9 @@ async fn start_server() -> std::io::Result<()> {
             .route("/api/train", web::post().to(api_train))
             .route("/api/train/stop", web::post().to(api_train_stop))
             .route("/api/generate", web::post().to(api_generate))
+            .route("/api/spectral/train", web::post().to(api_spectral_train))
+            .route("/api/spectral/generate", web::post().to(api_spectral_generate))
+            .route("/api/spectral/preview", web::get().to(api_spectral_preview))
     })
     .bind(("0.0.0.0", 7860))?
     .run()
@@ -209,7 +239,8 @@ async fn index(tmpl: web::Data<Tera>) -> impl Responder {
 }
 
 async fn api_status() -> impl Responder {
-    let models: Vec<_> = ModelKind::ALL.iter().map(|&kind| model_info(kind)).collect();
+    let mut models: Vec<_> = ModelKind::ALL.iter().map(|&kind| model_info(kind)).collect();
+    models.push(spectral_model_info());
     HttpResponse::Ok().json(serde_json::json!({
         "device": compute_device(),
         "models": models,
@@ -238,6 +269,56 @@ async fn api_train(request: web::Json<TrainRequest>) -> impl Responder {
     });
 
     HttpResponse::Accepted().json(serde_json::json!({ "started": kind.id() }))
+}
+
+async fn api_spectral_train(request: web::Json<SpectralTrainSettings>) -> impl Responder {
+    if training_progress().running {
+        return json_error(actix_web::http::StatusCode::CONFLICT, "A training is already running.");
+    }
+    let settings = request.into_inner();
+    if settings.steps == 0 || settings.batch_size == Some(0) || settings.max_images == Some(0) {
+        return json_error(actix_web::http::StatusCode::BAD_REQUEST, "Steps, images per step and the image limit must be at least 1.");
+    }
+    if !settings.size.is_power_of_two() || !(32..=512).contains(&settings.size) || !(settings.channels == 1 || settings.channels == 3) {
+        return json_error(actix_web::http::StatusCode::BAD_REQUEST, "Image size must be 32 to 512 (a power of two), colour grayscale or RGB.");
+    }
+    if let DataSource::Folder(path) = &settings.data {
+        if !std::path::Path::new(path).is_dir() {
+            return json_error(actix_web::http::StatusCode::BAD_REQUEST, format!("Image folder not found: {}", path));
+        }
+    }
+    // Loading images and training are long, blocking work: run them on their own thread.
+    std::thread::spawn(move || {
+        if let Err(e) = train_spectral(settings) {
+            eprintln!("[spectral] training failed: {}", e);
+        }
+    });
+    HttpResponse::Accepted().json(serde_json::json!({ "started": "spectral" }))
+}
+
+/// The generated images as a PNG; seed and duration in the `X-Seed` / `X-Seconds` headers.
+async fn api_spectral_generate(request: web::Json<SpectralGenerateRequest>) -> impl Responder {
+    let request = request.into_inner();
+    match web::block(move || generate_spectral_png(request.count, request.steps, request.seed)).await {
+        Ok(Ok(generation)) => HttpResponse::Ok()
+            .content_type("image/png")
+            .insert_header(("X-Seed", generation.seed.to_string()))
+            .insert_header(("X-Seconds", format!("{:.3}", generation.seconds)))
+            .body(generation.png),
+        Ok(Err(message)) => json_error(actix_web::http::StatusCode::BAD_REQUEST, message),
+        Err(err) => json_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Generation failed: {}", err)),
+    }
+}
+
+/// The latest preview image written by the spectral training (the path comes from the training, not the request).
+async fn api_spectral_preview() -> impl Responder {
+    let Some(path) = training_progress().sample_image else {
+        return json_error(actix_web::http::StatusCode::NOT_FOUND, "No preview yet.");
+    };
+    match std::fs::read(&path) {
+        Ok(png) => HttpResponse::Ok().content_type("image/png").insert_header(("Cache-Control", "no-store")).body(png),
+        Err(e) => json_error(actix_web::http::StatusCode::NOT_FOUND, format!("Preview not readable: {}", e)),
+    }
 }
 
 async fn api_train_stop() -> impl Responder {

@@ -76,9 +76,18 @@ early stopping: 100 epochs without improvement).
 // web UI: choose the model, train (live progress, loss chart, stop) and generate
 .\target\release\wav-transformer.exe server      // or without a command; then open http://localhost:7860
 
-// spectral flow (image model)
-.\target\release\wav-transformer.exe spectral-train [steps]
+// spectral flow (image model), also in the web UI (model "Spectral flow")
+// spectral-train [steps] [size] [gray|rgb] [mnist|<image folder>] [new]
+// size: 32, 64, 128, 256 or 512; an image folder is searched recursively (PNG, JPEG, BMP, WebP, GIF, TIFF),
+// every image is centre-cropped to a square and resized. Without 'new' the saved model is continued and keeps
+// its size and colour. Model: STORAGE\spectral_flow\checkpoint.bin
+.\target\release\wav-transformer.exe spectral-train 100000                          // MNIST 32x32 grayscale
+.\target\release\wav-transformer.exe spectral-train 50000 128 rgb C:\Images\faces new
 .\target\release\wav-transformer.exe spectral-sample [ckpt] [out.png] [count] [seed] [steps] [scale]
+
+With --features cuda the large matrix multiplications of the spectral model also run on the GPU (cuBLAS);
+large images (256, 512) need it. Images per step default to what fits in memory: 64 (32 px), 32 (64 px),
+16 (128 px), 8 (256 px), 4 (512 px).
 
 // is the GPU used? (second terminal: process with type C, GPU-Util > 0 %)
 nvidia-smi -l 1
