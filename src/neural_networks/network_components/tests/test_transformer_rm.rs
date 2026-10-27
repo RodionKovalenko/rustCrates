@@ -246,15 +246,17 @@ mod test_transformer_rm {
     /// Inference: after the same training both networks give the same top-k token scores for a prompt (forward pass
     /// with K/V cache and EML top-k head, as the first generation step), and both generate text token by token.
     ///
-    /// The generated texts themselves are not compared: the networks agree to ~1e-10, so a near tie between two
-    /// tokens of the barely trained model can be decided differently and the texts diverge from there.
+    /// Only a few training steps: both networks start equal to ~1e-18, but the different summation order of the two
+    /// implementations grows by about 10x per step at the peak learning rate (1e-10 after 8 steps), so after many steps
+    /// the networks are no longer comparable. The generated texts themselves are not compared either: a near tie
+    /// between two tokens of the barely trained model can be decided differently and the texts diverge from there.
     #[test]
     fn test_transformer_rm_generates_like_transformer() {
         let mut network = create_transformer(OperationMode::TRAINING);
         let mut network_rm = create_transformer_rm(OperationMode::TRAINING);
         copy_network_parameters(&network, &mut network_rm);
 
-        for time_step in WARMUP_STEPS..WARMUP_STEPS + 20 {
+        for time_step in WARMUP_STEPS..WARMUP_STEPS + 3 {
             let (layer_input, target_ids) = training_input(time_step);
             for net in [&mut network, &mut network_rm] {
                 net.minibatch_size = target_ids.len();
