@@ -19,11 +19,11 @@ mod test_transformer_rm {
                 transformer::{
                     transformer_builder::create_transformer,
                     transformer_builder_rm::create_transformer_rm,
-                    transformer_network::{backward, cross_entropy_sum_batch, predict, TOP_K_SIZE},
+                    transformer_network::{backward, cross_entropy_sum_batch, predict, predict_token_by_token, TOP_K_SIZE},
                     transformer_updater::update_transformer,
                 },
             },
-            utils::{adam_w::WARMUP_STEPS, matrix_rm::RowMajorMatrix, tokenizer::tokenize_batch},
+            utils::{adam_w::WARMUP_STEPS, dtype::Real, matrix_rm::RowMajorMatrix, tokenizer::tokenize_batch},
         },
     };
 
@@ -207,6 +207,66 @@ mod test_transformer_rm {
 
             assert!(losses_validation.iter().any(|loss| loss.re > 0.0), "{}: validation loss must not be 0", name);
             assert_close_1d(&format!("{} validation vs training loss", name), &losses_training, &losses_validation);
+        }
+    }
+
+    /// Inference: after the same training both networks give the same top-k token scores for a prompt (forward pass
+    /// with K/V cache and EML top-k head, as the first generation step), and both generate text token by token.
+    ///
+    /// The generated texts themselves are not compared: the networks agree to ~1e-10, so a near tie between two
+    /// tokens of the barely trained model can be decided differently and the texts diverge from there.
+    #[test]
+    fn test_transformer_rm_generates_like_transformer() {
+        let mut network = create_transformer(OperationMode::TRAINING);
+        let mut network_rm = create_transformer_rm(OperationMode::TRAINING);
+        copy_network_parameters(&network, &mut network_rm);
+
+        for time_step in WARMUP_STEPS..WARMUP_STEPS + 20 {
+            let (layer_input, target_ids) = training_input(time_step);
+            for net in [&mut network, &mut network_rm] {
+                net.minibatch_size = target_ids.len();
+                net.time_step = time_step;
+                predict(net, &layer_input);
+                backward(net, &target_ids, true);
+            }
+        }
+
+        // First generation step: the whole prompt, inference mode, filling the K/V cache.
+        let (_, prompt_ids) = tokenize_batch(&vec![format!("<bos> {} <sep>", INPUTS[0])], false).unwrap();
+        let mut layer_input = LayerInput::new_default();
+        layer_input.set_batch_ids(prompt_ids);
+        layer_input.set_forward_only(true);
+        layer_input.set_calculate_gradient(false);
+        layer_input.set_calculate_k_v_cache(true);
+        layer_input.set_top_k_size(TOP_K_SIZE);
+        let (output, output_rm) = (predict(&mut network, &layer_input), predict(&mut network_rm, &layer_input));
+
+        let last_row = |scores: Vec<Vec<Vec<Real>>>| scores[0].last().expect("scores for the last prompt token").clone();
+        let (mut scores, mut scores_rm) = (last_row(output.get_output_batch_real()), last_row(output_rm.get_output_batch_real()));
+        let top = |scores: &[Real], indices: &[usize]| {
+            let best = (0..scores.len()).max_by(|&a, &b| scores[a].total_cmp(&scores[b])).unwrap();
+            (indices[best], scores[best])
+        };
+        let (indices, indices_rm) = (output.get_output_indices()[0].last().unwrap().clone(), output_rm.get_output_indices()[0].last().unwrap().clone());
+        let ((token, _), (token_rm, _)) = (top(&scores, &indices), top(&scores_rm, &indices_rm));
+
+        scores.sort_by(|a, b| b.total_cmp(a));
+        scores_rm.sort_by(|a, b| b.total_cmp(a));
+        let finite: Vec<usize> = (0..scores.len()).filter(|&i| scores[i].is_finite()).collect();
+        assert!(!finite.is_empty(), "the head must score candidate tokens");
+        for &i in &finite {
+            assert!((scores[i] - scores_rm[i]).abs() <= 1e-7 * scores[i].abs().max(1.0), "score {} differs: {} vs {}", i, scores[i], scores_rm[i]);
+        }
+        if finite.len() > 1 && scores[0] - scores[1] > 1e-6 {
+            assert_eq!(token, token_rm, "both networks must predict the same next token");
+        }
+
+        let prompt = vec![INPUTS[0].to_string()];
+        for (name, net) in [("transformer", &mut network), ("RM transformer", &mut network_rm)] {
+            let generated = predict_token_by_token(net, &prompt);
+            let answer = generated[0].split("<sep>").nth(1).unwrap_or("").trim().to_string();
+            println!("{} generated: {:?}", name, answer);
+            assert!(!answer.is_empty(), "{}: the model must generate at least one token: {:?}", name, generated);
         }
     }
 

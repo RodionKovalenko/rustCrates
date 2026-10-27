@@ -1,6 +1,7 @@
 use crate::neural_networks::network_layers::default_layer::LayerInterface;
 use crate::neural_networks::network_layers::layer::LayerEnum;
 use crate::neural_networks::utils::dtype::{r, Real, C, ZERO};
+use crate::neural_networks::training::training_progress::{training_stop_requested, update_training_progress, EpochStats};
 use crate::neural_networks::utils::matrix_rm::RowMajorMatrix;
 use colored::*;
 use std::time::Instant;
@@ -129,10 +130,22 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
     let patience = 100; // Stop if no improvement for 100 epochs
     let mut epochs_without_improvement = 0;
 
+    update_training_progress(|progress| {
+        progress.num_epochs = num_epochs;
+        progress.training_records = dataset.total_training_records_size;
+        progress.validation_records = dataset.total_validation_records_size;
+    });
+
     'outer: for epoch in 0..num_epochs {
         total_loss = C::new(ZERO, ZERO);
         total_valid_target_tokens_epoch = 0;
-        for (batch_ind, batch_dataset) in dataset.split_into_batches(batch_size).iter().enumerate() {
+        let batches = dataset.split_into_batches(batch_size);
+        update_training_progress(|progress| {
+            progress.epoch = epoch;
+            progress.batch = 0;
+            progress.num_batches = batches.len();
+        });
+        for (batch_ind, batch_dataset) in batches.iter().enumerate() {
             let (input_batch, target_batch) = (batch_dataset.get_input(), batch_dataset.get_target());
 
             let seconds_elapsed = now.elapsed();
@@ -221,6 +234,19 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
             // time step is incremented after each batch update
             timestep += 1;
 
+            let batch_loss_per_token = (loss.re / r(valid_target_tokens_batch.max(1) as f64)) as f64;
+            update_training_progress(|progress| {
+                progress.batch = batch_ind + 1;
+                progress.batch_loss = Some(batch_loss_per_token);
+                progress.elapsed_seconds = now.elapsed().as_secs_f64();
+            });
+            if training_stop_requested() {
+                println!("⏹ Training stopped on request (epoch {}, batch {}).", epoch, batch_ind + 1);
+                save_to_sled(transformer_network.model_file(), &transformer_network);
+                update_training_progress(|progress| progress.message = format!("Stopped in epoch {} after batch {}; model saved.", epoch, batch_ind + 1));
+                break 'outer;
+            }
+
             if epoch > 0 && epoch % 10 == 0 && batch_ind == 0 || VERBOSE {
                 let seconds_elapsed_end = now.elapsed();
                 let duration = seconds_elapsed_end - seconds_elapsed;
@@ -254,6 +280,11 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
 
         total_loss_exp_ma = alpha * train_loss + (r(1.0) - alpha) * total_loss_exp_ma;
 
+        update_training_progress(|progress| {
+            progress.history.push(EpochStats { epoch, training_loss: train_loss as f64, validation_loss: None });
+            progress.elapsed_seconds = now.elapsed().as_secs_f64();
+        });
+
         if epoch % 5 == 0 || train_loss <= loss_threshold {
             println!("Epoch: {}, TRAINING LOSS: {}", epoch.to_string().blue().bold(), train_loss.to_string().red().bold());
         }
@@ -261,6 +292,15 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
         if dataset.total_validation_records_size > 0 {
             // ========== VALIDATION PHASE (NO GRADIENT UPDATES) ==========
             let val_loss = evaluate_validation(transformer_network, &dataset, batch_size, &mut layer_input);
+            update_training_progress(|progress| {
+                if let Some(stats) = progress.history.last_mut() {
+                    stats.validation_loss = Some(val_loss as f64);
+                }
+                if val_loss.is_finite() && progress.best_validation_loss.is_none_or(|best| (val_loss as f64) < best) {
+                    progress.best_validation_loss = Some(val_loss as f64);
+                    progress.best_epoch = Some(epoch);
+                }
+            });
 
             if epoch % 5 == 0 {
                 println!("Epoch: {}, VALIDATION LOSS: {}", epoch.to_string().blue().bold(), val_loss.to_string().yellow().bold());
@@ -309,7 +349,21 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
     }
 }
 
+/// Default number of tokens generated after the prompt.
+pub const MAX_GENERATED_TOKENS: usize = 50;
+
 pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String>) -> Vec<String> {
+    generate_batch(transformer_network, input_batch, MAX_GENERATED_TOKENS).1
+}
+
+/// Generates the answer to `prompt` greedily, token by token, and returns only the generated text.
+pub fn generate_text(transformer_network: &mut NeuralNetwork, prompt: &str, max_new_tokens: usize) -> String {
+    let (prompts, texts) = generate_batch(transformer_network, &vec![prompt.to_string()], max_new_tokens);
+    texts[0].get(prompts[0].len()..).unwrap_or("").trim().to_string()
+}
+
+/// Returns the prompts as fed to the network (`<bos> ... <sep>`) and the prompts followed by the generated text.
+fn generate_batch(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String>, max_new_tokens: usize) -> (Vec<String>, Vec<String>) {
     let mut current_input_batch: Vec<String> = extend_input_with_bos(input_batch);
 
     clear_network_caches(transformer_network);
@@ -321,6 +375,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
             s.push_str(" <sep>");
         }
     }
+    let prompts = current_input_batch.clone();
     let mut count_tokens_prediction = 0;
 
     let now = Instant::now();
@@ -341,7 +396,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         Ok(res) => res,
         Err(e) => {
             println!("Error tokenizing batch: {:?}", e);
-            return current_input_batch;
+            return (prompts, current_input_batch);
         }
     };
 
@@ -448,7 +503,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
         current_input_batch[0].push_str(&predicted_token);
 
         count_tokens_prediction += 1;
-        if count_tokens_prediction > 50 {
+        if count_tokens_prediction >= max_new_tokens {
             println!("\nMax token prediction limit reached. Breaking.");
             break;
         }
@@ -459,7 +514,7 @@ pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_bat
     let seconds = duration.as_secs_f64();
     println!("\ntime elapsed in seconds: {:?}", seconds);
 
-    current_input_batch
+    (prompts, current_input_batch)
 }
 
 pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput) -> LayerOutput {

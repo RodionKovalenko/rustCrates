@@ -1,126 +1,1246 @@
-<!DOCTYPE html>
+{% raw %}<!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="UTF-8" />
-    <title>Rust Model Trainer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Transformer Studio</title>
     <style>
+        :root {
+            --bg: #f5f6fa;
+            --surface: #ffffff;
+            --surface-2: #f0f2f7;
+            --border: #e2e5ee;
+            --text: #161a23;
+            --muted: #636b7d;
+            --accent: #5b5bd6;
+            --accent-soft: #ececfd;
+            --accent-text: #ffffff;
+            --validation: #e5484d;
+            --ok: #1e9e6a;
+            --ok-soft: #e3f6ee;
+            --warn: #b4690e;
+            --warn-soft: #fbf1e2;
+            --danger: #d93d42;
+            --shadow: 0 1px 2px rgba(20, 24, 40, .05), 0 6px 24px rgba(20, 24, 40, .06);
+            --radius: 14px;
+            color-scheme: light;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --bg: #0e1016;
+                --surface: #161922;
+                --surface-2: #1d212c;
+                --border: #2a2f3c;
+                --text: #e8eaf0;
+                --muted: #9aa1b2;
+                --accent: #8e8cf5;
+                --accent-soft: #24233f;
+                --accent-text: #0e1016;
+                --validation: #ff6b70;
+                --ok: #3dd68c;
+                --ok-soft: #13291f;
+                --warn: #f1a10d;
+                --warn-soft: #2c2210;
+                --danger: #ff6b70;
+                --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 28px rgba(0, 0, 0, .25);
+                color-scheme: dark;
+            }
+        }
+
+        :root[data-theme="dark"] {
+            --bg: #0e1016;
+            --surface: #161922;
+            --surface-2: #1d212c;
+            --border: #2a2f3c;
+            --text: #e8eaf0;
+            --muted: #9aa1b2;
+            --accent: #8e8cf5;
+            --accent-soft: #24233f;
+            --accent-text: #0e1016;
+            --validation: #ff6b70;
+            --ok: #3dd68c;
+            --ok-soft: #13291f;
+            --warn: #f1a10d;
+            --warn-soft: #2c2210;
+            --danger: #ff6b70;
+            --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 28px rgba(0, 0, 0, .25);
+            color-scheme: dark;
+        }
+
         * {
             box-sizing: border-box;
         }
 
-        body {
-            font-family: Arial, sans-serif;
-            padding: 2rem;
-            max-width: 800px;
-            margin: auto;
+        [hidden] {
+            display: none !important;
         }
 
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font: 15px/1.5 "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            backdrop-filter: blur(12px);
+            background: color-mix(in srgb, var(--bg) 82%, transparent);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .bar {
+            max-width: 1240px;
+            margin: 0 auto;
+            padding: 14px 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo {
+            width: 30px;
+            height: 30px;
+            border-radius: 9px;
+            background: linear-gradient(135deg, var(--accent), var(--validation));
+            display: grid;
+            place-items: center;
+            color: #fff;
+            font-weight: 700;
+            font-size: 14px;
+            flex: none;
+        }
+
+        h1 {
+            font-size: 17px;
+            margin: 0;
+            font-weight: 650;
+            letter-spacing: -.01em;
+        }
+
+        .spacer {
+            flex: 1;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 4px 11px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: 550;
+            background: var(--surface-2);
+            color: var(--muted);
+            border: 1px solid var(--border);
+            white-space: nowrap;
+        }
+
+        .pill .dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .pill.ok {
+            color: var(--ok);
+            background: var(--ok-soft);
+            border-color: transparent;
+        }
+
+        .pill.busy {
+            color: var(--accent);
+            background: var(--accent-soft);
+            border-color: transparent;
+        }
+
+        .pill.busy .dot {
+            animation: pulse 1.2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            50% {
+                opacity: .3;
+            }
+        }
+
+        .icon-btn {
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--muted);
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            cursor: pointer;
+            display: grid;
+            place-items: center;
+            font-size: 15px;
+        }
+
+        .icon-btn:hover {
+            color: var(--text);
+        }
+
+        main {
+            max-width: 1240px;
+            margin: 0 auto;
+            padding: 24px;
+            display: grid;
+            gap: 20px;
+        }
+
+        .columns {
+            display: grid;
+            grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+            gap: 20px;
+            align-items: start;
+        }
+
+        @media (max-width: 960px) {
+            .columns {
+                grid-template-columns: minmax(0, 1fr);
+            }
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 20px;
+            min-width: 0;
+        }
+
+        .card-head {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .step {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--accent);
+            background: var(--accent-soft);
+            border-radius: 6px;
+            padding: 1px 7px;
+        }
+
+        h2 {
+            font-size: 16px;
+            margin: 0;
+            font-weight: 650;
+        }
+
+        .hint {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        /* Model choice */
+        .models {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 12px;
+        }
+
+        .model {
+            position: relative;
+            display: block;
+            border: 1.5px solid var(--border);
+            border-radius: 12px;
+            padding: 14px 16px 14px 46px;
+            cursor: pointer;
+            transition: border-color .15s, background .15s;
+        }
+
+        .model:hover {
+            border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+        }
+
+        .model input {
+            position: absolute;
+            left: 16px;
+            top: 17px;
+            width: 18px;
+            height: 18px;
+            accent-color: var(--accent);
+            margin: 0;
+        }
+
+        .model:has(input:checked) {
+            border-color: var(--accent);
+            background: var(--accent-soft);
+        }
+
+        .model:has(input:disabled) {
+            cursor: not-allowed;
+            opacity: .6;
+        }
+
+        .model-title {
+            font-weight: 650;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .tag {
+            font-size: 11px;
+            font-weight: 650;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            padding: 1px 7px;
+            border-radius: 5px;
+            background: var(--surface-2);
+            color: var(--muted);
+        }
+
+        .tag.ok {
+            background: var(--ok-soft);
+            color: var(--ok);
+        }
+
+        .model p {
+            margin: 4px 0 6px;
+            color: var(--muted);
+            font-size: 13.5px;
+        }
+
+        .model .meta {
+            font-size: 12.5px;
+            color: var(--muted);
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Forms */
+        .fields {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px 16px;
+            margin-bottom: 18px;
+        }
+
+        .fields .segmented {
+            display: grid;
+            width: 100%;
+        }
+
+        .field-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--muted);
+        }
+
+        label.field {
+            display: grid;
+            gap: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--muted);
+        }
+
+        input[type="number"],
         textarea {
+            width: 100%;
+            font: inherit;
+            color: var(--text);
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 9px 12px;
+            outline: none;
+            transition: border-color .15s, box-shadow .15s;
+        }
+
+        input[type="number"]:focus,
+        textarea:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+        }
+
+        input:disabled,
+        textarea:disabled {
+            opacity: .55;
+        }
+
+        .segmented {
+            display: inline-grid;
+            grid-auto-flow: column;
+            grid-auto-columns: 1fr;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 3px;
+            gap: 3px;
+        }
+
+        .segmented button {
+            border: 0;
+            background: transparent;
+            color: var(--muted);
+            font: inherit;
+            font-size: 13.5px;
+            font-weight: 600;
+            padding: 6px 12px;
+            border-radius: 7px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .segmented button:disabled {
+            cursor: not-allowed;
+            opacity: .5;
+        }
+
+        .segmented button[aria-pressed="true"] {
+            background: var(--surface);
+            color: var(--text);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, .12);
+        }
+
+        .records {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .records .segmented {
+            flex: 1;
+        }
+
+        .records input {
+            width: 96px;
+            flex: none;
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            font: inherit;
+            font-weight: 650;
+            font-size: 14.5px;
+            border-radius: 10px;
+            padding: 9px 18px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn.primary {
+            background: var(--accent);
+            color: var(--accent-text);
+        }
+
+        .btn.primary:hover:not(:disabled) {
+            filter: brightness(1.08);
+        }
+
+        .btn.ghost {
+            background: transparent;
+            border-color: var(--border);
+            color: var(--text);
+        }
+
+        .btn.danger {
+            background: transparent;
+            border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+            color: var(--danger);
+        }
+
+        .btn:disabled {
+            opacity: .45;
+            cursor: not-allowed;
+        }
+
+        .spinner {
+            width: 14px;
+            height: 14px;
+            border: 2px solid currentColor;
+            border-right-color: transparent;
+            border-radius: 50%;
+            animation: spin .8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .notice {
+            margin-top: 14px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            font-size: 13.5px;
+            background: var(--surface-2);
+            color: var(--muted);
+        }
+
+        .notice.error {
+            background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+            color: var(--danger);
+        }
+
+        /* Progress */
+        .progress-wrap {
+            margin-top: 20px;
+            padding-top: 18px;
+            border-top: 1px solid var(--border);
+        }
+
+        .progress-top {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            color: var(--muted);
+            margin-bottom: 8px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .progress {
+            height: 8px;
+            background: var(--surface-2);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .progress>div {
+            height: 100%;
+            width: 0;
+            border-radius: inherit;
+            background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 60%, var(--validation)));
+            transition: width .5s ease;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin: 16px 0;
+        }
+
+        .stat {
+            background: var(--surface-2);
+            border-radius: 10px;
+            padding: 10px 12px;
+        }
+
+        .stat .k {
+            font-size: 12px;
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        .stat .v {
+            font-size: 18px;
+            font-weight: 650;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .stat .s {
+            font-size: 12px;
+            color: var(--muted);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .chart-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .legend {
+            display: flex;
+            gap: 14px;
+            font-size: 12.5px;
+            color: var(--muted);
+        }
+
+        .legend span::before {
+            content: "";
+            display: inline-block;
+            width: 10px;
+            height: 3px;
+            border-radius: 2px;
+            margin-right: 6px;
+            vertical-align: middle;
+            background: var(--c);
+        }
+
+        .chart {
+            position: relative;
+        }
+
+        .chart svg {
             display: block;
             width: 100%;
-            min-height: 300px;
+            height: 220px;
+        }
+
+        .chart .empty {
+            position: absolute;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            color: var(--muted);
+            font-size: 13.5px;
+        }
+
+        .tooltip {
+            position: absolute;
+            pointer-events: none;
+            background: var(--text);
+            color: var(--bg);
+            font-size: 12px;
+            padding: 6px 9px;
+            border-radius: 8px;
+            white-space: nowrap;
+            transform: translate(-50%, -110%);
+            opacity: 0;
+            transition: opacity .1s;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Generation */
+        textarea {
+            min-height: 140px;
             resize: vertical;
-            padding: 1rem;
-            font-size: 1rem;
             line-height: 1.5;
         }
 
-        form {
-            margin-bottom: 2rem;
+        .gen-row {
+            display: flex;
+            gap: 12px;
+            align-items: end;
+            margin: 12px 0 0;
+            flex-wrap: wrap;
         }
 
-        button {
-            margin-top: 0.5rem;
-            padding: 0.75rem 1.5rem;
-            font-size: 1rem;
+        .gen-row label.field {
+            width: 130px;
         }
 
-        input[name="epochs"],
-        input[name="batch_size"],
-        input[name="num_records"] {
-            height: 40px;
-            font-size: 1.1rem;
-            padding: 0 0.5rem;
-            margin-right: 0.5rem;
-            width: 120px;
+        .answer {
+            margin-top: 16px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
         }
 
-        #training-status {
-            font-weight: bold;
-            margin-top: 1rem;
-            color: green;
+        .answer-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--surface-2);
+            font-size: 12.5px;
+            color: var(--muted);
+        }
+
+        .answer-body {
+            padding: 12px 14px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            min-height: 48px;
+        }
+
+        .answer-body.placeholder {
+            color: var(--muted);
+        }
+
+        .history {
+            margin-top: 16px;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 8px;
+        }
+
+        .history h3 {
+            margin: 0;
+            font-size: 13px;
+            color: var(--muted);
+            font-weight: 650;
+        }
+
+        .history button {
+            min-width: 0;
+            width: 100%;
+            text-align: left;
+            font: inherit;
+            color: var(--text);
+            background: var(--surface-2);
+            border: 1px solid transparent;
+            border-radius: 10px;
+            padding: 8px 12px;
+            cursor: pointer;
+        }
+
+        .history button:hover {
+            border-color: var(--border);
+        }
+
+        .history .q {
+            font-size: 13px;
+            color: var(--muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .history .a {
+            font-size: 13.5px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        kbd {
+            font: 11.5px ui-monospace, Consolas, monospace;
+            border: 1px solid var(--border);
+            border-bottom-width: 2px;
+            border-radius: 5px;
+            padding: 0 5px;
+            color: var(--muted);
+        }
+
+        :focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        @media (max-width: 560px) {
+
+            main,
+            .bar {
+                padding-left: 16px;
+                padding-right: 16px;
+            }
+
+            .bar .pill.device {
+                display: none;
+            }
+
+            .fields {
+                grid-template-columns: minmax(0, 1fr);
+            }
         }
     </style>
 </head>
 
 <body>
-    <h1>Train and Infer Model</h1>
+    <header>
+        <div class="bar">
+            <div class="logo">T</div>
+            <h1>Transformer Studio</h1>
+            <div class="spacer"></div>
+            <span class="pill device" id="device-pill"><span class="dot"></span><span id="device">…</span></span>
+            <span class="pill" id="training-pill"><span class="dot"></span><span id="training-pill-text">Idle</span></span>
+            <button class="icon-btn" id="theme" title="Toggle light / dark" aria-label="Toggle light or dark theme">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" />
+                </svg>
+            </button>
+        </div>
+    </header>
 
-    <h2>Train Model</h2>
-    <form id="train-form">
-        <input name="epochs" id="epochs" type="number" placeholder="Epochs" required min="1" />
-        <input name="batch_size" id="batch_size" type="number" placeholder="Batch Size" required min="1" />
-        <input name="num_records" id="num_records" type="number" placeholder="Number of Records" required min="1" />
-        <button type="submit">Train</button>
-    </form>
+    <main>
+        <section class="card" aria-labelledby="model-title">
+            <div class="card-head">
+                <span class="step">1</span>
+                <h2 id="model-title">Model</h2>
+                <span class="hint">Used for training and generation</span>
+            </div>
+            <div class="models" id="models" role="radiogroup"></div>
+        </section>
 
-    <div id="training-status"></div>
+        <div class="columns">
+            <section class="card" aria-labelledby="train-title">
+                <div class="card-head">
+                    <span class="step">2</span>
+                    <h2 id="train-title">Training</h2>
+                    <span class="hint">XQuAD (de): 90 % training, 10 % validation</span>
+                </div>
 
-    <h2>Run Inference</h2>
-    <form action="/api/predict" method="post" accept-charset="UTF-8">
-        <label for="prompt">Enter full text:</label><br />
-        <textarea name="prompt" id="prompt" placeholder="Paste or write your full input here..." required>
-        {% if prompt %}{{ prompt }}{% endif %}
-    </textarea><br />
-        <button type="submit">Submit</button>
-    </form>
+                <form id="train-form" novalidate>
+                    <div class="fields">
+                        <label class="field">Epochs
+                            <input type="number" id="epochs" min="1" step="1" value="100" required />
+                        </label>
+                        <label class="field">Batch size
+                            <input type="number" id="batch-size" min="1" step="1" value="2" required />
+                        </label>
+                        <div class="field" style="display:grid;gap:6px">
+                            <span class="field-label">Records</span>
+                            <div class="records">
+                                <div class="segmented" id="records-mode">
+                                    <button type="button" data-value="all" aria-pressed="true">All</button>
+                                    <button type="button" data-value="batches" aria-pressed="false">Batches</button>
+                                </div>
+                                <input type="number" id="batches" min="1" step="1" value="4" aria-label="Number of batches" hidden />
+                            </div>
+                        </div>
+                        <div class="field" style="display:grid;gap:6px">
+                            <span class="field-label">Start</span>
+                            <div class="segmented" id="start-mode">
+                                <button type="button" data-value="new" aria-pressed="true">New model</button>
+                                <button type="button" data-value="resume" aria-pressed="false">Continue</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button class="btn primary" type="submit" id="train-btn">▶ Start training</button>
+                        <button class="btn danger" type="button" id="stop-btn" disabled>■ Stop</button>
+                        <span class="hint" id="train-hint"></span>
+                    </div>
+                </form>
+                <div class="notice" id="train-notice" hidden></div>
 
-    {% if infer_result %}
-    <h3>Inference Result:</h3>
-    <p>{{ infer_result }}</p>
-    {% endif %}
+                <div class="progress-wrap">
+                    <div class="progress-top">
+                        <span id="progress-label">No training yet</span>
+                        <span id="progress-percent"></span>
+                    </div>
+                    <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="progress-bar">
+                        <div id="progress-fill"></div>
+                    </div>
+
+                    <div class="stats">
+                        <div class="stat">
+                            <div class="k">Epoch</div>
+                            <div class="v" id="stat-epoch">–</div>
+                            <div class="s" id="stat-batch">&nbsp;</div>
+                        </div>
+                        <div class="stat">
+                            <div class="k">Batch loss / token</div>
+                            <div class="v" id="stat-batch-loss">–</div>
+                            <div class="s" id="stat-train-loss">&nbsp;</div>
+                        </div>
+                        <div class="stat">
+                            <div class="k">Best validation</div>
+                            <div class="v" id="stat-best">–</div>
+                            <div class="s" id="stat-best-epoch">&nbsp;</div>
+                        </div>
+                        <div class="stat">
+                            <div class="k">Time</div>
+                            <div class="v" id="stat-elapsed">–</div>
+                            <div class="s" id="stat-eta">&nbsp;</div>
+                        </div>
+                    </div>
+
+                    <div class="chart-head">
+                        <span class="hint">Loss per token</span>
+                        <div class="legend">
+                            <span style="--c: var(--accent)">Training</span>
+                            <span style="--c: var(--validation)">Validation</span>
+                        </div>
+                    </div>
+                    <div class="chart" id="chart">
+                        <svg id="chart-svg" role="img" aria-label="Training and validation loss per epoch"></svg>
+                        <div class="empty" id="chart-empty">The loss curve appears after the first epoch.</div>
+                        <div class="tooltip" id="tooltip"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card" aria-labelledby="gen-title">
+                <div class="card-head">
+                    <span class="step">3</span>
+                    <h2 id="gen-title">Generate</h2>
+                    <span class="hint" id="gen-model-hint"></span>
+                </div>
+                <form id="gen-form" novalidate>
+                    <label class="field" for="prompt">Question or text
+                        <textarea id="prompt" placeholder="Was ist die Hauptstadt von Frankreich?"></textarea>
+                    </label>
+                    <div class="gen-row">
+                        <label class="field">Max. tokens
+                            <input type="number" id="max-tokens" min="1" max="500" step="1" value="50" />
+                        </label>
+                        <div class="spacer"></div>
+                        <span class="hint"><kbd>Ctrl</kbd> + <kbd>Enter</kbd></span>
+                        <button class="btn primary" type="submit" id="gen-btn">✦ Generate</button>
+                    </div>
+                </form>
+                <div class="notice error" id="gen-notice" hidden></div>
+                <div class="answer">
+                    <div class="answer-head"><span id="answer-model">Answer</span><span id="answer-time"></span></div>
+                    <div class="answer-body placeholder" id="answer">The generated answer appears here.</div>
+                </div>
+                <div class="history" id="history" hidden>
+                    <h3>Recent</h3>
+                </div>
+            </section>
+        </div>
+    </main>
 
     <script>
-        let pollInterval;
+        const $ = (id) => document.getElementById(id);
+        const state = { status: null, model: null, recordsMode: "all", startMode: "new", history: [], busyGenerating: false };
 
-        document.getElementById('train-form').addEventListener('submit', async function (e) {
-            e.preventDefault();
-
-            const epochs = document.getElementById('epochs').value;
-            const batch_size = document.getElementById('batch_size').value;
-            const num_records = document.getElementById('num_records').value;
-
+        // ── theme ───────────────────────────────────────────────
+        (function initTheme() {
             try {
-                await fetch('/api/train', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: new URLSearchParams({ epochs, batch_size, num_records }),
-                });
+                const saved = localStorage.getItem("theme");
+                if (saved) document.documentElement.dataset.theme = saved;
+            } catch (e) { /* storage unavailable */ }
+            $("theme").addEventListener("click", () => {
+                const dark = getComputedStyle(document.documentElement).colorScheme === "dark";
+                const next = dark ? "light" : "dark";
+                document.documentElement.dataset.theme = next;
+                try { localStorage.setItem("theme", next); } catch (e) { /* ignore */ }
+                if (state.status) drawChart(state.status.training.history || []);
+            });
+        })();
 
-                document.getElementById('training-status').innerText = "⏳ Training in progress...";
-                pollInterval = setInterval(checkTrainingStatus, 3000);
-            } catch (err) {
-                document.getElementById('training-status').innerText = "❌ Failed to start training.";
-                console.error(err);
+        // ── helpers ─────────────────────────────────────────────
+        function formatBytes(bytes) {
+            if (!bytes) return "";
+            const units = ["B", "KB", "MB", "GB"];
+            let i = 0, v = bytes;
+            while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+            return v.toFixed(i ? 1 : 0) + " " + units[i];
+        }
+
+        function formatDate(seconds) {
+            if (!seconds) return "";
+            return new Date(seconds * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+        }
+
+        function formatDuration(seconds) {
+            if (seconds == null || !isFinite(seconds)) return "–";
+            seconds = Math.max(0, Math.round(seconds));
+            const h = Math.floor(seconds / 3600), m = Math.floor((seconds % 3600) / 60), s = seconds % 60;
+            if (h) return h + " h " + String(m).padStart(2, "0") + " min";
+            if (m) return m + " min " + String(s).padStart(2, "0") + " s";
+            return s + " s";
+        }
+
+        const fmt = (x, d = 3) => (x == null || !isFinite(x) ? "–" : Number(x).toFixed(d));
+
+        async function api(path, options = {}) {
+            const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...options });
+            let data = null;
+            try { data = await res.json(); } catch (e) { /* no body */ }
+            if (!res.ok) throw new Error((data && data.error) || res.status + " " + res.statusText);
+            return data;
+        }
+
+        function setSegmented(groupId, value) {
+            for (const b of $(groupId).querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.value === value));
+        }
+
+        function notice(id, text, isError) {
+            const el = $(id);
+            el.hidden = !text;
+            el.textContent = text || "";
+            el.classList.toggle("error", !!isError);
+        }
+
+        function modelLabel(id) {
+            const m = state.status && state.status.models.find((x) => x.id === id);
+            return m ? m.label : id;
+        }
+
+        // ── models ──────────────────────────────────────────────
+        function renderModels() {
+            const { models, training } = state.status;
+            if (!state.model) state.model = models[0].id;
+            const container = $("models");
+            container.replaceChildren();
+            for (const m of models) {
+                const card = document.createElement("label");
+                card.className = "model";
+                const input = document.createElement("input");
+                input.type = "radio";
+                input.name = "model";
+                input.value = m.id;
+                input.checked = m.id === state.model;
+                input.disabled = training.running;
+                input.addEventListener("change", () => { state.model = m.id; renderModelDependent(); });
+                const title = document.createElement("div");
+                title.className = "model-title";
+                title.append(m.label);
+                const tag = document.createElement("span");
+                tag.className = "tag" + (m.trained ? " ok" : "");
+                tag.textContent = m.trained ? "Trained" : "Not trained";
+                title.append(tag);
+                if (training.running && training.model === m.id) {
+                    const t = document.createElement("span");
+                    t.className = "tag";
+                    t.textContent = "Training…";
+                    title.append(t);
+                }
+                const p = document.createElement("p");
+                p.textContent = m.description;
+                const meta = document.createElement("div");
+                meta.className = "meta";
+                meta.textContent = m.trained ? `Saved ${formatDate(m.modified)} · ${formatBytes(m.size_bytes)}` : "No saved model yet";
+                card.append(input, title, p, meta);
+                container.append(card);
+            }
+            renderModelDependent();
+        }
+
+        function renderModelDependent() {
+            const m = state.status.models.find((x) => x.id === state.model);
+            $("gen-model-hint").textContent = m.trained ? m.label : `${m.label} · not trained yet`;
+            const resume = $("start-mode").querySelector('[data-value="resume"]');
+            resume.disabled = !m.trained;
+            if (!m.trained && state.startMode === "resume") { state.startMode = "new"; setSegmented("start-mode", "new"); }
+            $("gen-btn").disabled = state.busyGenerating || !m.trained;
+            $("train-hint").textContent = state.status.training.running ? "" : (m.trained && state.startMode === "new" ? "A new model replaces the saved one." : "");
+        }
+
+        // ── training ────────────────────────────────────────────
+        function renderTraining() {
+            const t = state.status.training;
+            const running = t.running;
+
+            const pill = $("training-pill");
+            pill.className = "pill " + (running ? "busy" : "");
+            $("training-pill-text").textContent = running ? `Training ${modelLabel(t.model)}` : "Idle";
+
+            for (const id of ["epochs", "batch-size", "batches"]) $(id).disabled = running;
+            for (const b of document.querySelectorAll("#records-mode button, #start-mode button")) b.disabled = running || (b.dataset.value === "resume" && !(state.status.models.find((x) => x.id === state.model) || {}).trained);
+            $("train-btn").disabled = running;
+            $("stop-btn").disabled = !running;
+
+            const started = t.num_epochs > 0;
+            const done = t.epoch + (t.num_batches ? t.batch / t.num_batches : 0);
+            const fraction = started ? Math.min(1, done / t.num_epochs) : 0;
+            $("progress-fill").style.width = (fraction * 100).toFixed(1) + "%";
+            $("progress-bar").setAttribute("aria-valuenow", (fraction * 100).toFixed(0));
+            $("progress-percent").textContent = started ? (fraction * 100).toFixed(1) + " %" : "";
+            const records = t.training_records ? ` · ${t.training_records} training / ${t.validation_records} validation records` : "";
+            $("progress-label").textContent = t.model ? `${modelLabel(t.model)} — ${t.message || ""}${records}` : "No training yet";
+
+            $("stat-epoch").textContent = started ? `${Math.min(t.epoch + 1, t.num_epochs)} / ${t.num_epochs}` : "–";
+            $("stat-batch").textContent = started && t.num_batches ? `Batch ${t.batch} / ${t.num_batches}` : " ";
+            $("stat-batch-loss").textContent = fmt(t.batch_loss);
+            const last = (t.history || [])[t.history.length - 1];
+            $("stat-train-loss").textContent = last ? `Epoch ${last.epoch + 1} training: ${fmt(last.training_loss)}` : " ";
+            $("stat-best").textContent = fmt(t.best_validation_loss);
+            $("stat-best-epoch").textContent = t.best_epoch != null ? `Epoch ${t.best_epoch + 1} (saved)` : " ";
+            $("stat-elapsed").textContent = started ? formatDuration(t.elapsed_seconds) : "–";
+            let eta = " ";
+            if (running && fraction > 0.002) eta = "≈ " + formatDuration(t.elapsed_seconds * (1 - fraction) / fraction) + " left";
+            $("stat-eta").textContent = eta;
+
+            drawChart(t.history || []);
+        }
+
+        function niceTicks(min, max, count) {
+            const span = max - min || 1;
+            const step0 = span / count;
+            const mag = Math.pow(10, Math.floor(Math.log10(step0)));
+            const step = [1, 2, 2.5, 5, 10].map((f) => f * mag).find((s) => span / s <= count) || 10 * mag;
+            const ticks = [];
+            for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) ticks.push(+v.toFixed(10));
+            return ticks;
+        }
+
+        function drawChart(history) {
+            const svg = $("chart-svg");
+            const empty = $("chart-empty");
+            svg.replaceChildren();
+            empty.hidden = history.length > 0;
+            if (!history.length) return;
+
+            const css = getComputedStyle(document.documentElement);
+            const colors = { train: css.getPropertyValue("--accent").trim(), val: css.getPropertyValue("--validation").trim(), grid: css.getPropertyValue("--border").trim(), muted: css.getPropertyValue("--muted").trim() };
+            const W = svg.clientWidth || 600, H = svg.clientHeight || 220;
+            const pad = { l: 44, r: 12, t: 10, b: 26 };
+            const values = history.flatMap((e) => [e.training_loss, e.validation_loss]).filter((v) => v != null && isFinite(v));
+            let lo = Math.min(...values), hi = Math.max(...values);
+            if (hi - lo < 1e-6) { lo -= 0.5; hi += 0.5; }
+            const margin = (hi - lo) * 0.08;
+            lo = Math.max(0, lo - margin); hi += margin;
+            const n = history.length;
+            const x = (i) => pad.l + (n === 1 ? (W - pad.l - pad.r) / 2 : (i / (n - 1)) * (W - pad.l - pad.r));
+            const y = (v) => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b);
+            const ns = "http://www.w3.org/2000/svg";
+            const el = (tag, attrs) => { const e = document.createElementNS(ns, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); svg.append(e); return e; };
+
+            for (const t of niceTicks(lo, hi, 4)) {
+                el("line", { x1: pad.l, x2: W - pad.r, y1: y(t), y2: y(t), stroke: colors.grid, "stroke-width": 1 });
+                const label = el("text", { x: pad.l - 8, y: y(t) + 4, "text-anchor": "end", "font-size": 11, fill: colors.muted });
+                label.textContent = t;
+            }
+            const xTicks = Math.min(n, 6);
+            for (let k = 0; k < xTicks; k++) {
+                const i = xTicks === 1 ? 0 : Math.round((k / (xTicks - 1)) * (n - 1));
+                const label = el("text", { x: x(i), y: H - 6, "text-anchor": "middle", "font-size": 11, fill: colors.muted });
+                label.textContent = history[i].epoch + 1;
+            }
+
+            const line = (key, color) => {
+                const pts = history.map((e, i) => [i, e[key]]).filter(([, v]) => v != null && isFinite(v));
+                if (!pts.length) return;
+                el("polyline", { points: pts.map(([i, v]) => x(i) + "," + y(v)).join(" "), fill: "none", stroke: color, "stroke-width": 2.2, "stroke-linejoin": "round", "stroke-linecap": "round" });
+                if (pts.length <= 60) for (const [i, v] of pts) el("circle", { cx: x(i), cy: y(v), r: 2.8, fill: color });
+            };
+            line("training_loss", colors.train);
+            line("validation_loss", colors.val);
+
+            const cursor = el("line", { x1: 0, x2: 0, y1: pad.t, y2: H - pad.b, stroke: colors.muted, "stroke-dasharray": "3 3", opacity: 0 });
+            const tooltip = $("tooltip");
+            svg.onmousemove = (ev) => {
+                const rect = svg.getBoundingClientRect();
+                const px = ev.clientX - rect.left;
+                const i = Math.max(0, Math.min(n - 1, Math.round(((px - pad.l) / (W - pad.l - pad.r)) * (n - 1))));
+                const e = history[i];
+                cursor.setAttribute("x1", x(i)); cursor.setAttribute("x2", x(i)); cursor.setAttribute("opacity", 1);
+                tooltip.textContent = `Epoch ${e.epoch + 1} · training ${fmt(e.training_loss)} · validation ${fmt(e.validation_loss)}`;
+                tooltip.style.left = Math.min(Math.max(x(i), 110), W - 110) + "px";
+                tooltip.style.top = y(e.training_loss) + "px";
+                tooltip.style.opacity = 1;
+            };
+            svg.onmouseleave = () => { cursor.setAttribute("opacity", 0); tooltip.style.opacity = 0; };
+        }
+
+        $("records-mode").addEventListener("click", (ev) => {
+            const v = ev.target.dataset && ev.target.dataset.value;
+            if (!v) return;
+            state.recordsMode = v;
+            setSegmented("records-mode", v);
+            $("batches").hidden = v !== "batches";
+        });
+
+        $("start-mode").addEventListener("click", (ev) => {
+            const v = ev.target.dataset && ev.target.dataset.value;
+            if (!v || ev.target.disabled) return;
+            state.startMode = v;
+            setSegmented("start-mode", v);
+            renderModelDependent();
+        });
+
+        $("train-form").addEventListener("submit", async (ev) => {
+            ev.preventDefault();
+            const epochs = parseInt($("epochs").value, 10);
+            const batchSize = parseInt($("batch-size").value, 10);
+            const batches = state.recordsMode === "all" ? null : parseInt($("batches").value, 10);
+            if (!(epochs > 0) || !(batchSize > 0) || (batches !== null && !(batches > 0))) {
+                notice("train-notice", "Epochs, batch size and batches must be positive whole numbers.", true);
+                return;
+            }
+            const m = state.status.models.find((x) => x.id === state.model);
+            if (m.trained && state.startMode === "new" && !confirm(`Start a new ${m.label}? The saved model will be replaced when the training saves.`)) return;
+            notice("train-notice", "");
+            $("train-btn").disabled = true;
+            try {
+                await api("/api/train", { method: "POST", body: JSON.stringify({ model: state.model, epochs, batch_size: batchSize, batches, resume: state.startMode === "resume" }) });
+                await refresh();
+            } catch (e) {
+                notice("train-notice", e.message, true);
+                $("train-btn").disabled = false;
             }
         });
 
-        async function checkTrainingStatus() {
+        $("stop-btn").addEventListener("click", async () => {
+            $("stop-btn").disabled = true;
             try {
-                const res = await fetch('/api/train_status');
-                const data = await res.json();
-                if (data.done) {
-                    document.getElementById('training-status').innerText = data.result || "✅ Training done.";
-                    clearInterval(pollInterval);
-                }
+                await api("/api/train/stop", { method: "POST" });
+                notice("train-notice", "Stopping after the current batch — the model will be saved.");
             } catch (e) {
-                console.error("Error checking training status:", e);
+                notice("train-notice", e.message, true);
+            }
+        });
+
+        // ── generation ──────────────────────────────────────────
+        function renderHistory() {
+            const box = $("history");
+            box.hidden = state.history.length === 0;
+            box.replaceChildren(Object.assign(document.createElement("h3"), { textContent: "Recent" }));
+            for (const h of state.history) {
+                const b = document.createElement("button");
+                b.type = "button";
+                const q = Object.assign(document.createElement("div"), { className: "q", textContent: `${h.model} · ${h.prompt}` });
+                const a = Object.assign(document.createElement("div"), { className: "a", textContent: h.answer || "(empty answer)" });
+                b.append(q, a);
+                b.addEventListener("click", () => { $("prompt").value = h.prompt; showAnswer(h); });
+                box.append(b);
             }
         }
+
+        function showAnswer(h) {
+            const body = $("answer");
+            body.classList.toggle("placeholder", !h.answer);
+            body.textContent = h.answer || "(the model generated no tokens)";
+            $("answer-model").textContent = h.model;
+            $("answer-time").textContent = h.seconds != null ? h.seconds.toFixed(2) + " s" : "";
+        }
+
+        async function generate() {
+            const prompt = $("prompt").value.trim();
+            if (!prompt) { notice("gen-notice", "Please enter a question or text.", true); $("prompt").focus(); return; }
+            const maxTokens = Math.min(500, Math.max(1, parseInt($("max-tokens").value, 10) || 50));
+            notice("gen-notice", "");
+            state.busyGenerating = true;
+            const btn = $("gen-btn");
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Generating…';
+            try {
+                const res = await api("/api/generate", { method: "POST", body: JSON.stringify({ model: state.model, prompt, max_tokens: maxTokens }) });
+                const entry = { model: modelLabel(state.model), prompt, answer: res.answer, seconds: res.seconds };
+                showAnswer(entry);
+                state.history = [entry, ...state.history].slice(0, 6);
+                renderHistory();
+            } catch (e) {
+                notice("gen-notice", e.message, true);
+            } finally {
+                state.busyGenerating = false;
+                btn.textContent = "✦ Generate";
+                renderModelDependent();
+            }
+        }
+
+        $("gen-form").addEventListener("submit", (ev) => { ev.preventDefault(); generate(); });
+        $("prompt").addEventListener("keydown", (ev) => { if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); generate(); } });
+
+        // ── polling ─────────────────────────────────────────────
+        let timer = null;
+        async function refresh() {
+            clearTimeout(timer);
+            try {
+                state.status = await api("/api/status");
+                const device = state.status.device;
+                $("device").textContent = device;
+                $("device-pill").className = "pill device " + (device.startsWith("GPU") ? "ok" : "");
+                renderModels();
+                renderTraining();
+            } catch (e) {
+                $("training-pill-text").textContent = "Server unreachable";
+                $("training-pill").className = "pill";
+            }
+            const running = state.status && state.status.training.running;
+            timer = setTimeout(refresh, running ? 1500 : 8000);
+        }
+
+        window.addEventListener("resize", () => state.status && drawChart(state.status.training.history || []));
+        refresh();
     </script>
 </body>
 
 </html>
+{% endraw %}

@@ -85,8 +85,8 @@ pub fn create_transformer(_operation_mode: OperationMode) -> NeuralNetwork {
 
     // EML output head: a self-contained terminal head (dense projection + two-level
     // softmax + cross-entropy in one). It REPLACES the Linear + Softmax pair below —
-    // do not stack a Softmax after it. Training-only in this cut (no inference path yet),
-    // so re-enable the dense Linear + Softmax head for generation/PRODUCTION runs.
+    // do not stack a Softmax after it. In inference it emits the top-k token scores and
+    // indices that predict_token_by_token decodes greedily.
     let _eml_linear_layer: EmlLinearLayer = EmlLinearLayer::new(learning_rate, compressed_hidden, vocab_size);
     layers.push(LayerEnum::Eml(Box::new(_eml_linear_layer)));
 

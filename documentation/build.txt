@@ -33,7 +33,7 @@ opt-level = 3  -> for speed, e.g. better performance, more binary files
 opt-level = "z" for size, e.g. smaller size
 
 build and run in one go (rebuilds first if the code changed):
-cargo run --release --features cuda -- train-rm
+cargo run --release --features cuda -- train
 
 
 2. Run the binary
@@ -42,29 +42,37 @@ cargo run --release --features cuda -- train-rm
 
 Windows locks a running .exe, so `cargo build` fails while training runs. To keep working during a
 long training, start a copy:
-copy target\release\wav-transformer.exe train-rm.exe
-.\train-rm.exe train-rm
+copy target\release\wav-transformer.exe train.exe
+.\train.exe train
 
 CUDA: nvcuda.dll and cublas64_12.dll must be on the PATH. At startup the program prints
 "CUDA initialized successfully" or "CUDA not available. Falling back to CPU".
 
 
-3. Training
------------
-// RM transformer (GPU with --features cuda), saved to STORAGE\transformer_rm_v1
-// train-rm [epochs] [batches|all] [batch_size]; default: 5000 epochs, all records, batch size 2
-// all records: 1071 training, 119 validation
-.\target\release\wav-transformer.exe train-rm
-.\target\release\wav-transformer.exe train-rm 300 all 16
-.\target\release\wav-transformer.exe train-rm 50 4 2        // only 4 batches (8 records), quick check
+3. Training and generation
+--------------------------
+Two models with the same architecture, each with its own model file:
+  RM transformer   (row-major, batched GPU matmuls, weights cached on the GPU)  STORAGE\transformer_rm_v1
+  Vec transformer  (reference implementation)                                    STORAGE\transformer_01.04.2025
 
-// Vec transformer (CPU), saved to STORAGE\transformer_01.04.2025
+// train [epochs] [batches|all] [batch_size] [resume]
+// default: 5000 epochs, all records (1071 training / 119 validation), batch size 2, new model
 .\target\release\wav-transformer.exe train
+.\target\release\wav-transformer.exe train 300 all 16
+.\target\release\wav-transformer.exe train 300 all 16 resume   // continue the saved model
+.\target\release\wav-transformer.exe train 50 4 2              // only 4 batches (8 records), quick check
+.\target\release\wav-transformer.exe train-vec 300 all 16      // same for the Vec transformer
 
-// other commands
-.\target\release\wav-transformer.exe predict
-.\target\release\wav-transformer.exe test
-.\target\release\wav-transformer.exe server
+// generate an answer (asks for the text if none is given)
+.\target\release\wav-transformer.exe predict Was ist die Hauptstadt von Frankreich?
+.\target\release\wav-transformer.exe predict-vec
+
+// web UI: choose the model, train (live progress, loss chart, stop) and generate
+.\target\release\wav-transformer.exe server      // or without a command; then open http://localhost:7860
+
+// spectral flow (image model)
+.\target\release\wav-transformer.exe spectral-train [steps]
+.\target\release\wav-transformer.exe spectral-sample [ckpt] [out.png] [count] [seed] [steps] [scale]
 
 // is the GPU used? (second terminal: process with type C, GPU-Util > 0 %)
 nvidia-smi -l 1
@@ -109,5 +117,3 @@ cargo test --no-default-features
 cargo test --features dtype-f64 -- --nocapture
 cargo test --features dtype-f64
 
-// test in prod build
-.\target\release\wav-transformer.exe test

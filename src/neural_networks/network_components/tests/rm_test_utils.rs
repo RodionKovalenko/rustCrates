@@ -56,13 +56,18 @@ pub fn layer_inputs_with_mask(input_batch: &Vec<Vec<Vec<C>>>, padding_mask_batch
     (input, input_rm)
 }
 
-/// Two upstream `Gradient`s with the same content: one Vec, one RM.
+/// Two upstream `Gradient`s with the same content: one Vec, one RM. Both carry the token count, as in the network,
+/// so the averaging over valid tokens in `update_parameters` is compared too.
 pub fn upstream_gradients(gradient_batch: &Vec<Vec<Vec<C>>>) -> (Gradient, Gradient) {
+    let total_valid_tokens: usize = gradient_batch.iter().map(|m| m.len()).sum();
+
     let mut gradient = Gradient::new_default();
     gradient.set_gradient_input_batch(gradient_batch.clone());
+    gradient.set_total_valid_tokens(total_valid_tokens);
 
     let mut gradient_rm = Gradient::new_default();
     gradient_rm.set_gradient_input_batch_rm(to_rm_batch(gradient_batch));
+    gradient_rm.set_total_valid_tokens(total_valid_tokens);
 
     (gradient, gradient_rm)
 }

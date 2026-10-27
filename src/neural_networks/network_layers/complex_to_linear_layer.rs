@@ -133,6 +133,8 @@ impl ComplexToLinearLayer {
         gradient.set_gradient_input_batch(grad_input.clone());
         gradient.set_gradient_weight_batch(grad_w1);
         gradient.set_gradient_weight_2_batch(grad_w2);
+        // Pass the token count on: update_parameters averages the weight gradients over it (like the other layers).
+        gradient.set_total_valid_tokens(previous_gradient.get_total_valid_tokens());
 
         self.gradient = Some(gradient.clone());
         gradient

@@ -2,45 +2,37 @@ use std::env;
 use std::io::{self, Write};
 use std::sync::Mutex;
 
-use actix_web::web::Form;
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
-use neural_networks::neural_networks::network_types::transformer::test_transformer::test_train_transformer;
-use neural_networks::neural_networks::network_types::transformer::transformer_network::predict_by_text;
-use neural_networks::neural_networks::spectral_model::data as spectral_data;
-use neural_networks::neural_networks::spectral_model::model::SpectralNet;
-use neural_networks::neural_networks::spectral_model::sample::{
-    lowpass_reference_png, prior_reference_png, report_band_profile, sample_batch,
-    sample_from_checkpoint, DEFAULT_SAMPLE_STEPS,
-};
-use neural_networks::neural_networks::spectral_model::train::Checkpoint as SpectralCheckpoint;
-use neural_networks::neural_networks::spectral_model::spectral::SpectralPrep;
+use neural_networks::neural_networks::network_types::neural_network_generic::NeuralNetwork;
+use neural_networks::neural_networks::network_types::transformer::transformer_network::MAX_GENERATED_TOKENS;
+use neural_networks::neural_networks::spectral_model::sample::{sample_from_checkpoint, DEFAULT_SAMPLE_STEPS};
 use neural_networks::neural_networks::spectral_model::train::{train_spectral_flow, TrainConfig};
-use neural_networks::neural_networks::training::train_transformer::{train_transformer_from_dataset, train_transformer_rm_from_dataset, ALL_RECORDS};
+use neural_networks::neural_networks::training::train_transformer::{
+    compute_device, generate, generate_with, load_model, model_info, train_model, ModelKind, TrainSettings, ALL_RECORDS,
+};
+use neural_networks::neural_networks::training::training_progress::{request_training_stop, training_progress};
 use neural_networks::utils::string::maybe_fix_encoding;
 use serde::Deserialize;
 use tera::{Context, Tera};
 
-#[derive(Deserialize)]
-struct PredictForm {
-    prompt: String,
-}
+const USAGE: &str = "\
+Usage: wav-transformer <command> [arguments]
 
-#[derive(Deserialize)]
-struct TrainForm {
-    epochs: usize,
-    batch_size: usize,
-    num_records: usize,
-}
+Language model (RM transformer; Vec transformer with the -vec commands):
+  train [epochs] [batches|all] [batch_size] [resume]   train (default: 5000 all 2; 'resume' continues the saved model)
+  train-vec [epochs] [batches|all] [batch_size] [resume]
+  predict [text]                                       generate an answer (asks for the text if none is given)
+  predict-vec [text]
 
-struct AppState {
-    training_done: Mutex<bool>,
-    training_result: Mutex<Option<String>>,
-}
+Spectral flow (image model):
+  spectral-train [steps]
+  spectral-sample [ckpt] [out.png] [count] [seed] [steps] [scale]
+
+Web UI:
+  server                                               http://localhost:7860 (also started without a command)";
 
 #[actix_web::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Test begins");
-
     #[cfg(feature = "cuda")]
     {
         // cudarc loads the CUDA DLLs (nvcuda, cublas64_12, ...) at runtime via PATH,
@@ -58,245 +50,75 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Running in CPU mode");
 
     let args: Vec<String> = env::args().collect();
-    println!("Args: {:?}", args);
 
-    if let Some(arg1) = args.get(1) {
-        match arg1.as_str() {
-            "train" => {
-                train_transformer_from_dataset(5000, 4, 2);
-            }
-            // Row-major transformer: all matmuls on the GPU with `--features cuda`.
-            // train-rm [epochs] [batches|all] [batch_size]; default: 5000 epochs on all records, batch size 2
-            "train-rm" => {
-                let epochs: usize = args.get(2).map(|a| a.parse().expect("epochs must be a number")).unwrap_or(5000);
-                let num_batches: usize = match args.get(3).map(String::as_str) {
-                    None | Some("all") => ALL_RECORDS,
-                    Some(n) => n.parse().expect("batches must be a number or 'all'"),
-                };
-                let batch_size: usize = args.get(4).map(|a| a.parse().expect("batch_size must be a number")).unwrap_or(2);
-                train_transformer_rm_from_dataset(epochs, num_batches, batch_size);
-            }
-            "predict" => {
-                let input = read_input("Enter input text for prediction: ")?;
-                predict_by_text(&vec![input]);
-            }
-            "test" => {
-                test_train_transformer();
-            }
-            // Spectral Flow: see documentation/spectral_transformer.txt
-            "spectral-warmup" => {
-                // Build-order gate 7: bands 0-1, no band schedule. Blurry
-                // digit-shaped blobs should appear within minutes.
-                let mut cfg = TrainConfig::warmup_gate();
-                if let Some(s) = args.get(2).and_then(|s| s.parse::<usize>().ok()) {
-                    cfg.steps = s;
-                }
-                train_spectral_flow(cfg)?;
-            }
-            "spectral-train" => {
-                let mut cfg = TrainConfig::default();
-                if let Some(s) = args.get(2).and_then(|s| s.parse::<usize>().ok()) {
-                    cfg.steps = s;
-                }
-                train_spectral_flow(cfg)?;
-            }
-            "spectral-lowpass" => {
-                // Reference ceiling: real digits limited to bands 0..=max_band.
-                let max_band = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(1usize);
-                let data = spectral_data::load_train()?;
-                let net = SpectralNet::new(true);
-                let prep = SpectralPrep::from_dataset(&data.images);
-                let out = format!("STORAGE/spectral_flow/lowpass_band{max_band}.png");
-                lowpass_reference_png(&net, &prep, &data.images, max_band, 8, 8, &out)?;
-                println!("Wrote {out}");
-            }
-            "spectral-bench" => {
-                neural_networks::neural_networks::spectral_model::bench::run_bench();
-            }
-            "spectral-bench-upscale" => {
-                neural_networks::neural_networks::spectral_model::bench::run_upscale_bench();
-            }
-            "spectral-diag" => {
-                let path = args
-                    .get(2)
-                    .cloned()
-                    .unwrap_or_else(|| "STORAGE/spectral_flow/warmup.bin".to_string());
-                let ckpt = SpectralCheckpoint::load(&path)?;
-                let net = SpectralNet::new(ckpt.adaptive_roundtrip);
-                let prep = SpectralPrep::with_table(ckpt.whitening.clone());
-                let data = spectral_data::load_train()?;
-                println!("[spectral] checkpoint {path} at step {}", ckpt.step);
-                prior_reference_png(&prep, 8, 8, 5, "STORAGE/spectral_flow/prior.png")?;
-                report_band_profile(
-                    &net, &prep, &ckpt.ema, &ckpt.schedule, ckpt.path, &data.images, 32, 16,
-                );
-            }
-            // spectral-sample [ckpt] [out.png] [count] [seed]
-            //
-            // `count` samples are laid out in a roughly square grid; each tile
-            // is an independent draw, not a variation on one image. The model
-            // is unconditional, so which digit appears is decided by the noise.
-            // `count 1` gives a single 28x28 digit.
-            "spectral-sample" => {
-                let ckpt = args
-                    .get(2)
-                    .cloned()
-                    .unwrap_or_else(|| TrainConfig::default().ckpt_path);
-                let out = args
-                    .get(3)
-                    .cloned()
-                    .unwrap_or_else(|| "STORAGE/spectral_flow/sample.png".to_string());
-                let count: usize = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(64);
-                // Default seed 0 makes repeated runs byte-identical, so two
-                // checkpoints can be compared on the same noise draws. Pass a
-                // seed explicitly to get fresh digits.
-                let seed: u64 =
-                    args.get(5).and_then(|s| s.parse().ok()).unwrap_or_else(default_seed);
-                // Integration steps. This is a genuine quality knob and costs
-                // nothing but time: the sampler solves an ODE, and 16 steps is
-                // a coarse solve. 64 is usually visibly cleaner.
-                let steps: usize = args.get(6).and_then(|s| s.parse().ok()).unwrap_or(DEFAULT_SAMPLE_STEPS);
-                // Pixel upscale; 0 = automatic.
-                let scale: usize = args.get(7).and_then(|s| s.parse().ok()).unwrap_or(0);
-                let cols = (count as f64).sqrt().ceil() as usize;
-                let rows = count.div_ceil(cols);
-                sample_from_checkpoint(&ckpt, rows, cols, steps, seed, &out, scale)?;
-                println!(
-                    "Wrote {out} ({count} sample(s), {rows}x{cols} grid, seed {seed},                      {steps} integration steps)"
-                );
-            }
-            // spectral-hd [ckpt] [out.png] [seed] [steps]
-            //
-            // One digit, band-limited-upsampled to 1024x1024 and centred on a
-            // 1920x1080 canvas. The upsample is exact ideal interpolation, not
-            // a learned model: it enlarges faithfully but invents nothing, so
-            // any artefact in the 32x32 sample is enlarged along with it.
-            "spectral-hd" => {
-                use neural_networks::neural_networks::spectral_model::upscale::{
-                    centre_on_hd, spectral_upsample_apodized, write_gray_png,
-                    DEFAULT_APODISATION, HD_H, HD_W,
-                };
-                let ckpt_path = args
-                    .get(2)
-                    .cloned()
-                    .unwrap_or_else(|| TrainConfig::default().ckpt_path);
-                let out = args
-                    .get(3)
-                    .cloned()
-                    .unwrap_or_else(|| "STORAGE/spectral_flow/hd.png".to_string());
-                let seed: u64 =
-                    args.get(4).and_then(|s| s.parse().ok()).unwrap_or_else(default_seed);
-                let steps: usize = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(DEFAULT_SAMPLE_STEPS);
-                // Apodisation strength; pass 0 for the exact (ringing) upsample.
-                let alpha: f32 = args
-                    .get(6)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(DEFAULT_APODISATION as f32);
-
-                let ckpt = SpectralCheckpoint::load(&ckpt_path)?;
-                let net = SpectralNet::new(ckpt.adaptive_roundtrip);
-                let prep = SpectralPrep::with_table(ckpt.whitening.clone());
-                let imgs = sample_batch(
-                    &net, &prep, &ckpt.ema, &ckpt.schedule, ckpt.path, 1, steps, seed,
-                );
-                let big = spectral_upsample_apodized(&imgs[0], 32, 1024, alpha as _);
-                let canvas = centre_on_hd(&big, 1024);
-                write_gray_png(&canvas, HD_W, HD_H, &out)?;
-                println!(
-                    "Wrote {out} ({HD_W}x{HD_H}, digit at 1024x1024, seed {seed},                      {steps} steps, apodisation {alpha})"
-                );
-            }
-            // spectral-compare [ckpt] [out.png] [seed] [steps]
-            //
-            // Left: the raw 32x32 sample, nearest-neighbour enlarged so every
-            // model pixel is visible as a block. Right: the same sample through
-            // the band-limited upscaler. Same data, same size -- so anything
-            // visible in one panel and not the other is the interpolation, and
-            // any defect present in BOTH came from the generator.
-            "spectral-compare" => {
-                use neural_networks::neural_networks::spectral_model::upscale::{
-                    nearest_upsample, spectral_upsample, write_side_by_side,
-                };
-                let ckpt_path = args
-                    .get(2)
-                    .cloned()
-                    .unwrap_or_else(|| TrainConfig::default().ckpt_path);
-                let out = args
-                    .get(3)
-                    .cloned()
-                    .unwrap_or_else(|| "STORAGE/spectral_flow/compare.png".to_string());
-                let seed: u64 =
-                    args.get(4).and_then(|s| s.parse().ok()).unwrap_or_else(default_seed);
-                let steps: usize = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(DEFAULT_SAMPLE_STEPS);
-
-                let ckpt = SpectralCheckpoint::load(&ckpt_path)?;
-                let net = SpectralNet::new(ckpt.adaptive_roundtrip);
-                let prep = SpectralPrep::with_table(ckpt.whitening.clone());
-                let imgs = sample_batch(
-                    &net, &prep, &ckpt.ema, &ckpt.schedule, ckpt.path, 1, steps, seed,
-                );
-
-                const SIDE: usize = 512;
-                let blocky = nearest_upsample(&imgs[0], 32, SIDE / 32);
-                let smooth = spectral_upsample(&imgs[0], 32, SIDE);
-                write_side_by_side(&blocky, &smooth, SIDE, 16, &out)?;
-                println!(
-                    "Wrote {out} (left: raw 32x32 pixels, right: band-limited upscale,                      seed {seed}, {steps} steps)"
-                );
-            }
-            // spectral-compare3 [ckpt] [out.png] [seed] [steps] [alpha]
-            //
-            // raw pixels | exact band-limited | apodised. Same sample, same
-            // size: the middle panel shows Gibbs ringing, the right shows what
-            // tapering the band edge costs and buys.
-            "spectral-compare3" => {
-                use neural_networks::neural_networks::spectral_model::upscale::{
-                    nearest_upsample, spectral_upsample, spectral_upsample_apodized,
-                    write_triptych, DEFAULT_APODISATION,
-                };
-                let ckpt_path = args
-                    .get(2)
-                    .cloned()
-                    .unwrap_or_else(|| TrainConfig::default().ckpt_path);
-                let out = args
-                    .get(3)
-                    .cloned()
-                    .unwrap_or_else(|| "STORAGE/spectral_flow/compare3.png".to_string());
-                let seed: u64 =
-                    args.get(4).and_then(|s| s.parse().ok()).unwrap_or_else(default_seed);
-                let steps: usize = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(DEFAULT_SAMPLE_STEPS);
-                let alpha: f32 = args
-                    .get(6)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(DEFAULT_APODISATION as f32);
-
-                let ckpt = SpectralCheckpoint::load(&ckpt_path)?;
-                let net = SpectralNet::new(ckpt.adaptive_roundtrip);
-                let prep = SpectralPrep::with_table(ckpt.whitening.clone());
-                let imgs = sample_batch(
-                    &net, &prep, &ckpt.ema, &ckpt.schedule, ckpt.path, 1, steps, seed,
-                );
-
-                // Must be a power of two: the radix-2 FFT that does the upsampling
-                // requires it. 384 (= 32 x 12) is not, and fails at runtime.
-                const SIDE: usize = 512;
-                let raw = nearest_upsample(&imgs[0], 32, SIDE / 32);
-                let exact = spectral_upsample(&imgs[0], 32, SIDE);
-                let soft = spectral_upsample_apodized(&imgs[0], 32, SIDE, alpha as _);
-                write_triptych([&raw, &exact, &soft], SIDE, 12, &out)?;
-                println!("Wrote {out} (raw | exact | apodised alpha={alpha}, seed {seed})");
-            }
-            "server" => start_server().await?,
-            _ => println!("Unrecognized argument: {}", arg1),
+    match args.get(1).map(String::as_str) {
+        Some("train") => {
+            train_model(ModelKind::Rm, train_settings(&args)?);
         }
-    } else {
-        println!("No arguments provided.");
-        start_server().await?;
+        Some("train-vec") => {
+            train_model(ModelKind::Vec, train_settings(&args)?);
+        }
+        Some("predict") => predict(ModelKind::Rm, &args)?,
+        Some("predict-vec") => predict(ModelKind::Vec, &args)?,
+        // Spectral Flow: see documentation/spectral_transformer.txt
+        Some("spectral-train") => {
+            let mut cfg = TrainConfig::default();
+            if let Some(s) = args.get(2).and_then(|s| s.parse::<usize>().ok()) {
+                cfg.steps = s;
+            }
+            train_spectral_flow(cfg)?;
+        }
+        // spectral-sample [ckpt] [out.png] [count] [seed] [steps] [scale]
+        //
+        // `count` samples are laid out in a roughly square grid; each tile
+        // is an independent draw, not a variation on one image. The model
+        // is unconditional, so which digit appears is decided by the noise.
+        // `count 1` gives a single 28x28 digit.
+        Some("spectral-sample") => {
+            let ckpt = args.get(2).cloned().unwrap_or_else(|| TrainConfig::default().ckpt_path);
+            let out = args.get(3).cloned().unwrap_or_else(|| "STORAGE/spectral_flow/sample.png".to_string());
+            let count: usize = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(64);
+            // Default seed: fresh digits on every run; the seed is printed so a sample can be reproduced.
+            let seed: u64 = args.get(5).and_then(|s| s.parse().ok()).unwrap_or_else(default_seed);
+            // Integration steps of the sampler's ODE solve: 16 is coarse, 64 is usually visibly cleaner.
+            let steps: usize = args.get(6).and_then(|s| s.parse().ok()).unwrap_or(DEFAULT_SAMPLE_STEPS);
+            // Pixel upscale; 0 = automatic.
+            let scale: usize = args.get(7).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let cols = (count as f64).sqrt().ceil() as usize;
+            let rows = count.div_ceil(cols);
+            sample_from_checkpoint(&ckpt, rows, cols, steps, seed, &out, scale)?;
+            println!("Wrote {out} ({count} sample(s), {rows}x{cols} grid, seed {seed}, {steps} integration steps)");
+        }
+        Some("server") | None => start_server().await?,
+        Some(command) => {
+            println!("Unknown command: {}\n\n{}", command, USAGE);
+        }
     }
 
     Ok(())
 }
 
+/// `[epochs] [batches|all] [batch_size] [resume]` after the command; default: 5000 epochs, all records, batch size 2.
+fn train_settings(args: &[String]) -> Result<TrainSettings, String> {
+    let epochs: usize = args.get(2).map(|a| a.parse().map_err(|_| format!("epochs must be a number: {}", a))).transpose()?.unwrap_or(5000);
+    let num_batches: usize = match args.get(3).map(String::as_str) {
+        None | Some("all") => ALL_RECORDS,
+        Some(n) => n.parse().map_err(|_| format!("batches must be a number or 'all': {}", n))?,
+    };
+    let batch_size: usize = args.get(4).map(|a| a.parse().map_err(|_| format!("batch_size must be a number: {}", a))).transpose()?.unwrap_or(2);
+    let resume = args.get(5).is_some_and(|a| a == "resume");
+    Ok(TrainSettings { epochs, num_batches, batch_size, resume })
+}
+
+/// Generates an answer for the text after the command, or for a text read from the terminal.
+fn predict(kind: ModelKind, args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let prompt = if args.len() > 2 { args[2..].join(" ") } else { read_input("Enter input text for prediction: ")? };
+    match generate(kind, &maybe_fix_encoding(&prompt), MAX_GENERATED_TOKENS) {
+        Ok(generation) => println!("\n{}: {}\n({:.2} s)", kind.label(), generation.answer, generation.seconds),
+        Err(message) => println!("{} Train it first: wav-transformer {}", message, if kind == ModelKind::Rm { "train" } else { "train-vec" }),
+    }
+    Ok(())
+}
 
 /// Seed to use when the user did not supply one.
 ///
@@ -318,36 +140,67 @@ fn read_input(prompt: &str) -> Result<String, io::Error> {
     Ok(input.trim().to_string())
 }
 
+// ── Web UI ──────────────────────────────────────────────────────────────────
+
+/// Model loaded for generation, kept until its file changes (e.g. the training saved a new version).
+struct LoadedModel {
+    kind: ModelKind,
+    modified: Option<u64>,
+    network: NeuralNetwork,
+}
+
+struct AppState {
+    loaded_model: Mutex<Option<LoadedModel>>,
+}
+
+#[derive(Deserialize)]
+struct TrainRequest {
+    model: ModelKind,
+    epochs: usize,
+    /// `None` = all records.
+    batches: Option<usize>,
+    batch_size: usize,
+    #[serde(default)]
+    resume: bool,
+}
+
+#[derive(Deserialize)]
+struct GenerateRequest {
+    model: ModelKind,
+    prompt: String,
+    max_tokens: Option<usize>,
+}
+
 async fn start_server() -> std::io::Result<()> {
     println!("🚀 Starting Actix-web server at http://localhost:7860");
 
     let mut tera = Tera::new();
-    tera.load_from_glob("templates/**/*")
-        .expect("Failed to load templates");
+    tera.load_from_glob("templates/**/*").expect("Failed to load templates");
 
-    let app_state = web::Data::new(AppState {
-        training_done: Mutex::new(true),
-        training_result: Mutex::new(None),
-    });
+    let app_state = web::Data::new(AppState { loaded_model: Mutex::new(None) });
 
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(tera.clone()))
             .app_data(app_state.clone())
             .route("/", web::get().to(index))
+            .route("/api/status", web::get().to(api_status))
             .route("/api/train", web::post().to(api_train))
-            .route("/api/train_status", web::get().to(api_train_status))
-            .route("/api/predict", web::post().to(api_predict))
+            .route("/api/train/stop", web::post().to(api_train_stop))
+            .route("/api/generate", web::post().to(api_generate))
     })
     .bind(("0.0.0.0", 7860))?
     .run()
     .await
 }
 
+fn json_error(status: actix_web::http::StatusCode, message: impl Into<String>) -> HttpResponse {
+    HttpResponse::build(status).json(serde_json::json!({ "error": message.into() }))
+}
+
 async fn index(tmpl: web::Data<Tera>) -> impl Responder {
-    let ctx = Context::new();
-    match tmpl.render("index.html", &ctx) {
-        Ok(body) => HttpResponse::Ok().content_type("text/html").body(body),
+    match tmpl.render("index.html", &Context::new()) {
+        Ok(body) => HttpResponse::Ok().content_type("text/html; charset=utf-8").body(body),
         Err(err) => {
             eprintln!("Template error: {:?}", err);
             HttpResponse::InternalServerError().body("Template error")
@@ -355,59 +208,69 @@ async fn index(tmpl: web::Data<Tera>) -> impl Responder {
     }
 }
 
-async fn api_train(form: Form<TrainForm>, state: web::Data<AppState>) -> impl Responder {
-    let state_clone = state.clone();
-    let epochs = form.epochs;
-    let num_records = form.num_records;
-    let batch_size = form.batch_size;
-
-    actix_web::rt::spawn(async move {
-        {
-            let mut done = state_clone.training_done.lock().unwrap();
-            *done = false;
-        }
-
-        let _result: bool = train_transformer_from_dataset(epochs, num_records, batch_size);
-
-        {
-            let mut training_result = state_clone.training_result.lock().unwrap();
-            *training_result = Some(format!("✅ Training complete with {} epochs.", epochs));
-        }
-
-        {
-            let mut done = state_clone.training_done.lock().unwrap();
-            *done = true;
-        }
-    });
-
-    HttpResponse::Ok().body("Training started.")
-}
-
-async fn api_train_status(state: web::Data<AppState>) -> impl Responder {
-    let done = *state.training_done.lock().unwrap();
-    let result = state.training_result.lock().unwrap();
-
+async fn api_status() -> impl Responder {
+    let models: Vec<_> = ModelKind::ALL.iter().map(|&kind| model_info(kind)).collect();
     HttpResponse::Ok().json(serde_json::json!({
-        "done": done,
-        "result": result.clone()
+        "device": compute_device(),
+        "models": models,
+        "training": training_progress(),
     }))
 }
 
-async fn api_predict(form: Form<PredictForm>, tmpl: web::Data<Tera>) -> impl Responder {
-    let fixed_prompt = maybe_fix_encoding(&form.prompt);
-    println!("fixed prompt: {:?}", &fixed_prompt);
+async fn api_train(request: web::Json<TrainRequest>) -> impl Responder {
+    if training_progress().running {
+        return json_error(actix_web::http::StatusCode::CONFLICT, "A training is already running.");
+    }
+    if request.epochs == 0 || request.batch_size == 0 || request.batches == Some(0) {
+        return json_error(actix_web::http::StatusCode::BAD_REQUEST, "Epochs, batches and batch size must be at least 1.");
+    }
 
-    let output = predict_by_text(&vec![fixed_prompt]);
+    let settings = TrainSettings {
+        epochs: request.epochs,
+        num_batches: request.batches.unwrap_or(ALL_RECORDS),
+        batch_size: request.batch_size,
+        resume: request.resume,
+    };
+    let kind = request.model;
+    // Training is long, blocking CPU/GPU work: run it on its own thread, not on the server's workers.
+    std::thread::spawn(move || {
+        train_model(kind, settings);
+    });
 
-    let mut ctx = Context::new();
-    ctx.insert("infer_result", &output);
-    ctx.insert("prompt", &form.prompt);
+    HttpResponse::Accepted().json(serde_json::json!({ "started": kind.id() }))
+}
 
-    match tmpl.render("index.html", &ctx) {
-        Ok(body) => HttpResponse::Ok().content_type("text/html").body(body),
-        Err(err) => {
-            eprintln!("Template error: {:?}", err);
-            HttpResponse::InternalServerError().body("Template error")
+async fn api_train_stop() -> impl Responder {
+    if !training_progress().running {
+        return json_error(actix_web::http::StatusCode::CONFLICT, "No training is running.");
+    }
+    request_training_stop();
+    HttpResponse::Ok().json(serde_json::json!({ "stopping": true }))
+}
+
+async fn api_generate(request: web::Json<GenerateRequest>, state: web::Data<AppState>) -> impl Responder {
+    let prompt = maybe_fix_encoding(request.prompt.trim());
+    if prompt.is_empty() {
+        return json_error(actix_web::http::StatusCode::BAD_REQUEST, "Please enter a text.");
+    }
+    let kind = request.model;
+    let max_tokens = request.max_tokens.unwrap_or(MAX_GENERATED_TOKENS).clamp(1, 500);
+
+    let result = web::block(move || -> Result<_, String> {
+        let modified = model_info(kind).modified;
+        let mut loaded = state.loaded_model.lock().map_err(|_| "model lock poisoned".to_string())?;
+        let reload = !matches!(&*loaded, Some(model) if model.kind == kind && model.modified == modified);
+        if reload {
+            *loaded = Some(LoadedModel { kind, modified, network: load_model(kind)? });
         }
+        let network = &mut loaded.as_mut().expect("model loaded above").network;
+        Ok(generate_with(network, &prompt, max_tokens))
+    })
+    .await;
+
+    match result {
+        Ok(Ok(generation)) => HttpResponse::Ok().json(generation),
+        Ok(Err(message)) => json_error(actix_web::http::StatusCode::BAD_REQUEST, message),
+        Err(err) => json_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Generation failed: {}", err)),
     }
 }
