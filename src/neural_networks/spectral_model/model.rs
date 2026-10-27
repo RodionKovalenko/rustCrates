@@ -11,8 +11,7 @@
 //! `phit` is learned.
 
 use crate::neural_networks::spectral_model::bands::{
-    clamp_u, highest_active_band, roundtrip_grid_size, BandTable, D, D_MERGE, EPS_MAG, N, NBANDS,
-    NCOEF, NH, NO_NEIGHBOUR,
+    clamp_u, highest_active_band, BandTable, D, D_MERGE, EPS_MAG, NBANDS, NO_NEIGHBOUR,
 };
 use crate::neural_networks::spectral_model::fft::Rfft2Plan;
 use crate::neural_networks::spectral_model::gemm::{gemm, gemm_acc, gemm_grad_a, gemm_grad_b};
@@ -22,12 +21,13 @@ use crate::neural_networks::spectral_model::params::{
 };
 use crate::neural_networks::utils::dtype::{Real, C};
 use num::Complex;
+use rayon::prelude::*;
 
 /// Geometry and FFT plans. Immutable once built; safe to share across threads.
 #[derive(Debug, Clone)]
 pub struct SpectralNet {
     pub bands: BandTable,
-    /// Plans for the R-block round trip, indexed by `log2(size) - 3` (8/16/32).
+    /// Plans for the R-block round trip on the grids `n/4`, `n/2` and `n`.
     plans: [Rfft2Plan; 3],
     /// Run the R-block round trip at the lowest resolution that still
     /// represents every active band (blueprint F, "the fix").
@@ -41,27 +41,24 @@ impl Default for SpectralNet {
 }
 
 impl SpectralNet {
+    /// The default 32x32 grayscale geometry.
     pub fn new(adaptive_roundtrip: bool) -> Self {
-        Self {
-            bands: BandTable::new(),
-            plans: [Rfft2Plan::new(8), Rfft2Plan::new(16), Rfft2Plan::new(32)],
-            adaptive_roundtrip,
-        }
+        Self::for_bands(BandTable::new(), adaptive_roundtrip)
+    }
+
+    pub fn for_bands(bands: BandTable, adaptive_roundtrip: bool) -> Self {
+        let n = bands.n;
+        Self { plans: [Rfft2Plan::new(n / 4), Rfft2Plan::new(n / 2), Rfft2Plan::new(n)], bands, adaptive_roundtrip }
     }
 
     fn plan_for(&self, ng: usize) -> &Rfft2Plan {
-        match ng {
-            8 => &self.plans[0],
-            16 => &self.plans[1],
-            32 => &self.plans[2],
-            _ => panic!("unsupported round-trip grid size {ng}"),
-        }
+        self.plans.iter().find(|plan| plan.n == ng).unwrap_or_else(|| panic!("unsupported round-trip grid size {ng}"))
     }
 
     fn grid_size(&self, active: &[bool; NBANDS]) -> usize {
         match (self.adaptive_roundtrip, highest_active_band(active)) {
-            (true, Some(h)) => roundtrip_grid_size(h),
-            _ => N,
+            (true, Some(h)) => self.bands.roundtrip_grid_size(h),
+            _ => self.bands.n,
         }
     }
 }
@@ -126,7 +123,7 @@ pub struct GroupInput {
     pub b: usize,
     pub tau: [Real; NBANDS],
     pub active: [bool; NBANDS],
-    /// `b * NCOEF`, band-major.
+    /// `b * ncoef`, band-major.
     pub ut: Vec<Real>,
     pub phit: Vec<Real>,
 }
@@ -136,7 +133,7 @@ pub struct Cache {
     pub b: usize,
     pub active: [bool; NBANDS],
     pub ng: usize,
-    /// `b * NCOEF`, band-major.
+    /// `b * ncoef`, band-major.
     pub v_u: Vec<Real>,
     pub v_phi: Vec<Real>,
     pub diag: Diagnostics,
@@ -152,10 +149,9 @@ pub struct Cache {
     s_y_mm: Vec<Vec<C>>,
     /// After the k1 pass of the stencil, before the k2 pass.
     s_y_sa: Vec<Vec<C>>,
-    /// After the full stencil; this is what the filter multiplies.
+    /// After the full stencil; this is what the filter multiplies. The filter and FiLM outputs are not kept:
+    /// the backward pass recomputes them from this (cheap, and a third less memory for large images).
     s_y_st: Vec<Vec<C>>,
-    s_y_filt: Vec<Vec<C>>,
-    s_y_film: Vec<Vec<C>>,
     /// Per-band coefficient means feeding the summary tokens, `(b, d)`.
     t_mean: Vec<Vec<C>>,
     /// Concatenated, projected summaries `(b, SUM_WIDTH)`.
@@ -217,19 +213,19 @@ fn soft_shrink_grad(z: C, g: C, lambda: Real) -> C {
     }
 }
 
-/// Map a stored `(k1, k2)` onto a round-trip grid of side `ng`.
+/// Map a stored `(k1, k2)` of the `n x n` spectrum onto a round-trip grid of side `ng`.
 ///
 /// Returns `None` when the coefficient does not fit, which cannot happen for
 /// the active bands `ng` was chosen from but keeps forward and backward
 /// consistent if it ever does.
 #[inline]
-fn grid_pos(k1: usize, k2: usize, ng: usize) -> Option<(usize, usize)> {
-    let k1s = if k1 <= N / 2 { k1 as i32 } else { k1 as i32 - N as i32 };
+fn grid_pos(k1: usize, k2: usize, n: usize, ng: usize) -> Option<(usize, usize)> {
+    let k1s = if k1 <= n / 2 { k1 as i32 } else { k1 as i32 - n as i32 };
     let half = (ng / 2) as i32;
     if k1s.abs() > half || k2 as i32 > half {
         return None;
     }
-    if ng < N && (k1s.abs() == half || k2 as i32 == half) {
+    if ng < n && (k1s.abs() == half || k2 as i32 == half) {
         // Nyquist row/column of a reduced grid is its own mirror; refuse it
         // rather than fold two distinct frequencies together.
         return None;
@@ -332,6 +328,12 @@ fn stencil_pass_backward(
     }
 }
 
+fn add_assign(dst: &mut [Real], src: &[Real]) {
+    for (d, s) in dst.iter_mut().zip(src.iter()) {
+        *d += *s;
+    }
+}
+
 /// `conj(a) * g` — the weight-side gradient of a complex product.
 #[inline]
 fn conj_mul(a: C, g: C) -> C {
@@ -346,6 +348,7 @@ impl SpectralNet {
     pub fn forward(&self, p: &SpectralParams, input: &GroupInput) -> Cache {
         let b = input.b;
         let bands = &self.bands;
+        let ncoef = bands.ncoef;
         let active = input.active;
         let ng = self.grid_size(&active);
 
@@ -353,10 +356,10 @@ impl SpectralNet {
             b,
             active,
             ng,
-            v_u: vec![0.0 as Real; b * NCOEF],
-            v_phi: vec![0.0 as Real; b * NCOEF],
+            v_u: vec![0.0 as Real; b * ncoef],
+            v_phi: vec![0.0 as Real; b * ncoef],
             diag: Diagnostics::default(),
-            c_lift: vec![C::new(0.0, 0.0); b * NCOEF],
+            c_lift: vec![C::new(0.0, 0.0); b * ncoef],
             feats: vec![0.0 as Real; TIME_FEAT],
             trunk_pre: vec![0.0 as Real; TIME_HIDDEN],
             trunk_out: vec![0.0 as Real; TIME_HIDDEN],
@@ -366,8 +369,6 @@ impl SpectralNet {
             s_y_mm: vec![Vec::new(); N_STAGES * N_SBLOCKS * NBANDS],
             s_y_sa: vec![Vec::new(); N_STAGES * N_SBLOCKS * NBANDS],
             s_y_st: vec![Vec::new(); N_STAGES * N_SBLOCKS * NBANDS],
-            s_y_filt: vec![Vec::new(); N_STAGES * N_SBLOCKS * NBANDS],
-            s_y_film: vec![Vec::new(); N_STAGES * N_SBLOCKS * NBANDS],
             t_mean: vec![Vec::new(); N_STAGES * N_SBLOCKS * NBANDS],
             t_cat: vec![Vec::new(); N_STAGES * N_SBLOCKS],
             t_mix_pre: vec![Vec::new(); N_STAGES * N_SBLOCKS],
@@ -386,7 +387,7 @@ impl SpectralNet {
         // Clamping is a no-op on training inputs, which are convex
         // combinations of two non-negative `asinh` values; it only guards the
         // sampler, whose state is not constrained to the valid range.
-        for i in 0..b * NCOEF {
+        for i in 0..b * ncoef {
             let mag = EPS_MAG * clamp_u(input.ut[i]).sinh();
             cache.c_lift[i] = Complex::new(mag * input.phit[i].cos(), mag * input.phit[i].sin());
         }
@@ -406,7 +407,7 @@ impl SpectralNet {
             let mut hb = vec![C::new(0.0, 0.0); b * n * d];
             for bi in 0..b {
                 for i in 0..n {
-                    let c = cache.c_lift[bi * NCOEF + off + i];
+                    let c = cache.c_lift[bi * ncoef + off + i];
                     let row = (bi * n + i) * d;
                     for j in 0..d {
                         hb[row + j] = c * w_in[j] + pos[i * d + j];
@@ -448,8 +449,8 @@ impl SpectralNet {
                         acc_u += z.re * hw[j * 2] + z.im * hw[(d + j) * 2];
                         acc_p += z.re * hw[j * 2 + 1] + z.im * hw[(d + j) * 2 + 1];
                     }
-                    cache.v_u[bi * NCOEF + off + i] = acc_u;
-                    cache.v_phi[bi * NCOEF + off + i] = acc_p;
+                    cache.v_u[bi * ncoef + off + i] = acc_u;
+                    cache.v_phi[bi * ncoef + off + i] = acc_p;
                 }
             }
             cache.h_final[bd] = std::mem::take(&mut h[bd]);
@@ -734,9 +735,6 @@ impl SpectralNet {
         let gamma = &cache.gamma[ci];
         let beta = &cache.beta[ci];
 
-        let mut y_filt = vec![C::new(0.0, 0.0); rows * d];
-        let mut y_film = vec![C::new(0.0, 0.0); rows * d];
-
         for bi in 0..cache.b {
             for i in 0..n {
                 let k1 = bands.k1_of_pos[off + i];
@@ -745,9 +743,7 @@ impl SpectralNet {
                 for j in 0..d {
                     let f = fa[k1 * d + j] * fb[k2 * d + j];
                     let yf = y_st[row + j] * f;
-                    y_filt[row + j] = yf;
                     let yl = yf * gamma[j] + beta[j];
-                    y_film[row + j] = yl;
                     h[row + j] = h[row + j] + soft_shrink(yl, SHRINK_LAMBDA);
                 }
             }
@@ -757,10 +753,12 @@ impl SpectralNet {
         cache.s_y_mm[si] = y_mm;
         cache.s_y_sa[si] = y_sa;
         cache.s_y_st[si] = y_st;
-        cache.s_y_filt[si] = y_filt;
-        cache.s_y_film[si] = y_film;
     }
 
+    /// The R-block round trip: bands -> pixel grid (inverse FFT) -> pixel MLP -> spectrum (FFT) -> bands.
+    ///
+    /// Every colour channel has its own `D_MERGE` grid channels, so the pixel MLP sees `channels * D_MERGE`
+    /// values per pixel and is where the colours of a pixel interact.
     fn r_block_forward(
         &self,
         p: &SpectralParams,
@@ -775,12 +773,13 @@ impl SpectralNet {
         let ngh = plan.nh;
         let cells = ng * ngh;
         let pixels = ng * ng;
+        let width = bands.channels * D_MERGE;
         let active = cache.active;
 
         // Reduced-resolution round trips are exact for band-limited content
         // once these two factors undo the resampling; see the module docs.
-        let scale_down = (ng as Real / N as Real).powi(2);
-        let scale_up = (N as Real / ng as Real).powi(2);
+        let scale_down = (ng as Real / bands.n as Real).powi(2);
+        let scale_up = (bands.n as Real / ng as Real).powi(2);
 
         // 1. project every band down to the common merge width
         let mut m_band: Vec<Vec<C>> = vec![Vec::new(); NBANDS];
@@ -796,88 +795,90 @@ impl SpectralNet {
             m_band[bd] = m;
         }
 
-        // 2. scatter into one grid; frozen and inactive coefficients stay zero
-        let mut grid = vec![C::new(0.0, 0.0); b * D_MERGE * cells];
+        // 2. scatter into one grid per colour channel; frozen and inactive coefficients stay zero
+        let mut grid = vec![C::new(0.0, 0.0); b * width * cells];
         for bd in 0..NBANDS {
             if !active[bd] {
                 continue;
             }
             let (n, off) = (bands.counts[bd], bands.offsets[bd]);
             for i in 0..n {
-                let Some((r, c)) = grid_pos(bands.k1_of_pos[off + i], bands.k2_of_pos[off + i], ng)
+                let Some((r, c)) = grid_pos(bands.k1_of_pos[off + i], bands.k2_of_pos[off + i], bands.n, ng)
                 else {
                     continue;
                 };
                 let cell = r * ngh + c;
+                let ch0 = bands.channel_of_pos[off + i] * D_MERGE;
                 for bi in 0..b {
                     let src = (bi * n + i) * D_MERGE;
                     for ch in 0..D_MERGE {
-                        grid[(bi * D_MERGE + ch) * cells + cell] += m_band[bd][src + ch];
+                        grid[(bi * width + ch0 + ch) * cells + cell] += m_band[bd][src + ch];
                     }
                 }
             }
         }
 
-        // 3. inverse FFT per channel: frequency -> pixels
-        let mut sp_in = vec![0.0 as Real; b * pixels * D_MERGE];
-        for bi in 0..b {
-            for ch in 0..D_MERGE {
-                let img = plan.irfft2(&grid[(bi * D_MERGE + ch) * cells..(bi * D_MERGE + ch + 1) * cells]);
-                for (pix, v) in img.iter().enumerate() {
-                    sp_in[(bi * pixels + pix) * D_MERGE + ch] = *v * scale_down;
-                }
+        // 3. inverse FFT per grid channel: frequency -> pixels
+        let images: Vec<Vec<Real>> = grid.par_chunks(cells).map(|channel| plan.irfft2(channel)).collect();
+        let mut sp_in = vec![0.0 as Real; b * pixels * width];
+        for (index, img) in images.iter().enumerate() {
+            let (bi, ch) = (index / width, index % width);
+            for (pix, v) in img.iter().enumerate() {
+                sp_in[(bi * pixels + pix) * width + ch] = *v * scale_down;
             }
         }
 
-        // 4. nonlinearity in pixel space: this is where bands talk to each
-        //    other, and where new frequency content is born
+        // 4. nonlinearity in pixel space: this is where bands (and colours) talk to
+        //    each other, and where new frequency content is born
         let w1 = p.rmlp_w1();
         let b1 = p.rmlp_b1();
         let w2 = p.rmlp_w2();
         let b2 = p.rmlp_b2();
         let mut hidden = vec![0.0 as Real; b * pixels * RMLP_HIDDEN];
-        let mut sp_out = vec![0.0 as Real; b * pixels * D_MERGE];
-        for r in 0..b * pixels {
-            let xin = &sp_in[r * D_MERGE..(r + 1) * D_MERGE];
-            let hid = &mut hidden[r * RMLP_HIDDEN..(r + 1) * RMLP_HIDDEN];
-            hid.copy_from_slice(b1);
-            for (ch, &x) in xin.iter().enumerate() {
-                let row = &w1[ch * RMLP_HIDDEN..(ch + 1) * RMLP_HIDDEN];
-                for (o, &w) in hid.iter_mut().zip(row.iter()) {
-                    *o += x * w;
+        let mut sp_out = vec![0.0 as Real; b * pixels * width];
+        sp_in
+            .par_chunks(width)
+            .zip(hidden.par_chunks_mut(RMLP_HIDDEN))
+            .zip(sp_out.par_chunks_mut(width))
+            .for_each(|((xin, hid), outr)| {
+                hid.copy_from_slice(b1);
+                for (ch, &x) in xin.iter().enumerate() {
+                    let row = &w1[ch * RMLP_HIDDEN..(ch + 1) * RMLP_HIDDEN];
+                    for (o, &w) in hid.iter_mut().zip(row.iter()) {
+                        *o += x * w;
+                    }
                 }
-            }
-            for v in hid.iter_mut() {
-                if *v < 0.0 {
-                    *v = 0.0;
+                for v in hid.iter_mut() {
+                    if *v < 0.0 {
+                        *v = 0.0;
+                    }
                 }
-            }
-            let outr = &mut sp_out[r * D_MERGE..(r + 1) * D_MERGE];
-            outr.copy_from_slice(b2);
-            for (q, &x) in hid.iter().enumerate() {
-                if x == 0.0 {
-                    continue;
+                outr.copy_from_slice(b2);
+                for (q, &x) in hid.iter().enumerate() {
+                    if x == 0.0 {
+                        continue;
+                    }
+                    let row = &w2[q * width..(q + 1) * width];
+                    for (o, &w) in outr.iter_mut().zip(row.iter()) {
+                        *o += x * w;
+                    }
                 }
-                let row = &w2[q * D_MERGE..(q + 1) * D_MERGE];
-                for (o, &w) in outr.iter_mut().zip(row.iter()) {
-                    *o += x * w;
-                }
-            }
-        }
+            });
 
-        // 5. forward FFT per channel: pixels -> frequency
-        let mut grid2 = vec![C::new(0.0, 0.0); b * D_MERGE * cells];
-        let mut chan = vec![0.0 as Real; pixels];
-        for bi in 0..b {
-            for ch in 0..D_MERGE {
-                for pix in 0..pixels {
-                    chan[pix] = sp_out[(bi * pixels + pix) * D_MERGE + ch];
-                }
-                let spec = plan.rfft2(&chan);
-                let dst = (bi * D_MERGE + ch) * cells;
-                for (cell, v) in spec.iter().enumerate() {
-                    grid2[dst + cell] = *v * scale_up;
-                }
+        // 5. forward FFT per grid channel: pixels -> frequency
+        let spectra: Vec<Vec<C>> = (0..b * width)
+            .into_par_iter()
+            .map(|index| {
+                let (bi, ch) = (index / width, index % width);
+                let chan: Vec<Real> = (0..pixels).map(|pix| sp_out[(bi * pixels + pix) * width + ch]).collect();
+                plan.rfft2(&chan)
+            })
+            .collect();
+        let mut grid2 = vec![C::new(0.0, 0.0); b * width * cells];
+        for (index, spec) in spectra.iter().enumerate() {
+            let dst = index * cells;
+            for (cell, v) in spec.iter().enumerate() {
+                grid2[dst + cell] = *v * scale_up;
             }
         }
 
@@ -890,15 +891,16 @@ impl SpectralNet {
             let rows = b * n;
             let mut g = vec![C::new(0.0, 0.0); rows * D_MERGE];
             for i in 0..n {
-                let Some((r, c)) = grid_pos(bands.k1_of_pos[off + i], bands.k2_of_pos[off + i], ng)
+                let Some((r, c)) = grid_pos(bands.k1_of_pos[off + i], bands.k2_of_pos[off + i], bands.n, ng)
                 else {
                     continue;
                 };
                 let cell = r * ngh + c;
+                let ch0 = bands.channel_of_pos[off + i] * D_MERGE;
                 for bi in 0..b {
                     let dst = (bi * n + i) * D_MERGE;
                     for ch in 0..D_MERGE {
-                        g[dst + ch] = grid2[(bi * D_MERGE + ch) * cells + cell];
+                        g[dst + ch] = grid2[(bi * width + ch0 + ch) * cells + cell];
                     }
                 }
             }
@@ -915,7 +917,7 @@ impl SpectralNet {
     // -----------------------------------------------------------------
 
     /// Accumulate parameter gradients into `grads` given `dL/dv_u` and
-    /// `dL/dv_phi` (both `b * NCOEF`, band-major).
+    /// `dL/dv_phi` (both `b * ncoef`, band-major).
     pub fn backward(
         &self,
         p: &SpectralParams,
@@ -925,6 +927,7 @@ impl SpectralNet {
         grads: &mut SpectralParams,
     ) {
         let bands = &self.bands;
+        let ncoef = bands.ncoef;
         let b = cache.b;
         let active = cache.active;
         if !active.iter().any(|&a| a) {
@@ -952,8 +955,8 @@ impl SpectralNet {
             let hf = &cache.h_final[bd];
             for bi in 0..b {
                 for i in 0..n {
-                    let g0 = d_v_u[bi * NCOEF + off + i];
-                    let g1 = d_v_phi[bi * NCOEF + off + i];
+                    let g0 = d_v_u[bi * ncoef + off + i];
+                    let g1 = d_v_phi[bi * ncoef + off + i];
                     if g0 == 0.0 && g1 == 0.0 {
                         continue;
                     }
@@ -1017,7 +1020,7 @@ impl SpectralNet {
             let mut g_pos = vec![C::new(0.0, 0.0); n * d];
             for bi in 0..b {
                 for i in 0..n {
-                    let c = cache.c_lift[bi * NCOEF + off + i];
+                    let c = cache.c_lift[bi * ncoef + off + i];
                     let row = (bi * n + i) * d;
                     for j in 0..d {
                         let g = dh[bd][row + j];
@@ -1063,19 +1066,18 @@ impl SpectralNet {
         let si = s_idx(stage, sb, bd);
         let ci = sb * NBANDS + bd;
 
-        let y_film = &cache.s_y_film[si];
-        let y_filt = &cache.s_y_filt[si];
         let y_mm = &cache.s_y_mm[si];
         let y_sa = &cache.s_y_sa[si];
         let y_st = &cache.s_y_st[si];
         let h_in = &cache.s_h_in[si];
         let gamma = &cache.gamma[ci];
+        let beta = &cache.beta[ci];
         let fa = p.filt_a(sb, bd);
         let fb = p.filt_b(sb, bd);
 
         let mut d_y_st = vec![C::new(0.0, 0.0); rows * d];
-        let mut g_fa = vec![C::new(0.0, 0.0); N * d];
-        let mut g_fb = vec![C::new(0.0, 0.0); NH * d];
+        let mut g_fa = vec![C::new(0.0, 0.0); bands.n * d];
+        let mut g_fb = vec![C::new(0.0, 0.0); bands.nh * d];
 
         for bi in 0..cache.b {
             for i in 0..n {
@@ -1084,22 +1086,28 @@ impl SpectralNet {
                 let row = (bi * n + i) * d;
                 for j in 0..d {
                     let g_out = dh[row + j];
-                    let d_yl = soft_shrink_grad(y_film[row + j], g_out, SHRINK_LAMBDA);
+                    if g_out.re == 0.0 && g_out.im == 0.0 {
+                        continue;
+                    }
+                    // Filter and FiLM outputs, recomputed as in the forward pass.
+                    let a = fa[k1 * d + j];
+                    let bb = fb[k2 * d + j];
+                    let f = a * bb;
+                    let ym = y_st[row + j];
+                    let yf = ym * f;
+                    let yl = yf * gamma[j] + beta[j];
+
+                    let d_yl = soft_shrink_grad(yl, g_out, SHRINK_LAMBDA);
                     if d_yl.re == 0.0 && d_yl.im == 0.0 {
                         continue;
                     }
 
                     // FiLM
-                    let yf = y_filt[row + j];
                     d_gamma[j] += d_yl.re * yf.re + d_yl.im * yf.im;
                     d_beta[j] += d_yl;
                     let d_yf = d_yl * gamma[j];
 
                     // separable filter
-                    let a = fa[k1 * d + j];
-                    let bb = fb[k2 * d + j];
-                    let f = a * bb;
-                    let ym = y_st[row + j];
                     d_y_st[row + j] = Complex::new(
                         d_yf.re * f.re + d_yf.im * f.im,
                         d_yf.im * f.re - d_yf.re * f.im,
@@ -1177,12 +1185,13 @@ impl SpectralNet {
         let ngh = plan.nh;
         let cells = ng * ngh;
         let pixels = ng * ng;
+        let width = bands.channels * D_MERGE;
         let active = cache.active;
-        let scale_down = (ng as Real / N as Real).powi(2);
-        let scale_up = (N as Real / ng as Real).powi(2);
+        let scale_down = (ng as Real / bands.n as Real).powi(2);
+        let scale_up = (bands.n as Real / ng as Real).powi(2);
 
         // 6. project up
-        let mut d_grid2 = vec![C::new(0.0, 0.0); b * D_MERGE * cells];
+        let mut d_grid2 = vec![C::new(0.0, 0.0); b * width * cells];
         for bd in 0..NBANDS {
             if !active[bd] {
                 continue;
@@ -1194,108 +1203,113 @@ impl SpectralNet {
             let mut d_g = vec![C::new(0.0, 0.0); rows * D_MERGE];
             gemm_grad_a(&dh[bd], p.proj_up(bd), &mut d_g, rows, D_MERGE, d);
             for i in 0..n {
-                let Some((r, c)) = grid_pos(bands.k1_of_pos[off + i], bands.k2_of_pos[off + i], ng)
+                let Some((r, c)) = grid_pos(bands.k1_of_pos[off + i], bands.k2_of_pos[off + i], bands.n, ng)
                 else {
                     continue;
                 };
                 let cell = r * ngh + c;
+                let ch0 = bands.channel_of_pos[off + i] * D_MERGE;
                 for bi in 0..b {
                     let src = (bi * n + i) * D_MERGE;
                     for ch in 0..D_MERGE {
-                        d_grid2[(bi * D_MERGE + ch) * cells + cell] += d_g[src + ch];
+                        d_grid2[(bi * width + ch0 + ch) * cells + cell] += d_g[src + ch];
                     }
                 }
             }
         }
 
         // 5. adjoint of the forward FFT
-        let mut d_sp_out = vec![0.0 as Real; b * pixels * D_MERGE];
-        for bi in 0..b {
-            for ch in 0..D_MERGE {
-                let base = (bi * D_MERGE + ch) * cells;
-                let scaled: Vec<C> =
-                    d_grid2[base..base + cells].iter().map(|v| *v * scale_up).collect();
-                let d_chan = plan.rfft2_adjoint(&scaled);
-                for (pix, v) in d_chan.iter().enumerate() {
-                    d_sp_out[(bi * pixels + pix) * D_MERGE + ch] = *v;
-                }
+        let d_chans: Vec<Vec<Real>> = d_grid2
+            .par_chunks(cells)
+            .map(|channel| {
+                let scaled: Vec<C> = channel.iter().map(|v| *v * scale_up).collect();
+                plan.rfft2_adjoint(&scaled)
+            })
+            .collect();
+        let mut d_sp_out = vec![0.0 as Real; b * pixels * width];
+        for (index, d_chan) in d_chans.iter().enumerate() {
+            let (bi, ch) = (index / width, index % width);
+            for (pix, v) in d_chan.iter().enumerate() {
+                d_sp_out[(bi * pixels + pix) * width + ch] = *v;
             }
         }
 
-        // 4. pixel-space MLP
+        // 4. pixel-space MLP: per-pixel input gradients, weight gradients summed over all pixels
         let w1 = p.rmlp_w1();
         let w2 = p.rmlp_w2();
         let sp_in = &cache.r_sp_in[stage];
         let hidden = &cache.r_hidden[stage];
-        let mut g_w1 = vec![0.0 as Real; D_MERGE * RMLP_HIDDEN];
-        let mut g_b1 = vec![0.0 as Real; RMLP_HIDDEN];
-        let mut g_w2 = vec![0.0 as Real; RMLP_HIDDEN * D_MERGE];
-        let mut g_b2 = vec![0.0 as Real; D_MERGE];
-        let mut d_sp_in = vec![0.0 as Real; b * pixels * D_MERGE];
-        let mut d_hid = vec![0.0 as Real; RMLP_HIDDEN];
+        let mut d_sp_in = vec![0.0 as Real; b * pixels * width];
 
-        for r in 0..b * pixels {
-            let go = &d_sp_out[r * D_MERGE..(r + 1) * D_MERGE];
-            let hid = &hidden[r * RMLP_HIDDEN..(r + 1) * RMLP_HIDDEN];
-            for (ch, &g) in go.iter().enumerate() {
-                g_b2[ch] += g;
-            }
-            for (q, &x) in hid.iter().enumerate() {
-                let row2 = &w2[q * D_MERGE..(q + 1) * D_MERGE];
-                let mut acc = 0.0 as Real;
-                for (ch, &g) in go.iter().enumerate() {
-                    if x != 0.0 {
-                        g_w2[q * D_MERGE + ch] += x * g;
+        /// Weight gradients of the pixel MLP: (w1, b1, w2, b2).
+        type MlpGrads = (Vec<Real>, Vec<Real>, Vec<Real>, Vec<Real>);
+        let zero_grads = || -> MlpGrads {
+            (vec![0.0 as Real; width * RMLP_HIDDEN], vec![0.0 as Real; RMLP_HIDDEN], vec![0.0 as Real; RMLP_HIDDEN * width], vec![0.0 as Real; width])
+        };
+        let (g_w1, g_b1, g_w2, g_b2) = d_sp_out
+            .par_chunks(width)
+            .zip(hidden.par_chunks(RMLP_HIDDEN))
+            .zip(sp_in.par_chunks(width))
+            .zip(d_sp_in.par_chunks_mut(width))
+            .fold(
+                || (zero_grads(), vec![0.0 as Real; RMLP_HIDDEN]),
+                |((mut g_w1, mut g_b1, mut g_w2, mut g_b2), mut d_hid), (((go, hid), xin), din)| {
+                    for (ch, &g) in go.iter().enumerate() {
+                        g_b2[ch] += g;
                     }
-                    acc += row2[ch] * g;
-                }
-                // ReLU: hidden is the post-activation value, so a stored zero
-                // is exactly the clipped branch.
-                d_hid[q] = if x > 0.0 { acc } else { 0.0 };
-            }
-            for (q, &g) in d_hid.iter().enumerate() {
-                g_b1[q] += g;
-            }
-            let xin = &sp_in[r * D_MERGE..(r + 1) * D_MERGE];
-            let din = &mut d_sp_in[r * D_MERGE..(r + 1) * D_MERGE];
-            for ch in 0..D_MERGE {
-                let row1 = &w1[ch * RMLP_HIDDEN..(ch + 1) * RMLP_HIDDEN];
-                let x = xin[ch];
-                let mut acc = 0.0 as Real;
-                for (q, &g) in d_hid.iter().enumerate() {
-                    g_w1[ch * RMLP_HIDDEN + q] += x * g;
-                    acc += row1[q] * g;
-                }
-                din[ch] = acc;
-            }
-        }
+                    for (q, &x) in hid.iter().enumerate() {
+                        let row2 = &w2[q * width..(q + 1) * width];
+                        let mut acc = 0.0 as Real;
+                        for (ch, &g) in go.iter().enumerate() {
+                            if x != 0.0 {
+                                g_w2[q * width + ch] += x * g;
+                            }
+                            acc += row2[ch] * g;
+                        }
+                        // ReLU: hidden is the post-activation value, so a stored zero
+                        // is exactly the clipped branch.
+                        d_hid[q] = if x > 0.0 { acc } else { 0.0 };
+                    }
+                    for (q, &g) in d_hid.iter().enumerate() {
+                        g_b1[q] += g;
+                    }
+                    for ch in 0..width {
+                        let row1 = &w1[ch * RMLP_HIDDEN..(ch + 1) * RMLP_HIDDEN];
+                        let x = xin[ch];
+                        let mut acc = 0.0 as Real;
+                        for (q, &g) in d_hid.iter().enumerate() {
+                            g_w1[ch * RMLP_HIDDEN + q] += x * g;
+                            acc += row1[q] * g;
+                        }
+                        din[ch] = acc;
+                    }
+                    ((g_w1, g_b1, g_w2, g_b2), d_hid)
+                },
+            )
+            .map(|(mlp_grads, _)| mlp_grads)
+            .reduce(zero_grads, |mut a, b| {
+                add_assign(&mut a.0, &b.0);
+                add_assign(&mut a.1, &b.1);
+                add_assign(&mut a.2, &b.2);
+                add_assign(&mut a.3, &b.3);
+                a
+            });
 
-        for k in 0..g_w1.len() {
-            grads.rmlp_w1_mut()[k] += g_w1[k];
-        }
-        for k in 0..g_b1.len() {
-            grads.rmlp_b1_mut()[k] += g_b1[k];
-        }
-        for k in 0..g_w2.len() {
-            grads.rmlp_w2_mut()[k] += g_w2[k];
-        }
-        for k in 0..g_b2.len() {
-            grads.rmlp_b2_mut()[k] += g_b2[k];
-        }
+        add_assign(grads.rmlp_w1_mut(), &g_w1);
+        add_assign(grads.rmlp_b1_mut(), &g_b1);
+        add_assign(grads.rmlp_w2_mut(), &g_w2);
+        add_assign(grads.rmlp_b2_mut(), &g_b2);
 
         // 3. adjoint of the inverse FFT
-        let mut d_grid = vec![C::new(0.0, 0.0); b * D_MERGE * cells];
-        let mut chan = vec![0.0 as Real; pixels];
-        for bi in 0..b {
-            for ch in 0..D_MERGE {
-                for pix in 0..pixels {
-                    chan[pix] = d_sp_in[(bi * pixels + pix) * D_MERGE + ch] * scale_down;
-                }
-                let d_cells = plan.irfft2_adjoint(&chan);
-                let dst = (bi * D_MERGE + ch) * cells;
-                d_grid[dst..dst + cells].copy_from_slice(&d_cells);
-            }
-        }
+        let d_cells: Vec<Vec<C>> = (0..b * width)
+            .into_par_iter()
+            .map(|index| {
+                let (bi, ch) = (index / width, index % width);
+                let chan: Vec<Real> = (0..pixels).map(|pix| d_sp_in[(bi * pixels + pix) * width + ch] * scale_down).collect();
+                plan.irfft2_adjoint(&chan)
+            })
+            .collect();
+        let d_grid: Vec<C> = d_cells.concat();
 
         // 2 & 1. gather per band and project down
         for bd in 0..NBANDS {
@@ -1306,15 +1320,16 @@ impl SpectralNet {
             let rows = b * n;
             let mut d_m = vec![C::new(0.0, 0.0); rows * D_MERGE];
             for i in 0..n {
-                let Some((r, c)) = grid_pos(bands.k1_of_pos[off + i], bands.k2_of_pos[off + i], ng)
+                let Some((r, c)) = grid_pos(bands.k1_of_pos[off + i], bands.k2_of_pos[off + i], bands.n, ng)
                 else {
                     continue;
                 };
                 let cell = r * ngh + c;
+                let ch0 = bands.channel_of_pos[off + i] * D_MERGE;
                 for bi in 0..b {
                     let dst = (bi * n + i) * D_MERGE;
                     for ch in 0..D_MERGE {
-                        d_m[dst + ch] = d_grid[(bi * D_MERGE + ch) * cells + cell];
+                        d_m[dst + ch] = d_grid[(bi * width + ch0 + ch) * cells + cell];
                     }
                 }
             }

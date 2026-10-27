@@ -7,11 +7,11 @@ use crate::neural_networks::spectral_model::bands::{
 };
 use crate::neural_networks::spectral_model::fft::{naive_rfft2, Rfft2Plan};
 use crate::neural_networks::spectral_model::gemm::{gemm, gemm_naive};
-use crate::neural_networks::spectral_model::loss::{flow_loss, PhaseWeights};
+use crate::neural_networks::spectral_model::loss::flow_loss;
 use crate::neural_networks::spectral_model::model::{GroupInput, SpectralNet};
 use crate::neural_networks::spectral_model::params::SpectralParams;
 use crate::neural_networks::spectral_model::spectral::{
-    build_sample, from_polar, integrate_step, polar_to_complex, sample_prior, to_polar,
+    build_sample, from_polar, integrate_step, polar_to_complex, sample_prior, sample_prior_n, to_polar,
     SpectralPrep,
 };
 use crate::neural_networks::utils::dtype::{Real, C};
@@ -248,6 +248,8 @@ struct GradFixture {
     tgt_phi: Vec<Real>,
     mask: Vec<bool>,
     path: FlowPath,
+    /// Uniform phase weights, one per coefficient of the geometry.
+    weights: Vec<Real>,
 }
 
 fn fixture(staggered: bool, t: Real, seed: u64) -> GradFixture {
@@ -255,32 +257,36 @@ fn fixture(staggered: bool, t: Real, seed: u64) -> GradFixture {
 }
 
 fn fixture_with_path(staggered: bool, t: Real, seed: u64, path: FlowPath) -> GradFixture {
-    let net = SpectralNet::new(true);
+    fixture_with_geometry(BandTable::new(), 2, staggered, t, seed, path)
+}
+
+fn fixture_with_geometry(bands: BandTable, b: usize, staggered: bool, t: Real, seed: u64, path: FlowPath) -> GradFixture {
+    let net = SpectralNet::for_bands(bands, true);
+    let ncoef = net.bands.ncoef;
     let mut rng = SmallRng::seed_from_u64(seed);
     let params = SpectralParams::init(&net.bands, &mut rng);
     let sched = Schedule { staggered, max_band: NBANDS - 1 };
 
-    let b = 2usize;
-    let mut ut = vec![0.0 as Real; b * NCOEF];
-    let mut phit = vec![0.0 as Real; b * NCOEF];
-    let mut tgt_u = vec![0.0 as Real; b * NCOEF];
-    let mut tgt_phi = vec![0.0 as Real; b * NCOEF];
-    let mut mask = vec![false; b * NCOEF];
+    let mut ut = vec![0.0 as Real; b * ncoef];
+    let mut phit = vec![0.0 as Real; b * ncoef];
+    let mut tgt_u = vec![0.0 as Real; b * ncoef];
+    let mut tgt_phi = vec![0.0 as Real; b * ncoef];
+    let mut mask = vec![false; b * ncoef];
     let mut tau = [0.0 as Real; NBANDS];
     let mut active = [false; NBANDS];
 
     for bi in 0..b {
-        let (u0, p0) = sample_prior(&mut rng);
-        let (u1, p1) = sample_prior(&mut rng);
+        let (u0, p0) = sample_prior_n(ncoef, &mut rng);
+        let (u1, p1) = sample_prior_n(ncoef, &mut rng);
         let s = build_sample(&net.bands, &sched, path, &u0, &p0, &u1, &p1, t);
         tau = s.tau;
         active = s.active;
-        let lo = bi * NCOEF;
-        ut[lo..lo + NCOEF].copy_from_slice(&s.ut);
-        phit[lo..lo + NCOEF].copy_from_slice(&s.phit);
-        tgt_u[lo..lo + NCOEF].copy_from_slice(&s.v_u);
-        tgt_phi[lo..lo + NCOEF].copy_from_slice(&s.v_phi);
-        mask[lo..lo + NCOEF].copy_from_slice(&s.mask);
+        let lo = bi * ncoef;
+        ut[lo..lo + ncoef].copy_from_slice(&s.ut);
+        phit[lo..lo + ncoef].copy_from_slice(&s.phit);
+        tgt_u[lo..lo + ncoef].copy_from_slice(&s.v_u);
+        tgt_phi[lo..lo + ncoef].copy_from_slice(&s.v_phi);
+        mask[lo..lo + ncoef].copy_from_slice(&s.mask);
     }
 
     GradFixture {
@@ -291,6 +297,7 @@ fn fixture_with_path(staggered: bool, t: Real, seed: u64, path: FlowPath) -> Gra
         tgt_phi,
         mask,
         path,
+        weights: vec![1.0 as Real; ncoef],
     }
 }
 
@@ -305,7 +312,7 @@ impl GradFixture {
             &self.input.ut,
             &self.mask,
             1.0,
-            &PhaseWeights::uniform().scale,
+            &self.weights,
             self.path,
         )
         .total
@@ -321,7 +328,7 @@ impl GradFixture {
             &self.input.ut,
             &self.mask,
             1.0,
-            &PhaseWeights::uniform().scale,
+            &self.weights,
             self.path,
         );
         let mut g = self.params.zeros_like();
@@ -367,7 +374,11 @@ const FD_DIRECTIONS: usize = 6;
 /// sits on the seam depends on the direction, each tensor gets several
 /// directions and the best agreement counts.
 fn check_tensor_grads(fx: &GradFixture, grads: &SpectralParams, label: &str) {
-    let h = FD_STEP;
+    check_tensor_grads_with_step(fx, grads, label, FD_STEP)
+}
+
+/// [`check_tensor_grads`] with an explicit finite-difference step.
+fn check_tensor_grads_with_step(fx: &GradFixture, grads: &SpectralParams, label: &str, h: Real) {
     let mut rng = SmallRng::seed_from_u64(99);
     let mut checked = 0usize;
 
@@ -1132,4 +1143,144 @@ fn sweep_apodisation_tradeoff() {
         }
         println!("{alpha:.1}    {overshoot:.4}     {edge:.4}");
     }
+}
+
+// -- Other image sizes and colour channels ------------------------------------
+
+/// 64x64 RGB: the band layout covers every coefficient of every channel, bands scale with the size and
+/// the stencil never couples two colour channels.
+#[test]
+fn rgb_64_band_table_is_consistent() {
+    let bands = BandTable::with_geometry(64, 3);
+    assert_eq!((bands.n, bands.nh, bands.channels), (64, 33, 3));
+    assert_eq!(bands.ncoef, 3 * 64 * 33);
+    assert_eq!(bands.counts.iter().sum::<usize>(), bands.ncoef);
+    let mut seen = vec![false; bands.ncoef];
+    for &k in &bands.order {
+        assert!(!seen[k]);
+        seen[k] = true;
+    }
+    // Same share of the spectrum per band as on the 32x32 grid (radii scale with n), within rounding.
+    let small = BandTable::new();
+    for bd in 0..NBANDS {
+        let share = bands.counts[bd] as f64 / bands.ncoef as f64;
+        let share_small = small.counts[bd] as f64 / small.ncoef as f64;
+        assert!((share - share_small).abs() < 0.03, "band {bd}: {share:.3} vs {share_small:.3}");
+    }
+    for p in 0..bands.ncoef {
+        let bd = bands.band_of_pos[p] as usize;
+        for &q in &bands.neighbours[p] {
+            if q != NO_NEIGHBOUR {
+                assert_eq!(bands.channel_of_pos[bands.offsets[bd] + q], bands.channel_of_pos[p], "stencil crosses colour channels");
+            }
+        }
+    }
+    assert_eq!(bands.roundtrip_grid_size(0), 16);
+    assert_eq!(bands.roundtrip_grid_size(1), 32);
+    assert_eq!(bands.roundtrip_grid_size(3), 64);
+}
+
+/// Whitening and the polar state round-trip an RGB image exactly.
+#[test]
+fn rgb_64_polar_round_trip_recovers_image() {
+    let mut rng = SmallRng::seed_from_u64(31);
+    let n = 64;
+    let imgs: Vec<Vec<Real>> = (0..6).map(|_| (0..3 * n * n).map(|_| rng.random_range(0.0f64..1.0) as Real).collect()).collect();
+    let prep = SpectralPrep::from_dataset_for(BandTable::with_geometry(n, 3), &imgs);
+    let (u, phi) = prep.image_to_polar(&imgs[0]);
+    let back = prep.polar_to_image(&u, &phi);
+    let max_err = imgs[0].iter().zip(back.iter()).map(|(a, b)| (a - b).abs()).fold(0.0 as Real, Real::max);
+    assert!(max_err < 1e-3, "max error {max_err}");
+}
+
+/// Finite-difference step for the 64x64 RGB checks: 4x more pixels than 32x32 means more pixel-MLP ReLU kinks
+/// within reach of a step of 1e-6 (rel. error ~3e-4 for the hidden bias); at 1e-7 analytic and numeric agree to ~1e-8.
+/// Only meaningful in f64, which cannot be said of f32 at this size (its loss resolution is ~2e-4).
+#[cfg(feature = "dtype-f64")]
+const FD_STEP_LARGE: Real = 1e-7;
+
+/// The backward pass is exact for a 64x64 RGB model too: per-channel R-block grids, the colour-mixing
+/// pixel MLP and the larger filters.
+#[cfg(feature = "dtype-f64")]
+#[test]
+fn rgb_64_gradients_match_finite_differences() {
+    let fx = fixture_with_geometry(BandTable::with_geometry(64, 3), 1, true, 0.5, 41, FlowPath::ComplexLinear);
+    assert!(fx.input.active.iter().filter(|&&a| a).count() >= 2);
+    let g = fx.analytic_grads();
+    check_tensor_grads_with_step(&fx, &g, "rgb64-staggered", FD_STEP_LARGE);
+}
+
+/// Same with only band 0 active: the R-block runs on the reduced 16x16 grid.
+#[cfg(feature = "dtype-f64")]
+#[test]
+fn rgb_64_gradients_match_finite_differences_reduced_grid() {
+    let fx = fixture_with_geometry(BandTable::with_geometry(64, 3), 1, true, 0.1, 42, FlowPath::ComplexLinear);
+    assert_eq!(fx.input.active, [true, false, false, false]);
+    let g = fx.analytic_grads();
+    check_tensor_grads_with_step(&fx, &g, "rgb64-band0", FD_STEP_LARGE);
+}
+
+/// A folder of images of any shape is centre-cropped and resized to the model size, in grayscale or RGB.
+#[test]
+fn image_folder_is_loaded_at_the_model_geometry() {
+    use crate::neural_networks::spectral_model::data::{load_images, DataSource};
+
+    let dir = std::env::temp_dir().join(format!("spectral_folder_test_{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("sub")).unwrap();
+    // A red 80x40 image (wider than high) and a blue 50x50 image in a subfolder.
+    image::RgbImage::from_pixel(80, 40, image::Rgb([255, 0, 0])).save(dir.join("red.png")).unwrap();
+    image::RgbImage::from_pixel(50, 50, image::Rgb([0, 0, 255])).save(dir.join("sub").join("blue.jpg")).unwrap();
+    std::fs::write(dir.join("notes.txt"), "not an image").unwrap();
+    let source = DataSource::Folder(dir.to_string_lossy().to_string());
+
+    let rgb = load_images(&source, 32, 3, None).unwrap();
+    assert_eq!((rgb.size, rgb.channels, rgb.content_side, rgb.images.len()), (32, 3, 32, 2));
+    let plane = 32 * 32;
+    for img in &rgb.images {
+        assert_eq!(img.len(), 3 * plane);
+    }
+    // Files are sorted: red.png before sub/blue.jpg.
+    let mean = |img: &Vec<Real>, ch: usize| img[ch * plane..(ch + 1) * plane].iter().sum::<Real>() / plane as Real;
+    assert!(mean(&rgb.images[0], 0) > 0.95 && mean(&rgb.images[0], 2) < 0.05, "red image");
+    assert!(mean(&rgb.images[1], 2) > 0.9 && mean(&rgb.images[1], 0) < 0.1, "blue image");
+
+    let gray = load_images(&source, 64, 1, Some(1)).unwrap();
+    assert_eq!((gray.images.len(), gray.images[0].len()), (1, 64 * 64));
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A 64x64 RGB model trains, saves its geometry in the checkpoint, resumes and samples an RGB PNG.
+#[test]
+fn rgb_64_checkpoint_keeps_the_geometry_and_samples_rgb() {
+    use crate::neural_networks::spectral_model::sample::{sample_from_checkpoint, ImageLayout};
+    use crate::neural_networks::spectral_model::train::{Checkpoint, TrainConfig, Trainer};
+
+    let dir = std::env::temp_dir().join(format!("spectral_ckpt_test_{}", std::process::id()));
+    let ckpt_path = dir.join("rgb.bin").to_string_lossy().to_string();
+    let mut rng = SmallRng::seed_from_u64(51);
+    let n = 64;
+    let imgs: Vec<Vec<Real>> = (0..8).map(|_| (0..3 * n * n).map(|_| rng.random_range(0.0f64..1.0) as Real).collect()).collect();
+
+    let mut cfg = TrainConfig { steps: 2, log_every: 0, ckpt_every: 0, sample_every: 0, ckpt_path: ckpt_path.clone(), size: n, channels: 3, ..TrainConfig::default() };
+    cfg.set_batch_size(2);
+    let layout = ImageLayout { size: n, channels: 3, content_side: n };
+    let mut trainer = Trainer::new_with_layout(&imgs, cfg.clone(), layout, "test".to_string());
+    trainer.run(&imgs).unwrap();
+    assert!(!trainer.params.has_non_finite());
+
+    let ckpt = Checkpoint::load(&ckpt_path).unwrap();
+    assert_eq!(ckpt.layout, layout);
+    assert_eq!(ckpt.step, 2);
+    let mut resumed = Trainer::from_checkpoint(ckpt, TrainConfig { size: 32, channels: 1, ..cfg });
+    assert_eq!((resumed.cfg.size, resumed.cfg.channels), (n, 3), "a resumed checkpoint keeps its geometry");
+    resumed.train_step(&imgs);
+
+    let png = dir.join("sample.png").to_string_lossy().to_string();
+    sample_from_checkpoint(&ckpt_path, 1, 2, 4, 7, &png, 1).unwrap();
+    let written = image::open(&png).unwrap();
+    assert_eq!((written.width(), written.height()), (2 * 64, 64));
+    assert!(matches!(written, image::DynamicImage::ImageRgb8(_)), "RGB model writes an RGB PNG");
+
+    std::fs::remove_dir_all(&dir).unwrap();
 }

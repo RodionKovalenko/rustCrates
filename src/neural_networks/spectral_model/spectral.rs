@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 
 /// Fixed geometry plus the dataset whitening table. Built once, then shared
 /// (read-only) by training and sampling.
+///
+/// Images are `channels * n * n` floats, channel-planar (`[channel][row][column]`).
 #[derive(Debug, Clone)]
 pub struct SpectralPrep {
     pub plan: Rfft2Plan,
@@ -32,31 +34,60 @@ pub struct WhiteningTable {
 }
 
 impl SpectralPrep {
-    /// Build the geometry with a whitening table of all ones (used before the
-    /// statistics have been measured).
+    /// Build the default (32x32 grayscale) geometry with a whitening table of all ones.
     pub fn unwhitened() -> Self {
-        Self {
-            plan: Rfft2Plan::new(crate::neural_networks::spectral_model::bands::N),
-            bands: BandTable::new(),
-            s: vec![1.0 as Real; NCOEF],
-        }
+        Self::unwhitened_for(BandTable::new())
+    }
+
+    /// Build `bands`' geometry with a whitening table of all ones (used before the
+    /// statistics have been measured).
+    pub fn unwhitened_for(bands: BandTable) -> Self {
+        let s = vec![1.0 as Real; bands.ncoef];
+        Self { plan: Rfft2Plan::new(bands.n), bands, s }
+    }
+
+    /// [`SpectralPrep::from_dataset_for`] with the default 32x32 grayscale geometry.
+    pub fn from_dataset(images: &[Vec<Real>]) -> Self {
+        Self::from_dataset_for(BandTable::new(), images)
     }
 
     /// Measure the RMS magnitude of every coefficient over `images`.
     ///
     /// Accumulated in `f64` because the low-frequency terms are ~1e4 and the
     /// sum runs over tens of thousands of images.
-    pub fn from_dataset(images: &[Vec<Real>]) -> Self {
-        let mut prep = Self::unwhitened();
+    pub fn from_dataset_for(bands: BandTable, images: &[Vec<Real>]) -> Self {
+        let mut prep = Self::unwhitened_for(bands);
         prep.s = prep.measure_s(images);
         prep
     }
 
+    /// Coefficients per image (all channels).
+    pub fn ncoef(&self) -> usize {
+        self.bands.ncoef
+    }
+
+    /// Floats per image, `channels * n * n`.
+    pub fn image_len(&self) -> usize {
+        self.bands.channels * self.bands.n * self.bands.n
+    }
+
+    /// Natural-layout half spectrum of every channel, concatenated.
+    fn rfft2_channels(&self, img: &[Real]) -> Vec<C> {
+        assert_eq!(img.len(), self.image_len(), "image has the wrong size for this model");
+        let pixels = self.bands.n * self.bands.n;
+        img.chunks(pixels).flat_map(|channel| self.plan.rfft2(channel)).collect()
+    }
+
+    /// Inverse of [`SpectralPrep::rfft2_channels`].
+    fn irfft2_channels(&self, coef: &[C]) -> Vec<Real> {
+        coef.chunks(self.bands.ncoef_channel).flat_map(|channel| self.plan.irfft2(channel)).collect()
+    }
+
     fn measure_s(&self, images: &[Vec<Real>]) -> Vec<Real> {
         assert!(!images.is_empty(), "cannot measure whitening statistics on an empty set");
-        let mut acc = vec![0.0f64; NCOEF];
+        let mut acc = vec![0.0f64; self.ncoef()];
         for img in images {
-            let x = self.plan.rfft2(img);
+            let x = self.rfft2_channels(img);
             for (k, xk) in x.iter().enumerate() {
                 acc[k] += (xk.re as f64) * (xk.re as f64) + (xk.im as f64) * (xk.im as f64);
             }
@@ -71,23 +102,28 @@ impl SpectralPrep {
         WhiteningTable { s: self.s.clone() }
     }
 
+    /// The default 32x32 grayscale geometry with a measured whitening table.
     pub fn with_table(table: WhiteningTable) -> Self {
-        let mut prep = Self::unwhitened();
-        assert_eq!(table.s.len(), NCOEF, "whitening table has the wrong length");
+        Self::with_table_for(BandTable::new(), table)
+    }
+
+    pub fn with_table_for(bands: BandTable, table: WhiteningTable) -> Self {
+        let mut prep = Self::unwhitened_for(bands);
+        assert_eq!(table.s.len(), prep.ncoef(), "whitening table has the wrong length");
         prep.s = table.s;
         prep
     }
 
     /// Image -> whitened, band-major complex spectrum.
     pub fn whiten(&self, img: &[Real]) -> Vec<C> {
-        let x = self.bands.permute(&self.plan.rfft2(img));
+        let x = self.bands.permute(&self.rfft2_channels(img));
         x.iter().zip(self.s.iter()).map(|(&xk, &sk)| xk / sk).collect()
     }
 
     /// Inverse of [`SpectralPrep::whiten`].
     pub fn unwhiten_to_image(&self, c: &[C]) -> Vec<Real> {
         let scaled: Vec<C> = c.iter().zip(self.s.iter()).map(|(&ck, &sk)| ck * sk).collect();
-        self.plan.irfft2(&self.bands.unpermute(&scaled))
+        self.irfft2_channels(&self.bands.unpermute(&scaled))
     }
 
     /// Image -> the data endpoint `z1 = (u1, phi1)`. Blueprint B4.
@@ -127,17 +163,22 @@ pub fn from_polar(u: &[Real], phi: &[Real]) -> Vec<C> {
         .collect()
 }
 
-/// Draw the noise endpoint `z0`. Blueprint B5.
+/// [`sample_prior_n`] for the default 32x32 grayscale geometry.
+pub fn sample_prior<R: RngExt + ?Sized>(rng: &mut R) -> (Vec<Real>, Vec<Real>) {
+    sample_prior_n(NCOEF, rng)
+}
+
+/// Draw the noise endpoint `z0` for `ncoef` coefficients. Blueprint B5.
 ///
 /// Sampled in Cartesian coordinates so that `E[|c|^2] = 1`, matching the
 /// whitened data; un-whitening this prior gives an image with the correct
 /// natural power spectrum but no structure.
-pub fn sample_prior<R: RngExt + ?Sized>(rng: &mut R) -> (Vec<Real>, Vec<Real>) {
+pub fn sample_prior_n<R: RngExt + ?Sized>(ncoef: usize, rng: &mut R) -> (Vec<Real>, Vec<Real>) {
     let normal = Normal::new(0.0f64, 1.0f64).unwrap();
     let inv_sqrt2 = std::f64::consts::FRAC_1_SQRT_2;
-    let mut u = vec![0.0 as Real; NCOEF];
-    let mut phi = vec![0.0 as Real; NCOEF];
-    for k in 0..NCOEF {
+    let mut u = vec![0.0 as Real; ncoef];
+    let mut phi = vec![0.0 as Real; ncoef];
+    for k in 0..ncoef {
         let a = normal.sample(rng) * inv_sqrt2;
         let b = normal.sample(rng) * inv_sqrt2;
         u[k] = ((a.hypot(b) / EPS_MAG as f64).asinh()) as Real;
@@ -192,14 +233,15 @@ pub fn build_sample(
 ) -> FlowSample {
     let tau = schedule.tau(t);
     let active = schedule.active(&tau);
+    let ncoef = bands.ncoef;
 
-    let mut ut = vec![0.0 as Real; NCOEF];
-    let mut phit = vec![0.0 as Real; NCOEF];
-    let mut v_u = vec![0.0 as Real; NCOEF];
-    let mut v_phi = vec![0.0 as Real; NCOEF];
-    let mut mask = vec![false; NCOEF];
+    let mut ut = vec![0.0 as Real; ncoef];
+    let mut phit = vec![0.0 as Real; ncoef];
+    let mut v_u = vec![0.0 as Real; ncoef];
+    let mut v_phi = vec![0.0 as Real; ncoef];
+    let mut mask = vec![false; ncoef];
 
-    for p in 0..NCOEF {
+    for p in 0..ncoef {
         let b = bands.band_of_pos[p] as usize;
         let tau_k = tau[b];
         mask[p] = active[b];

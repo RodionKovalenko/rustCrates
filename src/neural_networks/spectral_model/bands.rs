@@ -1,23 +1,31 @@
-//! Radial band partition of the 32x17 half spectrum, plus the band-local time
-//! schedule. Blueprint sections A2, B7 and B8.
+//! Radial band partition of the `n x (n/2+1)` half spectrum, plus the band-local
+//! time schedule. Blueprint sections A2, B7 and B8.
 //!
-//! Everything in this module is pure index arithmetic on a fixed grid, so it is
-//! computed once at start-up and shared by training and sampling.
+//! Everything in this module is pure index arithmetic on the image geometry
+//! (side length and colour channels), so it is computed once per model and
+//! shared by training and sampling. The constants below describe the original
+//! MNIST geometry (32x32, one channel), which is also the default.
 
 use crate::neural_networks::utils::dtype::Real;
 use serde::{Deserialize, Serialize};
 
-/// Side length of the spectral grid (power of two, required by radix-2 FFT).
+/// Side length of the default (MNIST) spectral grid. Other sizes: [`BandTable::with_geometry`].
 pub const N: usize = 32;
-/// Retained horizontal frequencies, `N/2 + 1`.
+/// Retained horizontal frequencies of the default grid, `N/2 + 1`.
 pub const NH: usize = N / 2 + 1;
-/// Stored coefficients per image.
+/// Stored coefficients per image of the default grid (one channel).
 pub const NCOEF: usize = N * NH;
+
+/// Smallest supported side length: the R-block's reduced grids are `n/4` and `n/2`.
+pub const MIN_SIZE: usize = 32;
+/// Largest supported side length (memory of one training step grows with `n^2`).
+pub const MAX_SIZE: usize = 512;
 
 /// Number of radial bands.
 pub const NBANDS: usize = 4;
 
-/// Radial cut points; band `b` holds `RADII[b] <= rho < RADII[b+1]`.
+/// Radial cut points of the 32x32 grid; band `b` holds `RADII[b] <= rho < RADII[b+1]`.
+/// Larger grids scale them by `n / 32`, so a band covers the same fraction of the spectrum.
 pub const RADII: [f32; NBANDS + 1] = [0.0, 4.0, 8.0, 13.0, f32::INFINITY];
 
 /// Channel width per band (tapered: high bands carry less information).
@@ -70,9 +78,22 @@ pub fn clamp_u(u: Real) -> Real {
 
 /// Band assignment, band-major permutation, and the per-coefficient metadata
 /// derived from them.
+///
+/// With several colour channels the natural layout is channel-major, `k = channel * ncoef_channel + k1 * nh + k2`,
+/// and every band holds the coefficients of all channels (channel 0 first).
 #[derive(Debug, Clone)]
 pub struct BandTable {
-    /// `band[k]` for `k` in the natural `(k1, k2)` row-major layout.
+    /// Side length of the image / spectral grid (power of two).
+    pub n: usize,
+    /// Retained horizontal frequencies, `n/2 + 1`.
+    pub nh: usize,
+    /// Colour channels (1 = grayscale, 3 = RGB).
+    pub channels: usize,
+    /// Coefficients per channel, `n * nh`.
+    pub ncoef_channel: usize,
+    /// Coefficients per image, `channels * ncoef_channel`.
+    pub ncoef: usize,
+    /// `band[k]` for `k` in the natural `(channel, k1, k2)` row-major layout.
     pub band: Vec<u8>,
     /// `order[p]` is the natural index stored at band-major position `p`.
     pub order: Vec<usize>,
@@ -84,9 +105,11 @@ pub struct BandTable {
     pub counts: [usize; NBANDS],
     /// Band of each band-major position (i.e. `band[order[p]]`).
     pub band_of_pos: Vec<u8>,
-    /// `(k1, k2)` of each band-major position, `k1` in `0..N`, `k2` in `0..NH`.
+    /// `(k1, k2)` of each band-major position, `k1` in `0..n`, `k2` in `0..nh`.
     pub k1_of_pos: Vec<usize>,
     pub k2_of_pos: Vec<usize>,
+    /// Colour channel of each band-major position.
+    pub channel_of_pos: Vec<usize>,
     /// Band-*local* index of each position's neighbour along `-k1, +k1, -k2,
     /// +k2`, or `usize::MAX` when the neighbour falls outside the band.
     ///
@@ -95,7 +118,7 @@ pub struct BandTable {
     /// frequency axis and wraps; `k2` indexes a half spectrum and does not.
     /// Neighbours in a *different* band are dropped — cross-band mixing is the
     /// summary tokens' and the R-block's job, and the bands have different
-    /// channel widths anyway.
+    /// channel widths anyway. Neighbours are always in the same colour channel.
     pub neighbours: Vec<[usize; 4]>,
 }
 
@@ -109,28 +132,43 @@ impl Default for BandTable {
 }
 
 impl BandTable {
+    /// The default MNIST geometry: 32x32, one channel.
     pub fn new() -> Self {
-        let mut band = vec![0u8; NCOEF];
-        for i in 0..N {
-            for j in 0..NH {
-                // Rows above N/2 hold negative vertical frequencies.
-                let k1 = if i <= N / 2 { i as i32 } else { i as i32 - N as i32 };
+        Self::with_geometry(N, 1)
+    }
+
+    /// Bands for an `n x n` image with `channels` colour channels; `n` a power of two in `MIN_SIZE..=MAX_SIZE`.
+    pub fn with_geometry(n: usize, channels: usize) -> Self {
+        assert!(n.is_power_of_two() && (MIN_SIZE..=MAX_SIZE).contains(&n), "image size must be a power of two in {MIN_SIZE}..={MAX_SIZE}, got {n}");
+        assert!(channels >= 1, "at least one colour channel");
+        let nh = n / 2 + 1;
+        let ncoef_channel = n * nh;
+        let ncoef = channels * ncoef_channel;
+        let radius_scale = n as f32 / N as f32;
+
+        let mut band = vec![0u8; ncoef];
+        for i in 0..n {
+            for j in 0..nh {
+                // Rows above n/2 hold negative vertical frequencies.
+                let k1 = if i <= n / 2 { i as i32 } else { i as i32 - n as i32 };
                 let k2 = j as i32;
                 let rho = ((k1 * k1 + k2 * k2) as f32).sqrt();
                 let mut b = (NBANDS - 1) as u8;
                 for cand in 0..NBANDS {
-                    if rho < RADII[cand + 1] {
+                    if rho < RADII[cand + 1] * radius_scale {
                         b = cand as u8;
                         break;
                     }
                 }
-                band[i * NH + j] = b;
+                for ch in 0..channels {
+                    band[ch * ncoef_channel + i * nh + j] = b;
+                }
             }
         }
 
         // Stable sort by band keeps the natural order inside each band, which
         // makes the layout reproducible across runs.
-        let mut order: Vec<usize> = (0..NCOEF).collect();
+        let mut order: Vec<usize> = (0..ncoef).collect();
         order.sort_by_key(|&k| band[k]);
 
         let mut counts = [0usize; NBANDS];
@@ -143,30 +181,32 @@ impl BandTable {
             offsets[b + 1] = offsets[b] + counts[b];
         }
 
-        let mut inv_order = vec![0usize; NCOEF];
-        let mut band_of_pos = vec![0u8; NCOEF];
-        let mut k1_of_pos = vec![0usize; NCOEF];
-        let mut k2_of_pos = vec![0usize; NCOEF];
+        let mut inv_order = vec![0usize; ncoef];
+        let mut band_of_pos = vec![0u8; ncoef];
+        let mut k1_of_pos = vec![0usize; ncoef];
+        let mut k2_of_pos = vec![0usize; ncoef];
+        let mut channel_of_pos = vec![0usize; ncoef];
         for (p, &k) in order.iter().enumerate() {
             inv_order[k] = p;
             band_of_pos[p] = band[k];
-            k1_of_pos[p] = k / NH;
-            k2_of_pos[p] = k % NH;
+            channel_of_pos[p] = k / ncoef_channel;
+            k1_of_pos[p] = (k % ncoef_channel) / nh;
+            k2_of_pos[p] = k % nh;
         }
 
-        let mut neighbours = vec![[NO_NEIGHBOUR; 4]; NCOEF];
-        for p in 0..NCOEF {
+        let mut neighbours = vec![[NO_NEIGHBOUR; 4]; ncoef];
+        for p in 0..ncoef {
             let bd = band_of_pos[p];
-            let (k1, k2) = (k1_of_pos[p], k2_of_pos[p]);
+            let (k1, k2, ch) = (k1_of_pos[p], k2_of_pos[p], channel_of_pos[p]);
             let cand = [
-                Some(((k1 + N - 1) % N, k2)),
-                Some(((k1 + 1) % N, k2)),
+                Some(((k1 + n - 1) % n, k2)),
+                Some(((k1 + 1) % n, k2)),
                 if k2 > 0 { Some((k1, k2 - 1)) } else { None },
-                if k2 + 1 < NH { Some((k1, k2 + 1)) } else { None },
+                if k2 + 1 < nh { Some((k1, k2 + 1)) } else { None },
             ];
             for (slot, c) in cand.iter().enumerate() {
                 if let Some((a, b)) = *c {
-                    let q = inv_order[a * NH + b];
+                    let q = inv_order[ch * ncoef_channel + a * nh + b];
                     if band_of_pos[q] == bd {
                         neighbours[p][slot] = q - offsets[bd as usize];
                     }
@@ -175,6 +215,11 @@ impl BandTable {
         }
 
         Self {
+            n,
+            nh,
+            channels,
+            ncoef_channel,
+            ncoef,
             band,
             order,
             inv_order,
@@ -183,7 +228,21 @@ impl BandTable {
             band_of_pos,
             k1_of_pos,
             k2_of_pos,
+            channel_of_pos,
             neighbours,
+        }
+    }
+
+    /// Grid side length sufficient to represent every coefficient up to band
+    /// `highest`, used to run the R-block round trip at reduced resolution.
+    ///
+    /// Band `b` reaches at most `RADII[b+1] * n/32`, so any grid with Nyquist frequency
+    /// above that loses nothing.
+    pub fn roundtrip_grid_size(&self, highest: usize) -> usize {
+        match highest {
+            0 => self.n / 4,
+            1 => self.n / 2,
+            _ => self.n,
         }
     }
 
@@ -356,17 +415,9 @@ pub fn highest_active_band(active: &[bool; NBANDS]) -> Option<usize> {
     (0..NBANDS).rev().find(|&b| active[b])
 }
 
-/// Grid side length sufficient to represent every coefficient up to band
-/// `highest`, used to run the R-block round trip at reduced resolution.
-///
-/// Band `b` reaches at most `RADII[b+1]`, so any grid with Nyquist frequency
-/// above that loses nothing.
+/// [`BandTable::roundtrip_grid_size`] of the default 32x32 grid.
 pub fn roundtrip_grid_size(highest: usize) -> usize {
-    match highest {
-        0 => 8,
-        1 => 16,
-        _ => N,
-    }
+    BandTable::new().roundtrip_grid_size(highest)
 }
 
 /// Wrap an angle into `(-pi, pi]`.

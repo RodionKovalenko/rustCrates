@@ -37,6 +37,12 @@ pub struct TrainingProgress {
     pub best_epoch: Option<usize>,
     /// Last status message ("finished", "stopped", errors, ...).
     pub message: String,
+    /// Spectral model: optimiser steps done and planned (it trains in steps, not epochs; `history` holds the mean
+    /// loss per logging interval with `epoch` = step).
+    pub step: usize,
+    pub num_steps: usize,
+    /// Spectral model: latest preview image written during training.
+    pub sample_image: Option<String>,
 }
 
 static PROGRESS: Lazy<Mutex<TrainingProgress>> = Lazy::new(|| Mutex::new(TrainingProgress::default()));

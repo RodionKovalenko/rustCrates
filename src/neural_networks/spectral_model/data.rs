@@ -1,11 +1,20 @@
-//! MNIST loading and the 28x28 -> 32x32 zero padding. Blueprint section A1.
+//! Training images. Blueprint section A1.
 //!
-//! Files are read from `datasets/mnist/`. Both the raw `idx-ubyte` files and
-//! their gzipped form are accepted; if neither is present the loader downloads
-//! them once from a public mirror.
+//! Two sources ([`DataSource`]):
+//! * MNIST, read from `datasets/mnist/`. Both the raw `idx-ubyte` files and
+//!   their gzipped form are accepted; if neither is present the loader downloads
+//!   them once from a public mirror. The 28x28 digits are centred in the grid
+//!   (28 -> 32 zero padding at the original size, scaled up for larger grids).
+//! * A folder of images (PNG, JPEG, BMP, WebP, ...): each image is centre-cropped
+//!   to a square and resized to the model's size.
+//!
+//! Images are stored as `channels * size * size` floats in `0..1`, channel-planar.
 
 use crate::neural_networks::spectral_model::bands::N;
 use crate::neural_networks::utils::dtype::Real;
+use image::imageops::FilterType;
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -162,4 +171,153 @@ fn read_idx(path: &Path) -> std::io::Result<Vec<u8>> {
     } else {
         Ok(bytes)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Datasets at any size and colour depth
+// ---------------------------------------------------------------------------
+
+/// Where the training images come from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "path", rename_all = "lowercase")]
+pub enum DataSource {
+    Mnist,
+    /// A folder with image files (searched recursively).
+    Folder(String),
+}
+
+impl DataSource {
+    pub fn describe(&self) -> String {
+        match self {
+            DataSource::Mnist => "MNIST".to_string(),
+            DataSource::Folder(path) => format!("folder {path}"),
+        }
+    }
+}
+
+/// Training images at the model's geometry.
+#[derive(Debug, Clone)]
+pub struct ImageSet {
+    pub size: usize,
+    pub channels: usize,
+    /// Side of the centred region that holds the image content (MNIST: the 28/32 digit area); the rest is padding.
+    pub content_side: usize,
+    /// `channels * size * size` floats in `0..1`, channel-planar.
+    pub images: Vec<Vec<Real>>,
+}
+
+/// File extensions read from an image folder.
+const IMAGE_EXTENSIONS: [&str; 7] = ["png", "jpg", "jpeg", "bmp", "webp", "gif", "tif"];
+
+/// Loads the images of `source` at `size x size` with `channels` (1 or 3) colour channels.
+/// `max_images` limits how many are loaded (memory: `4 * channels * size^2` bytes per image).
+pub fn load_images(source: &DataSource, size: usize, channels: usize, max_images: Option<usize>) -> std::io::Result<ImageSet> {
+    assert!(channels == 1 || channels == 3, "channels must be 1 (grayscale) or 3 (RGB)");
+    match source {
+        DataSource::Mnist => {
+            let data = load_train()?;
+            let content_side = size * IMG_SIDE / N;
+            let count = max_images.unwrap_or(usize::MAX).min(data.len());
+            let images = data.images[..count]
+                .par_iter()
+                .map(|grid| {
+                    let digit = crop_from_grid(grid);
+                    let digit = if content_side == IMG_SIDE { digit } else { resize_gray(&digit, IMG_SIDE, content_side) };
+                    let mut out = vec![0.0 as Real; channels * size * size];
+                    let pad = (size - content_side) / 2;
+                    for ch in 0..channels {
+                        for r in 0..content_side {
+                            for c in 0..content_side {
+                                out[ch * size * size + (r + pad) * size + (c + pad)] = digit[r * content_side + c];
+                            }
+                        }
+                    }
+                    out
+                })
+                .collect();
+            Ok(ImageSet { size, channels, content_side, images })
+        }
+        DataSource::Folder(path) => {
+            let mut files = Vec::new();
+            collect_image_files(Path::new(path), &mut files)?;
+            files.sort();
+            if let Some(max) = max_images {
+                files.truncate(max);
+            }
+            if files.is_empty() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("no images ({}) found in {path:?}", IMAGE_EXTENSIONS.join(", ")),
+                ));
+            }
+            let images: Vec<Vec<Real>> = files
+                .par_iter()
+                .filter_map(|file| match image::open(file) {
+                    Ok(img) => Some(prepare_image(&img, size, channels)),
+                    Err(e) => {
+                        eprintln!("[spectral] skipping {}: {e}", file.display());
+                        None
+                    }
+                })
+                .collect();
+            if images.is_empty() {
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("none of the images in {path:?} could be read")));
+            }
+            Ok(ImageSet { size, channels, content_side: size, images })
+        }
+    }
+}
+
+fn collect_image_files(dir: &Path, files: &mut Vec<PathBuf>) -> std::io::Result<()> {
+    let entries = fs::read_dir(dir).map_err(|e| std::io::Error::new(e.kind(), format!("cannot read image folder {}: {e}", dir.display())))?;
+    for entry in entries {
+        let path = entry?.path();
+        if path.is_dir() {
+            collect_image_files(&path, files)?;
+        } else if path.extension().and_then(|e| e.to_str()).is_some_and(|e| IMAGE_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str())) {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
+/// Centre-crops `img` to a square, resizes it to `size x size` and converts it to `channels` planes in `0..1`.
+pub fn prepare_image(img: &image::DynamicImage, size: usize, channels: usize) -> Vec<Real> {
+    let side = img.width().min(img.height());
+    let (x, y) = ((img.width() - side) / 2, (img.height() - side) / 2);
+    let square = img.crop_imm(x, y, side, side).resize_exact(size as u32, size as u32, FilterType::Lanczos3);
+    let pixels = size * size;
+    let mut out = vec![0.0 as Real; channels * pixels];
+    if channels == 1 {
+        for (i, p) in square.to_luma8().pixels().enumerate() {
+            out[i] = p.0[0] as Real / 255.0;
+        }
+    } else {
+        for (i, p) in square.to_rgb8().pixels().enumerate() {
+            for ch in 0..3 {
+                out[ch * pixels + i] = p.0[ch] as Real / 255.0;
+            }
+        }
+    }
+    out
+}
+
+fn resize_gray(img: &[Real], side: usize, new_side: usize) -> Vec<Real> {
+    let buffer = image::GrayImage::from_fn(side as u32, side as u32, |x, y| image::Luma([(img[y as usize * side + x as usize].clamp(0.0, 1.0) * 255.0).round() as u8]));
+    let resized = image::imageops::resize(&buffer, new_side as u32, new_side as u32, FilterType::Lanczos3);
+    resized.pixels().map(|p| p.0[0] as Real / 255.0).collect()
+}
+
+/// Cuts the centred `content_side` region out of every channel of a `size x size` image.
+pub fn crop_content(img: &[Real], size: usize, channels: usize, content_side: usize) -> Vec<Real> {
+    let pad = (size - content_side) / 2;
+    let mut out = vec![0.0 as Real; channels * content_side * content_side];
+    for ch in 0..channels {
+        for r in 0..content_side {
+            for c in 0..content_side {
+                out[(ch * content_side + r) * content_side + c] = img[ch * size * size + (r + pad) * size + (c + pad)];
+            }
+        }
+    }
+    out
 }

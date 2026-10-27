@@ -8,7 +8,7 @@
 //!
 //! Blueprint section A4 for the initialisation scheme, B14 for the optimiser.
 
-use crate::neural_networks::spectral_model::bands::{BandTable, D, D_MERGE, N, NBANDS, NH};
+use crate::neural_networks::spectral_model::bands::{BandTable, D, D_MERGE, NBANDS};
 use crate::neural_networks::utils::dtype::{Real, C};
 use num::Complex;
 use rand::RngExt;
@@ -91,7 +91,11 @@ pub struct SpectralParams {
 
 impl SpectralParams {
     /// Allocate every tensor at the right size, filled with zeros.
+    ///
+    /// The image geometry sets the filter lengths (`n`, `n/2+1`), the positional table (coefficients per band) and,
+    /// through the colour channels, the width of the R-block's pixel MLP (`channels * D_MERGE`).
     pub fn zeros(bands: &BandTable) -> Self {
+        let pixel_width = bands.channels * D_MERGE;
         let mut cplx = vec![Vec::new(); N_CPLX];
         let mut real = vec![Vec::new(); N_REAL];
 
@@ -111,8 +115,8 @@ impl SpectralParams {
             for sb in 0..N_SBLOCKS {
                 let s = sb * NBANDS + bd;
                 cplx[C_R_MAT + s] = vec![C::new(0.0, 0.0); d * d];
-                cplx[C_FILT_A + s] = vec![C::new(0.0, 0.0); N * d];
-                cplx[C_FILT_B + s] = vec![C::new(0.0, 0.0); NH * d];
+                cplx[C_FILT_A + s] = vec![C::new(0.0, 0.0); bands.n * d];
+                cplx[C_FILT_B + s] = vec![C::new(0.0, 0.0); bands.nh * d];
                 cplx[C_STENCIL_A + s] = vec![C::new(0.0, 0.0); 3 * d];
                 cplx[C_STENCIL_B + s] = vec![C::new(0.0, 0.0); 3 * d];
                 real[R_FILM_W + s] = vec![0.0 as Real; TIME_HIDDEN * 3 * d];
@@ -122,10 +126,10 @@ impl SpectralParams {
 
         real[R_TRUNK_W] = vec![0.0 as Real; TIME_FEAT * TIME_HIDDEN];
         real[R_TRUNK_B] = vec![0.0 as Real; TIME_HIDDEN];
-        real[R_RMLP_W1] = vec![0.0 as Real; D_MERGE * RMLP_HIDDEN];
+        real[R_RMLP_W1] = vec![0.0 as Real; pixel_width * RMLP_HIDDEN];
         real[R_RMLP_B1] = vec![0.0 as Real; RMLP_HIDDEN];
-        real[R_RMLP_W2] = vec![0.0 as Real; RMLP_HIDDEN * D_MERGE];
-        real[R_RMLP_B2] = vec![0.0 as Real; D_MERGE];
+        real[R_RMLP_W2] = vec![0.0 as Real; RMLP_HIDDEN * pixel_width];
+        real[R_RMLP_B2] = vec![0.0 as Real; pixel_width];
         cplx[C_SUM_MIX] = vec![C::new(0.0, 0.0); (NBANDS * D_MERGE) * (NBANDS * D_MERGE)];
 
         Self { cplx, real }
@@ -192,7 +196,7 @@ impl SpectralParams {
         let w = NBANDS * D_MERGE;
         fill_cplx(&mut p.cplx[C_SUM_MIX], sigma(w, w), rng);
         fill_real(&mut p.real[R_TRUNK_W], (2.0 / TIME_FEAT as f64).sqrt() as Real, rng);
-        fill_real(&mut p.real[R_RMLP_W1], (2.0 / D_MERGE as f64).sqrt() as Real, rng);
+        fill_real(&mut p.real[R_RMLP_W1], (2.0 / (bands.channels * D_MERGE) as f64).sqrt() as Real, rng);
         fill_real(&mut p.real[R_RMLP_W2], (2.0 / RMLP_HIDDEN as f64).sqrt() as Real, rng);
 
         p

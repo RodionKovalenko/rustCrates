@@ -5,15 +5,18 @@
 //! `group_size` images each. Groups are the unit of parallelism: they share no
 //! state, so they run on rayon threads and their gradients are summed.
 
-use crate::neural_networks::spectral_model::bands::{FlowPath, Schedule, D, NBANDS, NCOEF};
+use crate::neural_networks::spectral_model::bands::{BandTable, FlowPath, Schedule, D, N, NBANDS};
+use crate::neural_networks::spectral_model::data::{load_images, DataSource, IMG_SIDE};
 use crate::neural_networks::spectral_model::loss::{
     calibrate_for_path, flow_loss, PhaseWeights, DEFAULT_PHASE_ALPHA,
 };
 use crate::neural_networks::spectral_model::model::{Diagnostics, GroupInput, SpectralNet};
 use crate::neural_networks::spectral_model::params::{AdamW, NormTracker, SpectralParams, N_STAGES};
+use crate::neural_networks::spectral_model::sample::ImageLayout;
 use crate::neural_networks::spectral_model::spectral::{
-    build_sample, sample_prior, SpectralPrep, WhiteningTable,
+    build_sample, sample_prior_n, SpectralPrep, WhiteningTable,
 };
+use crate::neural_networks::training::training_progress::{training_stop_requested, update_training_progress, EpochStats};
 use crate::neural_networks::utils::dtype::Real;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
@@ -41,6 +44,36 @@ pub struct TrainConfig {
     pub ckpt_path: String,
     pub sample_dir: String,
     pub seed: u64,
+    /// Image side length (power of two). A resumed checkpoint keeps its own geometry.
+    #[serde(default = "default_size")]
+    pub size: usize,
+    /// Colour channels: 1 (grayscale) or 3 (RGB).
+    #[serde(default = "default_channels")]
+    pub channels: usize,
+    #[serde(default = "default_data")]
+    pub data: DataSource,
+    /// At most this many training images are loaded (all if `None`).
+    #[serde(default)]
+    pub max_images: Option<usize>,
+    /// Continue the checkpoint at `ckpt_path` if it exists; otherwise a new model replaces it.
+    #[serde(default = "default_resume")]
+    pub resume: bool,
+}
+
+fn default_size() -> usize {
+    N
+}
+
+fn default_channels() -> usize {
+    1
+}
+
+fn default_data() -> DataSource {
+    DataSource::Mnist
+}
+
+fn default_resume() -> bool {
+    true
 }
 
 impl Default for TrainConfig {
@@ -58,10 +91,29 @@ impl Default for TrainConfig {
             log_every: 50,
             ckpt_every: 2_000,
             sample_every: 2_000,
-            ckpt_path: "STORAGE/spectral_flow/checkpoint.bin".to_string(),
+            ckpt_path: SPECTRAL_CHECKPOINT.to_string(),
             sample_dir: "STORAGE/spectral_flow/samples".to_string(),
             seed: 0xC0FFEE,
+            size: N,
+            channels: 1,
+            data: DataSource::Mnist,
+            max_images: None,
+            resume: true,
         }
+    }
+}
+
+/// Default checkpoint of the spectral model (CLI and web UI).
+pub const SPECTRAL_CHECKPOINT: &str = "STORAGE/spectral_flow/checkpoint.bin";
+
+/// Images per optimiser step that fit in memory for `size` (one step caches all activations of its groups).
+pub fn default_batch_size(size: usize) -> usize {
+    match size {
+        0..=32 => 64,
+        33..=64 => 32,
+        65..=128 => 16,
+        129..=256 => 8,
+        _ => 4,
     }
 }
 
@@ -88,6 +140,13 @@ impl TrainConfig {
     pub fn batch_size(&self) -> usize {
         self.group_size * self.n_groups
     }
+
+    /// Splits `batch_size` images per step into up to 4 parallel time groups.
+    pub fn set_batch_size(&mut self, batch_size: usize) {
+        let batch_size = batch_size.max(1);
+        self.n_groups = batch_size.min(4);
+        self.group_size = batch_size.div_ceil(self.n_groups);
+    }
 }
 
 /// Everything needed to resume training or to sample.
@@ -104,6 +163,10 @@ pub struct Checkpoint {
     pub lambda_phi: Real,
     pub phase_alpha: Real,
     pub step: usize,
+    /// Image side length, colour channels and the centred content region the model was trained on.
+    pub layout: ImageLayout,
+    /// Where the training images came from (for display).
+    pub data: String,
 }
 
 /// Scalar metadata, stored as JSON so the format can gain fields without
@@ -127,6 +190,23 @@ struct CheckpointMeta {
     d_bands: [usize; NBANDS],
     #[serde(default = "default_n_stages")]
     n_stages: usize,
+    /// Geometry; checkpoints written before it existed are 32x32 MNIST.
+    #[serde(default = "default_size")]
+    size: usize,
+    #[serde(default = "default_channels")]
+    channels: usize,
+    #[serde(default = "default_content_side")]
+    content_side: usize,
+    #[serde(default = "default_data_description")]
+    data: String,
+}
+
+fn default_content_side() -> usize {
+    IMG_SIDE
+}
+
+fn default_data_description() -> String {
+    "MNIST".to_string()
 }
 
 fn default_phase_alpha() -> Real {
@@ -214,6 +294,10 @@ impl Checkpoint {
             step: self.step,
             d_bands: D,
             n_stages: N_STAGES,
+            size: self.layout.size,
+            channels: self.layout.channels,
+            content_side: self.layout.content_side,
+            data: self.data.clone(),
         };
         let meta_json = serde_json::to_vec(&meta)?;
         let body = CheckpointBody {
@@ -277,6 +361,8 @@ impl Checkpoint {
                 lambda_phi: meta.lambda_phi,
                 phase_alpha: meta.phase_alpha,
                 step: meta.step,
+                layout: ImageLayout { size: meta.size, channels: meta.channels, content_side: meta.content_side },
+                data: meta.data,
             });
         }
 
@@ -302,7 +388,21 @@ impl Checkpoint {
             lambda_phi: old.lambda_phi,
             phase_alpha: DEFAULT_PHASE_ALPHA,
             step: old.step,
+            layout: ImageLayout::MNIST,
+            data: default_data_description(),
         })
+    }
+
+    /// The model geometry of this checkpoint.
+    pub fn bands(&self) -> BandTable {
+        BandTable::with_geometry(self.layout.size, self.layout.channels)
+    }
+
+    /// Network and whitening of this checkpoint, ready to sample.
+    pub fn net_and_prep(&self) -> (SpectralNet, SpectralPrep) {
+        let net = SpectralNet::for_bands(self.bands(), self.adaptive_roundtrip);
+        let prep = SpectralPrep::with_table_for(self.bands(), self.whitening.clone());
+        (net, prep)
     }
 }
 
@@ -327,15 +427,24 @@ pub struct Trainer {
     pub phase_weights: PhaseWeights,
     pub norms: NormTracker,
     pub step: usize,
+    pub layout: ImageLayout,
+    pub data: String,
 }
 
 impl Trainer {
-    /// Fresh model: measures the whitening table on `images`, then initialises
-    /// weights. Blueprint A3-A4.
+    /// Fresh model for `cfg.size` / `cfg.channels` (MNIST layout): measures the whitening table on `images`,
+    /// then initialises weights. Blueprint A3-A4.
     pub fn new(images: &[Vec<Real>], cfg: TrainConfig) -> Self {
-        let net = SpectralNet::new(cfg.adaptive_roundtrip);
+        let content_side = cfg.size * IMG_SIDE / N;
+        let layout = ImageLayout { size: cfg.size, channels: cfg.channels, content_side };
+        Self::new_with_layout(images, cfg, layout, DataSource::Mnist.describe())
+    }
+
+    pub fn new_with_layout(images: &[Vec<Real>], cfg: TrainConfig, layout: ImageLayout, data: String) -> Self {
+        let bands = BandTable::with_geometry(layout.size, layout.channels);
+        let net = SpectralNet::for_bands(bands.clone(), cfg.adaptive_roundtrip);
         println!("[spectral] measuring whitening statistics over {} images", images.len());
-        let prep = SpectralPrep::from_dataset(images);
+        let prep = SpectralPrep::from_dataset_for(bands, images);
         let mut rng = SmallRng::seed_from_u64(cfg.seed);
         let params = SpectralParams::init(&net.bands, &mut rng);
         let ema = params.clone();
@@ -353,12 +462,15 @@ impl Trainer {
             norms: NormTracker::default(),
             cfg,
             step: 0,
+            layout,
+            data,
         }
     }
 
-    pub fn from_checkpoint(ckpt: Checkpoint, cfg: TrainConfig) -> Self {
-        let net = SpectralNet::new(ckpt.adaptive_roundtrip);
-        let prep = SpectralPrep::with_table(ckpt.whitening);
+    pub fn from_checkpoint(ckpt: Checkpoint, mut cfg: TrainConfig) -> Self {
+        let (net, prep) = ckpt.net_and_prep();
+        cfg.size = ckpt.layout.size;
+        cfg.channels = ckpt.layout.channels;
         let opt = ckpt.opt;
         let phase_weights = PhaseWeights::new(&prep.s, cfg.phase_alpha);
         Self {
@@ -372,6 +484,8 @@ impl Trainer {
             norms: NormTracker::default(),
             cfg,
             step: ckpt.step,
+            layout: ckpt.layout,
+            data: ckpt.data,
         }
     }
 
@@ -387,6 +501,8 @@ impl Trainer {
             lambda_phi: self.lambda_phi,
             phase_alpha: self.cfg.phase_alpha,
             step: self.step,
+            layout: self.layout,
+            data: self.data.clone(),
         }
     }
 
@@ -405,28 +521,29 @@ impl Trainer {
         // every tensor stays rectangular and the inactive bands are skipped
         // wholesale rather than masked element by element.
         let t = rng.random_range(0.0f64..sched.end_time() as f64) as Real;
+        let ncoef = self.prep.ncoef();
 
-        let mut ut = vec![0.0 as Real; b * NCOEF];
-        let mut phit = vec![0.0 as Real; b * NCOEF];
-        let mut tgt_u = vec![0.0 as Real; b * NCOEF];
-        let mut tgt_phi = vec![0.0 as Real; b * NCOEF];
-        let mut mask = vec![false; b * NCOEF];
+        let mut ut = vec![0.0 as Real; b * ncoef];
+        let mut phit = vec![0.0 as Real; b * ncoef];
+        let mut tgt_u = vec![0.0 as Real; b * ncoef];
+        let mut tgt_phi = vec![0.0 as Real; b * ncoef];
+        let mut mask = vec![false; b * ncoef];
         let mut tau = [0.0 as Real; NBANDS];
         let mut active = [false; NBANDS];
 
         for bi in 0..b {
             let idx = rng.random_range(0..images.len());
             let (u1, phi1) = self.prep.image_to_polar(&images[idx]);
-            let (u0, phi0) = sample_prior(&mut rng);
+            let (u0, phi0) = sample_prior_n(ncoef, &mut rng);
             let s = build_sample(&self.net.bands, sched, self.cfg.path, &u0, &phi0, &u1, &phi1, t);
             tau = s.tau;
             active = s.active;
-            let lo = bi * NCOEF;
-            ut[lo..lo + NCOEF].copy_from_slice(&s.ut);
-            phit[lo..lo + NCOEF].copy_from_slice(&s.phit);
-            tgt_u[lo..lo + NCOEF].copy_from_slice(&s.v_u);
-            tgt_phi[lo..lo + NCOEF].copy_from_slice(&s.v_phi);
-            mask[lo..lo + NCOEF].copy_from_slice(&s.mask);
+            let lo = bi * ncoef;
+            ut[lo..lo + ncoef].copy_from_slice(&s.ut);
+            phit[lo..lo + ncoef].copy_from_slice(&s.phit);
+            tgt_u[lo..lo + ncoef].copy_from_slice(&s.v_u);
+            tgt_phi[lo..lo + ncoef].copy_from_slice(&s.v_phi);
+            mask[lo..lo + ncoef].copy_from_slice(&s.mask);
         }
 
         if !active.iter().any(|&a| a) {
@@ -524,16 +641,46 @@ impl Trainer {
         println!("[spectral] lambda_phi calibrated to {:.4}", self.lambda_phi);
     }
 
+    /// Samples a preview grid (as many images as are cheap at this size) with the EMA weights.
+    pub fn write_preview(&self, path: &str) -> std::io::Result<()> {
+        let side = match self.layout.size {
+            0..=64 => 8,
+            65..=128 => 4,
+            _ => 2,
+        };
+        crate::neural_networks::spectral_model::sample::sample_grid_to_png_with(
+            &self.net,
+            &self.prep,
+            &self.ema,
+            &self.cfg.schedule,
+            self.cfg.path,
+            side,
+            side,
+            crate::neural_networks::spectral_model::sample::DEFAULT_SAMPLE_STEPS,
+            self.step as u64,
+            path,
+            0,
+            self.layout,
+        )
+    }
+
     pub fn run(&mut self, images: &[Vec<Real>]) -> std::io::Result<()> {
         let cfg = self.cfg.clone();
         println!(
-            "[spectral] training {} steps, batch {} ({} groups x {}), lr {:.1e}",
+            "[spectral] training {} steps, {}x{} {}, batch {} ({} groups x {}), lr {:.1e}",
             cfg.steps,
+            self.layout.size,
+            self.layout.size,
+            if self.layout.channels == 3 { "RGB" } else { "grayscale" },
             cfg.batch_size(),
             cfg.n_groups,
             cfg.group_size,
             cfg.lr
         );
+        update_training_progress(|progress| {
+            progress.num_steps = cfg.steps;
+            progress.message = "Training ...".to_string();
+        });
 
         let start = std::time::Instant::now();
         let mut running = 0.0 as Real;
@@ -543,6 +690,19 @@ impl Trainer {
             let stats = self.train_step(images);
             running += stats.loss;
             counted += 1;
+            update_training_progress(|progress| {
+                progress.step = local + 1;
+                progress.batch_loss = Some(stats.loss as f64);
+                progress.learning_rate = Some(self.opt.lr as f64);
+                progress.elapsed_seconds = start.elapsed().as_secs_f64();
+            });
+
+            if training_stop_requested() {
+                self.checkpoint().save(&cfg.ckpt_path)?;
+                println!("[spectral] stopped at step {}; checkpoint written to {}", self.step, cfg.ckpt_path);
+                update_training_progress(|progress| progress.message = format!("Stopped after step {}; model saved.", local + 1));
+                return Ok(());
+            }
 
             if self.params.has_non_finite() {
                 return Err(std::io::Error::new(
@@ -573,6 +733,8 @@ impl Trainer {
                     stats.diag.stencil_ratio(),
                     stats.diag.summary_ratio()
                 );
+                let mean_loss = running / counted as Real;
+                update_training_progress(|progress| progress.history.push(EpochStats { epoch: local + 1, training_loss: mean_loss as f64, validation_loss: None }));
                 running = 0.0;
                 counted = 0;
             }
@@ -584,24 +746,14 @@ impl Trainer {
 
             if cfg.sample_every > 0 && (local + 1) % cfg.sample_every == 0 {
                 let path = format!("{}/step_{:07}.png", cfg.sample_dir, self.step);
-                crate::neural_networks::spectral_model::sample::sample_grid_to_png(
-                    &self.net,
-                    &self.prep,
-                    &self.ema,
-                    &cfg.schedule,
-                    cfg.path,
-                    8,
-                    8,
-                    crate::neural_networks::spectral_model::sample::DEFAULT_SAMPLE_STEPS,
-                    self.step as u64,
-                    &path,
-                    0,
-                )?;
+                self.write_preview(&path)?;
                 println!("[spectral] samples written to {path}");
+                update_training_progress(|progress| progress.sample_image = Some(path.clone()));
             }
         }
 
         self.checkpoint().save(&cfg.ckpt_path)?;
+        update_training_progress(|progress| progress.message = "Training finished.".to_string());
         Ok(())
     }
 }
@@ -619,19 +771,29 @@ fn add_into(dst: &mut SpectralParams, src: &SpectralParams) {
     }
 }
 
-/// Convenience entry point: load MNIST, resume if a checkpoint exists, train.
+/// Convenience entry point: resume the checkpoint (if `cfg.resume` and it exists) or start a new model,
+/// load the training images at the model's geometry, train.
 pub fn train_spectral_flow(cfg: TrainConfig) -> std::io::Result<()> {
-    let data = crate::neural_networks::spectral_model::data::load_train()?;
-    println!("[spectral] loaded {} MNIST images", data.len());
+    let ckpt = if cfg.resume && Path::new(&cfg.ckpt_path).exists() { Some(Checkpoint::load(&cfg.ckpt_path)?) } else { None };
+    let (size, channels) = ckpt.as_ref().map(|c| (c.layout.size, c.layout.channels)).unwrap_or((cfg.size, cfg.channels));
 
-    let mut trainer = if Path::new(&cfg.ckpt_path).exists() {
-        let ckpt = Checkpoint::load(&cfg.ckpt_path)?;
-        println!("[spectral] resuming from step {}", ckpt.step);
-        Trainer::from_checkpoint(ckpt, cfg)
-    } else {
-        let mut t = Trainer::new(&data.images, cfg);
-        t.calibrate(&data.images);
-        t
+    update_training_progress(|progress| progress.message = format!("Loading {} ...", cfg.data.describe()));
+    let data = load_images(&cfg.data, size, channels, cfg.max_images)?;
+    println!("[spectral] loaded {} images from {} at {size}x{size}, {channels} channel(s)", data.images.len(), cfg.data.describe());
+    update_training_progress(|progress| progress.training_records = data.images.len());
+
+    let mut trainer = match ckpt {
+        Some(ckpt) => {
+            println!("[spectral] resuming from step {}", ckpt.step);
+            Trainer::from_checkpoint(ckpt, cfg)
+        }
+        None => {
+            let layout = ImageLayout { size, channels, content_side: data.content_side };
+            update_training_progress(|progress| progress.message = "Measuring whitening statistics ...".to_string());
+            let mut t = Trainer::new_with_layout(&data.images, cfg.clone(), layout, cfg.data.describe());
+            t.calibrate(&data.images);
+            t
+        }
     };
 
     trainer.run(&data.images)

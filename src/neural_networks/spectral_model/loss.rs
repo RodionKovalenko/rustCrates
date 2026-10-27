@@ -40,15 +40,15 @@ pub struct LossOut {
     pub mag_term: Real,
     pub phase_term: Real,
     pub n_active: usize,
-    /// `dL/dv_u`, `b * NCOEF`.
+    /// `dL/dv_u`, `b * ncoef`.
     pub d_v_u: Vec<Real>,
-    /// `dL/dv_phi`, `b * NCOEF`.
+    /// `dL/dv_phi`, `b * ncoef`.
     pub d_v_phi: Vec<Real>,
 }
 
 /// Compute the loss and its gradient w.r.t. the predicted velocities.
 ///
-/// All slices are `b * NCOEF` in band-major layout; `mask` marks the
+/// All slices are `b * ncoef` in band-major layout (`ncoef = energy_scale.len()`); `mask` marks the
 /// coefficients whose band is mid-flight. `energy_scale[p]` is
 /// `s[p]^phase_alpha`, precomputed once by [`PhaseWeights`].
 #[allow(clippy::too_many_arguments)]
@@ -64,8 +64,8 @@ pub fn flow_loss(
     path: FlowPath,
 ) -> LossOut {
     let len = pred_u.len();
-    debug_assert_eq!(len % NCOEF, 0);
-    debug_assert_eq!(energy_scale.len(), NCOEF);
+    let ncoef = energy_scale.len();
+    debug_assert_eq!(len % ncoef, 0);
 
     // Under `ComplexLinear` the second output is a Cartesian rate, not an
     // angle: it must not be wrapped, and it carries no energy weight.
@@ -84,7 +84,7 @@ pub fn flow_loss(
     for i in 0..len {
         if mask[i] {
             w[i] = if angular {
-                let mag = energy_scale[i % NCOEF] * EPS_MAG * ut[i].sinh();
+                let mag = energy_scale[i % ncoef] * EPS_MAG * ut[i].sinh();
                 mag * mag
             } else {
                 1.0
@@ -146,6 +146,7 @@ impl PhaseWeights {
         Self { scale: s.iter().map(|v| v.powf(alpha)).collect() }
     }
 
+    /// Uniform weight for the default 32x32 grayscale geometry.
     pub fn uniform() -> Self {
         Self { scale: vec![1.0 as Real; NCOEF] }
     }
