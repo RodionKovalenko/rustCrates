@@ -291,7 +291,6 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
 
                 if epochs_without_improvement >= patience {
                     println!("⛔ Early stopping triggered! No improvement for {} epochs.", patience);
-                    println!("â›” Early stopping triggered! No improvement for {} epochs.", patience);
                     println!("Best validation loss: {} at epoch {}", best_val_loss, best_epoch);
                     save_to_sled(transformer_network.model_file(), &transformer_network);
                     break 'outer;
@@ -819,7 +818,7 @@ fn evaluate_validation(transformer_network: &mut NeuralNetwork, dataset: &Datase
     let val_batches = dataset.get_validation_batches(batch_size);
 
     if val_batches.is_empty() {
-        println!("âš ï¸  Warning: No validation data available! Validation loss will be unreliable.");
+        println!("⚠️  Warning: No validation data available! Validation loss will be unreliable.");
         println!(
             "   Total dataset size: {}, Training size: {}, Validation size: {}",
             dataset.input.len(),
@@ -874,7 +873,7 @@ fn evaluate_validation(transformer_network: &mut NeuralNetwork, dataset: &Datase
     }
 
     if total_valid_target_tokens == 0 {
-        println!("âš ï¸  Warning: No validation batches processed!");
+        println!("⚠️  Warning: No validation batches processed!");
         return Real::INFINITY;
     }
 
@@ -883,7 +882,7 @@ fn evaluate_validation(transformer_network: &mut NeuralNetwork, dataset: &Datase
     // Debug: print validation statistics on first epoch
     if transformer_network.time_step < 100 {
         println!(
-            "ðŸ“Š Validation: {} valid tokens, total loss: {:.4}, avg loss/token: {:.4}",
+            "📊 Validation: {} valid tokens, total loss: {:.4}, avg loss/token: {:.4}",
             total_valid_target_tokens, total_val_loss, avg_val_loss
         );
     }
