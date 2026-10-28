@@ -10,7 +10,8 @@ use neural_networks::neural_networks::spectral_model::sample::{sample_from_check
 use neural_networks::neural_networks::spectral_model::train::SPECTRAL_CHECKPOINT;
 use neural_networks::neural_networks::training::train_spectral::{generate_spectral_png, spectral_model_info, train_spectral, SpectralTrainSettings};
 use neural_networks::neural_networks::training::train_transformer::{
-    compute_device, generate, generate_with, load_model, model_info, train_model, ModelKind, TrainSettings, ALL_RECORDS,
+    compute_device, generate, generate_with, load_model, model_info, qa_examples, train_model, ExampleSplit, ModelKind, TrainSettings, ALL_RECORDS,
+    DEFAULT_LEARNING_RATE,
 };
 use neural_networks::neural_networks::training::training_progress::{request_training_stop, training_progress};
 use neural_networks::utils::string::maybe_fix_encoding;
@@ -21,9 +22,11 @@ const USAGE: &str = "\
 Usage: wav-transformer <command> [arguments]
 
 Language model (RM transformer; Vec transformer with the -vec commands):
-  train [epochs] [batches|all] [batch_size] [resume]   train (default: 5000 all 2; 'resume' continues the saved model)
-  train-vec [epochs] [batches|all] [batch_size] [resume]
-  predict [text]                                       generate an answer (asks for the text if none is given)
+  train [epochs] [batches|all] [batch_size] [new|resume] [learning_rate]
+                                                       train (default: 100 all 16 new 0.0003; 'resume' continues
+                                                       the saved model)
+  train-vec [epochs] [batches|all] [batch_size] [new|resume] [learning_rate]
+  predict [text and question]                          generate an answer (asks for the input if none is given)
   predict-vec [text]
 
 Spectral flow (image model):
@@ -98,16 +101,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// `[epochs] [batches|all] [batch_size] [resume]` after the command; default: 5000 epochs, all records, batch size 2.
+/// `[epochs] [batches|all] [batch_size] [new|resume] [learning_rate]` after the command;
+/// default: 100 epochs, all records, batch size 16, new model, `DEFAULT_LEARNING_RATE`.
 fn train_settings(args: &[String]) -> Result<TrainSettings, String> {
-    let epochs: usize = args.get(2).map(|a| a.parse().map_err(|_| format!("epochs must be a number: {}", a))).transpose()?.unwrap_or(5000);
+    let epochs: usize = args.get(2).map(|a| a.parse().map_err(|_| format!("epochs must be a number: {}", a))).transpose()?.unwrap_or(100);
     let num_batches: usize = match args.get(3).map(String::as_str) {
         None | Some("all") => ALL_RECORDS,
         Some(n) => n.parse().map_err(|_| format!("batches must be a number or 'all': {}", n))?,
     };
-    let batch_size: usize = args.get(4).map(|a| a.parse().map_err(|_| format!("batch_size must be a number: {}", a))).transpose()?.unwrap_or(2);
-    let resume = args.get(5).is_some_and(|a| a == "resume");
-    Ok(TrainSettings { epochs, num_batches, batch_size, resume })
+    let batch_size: usize = args.get(4).map(|a| a.parse().map_err(|_| format!("batch_size must be a number: {}", a))).transpose()?.unwrap_or(16);
+    let resume = match args.get(5).map(String::as_str) {
+        None | Some("new") => false,
+        Some("resume") => true,
+        Some(other) => return Err(format!("expected 'new' or 'resume': {}", other)),
+    };
+    let learning_rate: f64 = args.get(6).map(|a| a.parse().map_err(|_| format!("learning_rate must be a number: {}", a))).transpose()?.unwrap_or(DEFAULT_LEARNING_RATE);
+    if !(learning_rate > 0.0 && learning_rate < 1.0) {
+        return Err(format!("learning_rate must be between 0 and 1: {}", learning_rate));
+    }
+    Ok(TrainSettings { epochs, num_batches, batch_size, resume, learning_rate })
 }
 
 /// `[steps] [size] [gray|rgb] [mnist|<image folder>] [new]` after `spectral-train`.
@@ -134,7 +146,11 @@ fn spectral_train_settings(args: &[String]) -> Result<SpectralTrainSettings, Str
 fn predict(kind: ModelKind, args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let prompt = if args.len() > 2 { args[2..].join(" ") } else { read_input("Enter input text for prediction: ")? };
     match generate(kind, &maybe_fix_encoding(&prompt), MAX_GENERATED_TOKENS) {
-        Ok(generation) => println!("\n{}: {}\n({:.2} s)", kind.label(), generation.answer, generation.seconds),
+        Ok(generation) => {
+            println!("\n{}: {}\n({:.2} s)", kind.label(), generation.answer, generation.seconds);
+            let candidates: Vec<String> = generation.first_tokens.iter().map(|c| format!("{:?} {:.1} %", c.token, 100.0 * c.probability)).collect();
+            println!("most likely first tokens: {}", candidates.join(", "));
+        }
         Err(message) => println!("{} Train it first: wav-transformer {}", message, if kind == ModelKind::Rm { "train" } else { "train-vec" }),
     }
     Ok(())
@@ -182,6 +198,13 @@ struct TrainRequest {
     batch_size: usize,
     #[serde(default)]
     resume: bool,
+    learning_rate: Option<f64>,
+}
+
+#[derive(Deserialize)]
+struct ExamplesQuery {
+    model: ModelKind,
+    split: ExampleSplit,
 }
 
 #[derive(Deserialize)]
@@ -215,6 +238,7 @@ async fn start_server() -> std::io::Result<()> {
             .route("/api/train", web::post().to(api_train))
             .route("/api/train/stop", web::post().to(api_train_stop))
             .route("/api/generate", web::post().to(api_generate))
+            .route("/api/examples", web::get().to(api_examples))
             .route("/api/spectral/train", web::post().to(api_spectral_train))
             .route("/api/spectral/generate", web::post().to(api_spectral_generate))
             .route("/api/spectral/preview", web::get().to(api_spectral_preview))
@@ -255,12 +279,17 @@ async fn api_train(request: web::Json<TrainRequest>) -> impl Responder {
     if request.epochs == 0 || request.batch_size == 0 || request.batches == Some(0) {
         return json_error(actix_web::http::StatusCode::BAD_REQUEST, "Epochs, batches and batch size must be at least 1.");
     }
+    let learning_rate = request.learning_rate.unwrap_or(DEFAULT_LEARNING_RATE);
+    if !(learning_rate > 0.0 && learning_rate < 1.0) {
+        return json_error(actix_web::http::StatusCode::BAD_REQUEST, "The learning rate must be between 0 and 1.");
+    }
 
     let settings = TrainSettings {
         epochs: request.epochs,
         num_batches: request.batches.unwrap_or(ALL_RECORDS),
         batch_size: request.batch_size,
         resume: request.resume,
+        learning_rate,
     };
     let kind = request.model;
     // Training is long, blocking CPU/GPU work: run it on its own thread, not on the server's workers.
@@ -269,6 +298,16 @@ async fn api_train(request: web::Json<TrainRequest>) -> impl Responder {
     });
 
     HttpResponse::Accepted().json(serde_json::json!({ "started": kind.id() }))
+}
+
+/// The validation (or training) questions of the model's last training, to try them out.
+async fn api_examples(query: web::Query<ExamplesQuery>) -> impl Responder {
+    let (model, split) = (query.model, query.split);
+    match web::block(move || qa_examples(model, split)).await {
+        Ok(Ok(examples)) => HttpResponse::Ok().json(examples),
+        Ok(Err(message)) => json_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, message),
+        Err(err) => json_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+    }
 }
 
 async fn api_spectral_train(request: web::Json<SpectralTrainSettings>) -> impl Responder {

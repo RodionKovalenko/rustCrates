@@ -55,22 +55,24 @@ Two models with the same architecture, each with its own model file:
   RM transformer   (row-major, batched GPU matmuls, weights cached on the GPU)  STORAGE\transformer_rm_v1
   Vec transformer  (reference implementation)                                    STORAGE\transformer_01.04.2025
 
-// train [epochs] [batches|all] [batch_size] [resume]
-// default: 5000 epochs, all records (1071 training / 119 validation), batch size 2, new model
+// train [epochs] [batches|all] [batch_size] [new|resume] [learning_rate]
+// default: 100 epochs, all records (1071 training / 119 validation), batch size 16, new model, learning rate 0.0003
 .\target\release\wav-transformer.exe train
-.\target\release\wav-transformer.exe train 300 all 16
-.\target\release\wav-transformer.exe train 300 all 16 resume   // continue the saved model
-.\target\release\wav-transformer.exe train 50 4 2              // only 4 batches (8 records), quick check
-.\target\release\wav-transformer.exe train-vec 300 all 16      // same for the Vec transformer
+.\target\release\wav-transformer.exe train 40 all 16 new 0.0003
+.\target\release\wav-transformer.exe train 50 all 16 resume          // continue the saved model
+.\target\release\wav-transformer.exe train 5 4 2                     // only 4 batches (8 records), quick check
+.\target\release\wav-transformer.exe train-vec 40 all 16             // same for the Vec transformer
 
-Learning rate: warmup (at most 200 steps, 10 % of the run) and cosine decay over epochs x batches per epoch;
-it reaches its minimum (5 %) with the last batch, so choose the number of epochs you really want to train.
-'resume' starts a new warmup + cosine over the given epochs.
-Saved model: with validation records always the network of the best validation loss (also after Stop and
-early stopping: 100 epochs without improvement).
+The records are mixed in a fixed order, so every training holds out the same validation questions; the split of
+the last training is saved next to the model (STORAGE\<model>.split.json). In the web UI the Generate card lists
+the validation questions (never trained on) and the training questions to try them out against the expected answer.
 
-// generate an answer (asks for the text if none is given)
-.\target\release\wav-transformer.exe predict Was ist die Hauptstadt von Frankreich?
+Training format: the text, then the question on the next line, then <sep> and the answer (no labels).
+The input can be typed freely: the question may stand before, inside or after the text (it is moved behind the
+text), and JSON escapes pasted from the data file (f\u00fcr) are decoded.
+
+// generate an answer: text and question in any order (asks for the input if none is given)
+.\target\release\wav-transformer.exe predict "Die Broncos gewannen den Super Bowl 50. Wer gewann den Super Bowl 50?"
 .\target\release\wav-transformer.exe predict-vec
 
 // web UI: choose the model, train (live progress, loss chart, stop) and generate

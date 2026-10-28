@@ -383,17 +383,53 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
 pub const MAX_GENERATED_TOKENS: usize = 50;
 
 pub fn predict_token_by_token(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String>) -> Vec<String> {
-    generate_batch(transformer_network, input_batch, MAX_GENERATED_TOKENS).1
+    generate_batch(transformer_network, input_batch, MAX_GENERATED_TOKENS).texts
 }
 
-/// Generates the answer to `prompt` greedily, token by token, and returns only the generated text.
-pub fn generate_text(transformer_network: &mut NeuralNetwork, prompt: &str, max_new_tokens: usize) -> String {
-    let (prompts, texts) = generate_batch(transformer_network, &vec![prompt.to_string()], max_new_tokens);
-    texts[0].get(prompts[0].len()..).unwrap_or("").trim().to_string()
+/// How many of the most likely first answer tokens `generate_answer` reports.
+pub const FIRST_TOKEN_CANDIDATES: usize = 5;
+
+/// A candidate for the first answer token and its probability.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TokenCandidate {
+    pub token: String,
+    pub probability: f64,
 }
 
-/// Returns the prompts as fed to the network (`<bos> ... <sep>`) and the prompts followed by the generated text.
-fn generate_batch(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String>, max_new_tokens: usize) -> (Vec<String>, Vec<String>) {
+/// Generated answer plus the most likely first tokens (shows what an undertrained model wants to say even
+/// when it ends the answer at once).
+#[derive(Debug, Clone)]
+pub struct GeneratedAnswer {
+    pub answer: String,
+    pub first_tokens: Vec<TokenCandidate>,
+}
+
+/// Generates the answer to `prompt` greedily, token by token; the answer contains only the generated text.
+pub fn generate_answer(transformer_network: &mut NeuralNetwork, prompt: &str, max_new_tokens: usize) -> GeneratedAnswer {
+    let output = generate_batch(transformer_network, &vec![prompt.to_string()], max_new_tokens);
+    let answer = output.texts[0].get(output.prompts[0].len()..).unwrap_or("").trim().to_string();
+    let first_tokens = output
+        .first_candidates
+        .iter()
+        .map(|&(id, score)| TokenCandidate {
+            token: detokenize(&vec![id], false).unwrap_or_else(|_| format!("<{id}>")),
+            // The EML head scores tokens by their joint log-probability log P(cluster) + log P(word | cluster).
+            probability: (score as f64).exp(),
+        })
+        .collect();
+    GeneratedAnswer { answer, first_tokens }
+}
+
+struct GenerationOutput {
+    /// The prompts as fed to the network (`<bos> ... <sep>`).
+    prompts: Vec<String>,
+    /// The prompts followed by the generated text.
+    texts: Vec<String>,
+    /// The `FIRST_TOKEN_CANDIDATES` best `(token id, score)` of the first generated token (first prompt).
+    first_candidates: Vec<(u32, Real)>,
+}
+
+fn generate_batch(transformer_network: &mut NeuralNetwork, input_batch: &Vec<String>, max_new_tokens: usize) -> GenerationOutput {
     let mut current_input_batch: Vec<String> = extend_input_with_bos(input_batch);
 
     clear_network_caches(transformer_network);
@@ -422,11 +458,13 @@ fn generate_batch(transformer_network: &mut NeuralNetwork, input_batch: &Vec<Str
 
     let _seconds_elapsed = now.elapsed();
 
+    let mut first_candidates: Vec<(u32, Real)> = Vec::new();
+
     let (_tokens, mut batch_ids) = match tokenize_batch(&current_input_batch, false) {
         Ok(res) => res,
         Err(e) => {
             println!("Error tokenizing batch: {:?}", e);
-            return (prompts, current_input_batch);
+            return GenerationOutput { prompts, texts: current_input_batch, first_candidates };
         }
     };
 
@@ -489,6 +527,14 @@ fn generate_batch(transformer_network: &mut NeuralNetwork, input_batch: &Vec<Str
         // Get reference to last prediction (avoid clone)
         let last_pred = current_predictions[0].last().unwrap();
 
+        if count_tokens_prediction == 0 && !output_indices.is_empty() && !output_indices[0].is_empty() {
+            let last_indices = output_indices[0].last().unwrap();
+            let mut ranked: Vec<(u32, Real)> = last_indices.iter().zip(last_pred.iter()).map(|(&id, &score)| (id as u32, score)).collect();
+            ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            ranked.truncate(FIRST_TOKEN_CANDIDATES);
+            first_candidates = ranked;
+        }
+
         // Greedy decoding: find argmax in sparse array, then map to actual token ID
         let predicted_token_id = if !output_indices.is_empty() && !output_indices[0].is_empty() {
             let last_indices = output_indices[0].last().unwrap();
@@ -544,7 +590,7 @@ fn generate_batch(transformer_network: &mut NeuralNetwork, input_batch: &Vec<Str
     let seconds = duration.as_secs_f64();
     println!("\ntime elapsed in seconds: {:?}", seconds);
 
-    (prompts, current_input_batch)
+    GenerationOutput { prompts, texts: current_input_batch, first_candidates }
 }
 
 pub fn predict(transformer_network: &mut NeuralNetwork, layer_input: &LayerInput) -> LayerOutput {

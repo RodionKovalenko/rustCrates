@@ -427,6 +427,53 @@
             color: var(--muted);
         }
 
+        /* Examples and expected answers */
+        .examples {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr);
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .examples select {
+            min-width: 0;
+        }
+
+        .expected {
+            display: flex;
+            gap: 8px;
+            align-items: baseline;
+            padding: 8px 14px;
+            border-top: 1px solid var(--border);
+            font-size: 13.5px;
+        }
+
+        .expected .tag {
+            flex: none;
+        }
+
+        .tag.bad {
+            background: color-mix(in srgb, var(--danger) 14%, var(--surface));
+            color: var(--danger);
+        }
+
+        .candidates {
+            padding: 8px 14px;
+            border-top: 1px solid var(--border);
+            font-size: 12.5px;
+            color: var(--muted);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .candidates code {
+            font: 12px ui-monospace, Consolas, monospace;
+            background: var(--surface-2);
+            border-radius: 4px;
+            padding: 0 4px;
+            color: var(--text);
+        }
+
         /* Images */
         .image-frame {
             margin-top: 16px;
@@ -908,7 +955,7 @@
                             <input type="number" id="epochs" min="1" step="1" value="100" required />
                         </label>
                         <label class="field">Batch size
-                            <input type="number" id="batch-size" min="1" step="1" value="2" required />
+                            <input type="number" id="batch-size" min="1" step="1" value="16" required />
                         </label>
                         <div class="field" style="display:grid;gap:6px">
                             <span class="field-label">Records</span>
@@ -920,6 +967,9 @@
                                 <input type="number" id="batches" min="1" step="1" value="4" aria-label="Number of batches" hidden />
                             </div>
                         </div>
+                        <label class="field">Learning rate
+                            <input type="number" id="learning-rate" min="0.000001" max="0.1" step="0.0001" value="0.0003" required />
+                        </label>
                     </div>
                     <div class="fields" id="image-fields" hidden>
                         <label class="field">Steps
@@ -1054,8 +1104,17 @@
                     </div>
                 </form>
                 <form id="gen-form" novalidate>
-                    <label class="field" for="prompt">Question or text
-                        <textarea id="prompt" placeholder="Was ist die Hauptstadt von Frankreich?"></textarea>
+                    <div class="examples">
+                        <div class="segmented" id="example-split">
+                            <button type="button" data-value="validation" aria-pressed="true" title="Questions the model was never trained on">Validation</button>
+                            <button type="button" data-value="training" aria-pressed="false" title="Questions the model was trained on">Training</button>
+                        </div>
+                        <select id="examples" aria-label="Try an example from the data set">
+                            <option value="">Try an example …</option>
+                        </select>
+                    </div>
+                    <label class="field" for="prompt">Text and question
+                        <textarea id="prompt" placeholder="Paste a text and ask a question about it — before, after or inside the text, as you like."></textarea>
                     </label>
                     <div class="gen-row">
                         <label class="field">Max. tokens
@@ -1070,6 +1129,8 @@
                 <div class="answer" id="answer-box">
                     <div class="answer-head"><span id="answer-model">Answer</span><span id="answer-time"></span></div>
                     <div class="answer-body placeholder" id="answer">The generated answer appears here.</div>
+                    <div class="expected" id="expected" hidden></div>
+                    <div class="candidates" id="candidates" hidden></div>
                 </div>
                 <div class="history" id="history" hidden>
                     <h3>Recent</h3>
@@ -1087,7 +1148,7 @@
 
     <script>
         const $ = (id) => document.getElementById(id);
-        const state = { status: null, model: null, recordsMode: "all", startMode: "new", colourMode: "1", dataMode: "mnist", history: [], images: [], busyGenerating: false, previewPath: null };
+        const state = { status: null, model: null, recordsMode: "all", startMode: "new", colourMode: "1", dataMode: "mnist", history: [], images: [], busyGenerating: false, previewPath: null, exampleSplit: "validation", examples: [], examplesKey: null, expected: null };
         const SPECTRAL = "spectral";
         const defaultImagesPerStep = (size) => ({ 32: 64, 64: 32, 128: 16, 256: 8, 512: 4 })[size] || 4;
         const geometry = (s) => `${s.size} × ${s.size} ${s.channels === 3 ? "RGB" : "grayscale"}`;
@@ -1213,6 +1274,7 @@
             $("history").hidden = image || state.history.length === 0;
             $("image-gen-form").hidden = !image;
             $("image-output").hidden = !image;
+            if (!image) loadExamples();
 
             const resume = $("start-mode").querySelector('[data-value="resume"]');
             resume.disabled = running || !m.trained;
@@ -1248,7 +1310,7 @@
             pill.className = "pill " + (running ? "busy" : "");
             $("training-pill-text").textContent = running ? `Training ${modelLabel(t.model)}` : "Idle";
 
-            for (const id of ["epochs", "batch-size", "batches", "steps", "image-batch", "max-images", "data-path"]) $(id).disabled = running;
+            for (const id of ["epochs", "batch-size", "batches", "learning-rate", "steps", "image-batch", "max-images", "data-path"]) $(id).disabled = running;
             for (const b of document.querySelectorAll("#records-mode button, #data-mode button")) b.disabled = running;
             for (const b of $("start-mode").querySelectorAll("button")) b.disabled = running || (b.dataset.value === "resume" && !(currentModel() || {}).trained);
             $("train-btn").disabled = running;
@@ -1454,15 +1516,20 @@
             const epochs = parseInt($("epochs").value, 10);
             const batchSize = parseInt($("batch-size").value, 10);
             const batches = state.recordsMode === "all" ? null : parseInt($("batches").value, 10);
+            const learningRate = parseFloat($("learning-rate").value);
             if (!(epochs > 0) || !(batchSize > 0) || (batches !== null && !(batches > 0))) {
                 notice("train-notice", "Epochs, batch size and batches must be positive whole numbers.", true);
+                return;
+            }
+            if (!(learningRate > 0 && learningRate < 1)) {
+                notice("train-notice", "The learning rate must be between 0 and 1, e.g. 0.0003.", true);
                 return;
             }
             if (m.trained && state.startMode === "new" && !confirm(`Start a new ${m.label}? The saved model will be replaced when the training saves.`)) return;
             notice("train-notice", "");
             $("train-btn").disabled = true;
             try {
-                await api("/api/train", { method: "POST", body: JSON.stringify({ model: state.model, epochs, batch_size: batchSize, batches, resume: state.startMode === "resume" }) });
+                await api("/api/train", { method: "POST", body: JSON.stringify({ model: state.model, epochs, batch_size: batchSize, batches, resume: state.startMode === "resume", learning_rate: learningRate }) });
                 await refresh();
             } catch (e) {
                 notice("train-notice", e.message, true);
@@ -1496,13 +1563,72 @@
             }
         }
 
+        const normalise = (t) => (t || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+
         function showAnswer(h) {
             const body = $("answer");
             body.classList.toggle("placeholder", !h.answer);
-            body.textContent = h.answer || "(the model generated no tokens)";
+            body.textContent = h.answer || "(the model ended the answer at once — see the most likely first tokens below)";
             $("answer-model").textContent = h.model;
             $("answer-time").textContent = h.seconds != null ? h.seconds.toFixed(2) + " s" : "";
+
+            const expected = $("expected");
+            expected.hidden = !h.expected;
+            if (h.expected) {
+                const a = normalise(h.answer), e = normalise(h.expected);
+                const exact = a === e, partial = !exact && a && e && (a.includes(e) || e.includes(a));
+                const tag = Object.assign(document.createElement("span"), { className: "tag " + (exact ? "ok" : partial ? "" : "bad"), textContent: exact ? "Correct" : partial ? "Partly" : "Wrong" });
+                expected.replaceChildren(tag, document.createTextNode(`Expected: ${h.expected}`));
+            }
+
+            const box = $("candidates");
+            const cands = h.first_tokens || [];
+            box.hidden = cands.length === 0;
+            box.replaceChildren(document.createTextNode("Most likely first tokens: "));
+            cands.forEach((c, i) => {
+                if (i) box.append(", ");
+                box.append(Object.assign(document.createElement("code"), { textContent: c.token.replace(/\n/g, "↵") || "␣" }), ` ${(c.probability * 100).toFixed(1)} %`);
+            });
         }
+
+        // ── examples from the data set ──────────────────────────
+        async function loadExamples(force) {
+            const key = state.model + "/" + state.exampleSplit + "/" + ((currentModel() || {}).modified || "");
+            if (!force && state.examplesKey === key) return;
+            state.examplesKey = key;
+            const select = $("examples");
+            try {
+                state.examples = await api(`/api/examples?model=${encodeURIComponent(state.model)}&split=${state.exampleSplit}`);
+            } catch (e) {
+                state.examples = [];
+            }
+            const label = state.exampleSplit === "validation" ? "validation questions (never trained on)" : "training questions";
+            select.replaceChildren(Object.assign(document.createElement("option"), { value: "", textContent: `Try one of ${state.examples.length} ${label} …` }));
+            state.examples.forEach((ex, i) => select.append(Object.assign(document.createElement("option"), { value: String(i), textContent: `${ex.question}  →  ${ex.answer}` })));
+        }
+
+        $("example-split").addEventListener("click", (ev) => {
+            const v = ev.target.dataset && ev.target.dataset.value;
+            if (!v) return;
+            state.exampleSplit = v;
+            setSegmented("example-split", v);
+            loadExamples(true);
+        });
+
+        $("examples").addEventListener("change", () => {
+            const ex = state.examples[parseInt($("examples").value, 10)];
+            if (!ex) return;
+            $("prompt").value = ex.input;
+            state.expected = ex.answer;
+            showAnswer({ model: "Expected answer", answer: "", expected: null, first_tokens: [] });
+            $("answer").textContent = "Generate to compare with the expected answer.";
+            const exp = $("expected");
+            exp.hidden = false;
+            exp.replaceChildren(Object.assign(document.createElement("span"), { className: "tag", textContent: state.exampleSplit === "validation" ? "Validation" : "Training" }), document.createTextNode(`Expected: ${ex.answer}`));
+        });
+
+        // A changed prompt is no longer the example, so it has no expected answer.
+        $("prompt").addEventListener("input", () => { state.expected = null; $("examples").value = ""; });
 
         async function generate() {
             const prompt = $("prompt").value.trim();
@@ -1515,7 +1641,7 @@
             btn.innerHTML = '<span class="spinner"></span> Generating…';
             try {
                 const res = await api("/api/generate", { method: "POST", body: JSON.stringify({ model: state.model, prompt, max_tokens: maxTokens }) });
-                const entry = { model: modelLabel(state.model), prompt, answer: res.answer, seconds: res.seconds };
+                const entry = { model: modelLabel(state.model), prompt, answer: res.answer, seconds: res.seconds, first_tokens: res.first_tokens, expected: state.expected };
                 showAnswer(entry);
                 state.history = [entry, ...state.history].slice(0, 6);
                 renderHistory();

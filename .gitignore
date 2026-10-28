@@ -19,3 +19,4 @@
 # Trained transformer models (large, rewritten by every training run).
 /STORAGE/transformer_01.04.2025
 /STORAGE/transformer_rm_v1
+/STORAGE/*.split.json

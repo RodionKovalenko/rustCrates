@@ -233,29 +233,42 @@ impl<T: Debug + Clone, O: Debug + Clone> DataTrait<T, O> for Dataset<T, O> {
     }
 }
 
-pub fn load_data_xquad_de_as_dataset() -> Result<Dataset<String, String>, Box<dyn std::error::Error>> {
-    println!("Dataset is being loaded...");
-    let dataset: XQuADDataset = load_data_xquad_de()?; // Returns nested structure
+/// Model input of a question about a text, as a user types it: the text, then the question on the next line.
+/// No labels and no separator token: `<bos>` and the `<sep>` before the answer are added by training and
+/// generation, and `prepare_prompt` brings free-form input into this order.
+pub fn qa_input(context: &str, question: &str) -> String {
+    format!("{}\n{}", context.trim(), question.trim())
+}
 
-    let mut inputs = Vec::new();
-    let mut targets = Vec::new();
+/// One XQuAD question: the paragraph, the question and its first answer.
+#[derive(Debug, Clone)]
+pub struct QaRecord {
+    pub context: String,
+    pub question: String,
+    pub answer: String,
+}
 
-    // Traverse nested structure to extract context, question, and answers
+/// The XQuAD (de) questions in file order; `load_data_xquad_de_as_dataset` holds them in the same order.
+pub fn xquad_de_records() -> Result<Vec<QaRecord>, Box<dyn std::error::Error>> {
+    let dataset: XQuADDataset = load_data_xquad_de()?;
+    let mut records = Vec::new();
     for article in dataset.data {
         for paragraph in article.paragraphs {
-            let context = paragraph.context;
             for qa in paragraph.qas {
-                let input = format!("Context: {} \n <sep> Question: {}", context, qa.question);
-                let target = qa.answers.get(0).map(|a| a.text.clone()).unwrap_or_else(|| "N/A".to_string());
-
-                inputs.push(input);
-                targets.push(target);
+                let answer = qa.answers.get(0).map(|a| a.text.clone()).unwrap_or_else(|| "N/A".to_string());
+                records.push(QaRecord { context: paragraph.context.clone(), question: qa.question, answer });
             }
         }
     }
+    Ok(records)
+}
 
+pub fn load_data_xquad_de_as_dataset() -> Result<Dataset<String, String>, Box<dyn std::error::Error>> {
+    println!("Dataset is being loaded...");
+    let records = xquad_de_records()?;
+    let inputs: Vec<String> = records.iter().map(|r| qa_input(&r.context, &r.question)).collect();
+    let targets: Vec<String> = records.into_iter().map(|r| r.answer).collect();
     println!("Dataset is loaded: {} instances", inputs.len());
-
     Ok(Dataset::new(inputs, targets))
 }
 pub fn load_data_xquad_en_as_dataset() -> Result<Dataset<String, String>, Box<dyn std::error::Error>> {
@@ -270,7 +283,7 @@ pub fn load_data_xquad_en_as_dataset() -> Result<Dataset<String, String>, Box<dy
         for paragraph in article.paragraphs {
             let context = paragraph.context;
             for qa in paragraph.qas {
-                let input = format!("Context: {} \n <sep> Question: {}", context, qa.question);
+                let input = qa_input(&context, &qa.question);
                 let target = qa.answers.get(0).map(|a| a.text.clone()).unwrap_or_else(|| "N/A".to_string());
 
                 inputs.push(input);
@@ -296,7 +309,7 @@ pub fn load_data_xquad_ru_as_dataset() -> Result<Dataset<String, String>, Box<dy
         for paragraph in article.paragraphs {
             let context = paragraph.context;
             for qa in paragraph.qas {
-                let input = format!("Context: {} \n <sep> Question: {}", context, qa.question);
+                let input = qa_input(&context, &qa.question);
                 let target = qa.answers.get(0).map(|a| a.text.clone()).unwrap_or_else(|| "N/A".to_string());
 
                 inputs.push(input);
