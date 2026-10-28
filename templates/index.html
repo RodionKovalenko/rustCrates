@@ -1565,6 +1565,17 @@
 
         const normalise = (t) => (t || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
+        function wordF1(answer, expected) {
+            const aw = answer ? answer.split(" ") : [], ew = expected ? expected.split(" ") : [];
+            const left = new Map();
+            for (const w of ew) left.set(w, (left.get(w) || 0) + 1);
+            let shared = 0;
+            for (const w of aw) if (left.get(w) > 0) { shared++; left.set(w, left.get(w) - 1); }
+            if (!shared) return 0;
+            const precision = shared / aw.length, recall = shared / ew.length;
+            return (2 * precision * recall) / (precision + recall);
+        }
+
         function showAnswer(h) {
             const body = $("answer");
             body.classList.toggle("placeholder", !h.answer);
@@ -1575,8 +1586,10 @@
             const expected = $("expected");
             expected.hidden = !h.expected;
             if (h.expected) {
+                // Word F1 as in the SQuAD evaluation (whole words, so "en" inside "Unterschieden" does not count).
                 const a = normalise(h.answer), e = normalise(h.expected);
-                const exact = a === e, partial = !exact && a && e && (a.includes(e) || e.includes(a));
+                const f1 = wordF1(a, e);
+                const exact = a === e, partial = !exact && f1 >= 0.5;
                 const tag = Object.assign(document.createElement("span"), { className: "tag " + (exact ? "ok" : partial ? "" : "bad"), textContent: exact ? "Correct" : partial ? "Partly" : "Wrong" });
                 expected.replaceChildren(tag, document.createTextNode(`Expected: ${h.expected}`));
             }
