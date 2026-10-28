@@ -21,7 +21,7 @@ mod test_transformer_rm {
                 transformer::{
                     transformer_builder::create_transformer,
                     transformer_builder_rm::create_transformer_rm,
-                    transformer_network::{backward, cross_entropy_sum_batch, predict, predict_token_by_token, TOP_K_SIZE},
+                    transformer_network::{backward, clear_network_caches, cross_entropy_sum_batch, predict, predict_token_by_token, TOP_K_SIZE},
                     transformer_updater::update_transformer,
                 },
             },
@@ -215,6 +215,59 @@ mod test_transformer_rm {
 
             let changed: HashSet<usize> = (0..before.len()).filter(|&row| before[row] != after[row]).collect();
             assert_eq!(changed, input_tokens, "{}: the update must change exactly the embedding rows of the input tokens", name);
+        }
+    }
+
+    /// Generation runs the prompt once and then only each new token against the K/V cache. The next-token scores of
+    /// that cached step must equal a full forward pass over prompt + token without any cache (both networks).
+    #[test]
+    fn test_cached_decoding_step_matches_full_forward() {
+        for mut network in [create_transformer(OperationMode::TRAINING), create_transformer_rm(OperationMode::TRAINING)] {
+            let name = if network.is_row_major() { "RM transformer" } else { "transformer" };
+            for time_step in WARMUP_STEPS..WARMUP_STEPS + 3 {
+                let (layer_input, target_ids) = training_input(time_step);
+                network.minibatch_size = target_ids.len();
+                network.time_step = time_step;
+                predict(&mut network, &layer_input);
+                backward(&mut network, true);
+            }
+
+            let (_, prompt_ids) = tokenize_batch(&vec![format!("<bos> {} <sep>", INPUTS[0])], false).unwrap();
+            let next_token = prompt_ids[0][1];
+            let inference_input = |ids: Vec<Vec<u32>>| {
+                let mut input = LayerInput::new_default();
+                input.set_batch_ids(ids);
+                input.set_forward_only(true);
+                input.set_calculate_gradient(false);
+                input.set_calculate_k_v_cache(true);
+                input.set_top_k_size(TOP_K_SIZE);
+                input.set_time_step(0);
+                input
+            };
+            let last_scores = |output: &crate::neural_networks::network_components::layer_output_struct::LayerOutput| -> Vec<(usize, Real)> {
+                let scores = output.get_output_batch_real()[0].last().unwrap().clone();
+                let indices = output.get_output_indices()[0].last().unwrap().clone();
+                let mut ranked: Vec<(usize, Real)> = indices.into_iter().zip(scores).collect();
+                ranked.sort_by(|a, b| b.1.total_cmp(&a.1));
+                ranked.truncate(20);
+                ranked
+            };
+
+            // Cached: prompt, then the new token alone.
+            clear_network_caches(&mut network);
+            predict(&mut network, &inference_input(prompt_ids.clone()));
+            let cached = last_scores(&predict(&mut network, &inference_input(vec![vec![next_token]])));
+
+            // Full: prompt + token in one pass from empty caches.
+            clear_network_caches(&mut network);
+            let mut full_ids = prompt_ids.clone();
+            full_ids[0].push(next_token);
+            let full = last_scores(&predict(&mut network, &inference_input(full_ids)));
+
+            for (k, ((id_c, s_c), (id_f, s_f))) in cached.iter().zip(full.iter()).enumerate() {
+                assert!((s_c - s_f).abs() < 1e-6, "{name}: rank {k}: cached {id_c} {s_c} vs full {id_f} {s_f}");
+            }
+            assert_eq!(cached.iter().map(|c| c.0).collect::<Vec<_>>()[..5], full.iter().map(|c| c.0).collect::<Vec<_>>()[..5], "{name}: top tokens differ");
         }
     }
 

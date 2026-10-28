@@ -917,7 +917,7 @@ pub fn cross_entropy_sum_batch(cross_entropy_loss_batch: &Vec<Vec<Vec<C>>>, _tar
 // }
 
 /// Clear all caches in attention layers (needed when changing batch size)
-fn clear_network_caches(transformer_network: &mut NeuralNetwork) {
+pub fn clear_network_caches(transformer_network: &mut NeuralNetwork) {
     for layer in transformer_network.layers.iter_mut() {
         match layer {
             LayerEnum::SparseSelfAttention(attention_layer) => {
