@@ -75,6 +75,11 @@ text), and JSON escapes pasted from the data file (f\u00fcr) are decoded.
 .\target\release\wav-transformer.exe predict "Die Broncos gewannen den Super Bowl 50. Wer gewann den Super Bowl 50?"
 .\target\release\wav-transformer.exe predict-vec
 
+// training time limit (the best model stays saved, like Stop in the web UI)
+$env:TRAIN_MAX_HOURS="8"; .\target\release\wav-transformer.exe train 40 all 16
+
+// free training on Kaggle: kaggle/train_transformer.ipynb (import it on kaggle.com; instructions in its first cell)
+
 // web UI: choose the model, train (live progress, loss chart, stop) and generate
 .\target\release\wav-transformer.exe server      // or without a command; then open http://localhost:7860
 

@@ -35,6 +35,8 @@ Spectral flow (image model):
                                                        model unless 'new', a continued model keeps its size/colour)
   spectral-sample [ckpt] [out.png] [count] [seed] [steps] [scale]
 
+Environment: TRAIN_MAX_HOURS=<hours> stops train / train-vec after that time (the best model stays saved).
+
 Web UI:
   server                                               http://localhost:7860 (also started without a command)";
 
@@ -60,10 +62,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match args.get(1).map(String::as_str) {
         Some("train") => {
-            train_model(ModelKind::Rm, train_settings(&args)?);
+            let settings = train_settings(&args)?;
+            schedule_training_time_limit();
+            train_model(ModelKind::Rm, settings);
         }
         Some("train-vec") => {
-            train_model(ModelKind::Vec, train_settings(&args)?);
+            let settings = train_settings(&args)?;
+            schedule_training_time_limit();
+            train_model(ModelKind::Vec, settings);
         }
         Some("predict") => predict(ModelKind::Rm, &args)?,
         Some("predict-vec") => predict(ModelKind::Vec, &args)?,
@@ -140,6 +146,20 @@ fn spectral_train_settings(args: &[String]) -> Result<SpectralTrainSettings, Str
     };
     let resume = args.get(6).map(String::as_str) != Some("new");
     Ok(SpectralTrainSettings { steps, size, channels, data, batch_size: None, max_images: None, resume })
+}
+
+/// With `TRAIN_MAX_HOURS` set (e.g. 11 on Kaggle, which ends a session after 12 h), the training stops after the
+/// batch that runs when the time is up; the best model stays saved, as after Stop in the web UI.
+fn schedule_training_time_limit() {
+    let Some(hours) = env::var("TRAIN_MAX_HOURS").ok().and_then(|v| v.trim().parse::<f64>().ok()).filter(|h| *h > 0.0) else {
+        return;
+    };
+    println!("Training stops after {} h (TRAIN_MAX_HOURS).", hours);
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs_f64(hours * 3600.0));
+        println!("Time limit of {} h reached: stopping after the current batch.", hours);
+        request_training_stop();
+    });
 }
 
 /// Generates an answer for the text after the command, or for a text read from the terminal.
