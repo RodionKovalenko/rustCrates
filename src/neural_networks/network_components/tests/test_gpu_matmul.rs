@@ -4,7 +4,7 @@ mod test_gpu_matmul {
 
     use crate::neural_networks::utils::{
         dtype::{r, C},
-        gpu_matmul::GpuMatmul,
+        gpu_matmul::{set_gpu_min_macs, GpuMatmul},
         matrix::multiply_complex,
         matrix_rm::{conjugate_transpose_rm, multiply_batch_with_weights_rm, multiply_complex_rm, multiply_complex_rm_op, multiply_complex_rm_weights, transpose_rm, MatOp, RowMajorMatrix},
         random_arrays::generate_random_complex_2d,
@@ -22,6 +22,8 @@ mod test_gpu_matmul {
         if !present {
             println!("CUDA driver / cuBLAS not found (check PATH for nvcuda.dll and cublas64_12.dll) - skipping GPU test");
         }
+        // These tests check the GPU path itself, also for small products.
+        set_gpu_min_macs(0);
         present
     }
 
@@ -184,6 +186,39 @@ mod test_gpu_matmul {
             "[{}x{}] * [{}x{}]: cpu {:?}, gpu first call {:?}, gpu {:?}, gpu weights first upload {:?}, gpu weights cached {:?}",
             m, k, k, n, cpu_time, gpu_first_time, gpu_time, gpu_weights_upload_time, gpu_weights_cached_time
         );
+    }
+
+    /// CPU and GPU time of products the size of the transformer's matmuls (`batch * tokens x width x width`), to choose
+    /// `GPU_MIN_MACS` for this machine: the GPU pays off from the first size where it is faster.
+    /// cargo test --release --features cuda test_gpu_crossover -- --nocapture --ignored
+    #[test]
+    #[ignore]
+    fn test_gpu_crossover() {
+        if !gpu_available() {
+            return;
+        }
+        let time = |f: &mut dyn FnMut()| {
+            f();
+            let start = Instant::now();
+            for _ in 0..5 {
+                f();
+            }
+            start.elapsed().as_secs_f64() / 5.0 * 1e3
+        };
+        println!("{:>8} {:>6} {:>6} {:>14} {:>10} {:>10}", "rows", "k", "n", "macs", "cpu ms", "gpu ms");
+        for (m, k, n) in [(256, 16, 16), (4800, 16, 16), (4800, 16, 64), (4800, 64, 64), (4800, 64, 256), (4800, 128, 128), (4800, 128, 512), (300, 32, 300)] {
+            let a = random_rm(m, k);
+            let b = random_rm(k, n);
+            set_gpu_min_macs(usize::MAX);
+            let cpu = time(&mut || {
+                multiply_complex_rm_weights(&a, &b, MatOp::None);
+            });
+            set_gpu_min_macs(0);
+            let gpu = time(&mut || {
+                multiply_complex_rm_weights(&a, &b, MatOp::None);
+            });
+            println!("{:>8} {:>6} {:>6} {:>14} {:>10.3} {:>10.3}{}", m, k, n, m * k * n, cpu, gpu, if gpu < cpu { "  <- GPU faster" } else { "" });
+        }
     }
 
     /// Every size goes through the GPU (no size gate); the result must equal the CPU reference.

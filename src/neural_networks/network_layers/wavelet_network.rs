@@ -10,7 +10,8 @@ use crate::wavelet_transform::dwt_types::DiscreteWaveletType;
 use crate::wavelet_transform::modes::WaveletMode;
 use num_complex::Complex;
 
-pub const DECOMPOSITION_LEVELS: u32 = 5;
+/// Wavelet levels of the embedding: the model width is 512 / 2^DECOMPOSITION_LEVELS (5 -> 16, 3 -> 64, 2 -> 128).
+pub const DECOMPOSITION_LEVELS: u32 = 2;
 
 pub fn get_pixels_rgba(image_path: &str) -> Vec<Vec<Vec<f64>>> {
     get_pixel_separate_rgba(image_path)

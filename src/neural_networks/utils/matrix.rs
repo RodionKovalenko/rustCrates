@@ -69,7 +69,7 @@ pub fn multiply_complex_f32(matrix_a: &[Vec<Complex<Real>>], matrix_b: &[Vec<f32
 #[cfg(feature = "cuda")]
 fn multiply_complex_gpu(matrix_a: &[Vec<Complex<Real>>], matrix_b: &[Vec<Complex<Real>>]) -> Option<Vec<Vec<Complex<Real>>>> {
     let (m, k, n) = (matrix_a.len(), matrix_a.first()?.len(), matrix_b.first()?.len());
-    if m == 0 || k == 0 || n == 0 || matrix_b.len() != k {
+    if m == 0 || k == 0 || n == 0 || matrix_b.len() != k || !super::gpu_matmul::gpu_worthwhile(m, k, n) {
         return None;
     }
 

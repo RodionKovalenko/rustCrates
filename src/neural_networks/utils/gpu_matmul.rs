@@ -4,6 +4,7 @@ use cudarc::driver::safe::{CudaContext, CudaSlice, CudaStream, DevicePtr, Device
 use cudarc::driver::sys::CUdeviceptr;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::neural_networks::utils::dtype::{Real, C};
@@ -34,6 +35,31 @@ pub static GPU_MATMUL: Lazy<Mutex<Option<GpuMatmul>>> = Lazy::new(|| match GpuMa
         Mutex::new(None)
     }
 });
+
+/// Smallest complex GEMM (`m*k*n` multiply-adds) the transformer layers send to the GPU. Below it, copying the
+/// operands to the GPU and back costs more than the product on the CPU: at embedding width 16 sending every
+/// product to the GPU made training ~1.5x slower than the CPU build. A layer of width 128 (`batch * tokens x 128 x 128`,
+/// tens of millions) and the vocabulary projection go to the GPU.
+///
+/// Override with the environment variable `GPU_MIN_MACS` (0 = every product on the GPU); the test
+/// `test_gpu_crossover` prints CPU and GPU times per size to choose it for a machine.
+pub const DEFAULT_GPU_MIN_MACS: usize = 1 << 20;
+
+static GPU_MIN_MACS: Lazy<AtomicUsize> =
+    Lazy::new(|| AtomicUsize::new(std::env::var("GPU_MIN_MACS").ok().and_then(|v| v.trim().parse().ok()).unwrap_or(DEFAULT_GPU_MIN_MACS)));
+
+pub fn gpu_min_macs() -> usize {
+    GPU_MIN_MACS.load(Ordering::Relaxed)
+}
+
+pub fn set_gpu_min_macs(macs: usize) {
+    GPU_MIN_MACS.store(macs, Ordering::Relaxed);
+}
+
+/// Whether an `m x k` by `k x n` product is large enough for the GPU (`gpu_min_macs`).
+pub fn gpu_worthwhile(m: usize, k: usize, n: usize) -> bool {
+    m.saturating_mul(k).saturating_mul(n) >= gpu_min_macs()
+}
 
 /// Row-major complex C(m×n) = op_a(A) × op_b(B) on the GPU, with op_a(A) of shape m×k and op_b(B) of shape k×n.
 ///

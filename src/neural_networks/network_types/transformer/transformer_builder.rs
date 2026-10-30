@@ -15,11 +15,12 @@ pub const SPARSE_WINDOW_SIZE: usize = 2;
 pub const VOCAB_SIZE: usize = 50280;
 pub const EMBEDDING_DIM_ORIGINAL: usize = 512;
 pub const NUM_ATTENTION_HEADS: usize = 4;
-pub const FFN_HIDDEN_DIM: usize = 256;
+/// Hidden width of the feed-forward layers: 4x the model width (128).
+pub const FFN_HIDDEN_DIM: usize = 512;
 pub const LEARNING_RATE: f64 = 0.001;
 pub const NORM_EPSILON: f64 = 1e-8;
 
-/// Embedding dimension after the wavelet decomposition of the embedding (512 / 2^DECOMPOSITION_LEVELS = 64).
+/// Model width: the embedding dimension after its wavelet decomposition (512 / 2^DECOMPOSITION_LEVELS = 128).
 pub fn embedding_dim_compressed() -> usize {
     let base_2: i32 = 2;
     (EMBEDDING_DIM_ORIGINAL as i32 / base_2.pow(DECOMPOSITION_LEVELS)) as usize
@@ -45,7 +46,7 @@ pub fn create_transformer(_operation_mode: OperationMode) -> NeuralNetwork {
     let mut layers = transformer_network.layers;
 
     let embedding_dim_original: usize = EMBEDDING_DIM_ORIGINAL;
-    // embedding_dim_compressed  = 64
+    // embedding_dim_compressed  = 128
     let embedding_dim_compressed = embedding_dim_compressed();
     let vocab_size: usize = VOCAB_SIZE;
     let epsilon: f64 = NORM_EPSILON;

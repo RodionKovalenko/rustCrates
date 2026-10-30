@@ -8,7 +8,7 @@ use crate::neural_networks::utils::{
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "cuda")]
-use crate::neural_networks::utils::gpu_matmul::try_multiply_complex_gpu;
+use crate::neural_networks::utils::gpu_matmul::{gpu_worthwhile, try_multiply_complex_gpu};
 
 /// Contiguous row-major matrix storage.
 ///
@@ -441,7 +441,7 @@ pub fn multiply_batch_with_weights_rm(batch: &[RowMajorMatrix<C>], weights: &Row
     {
         let rows: Vec<usize> = batch.iter().map(|x| x.rows).collect();
         let total_rows: usize = rows.iter().sum();
-        if total_rows > 0 && k > 0 && n > 0 {
+        if total_rows > 0 && k > 0 && n > 0 && gpu_worthwhile(total_rows, k, n) {
             let stacked: Vec<C> = batch.iter().flat_map(|x| x.data.iter().copied()).collect();
             if let Some(c) = try_multiply_complex_gpu(&stacked, MatOp::None, &weights.data, op_w, total_rows, k, n, true) {
                 let mut offset = 0;
@@ -469,8 +469,10 @@ fn multiply_rm(a: &RowMajorMatrix<C>, op_a: MatOp, b: &RowMajorMatrix<C>, op_b: 
 
     #[cfg(feature = "cuda")]
     {
-        if let Some(c) = try_multiply_complex_gpu(&a.data, op_a, &b.data, op_b, m, k, n, cache_b) {
-            return RowMajorMatrix::from_data(m, n, c);
+        if gpu_worthwhile(m, k, n) {
+            if let Some(c) = try_multiply_complex_gpu(&a.data, op_a, &b.data, op_b, m, k, n, cache_b) {
+                return RowMajorMatrix::from_data(m, n, c);
+            }
         }
     }
     #[cfg(not(feature = "cuda"))]

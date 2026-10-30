@@ -32,7 +32,7 @@ pub fn create_transformer_rm(_operation_mode: OperationMode) -> NeuralNetwork {
     let mut transformer_network: NeuralNetwork = create_transformer_network();
     let mut layers = transformer_network.layers;
 
-    // embedding_dim_compressed = 64
+    // embedding_dim_compressed = 128
     let embedding_dim_compressed = embedding_dim_compressed();
     let vocab_size: usize = VOCAB_SIZE;
 
