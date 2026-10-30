@@ -299,25 +299,23 @@ mod test_transformer_rm {
     /// Inference: after the same training both networks give the same top-k token scores for a prompt (forward pass
     /// with K/V cache and EML top-k head, as the first generation step), and both generate text token by token.
     ///
-    /// Only a few training steps: both networks start equal to ~1e-18, but the different summation order of the two
-    /// implementations grows by about 10x per step at the peak learning rate (1e-10 after 8 steps), so after many steps
-    /// the networks are no longer comparable. The generated texts themselves are not compared either: a near tie
-    /// between two tokens of the barely trained model can be decided differently and the texts diverge from there.
+    /// The networks are compared for inference with identical parameters: the Vec network is trained a few steps and
+    /// the RM network takes over its parameters. (Training both side by side diverges: the two implementations sum in
+    /// a different order, and Adam turns rounding noise in near-zero gradients into full steps.) The generated texts
+    /// are not compared either: a near tie between two tokens of the barely trained model can be decided differently.
     #[test]
     fn test_transformer_rm_generates_like_transformer() {
         let mut network = create_transformer(OperationMode::TRAINING);
         let mut network_rm = create_transformer_rm(OperationMode::TRAINING);
-        copy_network_parameters(&network, &mut network_rm);
 
         for time_step in WARMUP_STEPS..WARMUP_STEPS + 3 {
             let (layer_input, target_ids) = training_input(time_step);
-            for net in [&mut network, &mut network_rm] {
-                net.minibatch_size = target_ids.len();
-                net.time_step = time_step;
-                predict(net, &layer_input);
-                backward(net, true);
-            }
+            network.minibatch_size = target_ids.len();
+            network.time_step = time_step;
+            predict(&mut network, &layer_input);
+            backward(&mut network, true);
         }
+        copy_network_parameters(&network, &mut network_rm);
 
         // First generation step: the whole prompt, inference mode, filling the K/V cache.
         let (_, prompt_ids) = tokenize_batch(&vec![format!("<bos> {} <sep>", INPUTS[0])], false).unwrap();

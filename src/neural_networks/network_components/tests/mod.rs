@@ -68,3 +68,5 @@ pub mod test_attention_rm;
 pub mod test_transformer_rm;
 pub mod test_training_split;
 pub mod test_learning_rate_schedule;
+
+pub mod test_matmul_rm;
