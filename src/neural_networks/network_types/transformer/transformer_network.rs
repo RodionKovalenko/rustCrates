@@ -108,6 +108,9 @@ fn split_shifted_batch_with_targets(
     (input_chunks, target_chunks)
 }
 
+/// Epochs without a better validation loss after which the training stops (the best model is saved).
+pub const EARLY_STOPPING_PATIENCE: usize = 5;
+
 pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<String, String>, num_epochs: usize, batch_size: usize) {
     // Setup data splits: 90% train, 10% validation (test set remains separate)
     dataset.setup_splits(None);
@@ -126,7 +129,9 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
     // Early stopping parameters
     let mut best_val_loss = Real::INFINITY;
     let mut best_epoch = 0;
-    let patience = 100; // Stop if no improvement for 100 epochs
+    let patience = EARLY_STOPPING_PATIENCE;
+    // Whether this run saved a better model (a continued model may stay the best).
+    let mut improved = false;
     let mut epochs_without_improvement = 0;
 
     // Warmup + cosine over this run: the learning rate reaches its floor with the last batch of the last epoch.
@@ -148,6 +153,21 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
         progress.training_records = dataset.total_training_records_size;
         progress.validation_records = dataset.total_validation_records_size;
     });
+
+    // A continued model (time step > 0) sets the bar: the model file is only replaced by a network with a lower
+    // validation loss than the one it already holds.
+    if has_validation && transformer_network.time_step > 0 {
+        update_training_progress(|progress| progress.message = "Measuring the validation loss of the loaded model ...".to_string());
+        let loaded_val_loss = evaluate_validation(transformer_network, &dataset, batch_size, &mut layer_input);
+        if loaded_val_loss.is_finite() {
+            best_val_loss = loaded_val_loss;
+            println!("Validation loss of the loaded model: {} (only a better model replaces it)", loaded_val_loss);
+            update_training_progress(|progress| {
+                progress.best_validation_loss = Some(loaded_val_loss as f64);
+                progress.message = "Training ...".to_string();
+            });
+        }
+    }
 
     'outer: for epoch in 0..num_epochs {
         total_loss = C::new(ZERO, ZERO);
@@ -256,7 +276,9 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
             });
             if training_stop_requested() {
                 println!("⏹ Training stopped on request (epoch {}, batch {}).", epoch, batch_ind + 1);
-                let message = if has_validation && best_val_loss.is_finite() {
+                let message = if has_validation && best_val_loss.is_finite() && !improved {
+                    format!("Stopped in epoch {} after batch {}; the loaded model (validation {:.4}) stays saved.", epoch + 1, batch_ind + 1, best_val_loss)
+                } else if has_validation && best_val_loss.is_finite() {
                     format!("Stopped in epoch {} after batch {}; the model of epoch {} (best validation) is saved.", epoch + 1, batch_ind + 1, best_epoch + 1)
                 } else {
                     save_to_sled(transformer_network.model_file(), &transformer_network);
@@ -332,6 +354,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
                 let improvement = best_val_loss - val_loss;
                 best_val_loss = val_loss;
                 best_epoch = epoch;
+                improved = true;
                 epochs_without_improvement = 0; // Reset patience counter
                                                 // Save best model
                 println!(
@@ -353,7 +376,11 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
                     println!("⛔ Early stopping triggered! No improvement for {} epochs.", patience);
                     println!("Best validation loss: {} at epoch {}", best_val_loss, best_epoch);
                     update_training_progress(|progress| {
-                        progress.message = format!("Early stopping: no improvement for {} epochs; the model of epoch {} is saved.", patience, best_epoch + 1)
+                        progress.message = if improved {
+                            format!("Early stopping: no improvement for {} epochs; the model of epoch {} is saved.", patience, best_epoch + 1)
+                        } else {
+                            format!("Early stopping: no improvement for {} epochs; the loaded model (validation {:.4}) stays saved.", patience, best_val_loss)
+                        }
                     });
                     break 'outer;
                 }

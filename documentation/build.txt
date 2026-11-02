@@ -63,6 +63,10 @@ Two models with the same architecture, each with its own model file:
 .\target\release\wav-transformer.exe train 5 4 2                     // only 4 batches (8 records), quick check
 .\target\release\wav-transformer.exe train-vec 40 all 16             // same for the Vec transformer
 
+Saved model: always the network with the best validation loss (also after Stop). The training stops after
+5 epochs without improvement. A continued model sets the bar: its validation loss is measured first, and only a
+better network replaces it.
+
 The records are mixed in a fixed order, so every training holds out the same validation questions; the split of
 the last training is saved next to the model (STORAGE\<model>.split.json). In the web UI the Generate card lists
 the validation questions (never trained on) and the training questions to try them out against the expected answer.
