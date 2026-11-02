@@ -75,6 +75,11 @@ Training format: the text, then the question on the next line, then <sep> and th
 The input can be typed freely: the question may stand before, inside or after the text (it is moved behind the
 text), and JSON escapes pasted from the data file (f\u00fcr) are decoded.
 
+// more training data: every SQuAD-format file in datasets\qa\ is trained on together with XQuAD (de);
+// split large datasets into GitHub-sized parts (sources and licenses: datasets\qa\README.md)
+.\target\release\wav-transformer.exe split-qa GermanQuAD_train.json germanquad_train      // parts of 10 MB
+.\target\release\wav-transformer.exe split-qa dev-context-de-question-de.json mlqa_de_dev 5
+
 // generate an answer: text and question in any order (asks for the input if none is given)
 .\target\release\wav-transformer.exe predict "Die Broncos gewannen den Super Bowl 50. Wer gewann den Super Bowl 50?"
 .\target\release\wav-transformer.exe predict-vec

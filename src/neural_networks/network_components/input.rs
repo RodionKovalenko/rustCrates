@@ -263,6 +263,22 @@ pub fn xquad_de_records() -> Result<Vec<QaRecord>, Box<dyn std::error::Error>> {
     Ok(records)
 }
 
+/// All question-answering records for training: XQuAD (de), then every SQuAD-format file in `datasets/qa/`.
+pub fn qa_records() -> Result<Vec<QaRecord>, Box<dyn std::error::Error>> {
+    let mut records = xquad_de_records()?;
+    records.extend(crate::neural_networks::training::qa_datasets::qa_records_from(std::path::Path::new(crate::neural_networks::training::qa_datasets::QA_DATASET_DIR))?);
+    Ok(records)
+}
+
+/// `qa_records` as a dataset of model inputs (`qa_input`) and answers.
+pub fn load_qa_dataset() -> Result<Dataset<String, String>, Box<dyn std::error::Error>> {
+    let records = qa_records()?;
+    println!("Question-answer records: {}", records.len());
+    let inputs: Vec<String> = records.iter().map(|r| qa_input(&r.context, &r.question)).collect();
+    let targets: Vec<String> = records.into_iter().map(|r| r.answer).collect();
+    Ok(Dataset::new(inputs, targets))
+}
+
 pub fn load_data_xquad_de_as_dataset() -> Result<Dataset<String, String>, Box<dyn std::error::Error>> {
     println!("Dataset is being loaded...");
     let records = xquad_de_records()?;

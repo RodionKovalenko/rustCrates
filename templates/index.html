@@ -946,7 +946,7 @@
                 <div class="card-head">
                     <span class="step">2</span>
                     <h2 id="train-title">Training</h2>
-                    <span class="hint" id="train-hint-head">XQuAD (de): 90 % training, 10 % validation</span>
+                    <span class="hint" id="train-hint-head">XQuAD (de) + datasets/qa: 90 % training, 10 % validation</span>
                 </div>
 
                 <form id="train-form" novalidate>
@@ -1266,7 +1266,7 @@
             const image = isImageModel(m);
             const running = state.status.training.running;
             $("gen-model-hint").textContent = m.trained ? m.label : `${m.label} · not trained yet`;
-            $("train-hint-head").textContent = image ? "MNIST or your own images, 32 to 512 pixels" : "XQuAD (de): 90 % training, 10 % validation";
+            $("train-hint-head").textContent = image ? "MNIST or your own images, 32 to 512 pixels" : "XQuAD (de) + datasets/qa: 90 % training, 10 % validation";
             $("text-fields").hidden = image;
             $("image-fields").hidden = !image;
             $("gen-form").hidden = image;

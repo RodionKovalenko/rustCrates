@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     database::sled_db::{get_storage_path_transformer_db, SLED_DB_TRANSFORMER_RM_V1, SLED_DB_TRANSFORMER_V1},
     neural_networks::{
-        network_components::input::{load_data_xquad_de_as_dataset, qa_input, xquad_de_records, DataTrait, Dataset},
+        network_components::input::{load_qa_dataset, qa_input, qa_records, DataTrait, Dataset},
         network_types::{
             neural_network_generic::{get_from_db, print_networt_structure, update_learning_rate, NeuralNetwork, OperationMode},
             transformer::{
@@ -146,7 +146,7 @@ pub fn train_transformer_rm_from_dataset(num_epochs: usize, num_records: usize, 
     train_model(ModelKind::Rm, TrainSettings { epochs: num_epochs, num_batches: num_records, batch_size, resume: false, learning_rate: DEFAULT_LEARNING_RATE })
 }
 
-/// Trains `kind` on the XQuAD (de) records selected by `settings`; progress is published in `training_progress`.
+/// Trains `kind` on the question-answering records (XQuAD (de) and `datasets/qa/`) selected by `settings`; progress is published in `training_progress`.
 pub fn train_model(kind: ModelKind, settings: TrainSettings) -> bool {
     let now = Instant::now();
     reset_training_stop();
@@ -181,7 +181,17 @@ pub fn train_model(kind: ModelKind, settings: TrainSettings) -> bool {
     let seconds_elapsed = now.elapsed();
     println!("time elapsed in seconds: {:?}", &seconds_elapsed);
 
-    let dataset: Dataset<String, String> = load_data_xquad_de_as_dataset().unwrap();
+    let dataset: Dataset<String, String> = match load_qa_dataset() {
+        Ok(dataset) => dataset,
+        Err(e) => {
+            println!("could not load the training data: {e}");
+            update_training_progress(|progress| {
+                progress.running = false;
+                progress.message = format!("Could not load the training data: {e}");
+            });
+            return false;
+        }
+    };
     let selection = select_record_indices(dataset.input.len(), settings.num_batches, settings.batch_size);
     let dataset_small = records_at(&dataset, &selection);
     println!("selected records: {} (train() keeps 10% of them for validation)", dataset_small.input.len());
@@ -322,7 +332,7 @@ pub struct QaExample {
 
 /// The validation (never trained on) or training questions of `kind`'s last training.
 pub fn qa_examples(kind: ModelKind, split: ExampleSplit) -> Result<Vec<QaExample>, String> {
-    let records = xquad_de_records().map_err(|e| e.to_string())?;
+    let records = qa_records().map_err(|e| e.to_string())?;
     let file = load_split(kind, records.len());
     let indices = match split {
         ExampleSplit::Training => file.training,

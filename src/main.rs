@@ -8,6 +8,7 @@ use neural_networks::neural_networks::network_types::transformer::transformer_ne
 use neural_networks::neural_networks::spectral_model::data::DataSource;
 use neural_networks::neural_networks::spectral_model::sample::{sample_from_checkpoint, DEFAULT_SAMPLE_STEPS};
 use neural_networks::neural_networks::spectral_model::train::SPECTRAL_CHECKPOINT;
+use neural_networks::neural_networks::training::qa_datasets::{qa_records_from, split_squad_file, DEFAULT_PART_MB, QA_DATASET_DIR};
 use neural_networks::neural_networks::training::train_spectral::{generate_spectral_png, spectral_model_info, train_spectral, SpectralTrainSettings};
 use neural_networks::neural_networks::training::train_transformer::{
     compute_device, generate, generate_with, load_model, model_info, qa_examples, train_model, ExampleSplit, ModelKind, TrainSettings, ALL_RECORDS,
@@ -28,6 +29,8 @@ Language model (RM transformer; Vec transformer with the -vec commands):
   train-vec [epochs] [batches|all] [batch_size] [new|resume] [learning_rate]
   predict [text and question]                          generate an answer (asks for the input if none is given)
   predict-vec [text]
+  split-qa <squad.json> <name> [part_mb]               split a SQuAD-format dataset (e.g. GermanQuAD) into parts of
+                                                       part_mb MB (default 10) in datasets/qa/; training uses all files there
 
 Spectral flow (image model):
   spectral-train [steps] [size] [gray|rgb] [mnist|<image folder>] [new]
@@ -71,6 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             schedule_training_time_limit();
             train_model(ModelKind::Vec, settings);
         }
+        Some("split-qa") => split_qa(&args)?,
         Some("predict") => predict(ModelKind::Rm, &args)?,
         Some("predict-vec") => predict(ModelKind::Vec, &args)?,
         // Spectral Flow: see documentation/spectral_transformer.txt
@@ -160,6 +164,18 @@ fn schedule_training_time_limit() {
         println!("Time limit of {} h reached: stopping after the current batch.", hours);
         request_training_stop();
     });
+}
+
+/// `split-qa <squad.json> <name> [part_mb]`: writes the dataset as `datasets/qa/<name>_001.json`, ... (each a complete SQuAD file).
+fn split_qa(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let (Some(input), Some(name)) = (args.get(2), args.get(3)) else {
+        return Err("usage: split-qa <squad.json> <name> [part_mb]".into());
+    };
+    let part_mb: usize = args.get(4).map(|a| a.parse().map_err(|_| format!("part_mb must be a number: {}", a))).transpose()?.unwrap_or(DEFAULT_PART_MB);
+    let parts = split_squad_file(std::path::Path::new(input), std::path::Path::new(QA_DATASET_DIR), name, part_mb * 1024 * 1024)?;
+    let questions = qa_records_from(std::path::Path::new(QA_DATASET_DIR))?.len();
+    println!("Wrote {} part(s) to {}/ ({} questions in that folder now).", parts.len(), QA_DATASET_DIR, questions);
+    Ok(())
 }
 
 /// Generates an answer for the text after the command, or for a text read from the terminal.
