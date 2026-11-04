@@ -326,9 +326,8 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
             progress.elapsed_seconds = now.elapsed().as_secs_f64();
         });
 
-        if epoch % 5 == 0 || train_loss <= loss_threshold {
-            println!("Epoch: {}, TRAINING LOSS: {}", epoch.to_string().blue().bold(), train_loss.to_string().red().bold());
-        }
+        // Every epoch: the loss curve of the Kaggle notebook is read from these lines.
+        println!("Epoch: {}, TRAINING LOSS: {}", epoch.to_string().blue().bold(), train_loss.to_string().red().bold());
 
         if dataset.total_validation_records_size > 0 {
             // ========== VALIDATION PHASE (NO GRADIENT UPDATES) ==========
@@ -343,9 +342,7 @@ pub fn train(transformer_network: &mut NeuralNetwork, mut dataset: Dataset<Strin
                 }
             });
 
-            if epoch % 5 == 0 {
-                println!("Epoch: {}, VALIDATION LOSS: {}", epoch.to_string().blue().bold(), val_loss.to_string().yellow().bold());
-            }
+            println!("Epoch: {}, VALIDATION LOSS: {}", epoch.to_string().blue().bold(), val_loss.to_string().yellow().bold());
 
             // Early stopping check with improvement threshold
             let improvement_threshold: Real = r(1e-4); // Consider it an improvement if loss decreases by at least this amount
