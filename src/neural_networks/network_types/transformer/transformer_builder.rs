@@ -15,8 +15,8 @@ pub const SPARSE_WINDOW_SIZE: usize = 2;
 pub const VOCAB_SIZE: usize = 50280;
 pub const EMBEDDING_DIM_ORIGINAL: usize = 512;
 pub const NUM_ATTENTION_HEADS: usize = 4;
-/// Hidden width of the feed-forward layers: 4x the model width (32).
-pub const FFN_HIDDEN_DIM: usize = 128;
+/// Hidden width of the feed-forward layers: 4x the model width (64).
+pub const FFN_HIDDEN_DIM: usize = 256;
 pub const LEARNING_RATE: f64 = 0.001;
 pub const NORM_EPSILON: f64 = 1e-8;
 
