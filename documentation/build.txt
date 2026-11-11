@@ -88,6 +88,15 @@ text), and JSON escapes pasted from the data file (f\u00fcr) are decoded.
 $env:TRAIN_MAX_HOURS="8"; .\target\release\wav-transformer.exe train 40 all 16
 
 // free training on Kaggle: kaggle/train_transformer.ipynb (import it on kaggle.com; instructions in its first cell)
+
+// candle language model (width 256, 12 layers, window 256, ~63 M parameters), pretrained on German Wikipedia
+python3 kaggle/prepare_pretrain.py --out pretrain --parts 0-1      // token shards (uint16) from Wikipedia parquet parts
+cargo build --release --features candle                             // CPU
+cargo build --release --features candle-cuda                        // GPU (needs nvcc; CUDA_COMPUTE_CAP=75 for a T4)
+MICRO_BATCH=8 TRAIN_MAX_HOURS=11 ./target/release/wav-transformer pretrain pretrain 20000 16 0.0006 new 256
+./target/release/wav-transformer lm-generate 60 "Die Hauptstadt von Deutschland ist"
+cargo test --profile quick --features candle candle_model
+// on Kaggle (GPU T4): kaggle/pretrain_lm.ipynb (instructions in its first cell)
 // the notebook output also holds the built binary (bin/): with that output as input the next run skips the build,
 // unless src/, Cargo.toml, Cargo.lock, build.rs or rust-toolchain changed since it was built
 
