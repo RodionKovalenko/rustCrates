@@ -50,7 +50,7 @@ impl PretrainSettings {
             checkpoint: PathBuf::from(CHECKPOINT),
             steps: 20_000,
             batch_size: 16,
-            micro_batch: std::env::var("MICRO_BATCH").ok().and_then(|m| m.parse().ok()).unwrap_or(8),
+            micro_batch: std::env::var("MICRO_BATCH").ok().and_then(|m| m.parse().ok()).unwrap_or(4),
             learning_rate: 6e-4,
             warmup_steps: 500,
             resume: false,
@@ -178,6 +178,7 @@ pub fn pretrain(settings: &PretrainSettings) -> Result<()> {
     let mut history = std::fs::OpenOptions::new().create(true).append(true).open(&history_path)?;
     let (mut loss_sum, mut loss_count, mut window_started) = (0.0, 0usize, Instant::now());
 
+    let mut micro_batch = settings.micro_batch.max(1);
     for step in first_step..last_step {
         if batches_left_in_shard == 0 {
             state.shard += 1;
@@ -191,7 +192,17 @@ pub fn pretrain(settings: &PretrainSettings) -> Result<()> {
         let lr = learning_rate(step, settings.learning_rate, settings.warmup_steps, last_step.max(settings.warmup_steps + 1));
         optimizer.set_learning_rate(lr);
 
-        let (loss, mut grads) = micro_batched_loss_and_grads(&model, &batch, settings.micro_batch)?;
+        // A micro-batch that does not fit into the GPU memory is halved and the step is repeated.
+        let (loss, mut grads) = loop {
+            match micro_batched_loss_and_grads(&model, &batch, micro_batch) {
+                Ok(result) => break result,
+                Err(e) if micro_batch > 1 && is_out_of_memory(&e) => {
+                    micro_batch /= 2;
+                    println!("Out of GPU memory: continuing with micro-batches of {micro_batch} sequences (MICRO_BATCH={micro_batch})");
+                }
+                Err(e) => return Err(e),
+            }
+        };
         clip_gradients(&model, &mut grads, 1.0)?;
         optimizer.step(&grads)?;
 
@@ -238,6 +249,11 @@ pub fn pretrain(settings: &PretrainSettings) -> Result<()> {
     }
     println!("done: best validation loss {:?}", state.best_val_loss);
     Ok(())
+}
+
+fn is_out_of_memory(e: &candle_core::Error) -> bool {
+    let text = format!("{e:?}");
+    text.contains("OUT_OF_MEMORY") || text.contains("out of memory")
 }
 
 /// Loss and gradients of a batch computed in micro-batches of `micro` sequences: each micro-batch contributes with
