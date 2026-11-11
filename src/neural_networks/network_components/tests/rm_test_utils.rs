@@ -20,8 +20,10 @@ use crate::neural_networks::{
 };
 
 /// Relative tolerance for Vec vs RM comparisons. Both paths run the same arithmetic,
-/// differences only come from a different summation order.
-pub const TOLERANCE: f64 = 1e-10;
+/// differences only come from a different summation order: the RM path multiplies with a blocked GEMM
+/// (matrixmultiply) and factors the norm-layer row sums, which over a whole training step through all
+/// layers reaches ~1e-10 in f64. Any real arithmetic error is many orders of magnitude larger.
+pub const TOLERANCE: f64 = 1e-9;
 
 /// Builds an RM layer with exactly the parameters of `layer` (same serialized fields, same order).
 /// The round trip must be byte-identical, so a field that differs between the two structs fails here.

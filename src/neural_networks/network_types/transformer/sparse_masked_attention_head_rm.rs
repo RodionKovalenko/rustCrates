@@ -316,10 +316,13 @@ impl SparseMaskedAttentionHeadRm {
         let mut dl_dv = RowMajorMatrix::create_empty(seq_len, dim);
         let mut dl_dz = RowMajorMatrix::create_empty(seq_len, self.window_width());
 
-        // dL/dV[q] = sum over queries p attending q of A[p][q] * dL/dO[p] (real parts)
+        // dL/dV[q] = sum over queries p attending q of A[p][q] * dL/dO[p] (real parts).
+        // q lies in the (symmetric) window of p exactly when p lies in the window of q, so only those p are
+        // visited (in the same ascending order as a scan over all p, which keeps the sums bit-identical).
         for col in 0..dim {
             for q in 0..seq_len {
-                for p in 0..seq_len {
+                let (p_start, p_end) = calculate_start_end_indices(q, self.window_size, seq_len);
+                for p in p_start..p_end {
                     let (start_ind, end_ind) = calculate_start_end_indices(p, self.window_size, seq_len);
                     if q >= start_ind && q < end_ind {
                         let a = attention_weights.data[attention_weights.idx(p, q - start_ind)].re;
@@ -362,7 +365,9 @@ impl SparseMaskedAttentionHeadRm {
 
         for col in 0..q.cols {
             for i in 0..seq_len {
-                for p in 0..seq_len {
+                // Only the p whose window contains i (= the window of i), in ascending order as before.
+                let (p_start, p_end) = calculate_start_end_indices(i, self.window_size, seq_len);
+                for p in p_start..p_end {
                     let (start_p, end_p) = calculate_start_end_indices(p, self.window_size, seq_len);
                     if i < start_p || i >= end_p {
                         continue;

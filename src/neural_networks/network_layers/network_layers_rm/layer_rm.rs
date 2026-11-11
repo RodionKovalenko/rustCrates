@@ -5,14 +5,14 @@ use crate::neural_networks::{
         layer::{ActivationType, LayerType},
     },
     utils::{
-        activation_rm::{activate_output_complex_rm, swish_rm},
+        activation::sigmoid_complex,
+        activation_rm::activate_output_complex_rm,
         adam_w_rm::{update_bias_adam_w, update_weights_adam_w_rm},
-        derivative_rm::{get_gradient_complex_rm, swish_grad_rm},
-        dtype::{r, Real, C, ZERO},
+        derivative_rm::get_gradient_complex_rm,
+        dtype::{r, Real, C, ONE, ZERO},
         matrix::{average_vector_by_scalar, normalize_bias}, matrix_rm::RowMajorMatrix,
         matrix_rm::{
-            average_matrix_by_scalar_rm, clip_all_gradients_by_global_norm_rm, concat_columns_rm, conjugate_rm, hadamard_rm, linear_backward_batch_rm, linear_forward_batch_rm, normalize_gradients_rm,
-            split_data_by_columns_rm,
+            average_matrix_by_scalar_rm, clip_all_gradients_by_global_norm_rm, conjugate_rm, hadamard_rm, linear_backward_batch_rm, linear_forward_batch_rm, normalize_gradients_rm,
         },
         weights_initializer::initialize_weights_complex,
     },
@@ -99,11 +99,26 @@ impl LayerRm {
     fn output_delta(&self, previous_gradient: &RowMajorMatrix<C>, raw_output: &RowMajorMatrix<C>, output: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
         match &self.activation_type {
             ActivationType::SWiGLU => {
-                // Y = a * swish(b) with [a | b] = XW + b
-                let (a, b) = split_data_by_columns_rm(raw_output);
-                let dl_da = hadamard_rm(previous_gradient, &conjugate_rm(&swish_rm(&b)));
-                let dl_db = hadamard_rm(&hadamard_rm(previous_gradient, &conjugate_rm(&a)), &conjugate_rm(&swish_grad_rm(&b)));
-                concat_columns_rm(&dl_da, &dl_db)
+                // Y = a * swish(b) with [a | b] = XW + b:
+                //   dL/da = g * conj(swish(b)),  dL/db = (g * conj(a)) * conj(swish'(b)),
+                // one sigmoid per element and no intermediate matrices (same arithmetic as swish_rm / swish_grad_rm).
+                let half = raw_output.cols / 2;
+                let one = C::new(ONE, ZERO);
+                let mut delta = RowMajorMatrix::create_empty(raw_output.rows, raw_output.cols);
+                for row in 0..raw_output.rows {
+                    let raw = &raw_output.data[raw_output.row_range(row)];
+                    let g_row = &previous_gradient.data[previous_gradient.row_range(row)];
+                    let out = delta.row_range(row);
+                    for col in 0..half {
+                        let (a, b, g) = (raw[col], raw[half + col], g_row[col]);
+                        let sigma = sigmoid_complex(&b);
+                        let swish = b * sigma;
+                        let swish_grad = sigma + b * sigma * (one - sigma);
+                        delta.data[out.start + col] = g * swish.conj();
+                        delta.data[out.start + half + col] = (g * a.conj()) * swish_grad.conj();
+                    }
+                }
+                delta
             }
             activation => hadamard_rm(previous_gradient, &conjugate_rm(&get_gradient_complex_rm(output, raw_output, activation))),
         }

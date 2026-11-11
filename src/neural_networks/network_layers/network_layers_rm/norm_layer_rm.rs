@@ -1,5 +1,6 @@
 use core::fmt::Debug;
 use serde::{Deserialize, Serialize};
+use rayon::prelude::*;
 
 use crate::neural_networks::network_components::gradient_struct::Gradient;
 use crate::neural_networks::network_components::layer_input_struct::LayerInput;
@@ -82,18 +83,18 @@ impl NormalNormLayerRm {
             self.beta = vec![C::new(ZERO, ZERO); feature_dim];
         }
 
-        let mut output_batch_rm: Vec<RowMajorMatrix<C>> = Vec::with_capacity(input_batch_rm.len());
-        let mut mean_batch: Vec<Vec<C>> = Vec::with_capacity(input_batch_rm.len());
-        let mut var_batch: Vec<Vec<C>> = Vec::with_capacity(input_batch_rm.len());
-
-        for (batch_idx, input_matrix) in input_batch_rm.iter().enumerate() {
+        let (gamma, beta, epsilon) = (&self.gamma, &self.beta, self.epsilon);
+        // One sample per task: (normalized output, row means, row variances).
+        let per_sample: Vec<(RowMajorMatrix<C>, Vec<C>, Vec<C>)> = input_batch_rm.par_iter().enumerate().map(|(batch_idx, input_matrix)| {
             let seq_len = input_matrix.rows;
             let mut out = RowMajorMatrix::from_data(seq_len, input_matrix.cols, vec![C::new(ZERO, ZERO); seq_len * input_matrix.cols]);
 
+            let all_valid;
             let padding_mask = if batch_idx < padding_mask_batch.len() {
                 &padding_mask_batch[batch_idx]
             } else {
-                &vec![1u32; seq_len]
+                all_valid = vec![1u32; seq_len];
+                &all_valid
             };
 
             let mut mean_seq = Vec::with_capacity(seq_len);
@@ -118,24 +119,31 @@ impl NormalNormLayerRm {
                 let mut variance: C = C::new(ZERO, ZERO);
                 for c in 0..input_matrix.cols {
                     let diff = input_matrix.data[row.start + c] - mean;
-                    variance += diff.powf(2.0);
+                    variance += diff * diff; // = diff.powf(2.0) without the polar form (log, atan2, exp)
                 }
                 variance /= len;
 
-                let stddev: C = (variance + C::new(r(self.epsilon), ZERO)).sqrt();
+                let stddev: C = (variance + C::new(r(epsilon), ZERO)).sqrt();
 
                 for c in 0..input_matrix.cols {
                     let x = input_matrix.data[row.start + c];
-                    out.data[row.start + c] = ((x - mean) / stddev) * self.gamma[c] + self.beta[c];
+                    out.data[row.start + c] = ((x - mean) / stddev) * gamma[c] + beta[c];
                 }
 
                 mean_seq.push(mean);
                 var_seq.push(variance);
             }
 
+            (out, mean_seq, var_seq)
+        }).collect();
+
+        let mut output_batch_rm: Vec<RowMajorMatrix<C>> = Vec::with_capacity(per_sample.len());
+        let mut mean_batch: Vec<Vec<C>> = Vec::with_capacity(per_sample.len());
+        let mut var_batch: Vec<Vec<C>> = Vec::with_capacity(per_sample.len());
+        for (out, mean_seq, var_seq) in per_sample {
+            output_batch_rm.push(out);
             mean_batch.push(mean_seq);
             var_batch.push(var_seq);
-            output_batch_rm.push(out);
         }
 
         if layer_input.get_calculate_gradient() {
@@ -174,63 +182,79 @@ impl NormalNormLayerRm {
         let seq_len = input_batch_rm[0].rows;
         let feature_dim = input_batch_rm[0].cols;
 
-        let mut input_grads_rm: Vec<RowMajorMatrix<C>> = input_batch_rm
-            .iter()
-            .map(|m| RowMajorMatrix::from_data(m.rows, m.cols, vec![C::new(ZERO, ZERO); m.rows * m.cols]))
-            .collect();
-
-        let mut gamma_grad: Vec<C> = vec![C::new(ZERO, ZERO); feature_dim];
-        let mut beta_grad: Vec<C> = vec![C::new(ZERO, ZERO); feature_dim];
-
         let n: Real = r(feature_dim as f64);
         let eps: Real = r(1e-8);
+        let gamma = &self.gamma;
+        let all_valid = vec![1u32; seq_len];
 
-        for b in 0..batch_size {
-            let padding_mask = if b < padding_mask_batch.len() { &padding_mask_batch[b] } else { &vec![1u32; seq_len] };
+        // One sample per task: (input gradient, gamma gradient, beta gradient) of sample b.
+        let per_sample: Vec<(RowMajorMatrix<C>, Vec<C>, Vec<C>)> = (0..batch_size)
+            .into_par_iter()
+            .map(|b| {
+                let input = &input_batch_rm[b];
+                let mut input_grad = RowMajorMatrix::from_data(input.rows, input.cols, vec![C::new(ZERO, ZERO); input.rows * input.cols]);
+                let mut gamma_grad: Vec<C> = vec![C::new(ZERO, ZERO); feature_dim];
+                let mut beta_grad: Vec<C> = vec![C::new(ZERO, ZERO); feature_dim];
+                let padding_mask = if b < padding_mask_batch.len() { &padding_mask_batch[b] } else { &all_valid };
 
-            for s in 0..seq_len {
-                if s < padding_mask.len() && padding_mask[s] == 0 {
-                    continue;
-                }
+                for s in 0..input.rows {
+                    if s < padding_mask.len() && padding_mask[s] == 0 {
+                        continue;
+                    }
 
-                let mu: C = mean_batch[b][s];
-                let var: C = var_batch[b][s] + C::new(eps, ZERO);
-                let var_sqrt = var.sqrt();
-                let std_inv: C = C::new(ONE, ZERO) / var_sqrt;
-                let var_pow_minus_3_2: C = C::new(ONE, ZERO) / (var * var_sqrt);
+                    let mu: C = mean_batch[b][s];
+                    let var: C = var_batch[b][s] + C::new(eps, ZERO);
+                    let var_sqrt = var.sqrt();
+                    let std_inv: C = C::new(ONE, ZERO) / var_sqrt;
+                    let var_pow_minus_3_2: C = C::new(ONE, ZERO) / (var * var_sqrt);
 
-                let row = input_batch_rm[b].row_range(s);
+                    let row = input.row_range(s);
 
-                for f in 0..feature_dim {
-                    let x_hat: C = normalized_batch_rm[b].data[row.start + f];
-                    let dout_f: C = previous_gradient_rm[b].data[row.start + f].conj();
-
-                    gamma_grad[f] += dout_f * x_hat;
-                    beta_grad[f] += dout_f;
-
-                    let mut d_common_1 = C::new(ZERO, ZERO);
+                    // The row sums do not depend on the output feature f: compute them once per row (O(F) instead
+                    // of O(F^2)). d_common_1(f) = sum_d dout_d * gamma_f * (x_d - mu) = gamma_f * dout_x_mu.
+                    let mut dout_x_mu = C::new(ZERO, ZERO);
                     let mut dmu_term_2 = C::new(ZERO, ZERO);
                     let mut dmu_term_3 = C::new(ZERO, ZERO);
-
                     for d in 0..feature_dim {
-                        let x: C = input_batch_rm[b].data[row.start + d];
+                        let x: C = input.data[row.start + d];
                         let dout: C = previous_gradient_rm[b].data[row.start + d].conj();
-                        let dxhat: C = dout * self.gamma[f];
-                        d_common_1 += dxhat * (x - mu);
+                        dout_x_mu += dout * (x - mu);
                         dmu_term_2 += dout;
                         dmu_term_3 += (x - mu) / n;
                     }
 
-                    let dvar_sum = d_common_1 * r(-0.5) * var_pow_minus_3_2;
-                    let dmu_sum = self.gamma[f] * (-std_inv) * dmu_term_2 + var_pow_minus_3_2 * d_common_1 * dmu_term_3;
+                    for f in 0..feature_dim {
+                        let x_hat: C = normalized_batch_rm[b].data[row.start + f];
+                        let dout_f: C = previous_gradient_rm[b].data[row.start + f].conj();
 
-                    let dxhat: C = previous_gradient_rm[b].data[row.start + f].conj() * self.gamma[f];
-                    let x: C = input_batch_rm[b].data[row.start + f];
+                        gamma_grad[f] += dout_f * x_hat;
+                        beta_grad[f] += dout_f;
 
-                    let gradient_val: C = (dxhat * std_inv) + (dvar_sum * ((r(2.0) * (x - mu)) / n)) + dmu_sum / n;
-                    input_grads_rm[b].data[row.start + f] = gradient_val.conj();
+                        let d_common_1 = gamma[f] * dout_x_mu;
+                        let dvar_sum = d_common_1 * r(-0.5) * var_pow_minus_3_2;
+                        let dmu_sum = gamma[f] * (-std_inv) * dmu_term_2 + var_pow_minus_3_2 * d_common_1 * dmu_term_3;
+
+                        let dxhat: C = dout_f * gamma[f];
+                        let x: C = input.data[row.start + f];
+
+                        let gradient_val: C = (dxhat * std_inv) + (dvar_sum * ((r(2.0) * (x - mu)) / n)) + dmu_sum / n;
+                        input_grad.data[row.start + f] = gradient_val.conj();
+                    }
                 }
+                (input_grad, gamma_grad, beta_grad)
+            })
+            .collect();
+
+        // Sum the per-sample gamma/beta gradients in sample order.
+        let mut input_grads_rm: Vec<RowMajorMatrix<C>> = Vec::with_capacity(batch_size);
+        let mut gamma_grad: Vec<C> = vec![C::new(ZERO, ZERO); feature_dim];
+        let mut beta_grad: Vec<C> = vec![C::new(ZERO, ZERO); feature_dim];
+        for (input_grad, sample_gamma_grad, sample_beta_grad) in per_sample {
+            for f in 0..feature_dim {
+                gamma_grad[f] += sample_gamma_grad[f];
+                beta_grad[f] += sample_beta_grad[f];
             }
+            input_grads_rm.push(input_grad);
         }
 
         if let Some(prev) = self.gradient.as_ref() {

@@ -487,13 +487,51 @@ fn multiply_complex_cpu_rm(a: &[C], b: &[C], m: usize, k: usize, n: usize) -> Ve
     assert_eq!(b.len(), k * n);
 
     let mut c = vec![C::new(ZERO, ZERO); m * n];
-    for i in 0..m {
-        for p in 0..k {
-            let aip = a[i * k + p];
-            for j in 0..n {
-                c[i * n + j] = c[i * n + j] + aip * b[p * n + j];
-            }
-        }
+    // Packed, cache-blocked complex GEMM of matrixmultiply, single-threaded per call: the callers already run the
+    // samples of a batch in parallel with rayon. In a full training step it measured ~1.7x faster than the plain
+    // triple loop. (faer's single-threaded GEMM is faster in isolation but slowed the whole step down, most likely
+    // because its AVX-512 kernels lower the clock for the surrounding complex exp/sincos code.)
+    // SAFETY: Complex<Real> is repr(C) [re, im], the layout of matrixmultiply's c32/c64; the slices hold m*k, k*n
+    // and m*n elements (asserted above) and the strides describe dense row-major storage.
+    unsafe {
+        #[cfg(not(feature = "dtype-f64"))]
+        matrixmultiply::cgemm(
+            matrixmultiply::CGemmOption::Standard,
+            matrixmultiply::CGemmOption::Standard,
+            m,
+            k,
+            n,
+            [1.0, 0.0],
+            a.as_ptr() as *const [f32; 2],
+            k as isize,
+            1,
+            b.as_ptr() as *const [f32; 2],
+            n as isize,
+            1,
+            [0.0, 0.0],
+            c.as_mut_ptr() as *mut [f32; 2],
+            n as isize,
+            1,
+        );
+        #[cfg(feature = "dtype-f64")]
+        matrixmultiply::zgemm(
+            matrixmultiply::CGemmOption::Standard,
+            matrixmultiply::CGemmOption::Standard,
+            m,
+            k,
+            n,
+            [1.0, 0.0],
+            a.as_ptr() as *const [f64; 2],
+            k as isize,
+            1,
+            b.as_ptr() as *const [f64; 2],
+            n as isize,
+            1,
+            [0.0, 0.0],
+            c.as_mut_ptr() as *mut [f64; 2],
+            n as isize,
+            1,
+        );
     }
     c
 }

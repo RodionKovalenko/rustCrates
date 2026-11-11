@@ -5787,6 +5787,7 @@ dependencies = [
  "hyper",
  "image 0.25.10",
  "lazy_static",
+ "matrixmultiply",
  "ndarray",
  "num",
  "num-complex",

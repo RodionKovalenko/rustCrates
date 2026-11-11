@@ -46,6 +46,8 @@ yahoo_finance_api = "4.2.0"
 time = "0.3.55"
 csv = "1.4.0"
 faer = "0.24.4"
+# Packed, cache-blocked complex GEMM (single-threaded per call: the batch is parallelized with rayon).
+matrixmultiply = { version = "0.3.10", features = ["cgemm"] }
 rayon = "1.12.0"
 bincode = "1.3.3"
 lazy_static = "1.5.0"
