@@ -6,3 +6,5 @@ pub mod optimization;
 pub mod hidden_markov_models;
 pub mod network_layers;
 pub mod spectral_model;
+#[cfg(feature = "candle")]
+pub mod candle_model;
