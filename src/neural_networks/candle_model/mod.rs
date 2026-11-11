@@ -3,6 +3,8 @@
 
 pub mod block;
 pub mod complex;
+pub mod model;
+pub mod train;
 
 #[cfg(test)]
 mod tests;

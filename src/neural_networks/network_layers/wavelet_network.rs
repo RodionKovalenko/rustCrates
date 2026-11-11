@@ -41,6 +41,11 @@ pub fn apply_wavelet_positional_emb(input: &Vec<f64>, dw_type: DiscreteWaveletTy
 }
 
 pub fn decompose_in_wavelet_2d_default<T: ArrayType>(input: &T) -> Vec<Vec<Vec<Complex<f64>>>> {
+    decompose_in_wavelet_2d_levels(input, DECOMPOSITION_LEVELS as i32)
+}
+
+/// `decompose_in_wavelet_2d_default` with an explicit number of decomposition levels (each level halves the width).
+pub fn decompose_in_wavelet_2d_levels<T: ArrayType>(input: &T, decomposition_level: i32) -> Vec<Vec<Vec<Complex<f64>>>> {
     let wavelet_type = DiscreteWaveletType::DB1;
     let wavelet_mode = WaveletMode::SYMMETRIC;
 
@@ -48,8 +53,6 @@ pub fn decompose_in_wavelet_2d_default<T: ArrayType>(input: &T) -> Vec<Vec<Vec<C
     let scales: Vec<f64> = vec![2.0, 8.0, 16.0, 32.0];
     let min_height: usize = 28;
     let min_width: usize = 28;
-
-    let decomposition_level: i32 = DECOMPOSITION_LEVELS as i32;
 
     let mut cwt_complex_wavelet = CWTComplex {
         scales,

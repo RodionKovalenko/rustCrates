@@ -32,13 +32,20 @@ Language model (RM transformer; Vec transformer with the -vec commands):
   split-qa <squad.json> <name> [part_mb]               split a SQuAD-format dataset (e.g. GermanQuAD) into parts of
                                                        part_mb MB (default 10) in datasets/qa/; training uses all files there
 
+GPU language model (build with --features candle, on a GPU --features candle-cuda):
+  pretrain <shard folder> [steps] [batch_size] [learning_rate] [new|resume] [window]
+                                                       pretrain on token shards of kaggle/prepare_pretrain.py
+                                                       (default: 20000 16 0.0006 new 256); checkpoint
+                                                       STORAGE/candle_lm.safetensors, only a better model is saved
+  lm-generate [max_tokens] <text>                      greedy continuation of a text with the pretrained model
+
 Spectral flow (image model):
   spectral-train [steps] [size] [gray|rgb] [mnist|<image folder>] [new]
                                                        train (default: 100000 32 gray mnist; continues the saved
                                                        model unless 'new', a continued model keeps its size/colour)
   spectral-sample [ckpt] [out.png] [count] [seed] [steps] [scale]
 
-Environment: TRAIN_MAX_HOURS=<hours> stops train / train-vec after that time (the best model stays saved).
+Environment: TRAIN_MAX_HOURS=<hours> stops train / train-vec / pretrain after that time (the best model stays saved).
 
 Web UI:
   server                                               http://localhost:7860 (also started without a command)";
@@ -75,6 +82,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             train_model(ModelKind::Vec, settings);
         }
         Some("split-qa") => split_qa(&args)?,
+        #[cfg(feature = "candle")]
+        Some("pretrain") => pretrain_command(&args)?,
+        #[cfg(feature = "candle")]
+        Some("lm-generate") => lm_generate_command(&args)?,
         Some("predict") => predict(ModelKind::Rm, &args)?,
         Some("predict-vec") => predict(ModelKind::Vec, &args)?,
         // Spectral Flow: see documentation/spectral_transformer.txt
@@ -179,6 +190,55 @@ fn split_qa(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Generates an answer for the text after the command, or for a text read from the terminal.
+/// pretrain <shard folder> [steps] [batch_size] [learning_rate] [new|resume] [window]
+#[cfg(feature = "candle")]
+fn pretrain_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    use neural_networks::neural_networks::candle_model::train::{pretrain, PretrainSettings};
+    let data_dir = args.get(2).ok_or("usage: pretrain <shard folder> [steps] [batch_size] [learning_rate] [new|resume] [window]")?;
+    let mut settings = PretrainSettings::new(data_dir);
+    if let Some(steps) = args.get(3) {
+        settings.steps = steps.parse()?;
+    }
+    if let Some(batch) = args.get(4) {
+        settings.batch_size = batch.parse()?;
+    }
+    if let Some(lr) = args.get(5) {
+        settings.learning_rate = lr.parse()?;
+    }
+    settings.resume = args.get(6).is_some_and(|m| m == "resume");
+    if let Some(window) = args.get(7) {
+        settings.config.window = window.parse()?;
+    }
+    pretrain(&settings)?;
+    Ok(())
+}
+
+/// lm-generate [max_tokens] <text>
+#[cfg(feature = "candle")]
+fn lm_generate_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    use neural_networks::neural_networks::{
+        candle_model::{
+            model::Model,
+            train::{device, generate, CHECKPOINT},
+        },
+        utils::tokenizer::{detokenize, tokenize},
+    };
+    let (max_tokens, text_start) = match args.get(2).and_then(|a| a.parse::<usize>().ok()) {
+        Some(n) => (n, 3),
+        None => (100, 2),
+    };
+    let text = if args.len() > text_start { args[text_start..].join(" ") } else { read_input("Text: ")? };
+    let device = device();
+    let model = Model::load(std::path::Path::new(CHECKPOINT), candle_core::DType::F32, &device)?;
+    let (_, ids) = tokenize(&text).map_err(|e| e.to_string())?;
+    let eos = 50279;
+    let started = std::time::Instant::now();
+    let continuation = generate(&model, &ids, max_tokens, Some(eos), &device)?;
+    println!("{}{}", text, detokenize(&continuation, false).map_err(|e| e.to_string())?);
+    println!("({} tokens, {:.1} s)", continuation.len(), started.elapsed().as_secs_f64());
+    Ok(())
+}
+
 fn predict(kind: ModelKind, args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let prompt = if args.len() > 2 { args[2..].join(" ") } else { read_input("Enter input text for prediction: ")? };
     match generate(kind, &maybe_fix_encoding(&prompt), MAX_GENERATED_TOKENS) {

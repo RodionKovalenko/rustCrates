@@ -178,3 +178,148 @@ fn complex_ops_match_num_complex() {
     let sigmoid: Vec<C> = z.iter().map(crate::neural_networks::utils::activation::sigmoid_complex).collect();
     assert_close("sigmoid", &pairs(&sigmoid), &t.sigmoid().unwrap().to_pairs().unwrap());
 }
+
+mod model_tests {
+    use candle_core::{DType, Device, Tensor};
+    use candle_nn::{AdamW, Optimizer, ParamsAdamW};
+
+    use crate::neural_networks::candle_model::model::{Model, ModelConfig};
+
+    fn tiny() -> ModelConfig {
+        ModelConfig { vocab_size: 97, width: 64, layers: 2, heads: 4, ffn_hidden: 96, window: 8, seq_len: 16 }
+    }
+
+    fn windows(device: &Device) -> Tensor {
+        let ids: Vec<u32> = (0..2 * 17).map(|i| (i * 7 % 97) as u32).collect();
+        Tensor::from_vec(ids, (2, 17), device).unwrap()
+    }
+
+    #[test]
+    fn initial_loss_is_near_uniform_and_training_reduces_it() {
+        let device = Device::Cpu;
+        let model = Model::new(tiny(), DType::F32, &device, 1).unwrap();
+        let batch = windows(&device);
+        let first = model.loss(&batch).unwrap().to_scalar::<f32>().unwrap();
+        println!("initial loss {first:.3} (uniform: {:.3})", (97f32).ln());
+        assert!(first.is_finite() && first > 2.0 && first < 12.0, "initial loss {first}");
+
+        let mut optimizer = AdamW::new(model.vars(), ParamsAdamW { lr: 3e-3, ..Default::default() }).unwrap();
+        let mut last = first;
+        for _ in 0..30 {
+            let loss = model.loss(&batch).unwrap();
+            optimizer.backward_step(&loss).unwrap();
+            last = loss.to_scalar::<f32>().unwrap();
+        }
+        println!("loss after 30 steps on one batch: {last:.3}");
+        assert!(last < first * 0.7, "loss did not fall: {first} -> {last}");
+    }
+
+    #[test]
+    fn checkpointed_gradients_equal_plain_backprop() {
+        let device = Device::Cpu;
+        let model = Model::new(tiny(), DType::F64, &device, 4).unwrap();
+        let batch = windows(&device);
+        let loss = model.loss(&batch).unwrap();
+        let plain = loss.backward().unwrap();
+        let (checkpointed_loss, checkpointed) = model.loss_and_grads(&batch, 5).unwrap();
+        let plain_loss = loss.to_scalar::<f64>().unwrap();
+        assert!((plain_loss - checkpointed_loss).abs() < 1e-10, "loss {plain_loss} vs {checkpointed_loss}");
+        assert!((model.loss_no_grad(&batch, 7).unwrap() - plain_loss).abs() < 1e-10);
+        let mut worst = 0.0f64;
+        for (name, var) in model.named_vars() {
+            let a = plain.get(var.as_tensor()).unwrap_or_else(|| panic!("{name}: no plain gradient")).flatten_all().unwrap().to_vec1::<f64>().unwrap();
+            let b = checkpointed.get(var.as_tensor()).unwrap_or_else(|| panic!("{name}: no checkpointed gradient")).flatten_all().unwrap().to_vec1::<f64>().unwrap();
+            let scale = a.iter().fold(1e-12f64, |m, v| m.max(v.abs()));
+            let diff = a.iter().zip(&b).fold(0.0f64, |m, (x, y)| m.max((x - y).abs()));
+            worst = worst.max(diff / scale);
+        }
+        println!("checkpointed vs plain gradients: max relative difference {worst:.2e}");
+        assert!(worst < 1e-9);
+    }
+
+    #[test]
+    fn save_and_load_give_the_same_logits() {
+        let device = Device::Cpu;
+        let model = Model::new(tiny(), DType::F32, &device, 2).unwrap();
+        let dir = std::env::temp_dir().join(format!("candle_model_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("model.safetensors");
+        model.save(&path).unwrap();
+        let loaded = Model::load(&path, DType::F32, &device).unwrap();
+        let tokens = windows(&device).narrow(1, 0, 16).unwrap();
+        let a = model.forward(&tokens).unwrap().flatten_all().unwrap().to_vec1::<f32>().unwrap();
+        let b = loaded.forward(&tokens).unwrap().flatten_all().unwrap().to_vec1::<f32>().unwrap();
+        assert_eq!(a, b);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn default_model_has_about_25m_layer_parameters() {
+        let config = ModelConfig::default();
+        let (w, h, l) = (config.width, config.ffn_hidden, config.layers);
+        let hd = w / config.heads;
+        // Same count as Model::parameter_counts without building the 64 M parameter model.
+        let attention = config.heads * (3 * 2 * w * hd + 4 * hd * hd) + 4 * w;
+        let ffn = 2 * (w * 2 * h + 2 * h + h * w + w) + 4 * w;
+        let layers = l * (attention + ffn);
+        let total = layers + 2 * config.vocab_size * w + 4 * w + 2 * w * w + w * config.vocab_size + config.vocab_size;
+        println!("default model: {:.1} M parameters, {:.1} M in the layers", total as f64 / 1e6, layers as f64 / 1e6);
+        let model = Model::new(ModelConfig { vocab_size: 97, ..tiny() }, DType::F32, &Device::Cpu, 3).unwrap();
+        let (t, ly) = model.parameter_counts();
+        let c = tiny();
+        let (w, h, hd) = (c.width, c.ffn_hidden, c.width / c.heads);
+        let expected_layers = c.layers * (c.heads * (6 * w * hd + 4 * hd * hd) + 4 * w + 2 * (2 * w * h + 2 * h + h * w + w) + 4 * w);
+        assert_eq!(ly, expected_layers);
+        assert_eq!(t, ly + 2 * 97 * w + 4 * w + 2 * w * w + w * 97 + 97);
+        assert!((20_000_000..30_000_000).contains(&layers));
+    }
+}
+
+mod train_tests {
+    use crate::neural_networks::candle_model::{
+        model::ModelConfig,
+        train::{pretrain, PretrainSettings, TrainState},
+    };
+
+    /// Token stream with a learnable pattern: ascending runs of length 5.
+    fn write_shard(path: &std::path::Path, tokens: usize, offset: u16) {
+        let ids: Vec<u8> = (0..tokens).flat_map(|i| (((i / 5 + (i % 5)) as u16 + offset) % 50).to_le_bytes()).collect();
+        std::fs::write(path, ids).unwrap();
+    }
+
+    #[test]
+    fn pretrain_learns_saves_and_resumes() {
+        let dir = std::env::temp_dir().join(format!("candle_pretrain_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        write_shard(&dir.join("train_00000.bin"), 20_000, 0);
+        write_shard(&dir.join("train_00001.bin"), 20_000, 3);
+        write_shard(&dir.join("val_00000.bin"), 4_000, 0);
+
+        let mut settings = PretrainSettings::new(&dir);
+        settings.checkpoint = dir.join("lm.safetensors");
+        settings.config = ModelConfig { vocab_size: 50, width: 64, layers: 2, heads: 4, ffn_hidden: 96, window: 8, seq_len: 32 };
+        settings.steps = 60;
+        settings.batch_size = 8;
+        settings.micro_batch = 4;
+        settings.learning_rate = 3e-3;
+        settings.warmup_steps = 10;
+        settings.eval_every = 20;
+        settings.eval_batches = 4;
+        settings.log_every = 20;
+        settings.max_hours = None;
+        pretrain(&settings).unwrap();
+
+        let state: TrainState = serde_json::from_str(&std::fs::read_to_string(dir.join("lm.safetensors.state.json")).unwrap()).unwrap();
+        let best = state.best_val_loss.unwrap();
+        println!("best validation loss after 60 steps: {best:.3} (uniform {:.3})", (50f64).ln());
+        assert!(best < 0.7 * (50f64).ln(), "model did not learn the pattern: {best}");
+        assert!(dir.join("lm.safetensors.json").exists() && dir.join("lm.safetensors.history.csv").exists());
+
+        settings.resume = true;
+        settings.steps = 20;
+        pretrain(&settings).unwrap();
+        let resumed: TrainState = serde_json::from_str(&std::fs::read_to_string(dir.join("lm.safetensors.state.json")).unwrap()).unwrap();
+        assert!(resumed.best_val_loss.unwrap() <= best);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}

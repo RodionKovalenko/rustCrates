@@ -682,6 +682,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "candle-nn"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3045fa9e7aef8567d209a27d56b692f60b96f4d0569f4c3011f8ca6715c65e03"
+dependencies = [
+ "candle-core",
+ "half",
+ "libc",
+ "num-traits",
+ "rayon",
+ "safetensors 0.7.0",
+ "serde",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "candle-ug"
 version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6080,6 +6096,7 @@ dependencies = [
  "backtrace",
  "bincode",
  "candle-core",
+ "candle-nn",
  "cast",
  "cc",
  "chrono",
