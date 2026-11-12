@@ -177,6 +177,7 @@ pub fn pretrain(settings: &PretrainSettings) -> Result<()> {
     let history_path = sidecar(&settings.checkpoint, ".history.csv");
     let mut history = std::fs::OpenOptions::new().create(true).append(true).open(&history_path)?;
     let (mut loss_sum, mut loss_count, mut window_started) = (0.0, 0usize, Instant::now());
+    let (mut grad_norm_sum, mut grad_norm_max) = (0.0f64, 0.0f64);
 
     let mut micro_batch = settings.micro_batch.max(1);
     for step in first_step..last_step {
@@ -189,7 +190,10 @@ pub fn pretrain(settings: &PretrainSettings) -> Result<()> {
 
         let starts: Vec<usize> = (0..settings.batch_size).map(|_| rng.random_range(0..shard_tokens.len() - len)).collect();
         let batch = windows_tensor(&shard_tokens, &starts, len, &device)?;
-        let lr = learning_rate(step, settings.learning_rate, settings.warmup_steps, last_step.max(settings.warmup_steps + 1));
+        // Every run warms up again: a continued run starts with a fresh AdamW state, whose first full-size updates
+        // would otherwise hit the loaded model at the peak learning rate.
+        let run_step = step - first_step;
+        let lr = learning_rate(run_step, settings.learning_rate, settings.warmup_steps, settings.steps.max(settings.warmup_steps + 1));
         optimizer.set_learning_rate(lr);
 
         // A micro-batch that does not fit into the GPU memory is halved and the step is repeated.
@@ -203,8 +207,16 @@ pub fn pretrain(settings: &PretrainSettings) -> Result<()> {
                 Err(e) => return Err(e),
             }
         };
-        clip_gradients(&model, &mut grads, 1.0)?;
+        let grad_norm = clip_gradients(&model, &mut grads, 1.0)?;
+        if !grad_norm.is_finite() || !loss.is_finite() {
+            // An overflowing step would write inf / NaN into the weights and the AdamW moments.
+            println!("step {}: skipped (loss {loss}, gradient norm {grad_norm})", step + 1);
+            state.step = step + 1;
+            continue;
+        }
         optimizer.step(&grads)?;
+        grad_norm_sum += grad_norm;
+        grad_norm_max = grad_norm_max.max(grad_norm);
 
         loss_sum += loss;
         loss_count += 1;
@@ -214,15 +226,18 @@ pub fn pretrain(settings: &PretrainSettings) -> Result<()> {
         if state.step % settings.log_every == 0 {
             let tokens_per_s = (loss_count * settings.batch_size * model.config.seq_len) as f64 / window_started.elapsed().as_secs_f64();
             println!(
-                "[{:6.2} h] step {}  loss {:.4}  lr {:.2e}  {:.0} tokens/s  {:.1} M tokens seen",
+                "[{:6.2} h] step {}  loss {:.4}  lr {:.2e}  grad norm {:.2} (max {:.2})  {:.0} tokens/s  {:.1} M tokens seen",
                 started.elapsed().as_secs_f64() / 3600.0,
                 state.step,
                 loss_sum / loss_count as f64,
                 lr,
+                grad_norm_sum / loss_count as f64,
+                grad_norm_max,
                 tokens_per_s,
                 state.tokens_seen as f64 / 1e6
             );
             (loss_sum, loss_count, window_started) = (0.0, 0, Instant::now());
+            (grad_norm_sum, grad_norm_max) = (0.0, 0.0);
         }
 
         let out_of_time = settings.max_hours.is_some_and(|h| started.elapsed().as_secs_f64() >= h * 3600.0);
@@ -279,7 +294,8 @@ fn micro_batched_loss_and_grads(model: &Model, batch: &Tensor, micro: usize) -> 
 }
 
 /// Scales all gradients so that their global L2 norm is at most `max_norm`.
-fn clip_gradients(model: &Model, grads: &mut candle_core::backprop::GradStore, max_norm: f64) -> Result<()> {
+/// Scales the gradients to a global norm of at most `max_norm` and returns the norm before clipping.
+fn clip_gradients(model: &Model, grads: &mut candle_core::backprop::GradStore, max_norm: f64) -> Result<f64> {
     let vars = model.vars();
     let mut sum_sq = 0.0f64;
     for var in &vars {
@@ -296,7 +312,7 @@ fn clip_gradients(model: &Model, grads: &mut candle_core::backprop::GradStore, m
             }
         }
     }
-    Ok(())
+    Ok(norm)
 }
 
 /// Greedy continuation of `prompt` (token ids) by `max_new_tokens` tokens; stops at `eos`.
