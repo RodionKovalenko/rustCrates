@@ -26,7 +26,9 @@ impl CTensor {
     pub fn from_pairs(pairs: &[(f64, f64)], shape: &[usize], dtype: DType, device: &Device) -> Result<Self> {
         let re: Vec<f64> = pairs.iter().map(|p| p.0).collect();
         let im: Vec<f64> = pairs.iter().map(|p| p.1).collect();
-        Ok(Self { re: Tensor::from_vec(re, shape, device)?.to_dtype(dtype)?, im: Tensor::from_vec(im, shape, device)?.to_dtype(dtype)? })
+        // Converted on the CPU, then copied: no GPU kernel is needed to create parameters.
+        let make = |v: Vec<f64>| Tensor::from_vec(v, shape, &Device::Cpu)?.to_dtype(dtype)?.to_device(device);
+        Ok(Self { re: make(re)?, im: make(im)? })
     }
 
     pub fn dims(&self) -> &[usize] {

@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use super::model::{Model, ModelConfig};
 
 /// Token positions per chunk of the output head (its logits are chunk x vocab).
-pub const HEAD_CHUNK: usize = 2048;
+pub const HEAD_CHUNK: usize = 512;
 
 /// Default checkpoint (the configuration is stored next to it as `<file>.json`).
 pub const CHECKPOINT: &str = "STORAGE/candle_lm.safetensors";
@@ -50,7 +50,7 @@ impl PretrainSettings {
             checkpoint: PathBuf::from(CHECKPOINT),
             steps: 20_000,
             batch_size: 16,
-            micro_batch: std::env::var("MICRO_BATCH").ok().and_then(|m| m.parse().ok()).unwrap_or(4),
+            micro_batch: std::env::var("MICRO_BATCH").ok().and_then(|m| m.parse().ok()).unwrap_or(8),
             learning_rate: 6e-4,
             warmup_steps: 500,
             resume: false,

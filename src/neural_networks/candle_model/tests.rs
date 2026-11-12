@@ -185,6 +185,20 @@ mod model_tests {
 
     use crate::neural_networks::candle_model::model::{Model, ModelConfig};
 
+    #[test]
+    fn fast_embedding_table_equals_per_token_wavelet_decomposition() {
+        use crate::neural_networks::candle_model::model::{wavelet_embedding_table, wavelet_token_vector};
+        let (levels, width, seed) = (1, 256, 42u64);
+        let table = wavelet_embedding_table(5, levels, width, seed);
+        for token in 0..5 {
+            let direct = wavelet_token_vector(levels, width, seed ^ (token as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+            for (j, d) in direct.iter().enumerate() {
+                let f = table[token * width + j];
+                assert!((f.0 - d.0).abs() < 1e-9 && (f.1 - d.1).abs() < 1e-9, "token {token} value {j}: {f:?} vs {d:?}");
+            }
+        }
+    }
+
     fn tiny() -> ModelConfig {
         ModelConfig { vocab_size: 97, width: 64, layers: 2, heads: 4, ffn_hidden: 96, window: 8, seq_len: 16 }
     }

@@ -92,14 +92,50 @@ fn complex_constant(value: f64, n: usize, dtype: DType, device: &Device) -> Resu
 
 /// One token vector: a random raw vector (uniform in [-0.4, 0.5), as `create_embedding` of the RM model) compressed
 /// to the model width by the wavelet decomposition.
-fn wavelet_token_vector(levels: i32, width: usize, seed: u64) -> Vec<(f64, f64)> {
-    use rand::SeedableRng;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-    let raw: Vec<f64> = (0..EMBEDDING_DIM_ORIGINAL).map(|_| rng.random_range(-0.4..0.5)).collect();
-    let decomposed = decompose_in_wavelet_2d_levels(&raw, levels);
+pub(crate) fn wavelet_token_vector(levels: i32, width: usize, seed: u64) -> Vec<(f64, f64)> {
+    let decomposed = decompose_in_wavelet_2d_levels(&raw_token_vector(seed), levels);
     let row = &decomposed[0][0];
     assert_eq!(row.len(), width, "wavelet decomposition gave {} values, expected the width {}", row.len(), width);
     row.iter().map(|c| (c.re, c.im)).collect()
+}
+
+fn raw_token_vector(seed: u64) -> Vec<f64> {
+    use rand::SeedableRng;
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+    (0..EMBEDDING_DIM_ORIGINAL).map(|_| rng.random_range(-0.4..0.5)).collect()
+}
+
+fn token_seed(seed: u64, token: usize) -> u64 {
+    seed ^ (token as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+}
+
+/// The wavelet decomposition is linear, so the whole embedding table is the raw vectors times the decomposition of
+/// the unit vectors (512 decompositions instead of one per token: seconds instead of minutes for 50k tokens).
+pub(crate) fn wavelet_embedding_table(vocab_size: usize, levels: i32, width: usize, seed: u64) -> Vec<(f64, f64)> {
+    let basis: Vec<Vec<(f64, f64)>> = (0..EMBEDDING_DIM_ORIGINAL)
+        .into_par_iter()
+        .map(|i| {
+            let mut unit = vec![0.0; EMBEDDING_DIM_ORIGINAL];
+            unit[i] = 1.0;
+            let decomposed = decompose_in_wavelet_2d_levels(&unit, levels);
+            assert_eq!(decomposed[0][0].len(), width, "wavelet decomposition gave {} values, expected the width {}", decomposed[0][0].len(), width);
+            decomposed[0][0].iter().map(|c| (c.re, c.im)).collect()
+        })
+        .collect();
+    (0..vocab_size)
+        .into_par_iter()
+        .flat_map_iter(|token| {
+            let raw = raw_token_vector(token_seed(seed, token));
+            let mut row = vec![(0.0, 0.0); width];
+            for (x, b) in raw.iter().zip(&basis) {
+                for (r, c) in row.iter_mut().zip(b) {
+                    r.0 += x * c.0;
+                    r.1 += x * c.1;
+                }
+            }
+            row
+        })
+        .collect()
 }
 
 impl Model {
@@ -114,7 +150,7 @@ impl Model {
         };
 
         let levels = config.wavelet_levels();
-        let table: Vec<(f64, f64)> = (0..config.vocab_size).into_par_iter().flat_map_iter(|token| wavelet_token_vector(levels, w, seed ^ (token as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15))).collect();
+        let table = wavelet_embedding_table(config.vocab_size, levels, w, seed);
         let embedding = CVar::from_pairs(&table, &[config.vocab_size, w], dtype, device)?;
 
         let mut blocks = Vec::with_capacity(config.layers);
@@ -228,8 +264,8 @@ impl Model {
             let chunk_loss = (cross_entropy(&logits, &targets.narrow(0, start, len)?)? * (len as f64 / n as f64))?;
             loss_sum += chunk_loss.to_dtype(DType::F64)?.to_scalar::<f64>()?;
             let mut grads = chunk_loss.backward()?;
-            grad_re.push(grads.remove(leaf.0.re.as_tensor()).unwrap_or(leaf.0.re.zeros_like()?));
-            grad_im.push(grads.remove(leaf.0.im.as_tensor()).unwrap_or(leaf.0.im.zeros_like()?));
+            grad_re.push(grads.remove(leaf.0.re.as_tensor()).unwrap_or(leaf.0.re.zeros_like()?).detach());
+            grad_im.push(grads.remove(leaf.0.im.as_tensor()).unwrap_or(leaf.0.im.zeros_like()?).detach());
             add_grads(&mut total, &grads, &self.head_vars())?;
         }
         let mut grad = CTensor::new(Tensor::cat(&grad_re, 0)?.reshape((b, t, w))?, Tensor::cat(&grad_im, 0)?.reshape((b, t, w))?);
@@ -240,7 +276,11 @@ impl Model {
             let out = ffn.forward(&attention.forward(&input_t, &ctx)?)?;
             let surrogate = out.re.mul(&grad.re)?.sum_all()?.add(&out.im.mul(&grad.im)?.sum_all()?)?;
             let mut grads = surrogate.backward()?;
-            grad = CTensor::new(grads.remove(input_var.re.as_tensor()).unwrap_or(input_t.re.zeros_like()?), grads.remove(input_var.im.as_tensor()).unwrap_or(input_t.im.zeros_like()?));
+            // Gradients computed by candle keep their graph alive; detached, only the values are kept.
+            grad = CTensor::new(
+                grads.remove(input_var.re.as_tensor()).unwrap_or(input_t.re.zeros_like()?).detach(),
+                grads.remove(input_var.im.as_tensor()).unwrap_or(input_t.im.zeros_like()?).detach(),
+            );
             let mut block_vars = attention.vars();
             block_vars.extend(ffn.vars());
             add_grads(&mut total, &grads, &block_vars)?;
@@ -405,9 +445,10 @@ fn leaf(x: &CTensor) -> Result<(CVar, CTensor)> {
 pub fn add_grads(total: &mut GradStore, grads: &GradStore, vars: &[Var]) -> Result<()> {
     for var in vars {
         if let Some(g) = grads.get(var.as_tensor()) {
+            // Detached: a gradient computed by candle references its whole graph, which would stay in memory.
             let sum = match total.get(var.as_tensor()) {
-                Some(existing) => existing.add(g)?,
-                None => g.clone(),
+                Some(existing) => existing.add(g)?.detach(),
+                None => g.detach(),
             };
             total.insert(var.as_tensor(), sum);
         }
@@ -419,7 +460,7 @@ pub fn add_grads(total: &mut GradStore, grads: &GradStore, vars: &[Var]) -> Resu
 pub fn scale_grads(grads: &mut GradStore, vars: &[Var], factor: f64) -> Result<()> {
     for var in vars {
         if let Some(g) = grads.remove(var.as_tensor()) {
-            grads.insert(var.as_tensor(), (g * factor)?);
+            grads.insert(var.as_tensor(), (g * factor)?.detach());
         }
     }
     Ok(())
