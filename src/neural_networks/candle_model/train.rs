@@ -1,7 +1,7 @@
 //! Pretraining of the candle language model on token shards written by `kaggle/prepare_pretrain.py`
 //! (`train_NNNNN.bin` / `val_NNNNN.bin`, little-endian u16 token ids).
 //!
-//! Random windows of `seq_len + 1` tokens are drawn from one shard after the other; AdamW with linear warmup and a
+//! Random windows of `seq_len + 1` tokens are drawn from one shard after the other; AdamW (beta2 0.95) with linear warmup and a
 //! cosine decay to 10 %, gradient clipping at a global norm of 1. Every `eval_every` steps the mean loss on fixed
 //! validation windows decides whether the checkpoint is replaced (only a better model is kept). Training continues
 //! from the checkpoint with `resume` and stops cleanly after `TRAIN_MAX_HOURS`.
@@ -156,7 +156,7 @@ pub fn pretrain(settings: &PretrainSettings) -> Result<()> {
     println!("{:.1} M parameters ({:.1} M in the transformer layers)", total_params as f64 / 1e6, layer_params as f64 / 1e6);
 
     let len = model.config.seq_len + 1;
-    let mut optimizer = AdamW::new(model.vars(), ParamsAdamW { lr: settings.learning_rate, weight_decay: 0.01, ..Default::default() })?;
+    let mut optimizer = AdamW::new(model.vars(), ParamsAdamW { lr: settings.learning_rate, beta2: 0.95, weight_decay: 0.01, ..Default::default() })?;
     let mut rng = rand::rngs::StdRng::seed_from_u64(1234 + state.step as u64);
 
     let started = Instant::now();
