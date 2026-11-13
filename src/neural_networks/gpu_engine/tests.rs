@@ -51,6 +51,18 @@ fn training_steps_reduce_the_loss() {
 }
 
 #[test]
+fn window_order_takes_every_window_exactly_once_and_differs_per_shard() {
+    use super::train::window_order;
+    let order = window_order(3, 1000);
+    let mut sorted = order.clone();
+    sorted.sort();
+    assert_eq!(sorted, (0..1000).collect::<Vec<_>>(), "not a permutation");
+    assert_ne!(order, (0..1000).collect::<Vec<_>>(), "not shuffled");
+    assert_ne!(order, window_order(4, 1000), "same order for another shard / pass");
+    assert_eq!(order, window_order(3, 1000), "not reproducible");
+}
+
+#[test]
 fn pretrain_learns_saves_and_resumes() {
     use super::train::{load_checkpoint, pretrain, EngineTrainSettings};
     let dir = std::env::temp_dir().join(format!("engine_pretrain_test_{}", std::process::id()));
@@ -71,6 +83,8 @@ fn pretrain_learns_saves_and_resumes() {
     pretrain(CpuBackend, &settings).unwrap();
     let (_, params, adam, state) = load_checkpoint(&settings.checkpoint).unwrap();
     assert_eq!(state.step, 60);
+    // 4000 tokens = 444 windows of 9 tokens; 60 steps x 4 windows = 240 of them, each once, still in shard 0.
+    assert_eq!((state.shard, state.window), (0, Some(240)));
     assert!(adam.is_some_and(|m| m.len() == 2 * params.len()), "AdamW moments saved");
     let best = state.best_val_loss.unwrap();
     assert!(best < (config.vocab_size as f64).ln() - 1.0, "validation loss {best} did not drop");
@@ -79,6 +93,18 @@ fn pretrain_learns_saves_and_resumes() {
     pretrain(CpuBackend, &settings).unwrap();
     let (_, _, _, resumed) = load_checkpoint(&settings.checkpoint).unwrap();
     assert!(resumed.best_val_loss.unwrap() <= best);
+    // 30 more steps continue at window 240 of the same shard order: 240 + 120 = 360 <= 444.
+    assert_eq!((resumed.shard, resumed.window), (0, Some(360)));
+
+    // A checkpoint of the earlier random sampling (no window position) continues with the next shard.
+    let state_file = super::train::file(&settings.checkpoint, ".state.json");
+    let mut old: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&state_file).unwrap()).unwrap();
+    old.as_object_mut().unwrap().remove("window");
+    std::fs::write(&state_file, old.to_string()).unwrap();
+    settings.steps = 2;
+    pretrain(CpuBackend, &settings).unwrap();
+    let (_, _, _, migrated) = load_checkpoint(&settings.checkpoint).unwrap();
+    assert_eq!((migrated.shard, migrated.window), (1, Some(8)));
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

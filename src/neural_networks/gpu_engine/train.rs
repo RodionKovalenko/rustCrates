@@ -1,7 +1,9 @@
 //! Pretraining with the engine on the token shards of `kaggle/prepare_pretrain.py` (`train_NNNNN.bin` /
 //! `val_NNNNN.bin`, little-endian u16 ids).
 //!
-//! Random windows of `seq_len + 1` tokens from one shard after the other; AdamW (beta2 0.95, weight decay 0.01) with
+//! Every shard is cut into non-overlapping windows of `seq_len + 1` tokens, which are taken in a shuffled order
+//! (each window exactly once, then the next shard; the order depends on the shard and the pass over the data, so it
+//! is reproducible after a resume). AdamW (beta2 0.95, weight decay 0.01) with
 //! a linear warmup and a cosine decay to 10 % within every run; gradient clipping at a global norm of 1. With f16
 //! GEMMs the loss is scaled (dynamic loss scaling: halved and the step skipped when a gradient overflows, doubled
 //! after `LOSS_SCALE_GROWTH_INTERVAL` clean steps). Every `eval_every` steps the validation loss decides whether the
@@ -11,7 +13,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use rand::{RngExt, SeedableRng};
+use rand::{seq::SliceRandom, SeedableRng};
 use serde::{Deserialize, Serialize};
 
 use super::backend::Backend;
@@ -67,6 +69,9 @@ pub struct EngineTrainState {
     pub step: usize,
     pub best_val_loss: Option<f64>,
     pub shard: usize,
+    /// Next position in the shuffled window order of `shard` (None: checkpoint of the earlier random sampling).
+    #[serde(default)]
+    pub window: Option<usize>,
     pub tokens_seen: u64,
     /// AdamW steps taken (bias correction).
     pub adam_step: u64,
@@ -75,7 +80,7 @@ pub struct EngineTrainState {
 
 impl Default for EngineTrainState {
     fn default() -> Self {
-        Self { step: 0, best_val_loss: None, shard: 0, tokens_seen: 0, adam_step: 0, loss_scale: INITIAL_LOSS_SCALE }
+        Self { step: 0, best_val_loss: None, shard: 0, window: Some(0), tokens_seen: 0, adam_step: 0, loss_scale: INITIAL_LOSS_SCALE }
     }
 }
 
@@ -143,6 +148,14 @@ pub fn learning_rate(step: usize, peak: f64, warmup: usize, total: usize) -> f64
     peak * (0.1 + 0.9 * 0.5 * (1.0 + (std::f64::consts::PI * progress).cos()))
 }
 
+/// Shuffled order of the `count` windows of the shard with index `shard` (counted over all passes, so every pass over
+/// the data has a different order).
+pub fn window_order(shard: usize, count: usize) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..count).collect();
+    order.shuffle(&mut rand::rngs::StdRng::seed_from_u64(0x5EED_0000 ^ shard as u64));
+    order
+}
+
 fn windows(tokens: &[u16], starts: &[usize], len: usize) -> Vec<u32> {
     starts.iter().flat_map(|&s| tokens[s..s + len].iter().map(|&t| t as u32)).collect()
 }
@@ -192,12 +205,17 @@ pub fn pretrain<B: Backend>(backend: B, settings: &EngineTrainSettings) -> Resul
     println!("{:.1} M parameters ({:.1} M in the transformer layers)", params_total as f64 / 1e6, layer_params as f64 / 1e6);
 
     let len = model.config.seq_len + 1;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(1234 + state.step as u64);
+    if state.window.is_none() {
+        // A checkpoint of the earlier random sampling: its shard has been used, the next one starts.
+        state.shard += 1;
+        state.window = Some(0);
+        println!("Checkpoint without a window position: continuing with shard {}", state.shard);
+    }
     let started = Instant::now();
     let first_step = state.step;
     let last_step = first_step + settings.steps;
     let mut shard_tokens = read_shard(&train_files[state.shard % train_files.len()])?;
-    let mut batches_left = shard_tokens.len() / (settings.batch_size * len);
+    let mut order = window_order(state.shard, shard_tokens.len() / len);
     println!("{} train shards, {} validation tokens; steps {}..{}, batch {} x {} tokens, micro-batch {}", train_files.len(), val.len(), first_step, last_step, settings.batch_size, model.config.seq_len, settings.micro_batch);
 
     let mut history = std::fs::OpenOptions::new().create(true).append(true).open({
@@ -212,13 +230,15 @@ pub fn pretrain<B: Backend>(backend: B, settings: &EngineTrainSettings) -> Resul
     let micro = settings.micro_batch.clamp(1, settings.batch_size);
 
     for step in first_step..last_step {
-        if batches_left == 0 {
+        let mut position = state.window.unwrap_or(0);
+        if position + settings.batch_size > order.len() {
             state.shard += 1;
             shard_tokens = read_shard(&train_files[state.shard % train_files.len()])?;
-            batches_left = shard_tokens.len() / (settings.batch_size * len);
+            order = window_order(state.shard, shard_tokens.len() / len);
+            position = 0;
         }
-        batches_left = batches_left.saturating_sub(1);
-        let starts: Vec<usize> = (0..settings.batch_size).map(|_| rng.random_range(0..shard_tokens.len() - len)).collect();
+        let starts: Vec<usize> = order[position..position + settings.batch_size].iter().map(|w| w * len).collect();
+        state.window = Some(position + settings.batch_size);
         let lr = learning_rate(step - first_step, settings.learning_rate, settings.warmup_steps, settings.steps.max(settings.warmup_steps + 1));
 
         // Gradients of the batch mean loss, summed over micro-batches (each weighted by its share of the batch).
