@@ -4,8 +4,9 @@
 //!   x -> x + beta * concat_h attention_h(norm(x))          (SparseSelfAttentionLayerRm)
 //!     -> x + beta * leaky(swiglu(norm(x) W1 + b1) W2 + b2)  (FeedForwardLayerRm)
 //!
-//! The arithmetic follows the RM layers step by step (complex norm with a complex variance, RoPE, ComplexToLinear on
-//! queries and keys, causal local-window softmax on real scores, real parts of V, complex SwiGLU and leaky ReLU),
+//! The arithmetic follows the RM layers step by step (complex norm with the real variance mean(|x - mean|^2), RoPE,
+//! ComplexToLinear on queries and keys, causal local-window softmax on real scores, real parts of V, gated unit
+//! a * split SiLU(b) and leaky ReLU),
 //! only the attention window is a parameter (`window`, the RM model uses 2). Sequences are not padded.
 
 use candle_core::{DType, Device, Result, Tensor, Var, D};
@@ -15,7 +16,8 @@ use super::complex::{CTensor, CVar};
 /// RoPE base of the RM model (`INITIAL_BASE * SCALING_FAKTOR`).
 pub const ROPE_BASE: f64 = 1250.0;
 
-/// Complex layer norm over the last dimension: (x - mean) / sqrt(var + eps) * gamma + beta, var = mean((x - mean)^2).
+/// Complex layer norm over the last dimension: (x - mean) / sqrt(var + eps) * gamma + beta with the real variance
+/// var = mean(|x - mean|^2).
 #[derive(Clone, Debug)]
 pub struct ComplexNorm {
     pub gamma: CVar,
@@ -25,11 +27,11 @@ pub struct ComplexNorm {
 
 impl ComplexNorm {
     pub fn forward(&self, x: &CTensor) -> Result<CTensor> {
+        // Real variance mean(|x - mu|^2), as in complex_layer_norm::layer_norm_row.
         let mean = x.mean_keepdim_last()?;
         let diff = x.sub(&mean)?;
-        let var = diff.mul(&diff)?.mean_keepdim_last()?;
-        let std = CTensor::new((&var.re + self.epsilon)?, var.im.clone()).sqrt()?;
-        diff.div(&std)?.mul(&self.gamma.tensor())?.add(&self.beta.tensor())
+        let std = (diff.mean_norm_sqr_keepdim_last()? + self.epsilon)?.sqrt()?;
+        diff.div_real(&std)?.mul(&self.gamma.tensor())?.add(&self.beta.tensor())
     }
 
     pub fn vars(&self) -> Vec<Var> {
@@ -170,7 +172,7 @@ impl FeedForwardLayer {
         let normed = self.norm.forward(x)?;
         let hidden = normed.matmul(&self.w_1.tensor())?.add(&self.b_1.tensor())?;
         let (a, b) = hidden.split_half_last()?;
-        let gated = a.mul(&b)?.mul(&b.sigmoid()?)?;
+        let gated = a.mul(&b.split_silu()?)?; // as in complex_layer_norm::gated
         let out = gated.matmul(&self.w_2.tensor())?.add(&self.b_2.tensor())?.leaky_relu(0.01)?;
         out.scale(self.beta)?.add(x)
     }

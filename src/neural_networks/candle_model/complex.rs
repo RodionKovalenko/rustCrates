@@ -108,6 +108,22 @@ impl CTensor {
         numerator.div(&one_plus)
     }
 
+    /// Divides by a real tensor (with broadcasting).
+    pub fn div_real(&self, r: &Tensor) -> Result<CTensor> {
+        Ok(CTensor::new(self.re.broadcast_div(r)?, self.im.broadcast_div(r)?))
+    }
+
+    /// |z|^2 averaged over the last dimension, keeping it (size 1): a real tensor.
+    pub fn mean_norm_sqr_keepdim_last(&self) -> Result<Tensor> {
+        let d = self.re.rank() - 1;
+        self.re.sqr()?.add(&self.im.sqr()?)?.mean_keepdim(d)
+    }
+
+    /// Split SiLU: silu(re) + i silu(im) with silu(t) = t / (1 + e^-t) (bounded, no poles).
+    pub fn split_silu(&self) -> Result<CTensor> {
+        Ok(CTensor::new(self.re.silu()?, self.im.silu()?))
+    }
+
     /// Complex leaky ReLU: z if re > 0, else slope * z (the whole complex value is scaled).
     pub fn leaky_relu(&self, slope: f64) -> Result<CTensor> {
         let positive = self.re.gt(0.0)?;

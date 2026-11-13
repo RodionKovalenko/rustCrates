@@ -6,10 +6,11 @@ use crate::neural_networks::network_components::layer_input_struct::LayerInput;
 use crate::neural_networks::network_components::layer_output_struct::LayerOutput;
 use crate::neural_networks::network_layers::default_layer::LayerInterface;
 use crate::neural_networks::utils::dtype::{r, Real, C, ONE, ZERO};
+use crate::neural_networks::utils::complex_layer_norm::{layer_norm_row, layer_norm_row_backward};
 use crate::neural_networks::utils::matrix::normalize_bias;
 use crate::neural_networks::utils::{
     adam_w::calculate_adam_w_bias,
-    matrix::{add_vectors, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate_1d},
+    matrix::{add_vectors, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,25 +79,11 @@ impl NormalNormLayer {
         }
     }
 
+    /// Layer norm of one row with the real (modulus) variance: (output, mean, variance as a complex number with a
+    /// zero imaginary part).
     pub fn normalize(&self, input: &Vec<C>) -> (Vec<C>, C, C) {
-        let len: Real = r(input.len() as f64);
-        let mean: C = input.iter().sum::<C>() / len;
-
-        let variance: C = input.iter().map(|x| (*x - mean).powf(2.0)).sum::<C>() / len;
-
-        let stddev: C = (variance + C::new(r(self.epsilon), ZERO)).sqrt();
-
-        let normalized: Vec<C> = input
-            .iter()
-            .enumerate()
-            .map(|(i, x)| {
-                let val: C = ((*x - mean) / stddev) * self.gamma[i] + self.beta[i];
-                //Complex::new(val.re, 0.0)
-                val
-            })
-            .collect();
-
-        (normalized, mean, variance)
+        let (normalized, mean, variance) = layer_norm_row(input, &self.gamma, &self.beta, self.epsilon);
+        (normalized, mean, C::new(variance, ZERO))
     }
 
     pub fn forward(&mut self, layer_input: &LayerInput) -> LayerOutput {
@@ -179,7 +166,6 @@ impl NormalNormLayer {
 
     pub fn backward(&mut self, previous_gradient: &Gradient) -> Gradient {
         let input_batch = self.input_batch.as_ref();
-        let normalized_batch = self.normalized_batch.as_ref();
         let mean_batch = self.mean_batch.as_ref().expect("Mean not found");
         let var_batch = self.var_batch.as_ref().expect("Variance not found");
 
@@ -211,14 +197,11 @@ impl NormalNormLayer {
         let mut gamma_grad: Vec<C> = vec![C::new(ZERO, ZERO); feature_dim];
         let mut beta_grad: Vec<C> = vec![C::new(ZERO, ZERO); feature_dim];
 
-        let n: Real = r(feature_dim as f64);
-        let eps: Real = r(1e-8);
 
         if let Some(previous_gradient_batch) = previous_gradient_batch {
             match previous_gradient_batch {
                 GradientBatch::Complex(previous_gradient) => {
                     let input_batch = input_batch.expect("Input batch not found");
-                    let normalized_batch = normalized_batch.expect("Normalized batch not found");
                     for b in 0..batch_size {
                         let padding_mask = if b < padding_mask_batch.len() { &padding_mask_batch[b] } else { &vec![1u32; seq_len] };
 
@@ -227,45 +210,12 @@ impl NormalNormLayer {
                             if s < padding_mask.len() && padding_mask[s] == 0 {
                                 continue;
                             }
-
-                            let mu: C = mean_batch[b][s];
-                            let var: C = var_batch[b][s] + C::new(eps, ZERO);
-                            let var_sqrt = var.sqrt();
-                            let std_inv: C = C::new(ONE, ZERO) / var_sqrt;
-                            let var_pow_minus_3_2: C = C::new(ONE, ZERO) / (var * var_sqrt);
-
+                            let (row_input_grad, row_gamma_grad, row_beta_grad) =
+                                layer_norm_row_backward(&input_batch[b][s], mean_batch[b][s], var_batch[b][s].re, &self.gamma, self.epsilon, &previous_gradient[b][s]);
+                            input_grads[b][s] = row_input_grad;
                             for f in 0..feature_dim {
-                                let x_hat: C = normalized_batch[b][s][f];
-                                let dout: C = previous_gradient[b][s][f].conj();
-
-                                // Accumulate gamma and beta gradients
-                                gamma_grad[f] += dout * x_hat;
-                                beta_grad[f] += dout;
-
-                                let mut d_common_1 = C::new(ZERO, ZERO);
-                                let mut dmu_term_2 = C::new(ZERO, ZERO);
-                                let mut dmu_term_3 = C::new(ZERO, ZERO);
-
-                                // Compute sums over d features
-                                for d in 0..feature_dim {
-                                    let x: C = input_batch[b][s][d];
-                                    let dout: C = previous_gradient[b][s][d].conj();
-
-                                    let dxhat: C = dout * self.gamma[f];
-                                    d_common_1 += dxhat * (x - mu);
-                                    dmu_term_2 += dout;
-                                    dmu_term_3 += (x - mu) / n;
-                                }
-
-                                let dvar_sum = d_common_1 * r(-0.5) * var_pow_minus_3_2;
-                                let dmu_sum = self.gamma[f] * (-std_inv) * dmu_term_2 + var_pow_minus_3_2 * d_common_1 * dmu_term_3;
-
-                                let dxhat: C = previous_gradient[b][s][f].conj() * self.gamma[f];
-                                let x: C = input_batch[b][s][f];
-
-                                let gradient: C = (dxhat * std_inv) + (dvar_sum * ((r(2.0) * (x - mu)) / n)) + dmu_sum / n;
-
-                                input_grads[b][s][f] = gradient.conj();
+                                gamma_grad[f] += row_gamma_grad[f];
+                                beta_grad[f] += row_beta_grad[f];
                             }
                         }
                     }
@@ -285,8 +235,8 @@ impl NormalNormLayer {
         let mut gradient = Gradient::new_default();
         gradient.set_time_step(self.time_step);
         gradient.set_gradient_input_batch(input_grads);
-        gradient.set_gradient_gamma(conjugate_1d(&gamma_grad));
-        gradient.set_gradient_beta(conjugate_1d(&beta_grad));
+        gradient.set_gradient_gamma(gamma_grad);
+        gradient.set_gradient_beta(beta_grad);
 
         self.gradient = Some(gradient.clone());
         gradient

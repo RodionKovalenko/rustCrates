@@ -1,3 +1,4 @@
+use crate::neural_networks::utils::complex_layer_norm::gated_backward;
 use crate::neural_networks::{
     network_layers::network_layers_rm::eml_linear_layer_rm::EmlLinearLayerRm,
     network_layers::network_layers_rm::adaptive_linear_layer_rm::AdaptiveLinearLayerRm,
@@ -16,9 +17,9 @@ use crate::neural_networks::{
     },
     network_types::neural_network_generic::OperationMode,
     utils::{
-        activation::{activate_output_complex, swish},
+        activation::activate_output_complex,
         adam_w::{calculate_adam_w, calculate_adam_w_bias},
-        derivative::{get_gradient_complex, get_gradient_swish},
+        derivative::get_gradient_complex,
         matrix::{add_matrix, add_vector, average_matrix_by_scalar, average_vector_by_scalar, clip_all_gradients_by_global_norm_2d, conjugate, conjugate_transpose, hadamard_product_2d_c, multiply_complex, normalize_bias, normalize_gradients, split_data_by_columns}, matrix_rm::RowMajorMatrix,
         weights_initializer::initialize_weights_complex,
     },
@@ -259,18 +260,16 @@ impl Layer {
                 for batch_ind in 0..input_batch.len() {
                     let (a, b) = split_data_by_columns(&raw_output_batch[batch_ind]);
 
-                    let swish_b = swish(&b);
-                    let gradient_b = get_gradient_swish(&b);
-
-                    //5x10 hadamard 5x10 = 5x10
-                    let dl_da = hadamard_product_2d_c(&previous_gradient_batch[batch_ind], &conjugate(&swish_b));
+                    // Y = a * split_silu(b) (see complex_layer_norm::gated_backward).
+                    let g = &previous_gradient_batch[batch_ind];
+                    let (mut dl_da, mut dl_db_2) = (a.clone(), b.clone());
+                    for i in 0..a.len() {
+                        for j in 0..a[i].len() {
+                            (dl_da[i][j], dl_db_2[i][j]) = gated_backward(&a[i][j], &b[i][j], &g[i][j]);
+                        }
+                    }
                     // 16x5 * 5x10 = 16x10
                     gradient_weights_1[batch_ind] = multiply_complex(&conjugate_transpose(&input_batch[batch_ind]), &dl_da);
-
-                    // 5x10 hadamard 5x10 = 5x10
-                    let dl_db_1 = hadamard_product_2d_c(&previous_gradient_batch[batch_ind], &conjugate(&a));
-                    // 5x10 hadamard 5x10 = 5x10
-                    let dl_db_2 = hadamard_product_2d_c(&dl_db_1, &conjugate(&gradient_b));
 
                     // 16x5 * 5x10 = 16x10
                     gradient_weights_2[batch_ind] = multiply_complex(&conjugate_transpose(&input_batch[batch_ind]), &dl_db_2);

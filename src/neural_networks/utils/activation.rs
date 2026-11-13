@@ -285,8 +285,9 @@ pub fn swiglu_vector(a: &Vec<C>, b: &Vec<C>) -> Vec<C> {
     a.iter().zip(b.iter()).map(|(a, b)| swiglu(a, b)).collect()
 }
 
+/// Gated unit of the feed-forward layers: a * (silu(Re b) + i silu(Im b)); see `complex_layer_norm::gated`.
 pub fn swiglu(a: &C, b: &C) -> C {
-    *a * *b * sigmoid_complex(b)
+    crate::neural_networks::utils::complex_layer_norm::gated(a, b)
 }
 
 pub fn swish(data: &Vec<Vec<C>>) -> Vec<Vec<C>> {

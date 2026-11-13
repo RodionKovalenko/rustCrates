@@ -21,7 +21,7 @@ pub fn swish_rm(data: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
     map_rm(data, |x| x * sigmoid_complex(&x))
 }
 
-/// RM counterpart of `activation::swiglu_matrix`: each row is split in half `[a | b]`, output is `a * b * sigmoid(b)`.
+/// RM counterpart of `activation::swiglu_matrix`: each row is split in half `[a | b]`, output is `a * split_silu(b)` (see `complex_layer_norm::gated`).
 pub fn swiglu_matrix_rm(data: &RowMajorMatrix<C>) -> RowMajorMatrix<C> {
     let half = data.cols / 2;
     let mut out = RowMajorMatrix::create_empty(data.rows, half);

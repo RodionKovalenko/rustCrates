@@ -144,6 +144,56 @@ fn feed_forward_layer_matches_rm() {
     assert_close("FFN input gradient", &rm_pairs(&input_gradient_rm), &input_gradient);
 }
 
+/// The exact gradient check: the autograd gradients of the candle feed-forward layer (norm with the real variance,
+/// gated unit a * split SiLU(b)) against central differences in f64, for the input and every parameter.
+#[test]
+fn feed_forward_layer_gradients_match_finite_differences() {
+    let (batch_size, seq_len, dim, hidden) = (2, 3, 6, 5);
+    let layer_rm = FeedForwardLayerRm::new(dim, hidden, 0.01);
+    let mut layer = ffn_from_rm(&layer_rm);
+    // Non-trivial gamma / beta, so their gradients and their effect on the input gradient are exercised.
+    let random = |n: usize| generate_random_complex_3d(1, 1, n).remove(0).remove(0);
+    layer.norm.gamma = cvar(&random(dim), &[dim]);
+    layer.norm.beta = cvar(&random(dim), &[dim]);
+    let input = generate_random_complex_3d(batch_size, seq_len, dim);
+    let g = to_ctensor(&generate_random_complex_3d(batch_size, seq_len, dim));
+    let x = to_ctensor(&input);
+    let (x_re, x_im) = (Var::from_tensor(&x.re).unwrap(), Var::from_tensor(&x.im).unwrap());
+    let loss = |layer: &FeedForwardLayer| -> candle_core::Tensor {
+        let y = layer.forward(&CTensor::new(x_re.as_tensor().clone(), x_im.as_tensor().clone())).unwrap();
+        (y.re.mul(&g.re).unwrap().sum_all().unwrap() + y.im.mul(&g.im).unwrap().sum_all().unwrap()).unwrap()
+    };
+    let grads = loss(&layer).backward().unwrap();
+
+    let mut vars: Vec<(String, Var)> = vec![("input.re".into(), x_re.clone()), ("input.im".into(), x_im.clone())];
+    for (name, p) in [("norm.gamma", &layer.norm.gamma), ("norm.beta", &layer.norm.beta), ("w_1", &layer.w_1), ("b_1", &layer.b_1), ("w_2", &layer.w_2), ("b_2", &layer.b_2)] {
+        let [re, im] = p.vars();
+        vars.push((format!("{name}.re"), re.clone()));
+        vars.push((format!("{name}.im"), im.clone()));
+    }
+    let h = 1e-6;
+    let mut worst = 0.0f64;
+    for (name, var) in &vars {
+        let analytical = grads.get(var.as_tensor()).unwrap_or_else(|| panic!("{name}: no gradient")).flatten_all().unwrap().to_vec1::<f64>().unwrap();
+        let original = var.as_tensor().flatten_all().unwrap().to_vec1::<f64>().unwrap();
+        let shape = var.as_tensor().shape().clone();
+        for i in 0..original.len() {
+            let mut at = |delta: f64| {
+                let mut values = original.clone();
+                values[i] += delta;
+                var.set(&candle_core::Tensor::from_vec(values, shape.clone(), &Device::Cpu).unwrap()).unwrap();
+                loss(&layer).to_scalar::<f64>().unwrap()
+            };
+            let numerical = (at(h) - at(-h)) / (2.0 * h);
+            var.set(&candle_core::Tensor::from_vec(original.clone(), shape.clone(), &Device::Cpu).unwrap()).unwrap();
+            let difference = (numerical - analytical[i]).abs() / numerical.abs().max(analytical[i].abs()).max(1.0);
+            assert!(difference < 1e-6, "{name}[{i}]: numerical {numerical} vs autograd {}", analytical[i]);
+            worst = worst.max(difference);
+        }
+    }
+    println!("FFN gradients vs central differences: max relative difference {worst:.2e}");
+}
+
 #[test]
 fn attention_layer_matches_rm() {
     let (batch_size, seq_len, dim, heads, window) = (2, 9, 8, 2, 2);

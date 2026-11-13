@@ -19,6 +19,7 @@ pub mod matrix_rm;
 pub mod derivative_rm;
 pub mod activation_rm;
 pub mod adam_w_rm;
+pub mod complex_layer_norm;
 
 #[cfg(feature = "cuda")]
 pub mod gpu_matmul;
