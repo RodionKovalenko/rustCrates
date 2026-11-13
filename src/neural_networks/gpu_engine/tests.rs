@@ -300,3 +300,25 @@ mod cuda_backend {
         compare(Precision::F16, 5e-2, 1024.0);
     }
 }
+
+/// Speed of the default model on the CPU backend (forward + backward of one 512-token sequence).
+/// `cargo test --release --lib cpu_speed -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn cpu_speed_of_the_default_model() {
+    let config = EngineConfig::default();
+    let started = std::time::Instant::now();
+    let mut model = Model::new(CpuBackend, config.clone(), 1);
+    println!("model created in {:.1} s", started.elapsed().as_secs_f64());
+    let ids = windows(&config, 1, 7);
+    model.zero_grads();
+    model.forward_backward(&ids, true, 1.0); // warm-up (allocations)
+    let started = std::time::Instant::now();
+    let steps = 2;
+    for _ in 0..steps {
+        model.zero_grads();
+        model.forward_backward(&ids, true, 1.0);
+    }
+    let seconds = started.elapsed().as_secs_f64() / steps as f64;
+    println!("CPU ({} threads): {:.2} s per 512 tokens = {:.0} tokens/s", rayon::current_num_threads(), seconds, 512.0 / seconds);
+}
