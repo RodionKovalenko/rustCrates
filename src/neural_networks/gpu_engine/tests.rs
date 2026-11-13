@@ -165,3 +165,66 @@ mod against_candle {
         println!("largest relative gradient difference: {:.2e} ({})", worst.0, worst.1);
     }
 }
+
+#[cfg(feature = "gpu-engine")]
+mod cuda_backend {
+    use super::*;
+    use crate::neural_networks::gpu_engine::cuda::{compile_kernels, CudaBackend, Precision};
+
+    /// Needs only the NVRTC library, no GPU.
+    #[test]
+    fn kernels_compile_with_nvrtc() {
+        if let Err(e) = compile_kernels() {
+            panic!("NVRTC: {e}");
+        }
+    }
+
+    fn gpu(precision: Precision) -> Option<CudaBackend> {
+        match CudaBackend::new(0, precision) {
+            Ok(b) => Some(b),
+            Err(e) => {
+                println!("no GPU ({e}): skipped");
+                None
+            }
+        }
+    }
+
+    /// Loss and every gradient of the CUDA backend against the CPU backend (same parameters, same batch).
+    fn compare(precision: Precision, tolerance: f64) {
+        let Some(backend) = gpu(precision) else { return };
+        println!("GPU: {}", backend.device_name());
+        let config = EngineConfig { vocab_size: 300, width: 64, layers: 2, heads: 4, ffn_hidden: 96, window: 5, seq_len: 32 };
+        let mut cpu = Model::new(CpuBackend, config.clone(), 3);
+        let params = cpu.params.clone();
+        let mut cuda = Model::from_parameters(backend, config.clone(), &params);
+        let ids = windows(&config, 3, 9);
+        cpu.zero_grads();
+        cuda.zero_grads();
+        let (l_cpu, l_gpu) = (cpu.forward_backward(&ids, true, 1.0), cuda.forward_backward(&ids, true, 1.0));
+        println!("{precision:?}: loss cpu {l_cpu:.6}, gpu {l_gpu:.6}");
+        assert!((l_cpu - l_gpu).abs() < tolerance * l_cpu.abs(), "loss cpu {l_cpu} gpu {l_gpu}");
+        use super::super::backend::Backend;
+        let g_gpu = cuda.backend.download(&cuda.grads);
+        let mut worst = (0.0f64, String::new());
+        for seg in &cpu.layout.segments {
+            let (a, b) = (&cpu.grads[seg.offset..seg.offset + seg.len()], &g_gpu[seg.offset..seg.offset + seg.len()]);
+            let norm = a.iter().fold(0.0f32, |m, v| m.max(v.abs())).max(1e-6) as f64;
+            let diff = a.iter().zip(b).map(|(x, y)| (x - y).abs() as f64).fold(0.0, f64::max) / norm;
+            if diff > worst.0 {
+                worst = (diff, seg.name.clone());
+            }
+            assert!(diff < tolerance, "{precision:?} {}: GPU gradient differs by {diff:.2e}", seg.name);
+        }
+        println!("{precision:?}: largest relative gradient difference {:.2e} ({})", worst.0, worst.1);
+    }
+
+    #[test]
+    fn gpu_f32_matches_cpu() {
+        compare(Precision::F32, 1e-4);
+    }
+
+    #[test]
+    fn gpu_f16_matches_cpu_to_half_precision() {
+        compare(Precision::F16, 2e-2);
+    }
+}

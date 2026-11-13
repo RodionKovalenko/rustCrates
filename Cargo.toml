@@ -82,6 +82,8 @@ name = "neural_networks"
 default = ["cpu"]
 cpu = []
 cuda = ["cudarc", "cudarc/cuda-12090", "cudarc/cublas"]
+# Own training engine on the GPU: cuBLAS GEMMs and own kernels compiled at run time with NVRTC.
+gpu-engine = ["cudarc", "cudarc/cuda-12090", "cudarc/cublas", "cudarc/nvrtc"]
 cublas = []
 # Candle (Hugging Face) tensor model with autograd: the GPU-trained transformer. `candle-cuda` runs it on the GPU.
 candle = ["dep:candle-core", "dep:candle-nn"]

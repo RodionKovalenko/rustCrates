@@ -10,6 +10,8 @@
 
 pub mod backend;
 pub mod cpu;
+#[cfg(feature = "gpu-engine")]
+pub mod cuda;
 pub mod model;
 
 #[cfg(test)]
