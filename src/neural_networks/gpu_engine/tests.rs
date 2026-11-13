@@ -50,6 +50,38 @@ fn training_steps_reduce_the_loss() {
     assert!(last < first - 1.0, "loss {first} -> {last}");
 }
 
+#[test]
+fn pretrain_learns_saves_and_resumes() {
+    use super::train::{load_checkpoint, pretrain, EngineTrainSettings};
+    let dir = std::env::temp_dir().join(format!("engine_pretrain_test_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // A learnable stream: token i is followed by token (i + 1) mod vocab.
+    let config = tiny();
+    let write = |name: &str, n: usize, offset: u16| {
+        let bytes: Vec<u8> = (0..n).flat_map(|i| ((i as u16 + offset) % config.vocab_size as u16).to_le_bytes()).collect();
+        std::fs::write(dir.join(name), bytes).unwrap();
+    };
+    write("train_00000.bin", 4000, 0);
+    write("val_00000.bin", 600, 3);
+    let mut settings = EngineTrainSettings::new(&dir);
+    settings.checkpoint = dir.join("model");
+    settings.config = config.clone();
+    (settings.steps, settings.batch_size, settings.micro_batch, settings.learning_rate) = (60, 4, 2, 3e-3);
+    (settings.warmup_steps, settings.eval_every, settings.eval_batches, settings.log_every, settings.max_hours) = (5, 30, 2, 30, None);
+    pretrain(CpuBackend, &settings).unwrap();
+    let (_, params, adam, state) = load_checkpoint(&settings.checkpoint).unwrap();
+    assert_eq!(state.step, 60);
+    assert!(adam.is_some_and(|m| m.len() == 2 * params.len()), "AdamW moments saved");
+    let best = state.best_val_loss.unwrap();
+    assert!(best < (config.vocab_size as f64).ln() - 1.0, "validation loss {best} did not drop");
+    settings.resume = true;
+    settings.steps = 30;
+    pretrain(CpuBackend, &settings).unwrap();
+    let (_, _, _, resumed) = load_checkpoint(&settings.checkpoint).unwrap();
+    assert!(resumed.best_val_loss.unwrap() <= best);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[cfg(feature = "candle")]
 mod against_candle {
     use super::*;

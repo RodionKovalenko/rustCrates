@@ -13,6 +13,7 @@ pub mod cpu;
 #[cfg(feature = "gpu-engine")]
 pub mod cuda;
 pub mod model;
+pub mod train;
 
 #[cfg(test)]
 mod tests;

@@ -39,6 +39,12 @@ GPU language model (build with --features candle, on a GPU --features candle-cud
                                                        STORAGE/candle_lm.safetensors, only a better model is saved
   lm-generate [max_tokens] <text>                      greedy continuation of a text with the pretrained model
 
+Own GPU engine (hand-written backward pass; on a GPU build with --features gpu-engine, else it runs on the CPU):
+  engine-pretrain <shard folder> [steps] [batch_size] [learning_rate] [new|resume] [window] [f16|f32]
+                                                       pretrain on token shards of kaggle/prepare_pretrain.py
+                                                       (default: 20000 16 0.0003 new 256 f16); checkpoint
+                                                       STORAGE/engine_lm.*, only a better model is saved
+
 Spectral flow (image model):
   spectral-train [steps] [size] [gray|rgb] [mnist|<image folder>] [new]
                                                        train (default: 100000 32 gray mnist; continues the saved
@@ -84,6 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("split-qa") => split_qa(&args)?,
         #[cfg(feature = "candle")]
         Some("pretrain") => pretrain_command(&args)?,
+        Some("engine-pretrain") => engine_pretrain_command(&args)?,
         #[cfg(feature = "candle")]
         Some("lm-generate") => lm_generate_command(&args)?,
         Some("predict") => predict(ModelKind::Rm, &args)?,
@@ -210,6 +217,42 @@ fn pretrain_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         settings.config.window = window.parse()?;
     }
     pretrain(&settings)?;
+    Ok(())
+}
+
+/// engine-pretrain <shard folder> [steps] [batch_size] [learning_rate] [new|resume] [window] [f16|f32]
+fn engine_pretrain_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    use neural_networks::neural_networks::gpu_engine::train::EngineTrainSettings;
+    let data_dir = args.get(2).ok_or("usage: engine-pretrain <shard folder> [steps] [batch_size] [learning_rate] [new|resume] [window] [f16|f32]")?;
+    let mut settings = EngineTrainSettings::new(data_dir);
+    if let Some(steps) = args.get(3) {
+        settings.steps = steps.parse()?;
+    }
+    if let Some(batch) = args.get(4) {
+        settings.batch_size = batch.parse()?;
+    }
+    if let Some(lr) = args.get(5) {
+        settings.learning_rate = lr.parse()?;
+    }
+    settings.resume = args.get(6).is_some_and(|m| m == "resume");
+    if let Some(window) = args.get(7) {
+        settings.config.window = window.parse()?;
+    }
+    let half = args.get(8).is_none_or(|p| p != "f32");
+    #[cfg(feature = "gpu-engine")]
+    {
+        use neural_networks::neural_networks::gpu_engine::cuda::{CudaBackend, Precision};
+        let backend = CudaBackend::new(0, if half { Precision::F16 } else { Precision::F32 })?;
+        println!("GPU: {} ({} GEMMs)", backend.device_name(), if half { "f16 tensor-core" } else { "f32" });
+        settings.loss_scaling = half;
+        neural_networks::neural_networks::gpu_engine::train::pretrain(backend, &settings)?;
+    }
+    #[cfg(not(feature = "gpu-engine"))]
+    {
+        let _ = half;
+        println!("Built without the feature gpu-engine: training on the CPU (f32).");
+        neural_networks::neural_networks::gpu_engine::train::pretrain(neural_networks::neural_networks::gpu_engine::cpu::CpuBackend, &settings)?;
+    }
     Ok(())
 }
 
