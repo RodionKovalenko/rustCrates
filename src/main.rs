@@ -44,6 +44,8 @@ Own GPU engine (hand-written backward pass; on a GPU build with --features gpu-e
                                                        pretrain on token shards of kaggle/prepare_pretrain.py
                                                        (default: 20000 16 0.0003 new 256 f16); checkpoint
                                                        STORAGE/engine_lm.*, only a better model is saved
+  engine-bench [micro_batch] [f16|f32] [steps]       training speed of the default model on random tokens
+                                                       (no data needed; default: 4 f16 5)
 
 Spectral flow (image model):
   spectral-train [steps] [size] [gray|rgb] [mnist|<image folder>] [new]
@@ -71,7 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    #[cfg(not(feature = "cuda"))]
+    #[cfg(not(any(feature = "cuda", feature = "gpu-engine")))]
     println!("Running in CPU mode");
 
     let args: Vec<String> = env::args().collect();
@@ -91,6 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(feature = "candle")]
         Some("pretrain") => pretrain_command(&args)?,
         Some("engine-pretrain") => engine_pretrain_command(&args)?,
+        Some("engine-bench") => engine_bench_command(&args)?,
         #[cfg(feature = "candle")]
         Some("lm-generate") => lm_generate_command(&args)?,
         Some("predict") => predict(ModelKind::Rm, &args)?,
@@ -252,6 +255,60 @@ fn engine_pretrain_command(args: &[String]) -> Result<(), Box<dyn std::error::Er
         let _ = half;
         println!("Built without the feature gpu-engine: training on the CPU (f32).");
         neural_networks::neural_networks::gpu_engine::train::pretrain(neural_networks::neural_networks::gpu_engine::cpu::CpuBackend, &settings)?;
+    }
+    Ok(())
+}
+
+/// engine-bench [micro_batch] [f16|f32] [steps]: forward + backward + AdamW of the default model on random tokens.
+fn engine_bench_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    use neural_networks::neural_networks::gpu_engine::{backend::Backend, model::{EngineConfig, Model}};
+    let micro: usize = args.get(2).map(|m| m.parse()).transpose()?.unwrap_or(4);
+    let half = args.get(3).is_none_or(|p| p != "f32");
+    let steps: usize = args.get(4).map(|s| s.parse()).transpose()?.unwrap_or(5);
+    fn run<B: Backend>(backend: B, micro: usize, steps: usize) {
+        let config = EngineConfig::default();
+        let t = config.seq_len;
+        let mut model = Model::new(backend, config.clone(), 1);
+        let (mut m, mut v) = (model.backend.zeros(model.layout.total), model.backend.zeros(model.layout.total));
+        let mut seed = 7u64;
+        let ids: Vec<u32> = (0..micro * (t + 1))
+            .map(|_| {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                ((seed >> 33) % config.vocab_size as u64) as u32
+            })
+            .collect();
+        let mut step = |i: u64| -> f64 {
+            model.zero_grads();
+            let loss = model.forward_backward(&ids, true, 1.0);
+            let total = model.layout.total;
+            let finite = model.backend.sum_squares(&model.grads, total).is_finite(); // also waits for the GPU
+            model.backend.adamw(&mut model.params, &model.grads, &mut m, &mut v, total, 1e-4, 0.9, 0.95, 1e-8, 0.01, 1.0, i);
+            model.refresh_blocks();
+            assert!(finite && loss.is_finite(), "non-finite loss or gradient");
+            loss
+        };
+        println!("micro-batch {micro} x {t} tokens, warm-up step ...");
+        step(1);
+        let started = std::time::Instant::now();
+        for i in 0..steps {
+            let loss = step(i as u64 + 2);
+            println!("  step {}: loss {loss:.4}", i + 1);
+        }
+        let seconds = started.elapsed().as_secs_f64() / steps as f64;
+        println!("{:.3} s per micro-batch = {:.0} tokens/s (a batch of 16 sequences: {:.2} s per step)", seconds, (micro * t) as f64 / seconds, seconds * 16.0 / micro as f64);
+    }
+    #[cfg(feature = "gpu-engine")]
+    {
+        use neural_networks::neural_networks::gpu_engine::cuda::{CudaBackend, Precision};
+        let backend = CudaBackend::new(0, if half { Precision::F16 } else { Precision::F32 })?;
+        println!("GPU: {} ({} GEMMs)", backend.device_name(), if half { "f16 tensor-core" } else { "f32" });
+        run(backend, micro, steps);
+    }
+    #[cfg(not(feature = "gpu-engine"))]
+    {
+        let _ = half;
+        println!("Built without the feature gpu-engine: CPU (f32).");
+        run(neural_networks::neural_networks::gpu_engine::cpu::CpuBackend, micro, steps);
     }
     Ok(())
 }
