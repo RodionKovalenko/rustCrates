@@ -21,3 +21,6 @@
 /STORAGE/transformer_rm_v1
 /STORAGE/*.split.json
 /STORAGE/candle_lm.safetensors*
+# Engine language model (checkpoint from Kaggle) and pretraining token shards (~3.3 GB).
+/STORAGE/engine_lm.*
+/STORAGE/shards/
