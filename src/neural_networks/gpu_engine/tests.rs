@@ -51,6 +51,63 @@ fn training_steps_reduce_the_loss() {
 }
 
 #[test]
+fn next_token_logits_give_the_training_loss_and_ignore_later_tokens() {
+    let config = tiny();
+    let mut model = Model::new(CpuBackend, config.clone(), 11);
+    let window = windows(&config, 1, 5);
+    let t = config.seq_len;
+    let loss = model.forward_backward(&window, false, 1.0);
+    // Mean cross-entropy of the next-token logits at every position = the loss of the training forward pass.
+    let mut total = 0.0;
+    for p in 0..t {
+        let logits = model.next_token_logits(&window[..=p]);
+        let max = logits.iter().fold(f32::NEG_INFINITY, |m, v| m.max(*v)) as f64;
+        let log_sum = logits.iter().map(|v| (*v as f64 - max).exp()).sum::<f64>().ln() + max;
+        total += log_sum - logits[window[p + 1] as usize] as f64;
+    }
+    assert!((total / t as f64 - loss).abs() < 1e-4, "next-token logits {} vs loss {loss}", total / t as f64);
+    // A context longer than seq_len uses its last seq_len tokens.
+    let longer: Vec<u32> = [3, 9].iter().copied().chain(window[..t].iter().copied()).collect();
+    assert_eq!(model.next_token_logits(&longer), model.next_token_logits(&window[..t]));
+}
+
+#[test]
+fn sampling_is_greedy_at_temperature_zero_and_respects_top_k() {
+    use super::generate::{apply_repetition_penalty, sample, SamplingSettings};
+    use rand::{rngs::StdRng, SeedableRng};
+    let logits = [0.1, 2.0, 1.9, -1.0, 0.5];
+    let mut rng = StdRng::seed_from_u64(1);
+    let greedy = SamplingSettings { temperature: 0.0, ..SamplingSettings::default() };
+    assert_eq!(sample(&logits, &greedy, &mut rng), 1);
+    let top2 = SamplingSettings { temperature: 1.0, top_k: 2, ..SamplingSettings::default() };
+    let mut counts = [0; 5];
+    for _ in 0..2000 {
+        counts[sample(&logits, &top2, &mut rng) as usize] += 1;
+    }
+    assert_eq!(counts[0] + counts[3] + counts[4], 0, "sampled outside the top 2: {counts:?}");
+    assert!(counts[1] > 800 && counts[2] > 800, "{counts:?}");
+    let mut penalized = logits;
+    apply_repetition_penalty(&mut penalized, &[1, 3], 2.0);
+    assert_eq!(penalized, [0.1, 1.0, 1.9, -2.0, 0.5]);
+}
+
+#[test]
+fn generation_stops_at_eos_and_is_reproducible_with_a_seed() {
+    use super::generate::{generate, SamplingSettings};
+    let config = tiny();
+    let mut model = Model::new(CpuBackend, config.clone(), 3);
+    let settings = SamplingSettings { seed: 42, ..SamplingSettings::default() };
+    let mut seen = Vec::new();
+    let first = generate(&mut model, &[1, 2, 3], 20, None, &settings, |id| seen.push(id));
+    assert_eq!(first.len(), 20);
+    assert_eq!(seen, first);
+    assert_eq!(generate(&mut model, &[1, 2, 3], 20, None, &settings, |_| {}), first);
+    let eos = first[5];
+    let stopped = generate(&mut model, &[1, 2, 3], 20, Some(eos), &settings, |_| {});
+    assert!(!stopped.contains(&eos) && stopped.len() <= 5, "{stopped:?}");
+}
+
+#[test]
 fn window_order_takes_every_window_exactly_once_and_differs_per_shard() {
     use super::train::window_order;
     let order = window_order(3, 1000);

@@ -45,6 +45,8 @@ Own GPU engine (hand-written backward pass; on a GPU build with --features gpu-e
                                                        (default: 20000 16 0.0003 new 256 f16); checkpoint
                                                        STORAGE/engine_lm.*, only a better model is saved
   engine-bench [micro_batch] [f16|f32] [steps]       training speed of the default model on random tokens
+  engine-generate [--tokens N] [--temperature T] [--top-k K] [--penalty P] [--seed S] [--cpu] <text>
+                                                     continue a text with the engine model (STORAGE/engine_lm)
                                                        (no data needed; default: 4 f16 5)
 
 Spectral flow (image model):
@@ -94,6 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("pretrain") => pretrain_command(&args)?,
         Some("engine-pretrain") => engine_pretrain_command(&args)?,
         Some("engine-bench") => engine_bench_command(&args)?,
+        Some("engine-generate") => engine_generate_command(&args)?,
         #[cfg(feature = "candle")]
         Some("lm-generate") => lm_generate_command(&args)?,
         Some("predict") => predict(ModelKind::Rm, &args)?,
@@ -310,6 +313,84 @@ fn engine_bench_command(args: &[String]) -> Result<(), Box<dyn std::error::Error
         println!("Built without the feature gpu-engine: CPU (f32).");
         run(neural_networks::neural_networks::gpu_engine::cpu::CpuBackend, micro, steps);
     }
+    Ok(())
+}
+
+/// engine-generate [--tokens N] [--temperature T] [--top-k K] [--penalty P] [--seed S] [--cpu] <text>
+/// Continues a text with the engine model; the tokens are printed as they are generated. Temperature 0 = greedy.
+fn engine_generate_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    use neural_networks::neural_networks::{
+        gpu_engine::{
+            backend::Backend,
+            generate::{generate, SamplingSettings},
+            model::Model,
+            train::{load_checkpoint, CHECKPOINT},
+        },
+        utils::tokenizer::{detokenize, token_id, tokenize},
+    };
+    let mut settings = SamplingSettings { seed: default_seed(), ..SamplingSettings::default() };
+    let (mut max_tokens, mut cpu, mut words) = (100usize, false, Vec::new());
+    let mut rest = args.iter().skip(2);
+    while let Some(arg) = rest.next() {
+        let mut value = |name: &str| rest.next().ok_or_else(|| format!("{name} needs a value"));
+        match arg.as_str() {
+            "--tokens" => max_tokens = value("--tokens")?.parse()?,
+            "--temperature" => settings.temperature = value("--temperature")?.parse()?,
+            "--top-k" => settings.top_k = value("--top-k")?.parse()?,
+            "--penalty" => settings.repetition_penalty = value("--penalty")?.parse()?,
+            "--seed" => settings.seed = value("--seed")?.parse()?,
+            "--cpu" => cpu = true,
+            _ => words.push(arg.clone()),
+        }
+    }
+    let text = if words.is_empty() { read_input("Text: ")? } else { words.join(" ") };
+    // Articles were trained as "title\n\ntext<eos>": a literal "\n" in the argument becomes a line break.
+    let text = text.replace("\\n", "\n");
+    let (_, prompt) = tokenize(&text).map_err(|e| e.to_string())?;
+    if prompt.is_empty() {
+        return Err("the text gives no tokens".into());
+    }
+    let (config, params, _, state) = load_checkpoint(std::path::Path::new(CHECKPOINT)).map_err(|e| format!("{CHECKPOINT}: {e} (download the trained model first)"))?;
+    println!("model: step {}, best validation loss {:?}; temperature {}, top-k {}, penalty {}, seed {}", state.step, state.best_val_loss, settings.temperature, settings.top_k, settings.repetition_penalty, settings.seed);
+    let eos = token_id("<eos>");
+
+    fn run<B: Backend>(backend: B, config: neural_networks::neural_networks::gpu_engine::model::EngineConfig, params: &[f32], prompt: &[u32], text: &str, max_tokens: usize, eos: Option<u32>, settings: &SamplingSettings) {
+        let mut model = Model::from_parameters(backend, config, params);
+        let started = std::time::Instant::now();
+        let mut generated: Vec<u32> = Vec::new();
+        let mut printed = 0;
+        print!("{text}");
+        let _ = io::stdout().flush();
+        let continuation = generate(&mut model, prompt, max_tokens, eos, settings, |id| {
+            // Decode everything generated so far and print the new part (a token can be part of a character).
+            generated.push(id);
+            if let Ok(decoded) = detokenize(&generated, false) {
+                if decoded.len() > printed && decoded.is_char_boundary(printed) && !decoded.ends_with('\u{FFFD}') {
+                    print!("{}", &decoded[printed..]);
+                    let _ = io::stdout().flush();
+                    printed = decoded.len();
+                }
+            }
+        });
+        if let Ok(decoded) = detokenize(&continuation, false) {
+            if decoded.len() > printed && decoded.is_char_boundary(printed) {
+                print!("{}", &decoded[printed..]);
+            }
+        }
+        let seconds = started.elapsed().as_secs_f64();
+        println!("\n({} tokens, {:.1} s, {:.1} tokens/s)", continuation.len(), seconds, continuation.len() as f64 / seconds.max(1e-9));
+    }
+    #[cfg(feature = "gpu-engine")]
+    if !cpu {
+        use neural_networks::neural_networks::gpu_engine::cuda::{CudaBackend, Precision};
+        let backend = CudaBackend::new(0, Precision::F32)?;
+        println!("GPU: {}", backend.device_name());
+        run(backend, config, &params, &prompt, &text, max_tokens, eos, &settings);
+        return Ok(());
+    }
+    let _ = cpu;
+    println!("CPU (f32)");
+    run(neural_networks::neural_networks::gpu_engine::cpu::CpuBackend, config, &params, &prompt, &text, max_tokens, eos, &settings);
     Ok(())
 }
 

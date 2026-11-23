@@ -298,6 +298,9 @@ struct Workspace<B: Backend> {
 /// Token positions per head chunk: the logits of a chunk (`chunk x vocab`) are the largest buffer.
 pub const HEAD_CHUNK: usize = 1024;
 
+/// Generation computes the context length rounded up to a multiple of this (fewer workspace reallocations).
+const CONTEXT_BUCKET: usize = if cfg!(test) { 4 } else { 64 };
+
 pub struct Model<B: Backend> {
     pub config: EngineConfig,
     pub layout: Layout,
@@ -428,6 +431,32 @@ impl<B: Backend> Model<B> {
         }
         self.workspace = Some(ws);
         loss
+    }
+
+    /// Logits of the token after `context` (inference, no gradients). Uses the last `seq_len` ids; a shorter context
+    /// is padded at the end, which does not change the logits at its last position because attention is causal.
+    /// Only the context length rounded up to `CONTEXT_BUCKET` is computed (positions start at 0 either way).
+    pub fn next_token_logits(&mut self, context: &[u32]) -> Vec<f32> {
+        let full = self.config.seq_len;
+        let context = &context[context.len().saturating_sub(full)..];
+        let last = *context.last().expect("context must not be empty");
+        let t = context.len().div_ceil(CONTEXT_BUCKET).saturating_mul(CONTEXT_BUCKET).min(full);
+        let mut ids = context.to_vec();
+        ids.resize(t, last);
+        let inputs = self.backend.upload_ids(&ids);
+        self.config.seq_len = t;
+        let mut ws = self.workspace(1);
+        self.forward(&mut ws, &inputs);
+        self.config.seq_len = full;
+        let (b, l, w, v) = (&self.backend, &self.layout, self.config.width, self.config.vocab_size);
+        let position = context.len() - 1;
+        b.gemm(&Gemm::new(1, w, 2 * w, false, false).offsets(position * 2 * w, l.ctl, 0), &ws.final_x, &self.params, &mut ws.real);
+        b.gemm(&Gemm::new(1, v, w, false, false).offsets(0, l.head, 0), &ws.real, &self.params, &mut ws.logits);
+        b.add_row_vector(&mut ws.logits, 1, v, &self.params, l.head_bias);
+        let mut logits = b.download(&ws.logits);
+        logits.truncate(v);
+        self.workspace = Some(ws);
+        logits
     }
 
     fn forward(&self, ws: &mut Workspace<B>, inputs: &B::Ids) {

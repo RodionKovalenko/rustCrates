@@ -43,6 +43,11 @@ pub fn tokenize(text: &str) -> Result<(Vec<String>, Vec<u32>), Box<dyn Error + S
     Ok((encoded_tokens, encoded_ids))
 }
 
+/// Id of a token of the vocabulary (e.g. `"<eos>"`), `None` if it does not exist.
+pub fn token_id(token: &str) -> Option<u32> {
+    TOKENIZER.token_to_id(token)
+}
+
 pub fn detokenize(ids: &Vec<u32>, skip_speical_tokens: bool) -> Result<String, Box<dyn Error + Send + Sync>> {
     // Use the cached tokenizer
     let decoded_text = TOKENIZER.decode(ids, skip_speical_tokens)?;
