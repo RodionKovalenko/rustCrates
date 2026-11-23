@@ -47,6 +47,9 @@ Own GPU engine (hand-written backward pass; on a GPU build with --features gpu-e
   engine-bench [micro_batch] [f16|f32] [steps]       training speed of the default model on random tokens
   engine-generate [--tokens N] [--temperature T] [--top-k K] [--penalty P] [--seed S] [--cpu] <text>
                                                      continue a text with the engine model (STORAGE/engine_lm)
+  engine-finetune [qa folder] [epochs] [learning_rate] [f16|f32]
+                                                     fine-tune STORAGE/engine_lm on GermanQuAD -> STORAGE/engine_qa
+  engine-qa <context file> <question>               answer a question about a text with STORAGE/engine_qa
                                                        (no data needed; default: 4 f16 5)
 
 Spectral flow (image model):
@@ -97,6 +100,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("engine-pretrain") => engine_pretrain_command(&args)?,
         Some("engine-bench") => engine_bench_command(&args)?,
         Some("engine-generate") => engine_generate_command(&args)?,
+        Some("engine-finetune") => engine_finetune_command(&args)?,
+        Some("engine-qa") => engine_qa_command(&args)?,
         #[cfg(feature = "candle")]
         Some("lm-generate") => lm_generate_command(&args)?,
         Some("predict") => predict(ModelKind::Rm, &args)?,
@@ -392,6 +397,69 @@ fn engine_generate_command(args: &[String]) -> Result<(), Box<dyn std::error::Er
     println!("CPU (f32)");
     run(neural_networks::neural_networks::gpu_engine::cpu::CpuBackend, config, &params, &prompt, &text, max_tokens, eos, &settings);
     Ok(())
+}
+
+/// engine-finetune [qa folder] [epochs] [learning_rate] [f16|f32]: GermanQuAD fine-tuning of STORAGE/engine_lm.
+fn engine_finetune_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    use neural_networks::neural_networks::gpu_engine::finetune::{finetune, FinetuneSettings};
+    let mut settings = FinetuneSettings::new(args.get(2).map(String::as_str).unwrap_or("datasets/qa"));
+    if let Some(epochs) = args.get(3) {
+        settings.epochs = epochs.parse()?;
+    }
+    if let Some(lr) = args.get(4) {
+        settings.learning_rate = lr.parse()?;
+    }
+    if let Ok(n) = std::env::var("EVAL_QUESTIONS") {
+        settings.eval_questions = n.parse()?;
+    }
+    let half = args.get(5).is_none_or(|p| p != "f32");
+    #[cfg(feature = "gpu-engine")]
+    {
+        use neural_networks::neural_networks::gpu_engine::cuda::{CudaBackend, Precision};
+        let backend = CudaBackend::new(0, if half { Precision::F16 } else { Precision::F32 })?;
+        println!("GPU: {} ({} GEMMs)", backend.device_name(), if half { "f16 tensor-core" } else { "f32" });
+        settings.loss_scaling = half;
+        finetune(backend, &settings)?;
+    }
+    #[cfg(not(feature = "gpu-engine"))]
+    {
+        let _ = half;
+        println!("Built without the feature gpu-engine: fine-tuning on the CPU (f32, slow).");
+        finetune(neural_networks::neural_networks::gpu_engine::cpu::CpuBackend, &settings)?;
+    }
+    Ok(())
+}
+
+/// engine-qa <context file> <question>: answer with the fine-tuned model STORAGE/engine_qa.
+fn engine_qa_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    use neural_networks::neural_networks::{
+        gpu_engine::{backend::Backend, finetune::answer_question, model::{EngineConfig, Model}, train::load_checkpoint},
+        utils::tokenizer::{detokenize, token_id},
+    };
+    let path = args.get(2).ok_or("usage: engine-qa <context file> <question>")?;
+    let context = std::fs::read_to_string(path)?;
+    let question = if args.len() > 3 { args[3..].join(" ") } else { read_input("Frage: ")? };
+    let (config, params, _, _) = load_checkpoint(std::path::Path::new("STORAGE/engine_qa")).map_err(|e| format!("STORAGE/engine_qa: {e} (fine-tune first: engine-finetune)"))?;
+    let eos = token_id("<eos>").ok_or("no <eos> token")?;
+    fn run<B: Backend>(backend: B, config: EngineConfig, params: &[f32], question: &str, context: &str, eos: u32) -> Result<(), Box<dyn std::error::Error>> {
+        let mut model = Model::from_parameters(backend, config, params);
+        let started = std::time::Instant::now();
+        let (answer, log_prob) = answer_question(&mut model, question, context, eos).map_err(|e| e.to_string())?;
+        let text = detokenize(&answer, true).map_err(|e| e.to_string())?;
+        if answer.is_empty() {
+            println!("Antwort: (keine Antwort im Text gefunden)");
+        } else {
+            println!("Antwort: {}\n(mean log-probability {:.2}, {:.1} s)", text.trim(), log_prob, started.elapsed().as_secs_f64());
+        }
+        Ok(())
+    }
+    #[cfg(feature = "gpu-engine")]
+    {
+        use neural_networks::neural_networks::gpu_engine::cuda::{CudaBackend, Precision};
+        return run(CudaBackend::new(0, Precision::F32)?, config, &params, &question, &context, eos);
+    }
+    #[cfg(not(feature = "gpu-engine"))]
+    run(neural_networks::neural_networks::gpu_engine::cpu::CpuBackend, config, &params, &question, &context, eos)
 }
 
 /// lm-generate [max_tokens] <text>

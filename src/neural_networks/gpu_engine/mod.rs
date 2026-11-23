@@ -12,6 +12,7 @@ pub mod backend;
 pub mod cpu;
 #[cfg(feature = "gpu-engine")]
 pub mod cuda;
+pub mod finetune;
 pub mod generate;
 pub mod model;
 pub mod train;

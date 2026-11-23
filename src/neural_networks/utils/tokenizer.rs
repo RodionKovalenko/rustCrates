@@ -43,6 +43,12 @@ pub fn tokenize(text: &str) -> Result<(Vec<String>, Vec<u32>), Box<dyn Error + S
     Ok((encoded_tokens, encoded_ids))
 }
 
+/// Token ids of `text` (no special tokens added) with the byte range of `text` each token covers.
+pub fn encode_with_offsets(text: &str) -> Result<(Vec<u32>, Vec<(usize, usize)>), Box<dyn Error + Send + Sync>> {
+    let encoding = TOKENIZER.encode(text, false)?;
+    Ok((encoding.get_ids().to_vec(), encoding.get_offsets().to_vec()))
+}
+
 /// Id of a token of the vocabulary (e.g. `"<eos>"`), `None` if it does not exist.
 pub fn token_id(token: &str) -> Option<u32> {
     TOKENIZER.token_to_id(token)

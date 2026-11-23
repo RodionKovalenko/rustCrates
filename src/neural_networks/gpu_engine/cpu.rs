@@ -3,7 +3,7 @@
 
 use rayon::prelude::*;
 
-use super::backend::{Backend, Gemm};
+use super::backend::{Backend, Gemm, IGNORE_TARGET};
 
 pub struct CpuBackend;
 
@@ -351,6 +351,10 @@ impl Backend for CpuBackend {
             .par_chunks_mut(vocab)
             .enumerate()
             .map(|(r, l)| {
+                if targets[t_off + r] == IGNORE_TARGET {
+                    l.iter_mut().for_each(|v| *v = 0.0);
+                    return 0.0;
+                }
                 let target = targets[t_off + r] as usize;
                 let max = l.iter().fold(f32::NEG_INFINITY, |m, v| m.max(*v));
                 let sum: f64 = l.iter().map(|v| ((*v - max) as f64).exp()).sum();

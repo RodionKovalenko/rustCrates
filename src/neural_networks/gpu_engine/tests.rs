@@ -108,6 +108,136 @@ fn generation_stops_at_eos_and_is_reproducible_with_a_seed() {
 }
 
 #[test]
+fn masked_loss_counts_only_the_targets_and_its_gradient_matches_finite_differences() {
+    use super::backend::{Backend, IGNORE_TARGET};
+    let config = tiny();
+    let t = config.seq_len;
+    let mut model = Model::new(CpuBackend, config.clone(), 13);
+    let window = windows(&config, 2, 9);
+    let inputs: Vec<u32> = window.chunks(t + 1).flat_map(|w| w[..t].to_vec()).collect();
+    let all: Vec<u32> = window.chunks(t + 1).flat_map(|w| w[1..].to_vec()).collect();
+    // Without ignored targets the masked loss is the ordinary loss.
+    let plain = model.forward_backward(&window, false, 1.0);
+    assert!((model.forward_backward_targets(&inputs, &all, false, 1.0) - plain).abs() < 1e-9);
+    // Only positions 5..8 of the first sequence and 2 of the second count.
+    let mut targets = vec![IGNORE_TARGET; 2 * t];
+    for i in [5, 6, 7, t + 2] {
+        targets[i] = all[i];
+    }
+    let loss = model.forward_backward_targets(&inputs, &targets, false, 1.0);
+    let mut expected = 0.0;
+    for i in [5, 6, 7, t + 2] {
+        let (s, p) = (i / t, i % t);
+        let logits = model.next_token_logits(&window[s * (t + 1)..s * (t + 1) + p + 1]);
+        let max = logits.iter().fold(f32::NEG_INFINITY, |m, v| m.max(*v)) as f64;
+        let log_sum = logits.iter().map(|v| (*v as f64 - max).exp()).sum::<f64>().ln() + max;
+        expected += log_sum - logits[all[i] as usize] as f64;
+    }
+    assert!((loss - expected / 4.0).abs() < 1e-4, "masked loss {loss} vs {}", expected / 4.0);
+    assert_eq!(model.forward_backward_targets(&inputs, &vec![IGNORE_TARGET; 2 * t], true, 1.0), 0.0);
+    // Gradient of the masked loss against central differences for a few parameters.
+    model.zero_grads();
+    model.forward_backward_targets(&inputs, &targets, true, 1.0);
+    let grads = CpuBackend.download(&model.grads);
+    let params = CpuBackend.download(&model.params);
+    let h = 1e-2f32;
+    let mut checked = 0;
+    for &i in &[3usize, 777, 1500, 2600, model.layout.total - 5] {
+        let mut eval = |delta: f32| {
+            let mut p = params.clone();
+            p[i] += delta;
+            let mut m = Model::from_parameters(CpuBackend, config.clone(), &p);
+            m.forward_backward_targets(&inputs, &targets, false, 1.0)
+        };
+        let numeric = (eval(h) - eval(-h)) / (2.0 * h as f64);
+        let analytic = grads[i] as f64;
+        if numeric.abs().max(analytic.abs()) > 1e-3 {
+            checked += 1;
+            assert!((numeric - analytic).abs() <= 0.05 * numeric.abs().max(analytic.abs()) + 1e-4, "parameter {i}: numeric {numeric} vs analytic {analytic}");
+        }
+    }
+    assert!(checked >= 2, "too few parameters with a visible gradient");
+}
+
+#[test]
+fn qa_sequences_train_only_the_answer_and_keep_it_in_the_window() {
+    use super::backend::IGNORE_TARGET;
+    use super::finetune::{evaluation_windows, exact_match_and_f1, sequence, training_sequences, EncodedQa};
+    use rand::{rngs::StdRng, SeedableRng};
+    let (inputs, targets) = sequence(&[1, 2], &[10, 11, 12], &[3, 4], &[20, 21], 99, 12);
+    assert_eq!(inputs, vec![1, 2, 10, 11, 12, 3, 4, 20, 21, 99, 99, 99]);
+    let i = IGNORE_TARGET;
+    assert_eq!(targets, vec![i, i, i, i, i, i, 20, 21, 99, i, i, i]);
+    // A long context: the answer (tokens 300..303) is always inside the window.
+    let e = EncodedQa { prefix: vec![1; 10], suffix: vec![2; 10], context: (1000..1500).collect(), answer_span: (300, 303), answer: vec![7, 8, 9] };
+    let mut rng = StdRng::seed_from_u64(1);
+    let (mut negatives, mut positives) = (0, 0);
+    for _ in 0..50 {
+        for (inputs, targets) in training_sequences(&e, 99, 128, &mut rng) {
+            let answer: Vec<u32> = targets.iter().copied().filter(|&t| t != IGNORE_TARGET).collect();
+            if answer == vec![99] {
+                negatives += 1;
+                assert!(!(300..303).any(|t| inputs.contains(&(1000 + t))), "negative window contains the answer");
+            } else {
+                positives += 1;
+                assert_eq!(answer, vec![7, 8, 9, 99]);
+                assert!((300..303).all(|t| inputs.contains(&(1000 + t))), "answer not in the window");
+            }
+        }
+    }
+    assert_eq!(positives, 50);
+    assert!(negatives > 10, "{negatives} negative windows");
+    let w = evaluation_windows(500, 100);
+    assert_eq!(w.first(), Some(&(0, 100)));
+    assert_eq!(w.last().unwrap().1, 500);
+    assert!(w.windows(2).all(|p| p[1].0 < p[0].1), "windows must overlap");
+    assert_eq!(exact_match_and_f1("Der Rhein.", "der rhein"), (1.0, 1.0));
+    let (em, f1) = exact_match_and_f1("im Jahr 1990", "1990");
+    assert_eq!(em, 0.0);
+    assert!((f1 - 0.5).abs() < 1e-9);
+}
+
+#[test]
+fn finetuning_runs_end_to_end_on_a_small_model() {
+    use super::finetune::{finetune, FinetuneSettings};
+    use super::train::save_checkpoint;
+    let dir = std::env::temp_dir().join(format!("engine_finetune_test_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut paragraphs = Vec::new();
+    for i in 0..24 {
+        let city = ["Berlin", "Hamburg", "München", "Köln"][i % 4];
+        let context = format!("Die Stadt {city} liegt in Deutschland. Im Jahr {} wurde dort ein Museum eröffnet.", 1900 + i);
+        let start = context.find(city).unwrap();
+        paragraphs.push(serde_json::json!({"context": context, "qas": [{"question": "Welche Stadt liegt in Deutschland?", "answers": [{"text": city, "answer_start": context[..start].chars().count()}]}]}));
+    }
+    let squad = serde_json::json!({"version": "test", "data": [{"title": "t", "paragraphs": paragraphs}]});
+    for name in ["qa_train_001.json", "qa_test_001.json"] {
+        std::fs::write(dir.join(name), squad.to_string()).unwrap();
+    }
+    let config = EngineConfig { vocab_size: 50282, width: 16, layers: 1, heads: 2, ffn_hidden: 16, window: 64, seq_len: 64 };
+    let base = dir.join("base");
+    let model = Model::new(CpuBackend, config, 5);
+    save_checkpoint(&model, &base, None, &Default::default()).unwrap();
+    let mut settings = FinetuneSettings::new(&dir);
+    settings.train_prefix = "qa_train".into();
+    settings.test_prefix = "qa_test".into();
+    settings.base = base;
+    settings.checkpoint = dir.join("qa");
+    settings.epochs = 2;
+    settings.batch_size = 4;
+    settings.micro_batch = 2;
+    settings.learning_rate = 3e-3;
+    settings.warmup_steps = 2;
+    settings.eval_every = 6;
+    settings.eval_questions = 4;
+    finetune(CpuBackend, &settings).unwrap();
+    let state: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("qa.state.json")).unwrap()).unwrap();
+    assert!(state["best_val_loss"].as_f64().is_some_and(|l| l.is_finite()), "{state}");
+    assert!(dir.join("qa.params").exists());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
 fn window_order_takes_every_window_exactly_once_and_differs_per_shard() {
     use super::train::window_order;
     let order = window_order(3, 1000);
@@ -378,4 +508,26 @@ fn cpu_speed_of_the_default_model() {
     }
     let seconds = started.elapsed().as_secs_f64() / steps as f64;
     println!("CPU ({} threads): {:.2} s per 512 tokens = {:.0} tokens/s", rayon::current_num_threads(), seconds, 512.0 / seconds);
+}
+
+/// Data statistics of GermanQuAD for the fine-tuning (cargo test --release germanquad_sequences -- --ignored --nocapture).
+#[test]
+#[ignore]
+fn germanquad_sequences() {
+    use super::finetune::{encode_example, load_squad, squad_files, training_sequences};
+    use crate::neural_networks::utils::tokenizer::{detokenize, token_id};
+    use rand::{rngs::StdRng, SeedableRng};
+    let eos = token_id("<eos>").unwrap();
+    for prefix in ["germanquad_train", "germanquad_test"] {
+        let examples = load_squad(&squad_files(std::path::Path::new("datasets/qa"), prefix).unwrap()).unwrap();
+        let encoded: Vec<_> = examples.iter().filter_map(|e| encode_example(e).unwrap()).collect();
+        let mut rng = StdRng::seed_from_u64(1);
+        let sequences: Vec<_> = encoded.iter().flat_map(|e| training_sequences(e, eos, 512, &mut rng)).collect();
+        let negatives = sequences.iter().filter(|s| s.1.iter().filter(|&&t| t != u32::MAX).count() == 1).count();
+        println!("{prefix}: {} questions, {} encoded, {} sequences per epoch ({} without the answer)", examples.len(), encoded.len(), sequences.len(), negatives);
+        let (inputs, targets) = &sequences[0];
+        let answer: Vec<u32> = targets.iter().copied().filter(|&t| t != u32::MAX).collect();
+        let end = inputs.iter().rposition(|&t| t != eos).unwrap();
+        println!("  example input end: {:?}\n  target: {:?}", detokenize(&inputs[end.saturating_sub(40)..=end].to_vec(), false).unwrap(), detokenize(&answer, false).unwrap());
+    }
 }

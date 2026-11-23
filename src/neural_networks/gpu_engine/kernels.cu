@@ -307,12 +307,20 @@ extern "C" __global__ void leaky_residual_backward(const float* o, const float* 
     }
 }
 
-// One block per row: loss of the row to row_loss[r], logits replaced by scale * (softmax - onehot).
+// One block per row: loss of the row to row_loss[r], logits replaced by scale * (softmax - onehot); a target of
+// 0xFFFFFFFF (IGNORE_TARGET) gives loss 0 and a zero row.
 extern "C" __global__ void cross_entropy(float* logits, i64 vocab, const unsigned int* targets, i64 t_off, float scale, float* row_loss) {
     __shared__ float shared[32];
     i64 r = blockIdx.x;
     float* l = logits + r * vocab;
-    i64 target = targets[t_off + r];
+    unsigned int raw_target = targets[t_off + r];
+    if (raw_target == 0xFFFFFFFFu) {
+        // Ignored position (IGNORE_TARGET): no loss, no gradient.
+        for (i64 j = threadIdx.x; j < vocab; j += blockDim.x) l[j] = 0.0f;
+        if (threadIdx.x == 0) row_loss[r] = 0.0f;
+        return;
+    }
+    i64 target = raw_target;
     float m = NEG_INF;
     for (i64 j = threadIdx.x; j < vocab; j += blockDim.x) m = fmaxf(m, l[j]);
     m = block_max(m, shared);

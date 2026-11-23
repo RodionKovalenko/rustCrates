@@ -8,6 +8,9 @@
 //!   `[Xr | Xi] · [[Wr, Wi], [-Wi, Wr]]` whose result is again planar (see `block` in `model.rs`).
 //! - buffer offsets and leading dimensions are counted in floats.
 
+/// Target id of a position that does not count in the loss (e.g. the question and context in fine-tuning).
+pub const IGNORE_TARGET: u32 = u32::MAX;
+
 /// Batched, strided GEMM on row-major matrices:
 /// `C_i = alpha * op(A_i) * op(B_i) + beta * C_i` for `i < batch`, with `A_i` starting at `a_off + i * stride_a`
 /// (likewise B, C). `op(A)` is `m x k`, `op(B)` is `k x n`, `C` is `m x n`; `trans_*` transposes the stored matrix.
@@ -168,7 +171,8 @@ pub trait Backend {
     fn leaky_residual_backward(&self, o: &Self::Buf, dy: &Self::Buf, rows: usize, w: usize, beta: f32, slope: f32, d_o: &mut Self::Buf);
 
     /// Softmax cross-entropy of `rows x vocab` logits against `targets[t_off ..]`: returns the summed loss and
-    /// replaces the logits by `scale * (softmax - onehot)` (the gradient of `scale * loss`).
+    /// replaces the logits by `scale * (softmax - onehot)` (the gradient of `scale * loss`). Rows whose target is
+    /// `IGNORE_TARGET` add no loss and get a zero gradient.
     fn cross_entropy(&self, logits: &mut Self::Buf, rows: usize, vocab: usize, targets: &Self::Ids, t_off: usize, scale: f32) -> f64;
 
     /// Embedding lookup: planar rows from the tables Er (`re_off`) and Ei (`im_off`), each `vocab x w`.

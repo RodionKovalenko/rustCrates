@@ -14,7 +14,7 @@ use rand::{Rng, RngExt, SeedableRng};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use super::backend::{Backend, Gemm};
+use super::backend::{Backend, Gemm, IGNORE_TARGET};
 use crate::neural_networks::network_layers::wavelet_network::decompose_in_wavelet_2d_levels;
 
 /// Size of the raw token vectors that the wavelet decomposition compresses to the model width.
@@ -421,11 +421,25 @@ impl<B: Backend> Model<B> {
             inputs.extend_from_slice(&wdw[..t]);
             targets.extend_from_slice(&wdw[1..]);
         }
-        let inputs = self.backend.upload_ids(&inputs);
-        let targets = self.backend.upload_ids(&targets);
+        self.forward_backward_targets(&inputs, &targets, backward, grad_scale)
+    }
+
+    /// Mean loss over the counted positions: `inputs` and `targets` are batch x seq_len ids, a target of
+    /// `IGNORE_TARGET` does not count (fine-tuning: only the answer). With `backward`, adds
+    /// `grad_scale * d(mean loss)` to `grads`. Without any counted position the loss is 0 and nothing is added.
+    pub fn forward_backward_targets(&mut self, inputs: &[u32], targets: &[u32], backward: bool, grad_scale: f32) -> f64 {
+        let t = self.config.seq_len;
+        assert!(inputs.len() == targets.len() && inputs.len() % t == 0, "inputs and targets must be batch x seq_len ids");
+        let counted = targets.iter().filter(|&&id| id != IGNORE_TARGET).count();
+        if counted == 0 {
+            return 0.0;
+        }
+        let batch = inputs.len() / t;
+        let inputs = self.backend.upload_ids(inputs);
+        let targets = self.backend.upload_ids(targets);
         let mut ws = self.workspace(batch);
         self.forward(&mut ws, &inputs);
-        let loss = self.head(&mut ws, &targets, backward, grad_scale);
+        let loss = self.head(&mut ws, &targets, backward, grad_scale, counted);
         if backward {
             self.backward(&mut ws, &inputs);
         }
@@ -517,14 +531,14 @@ impl<B: Backend> Model<B> {
     }
 
     /// Output head and loss in chunks of positions; with `backward`, the head gradients and d(final x).
-    fn head(&mut self, ws: &mut Workspace<B>, targets: &B::Ids, backward: bool, grad_scale: f32) -> f64 {
+    fn head(&mut self, ws: &mut Workspace<B>, targets: &B::Ids, backward: bool, grad_scale: f32, counted: usize) -> f64 {
         let (c, l) = (&self.config, &self.layout);
         let (rows, w, v) = (ws.rows, c.width, c.vocab_size);
         let b = &self.backend;
         b.gemm(&Gemm::new(rows, w, 2 * w, false, false).offsets(0, l.ctl, 0), &ws.final_x, &self.params, &mut ws.real);
         let mut loss = 0.0;
         let chunk = HEAD_CHUNK.min(rows);
-        let scale = grad_scale / rows as f32;
+        let scale = grad_scale / counted as f32;
         for start in (0..rows).step_by(chunk) {
             let len = chunk.min(rows - start);
             b.gemm(&Gemm::new(len, v, w, false, false).offsets(start * w, l.head, 0), &ws.real, &self.params, &mut ws.logits);
@@ -540,7 +554,7 @@ impl<B: Backend> Model<B> {
             b.gemm(&Gemm::new(2 * w, w, rows, true, false).offsets(0, 0, l.ctl).accumulate(), &ws.final_x, &ws.d_real, &mut self.grads);
             b.gemm(&Gemm::new(rows, 2 * w, w, false, true).offsets(0, l.ctl, 0), &ws.d_real, &self.params, &mut ws.dx);
         }
-        loss / rows as f64
+        loss / counted as f64
     }
 
     /// Complex linear backward: `d_in = d_out W'^T`, weight gradient folded from `in'^T d_out`.
