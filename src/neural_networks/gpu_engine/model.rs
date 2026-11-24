@@ -49,6 +49,13 @@ pub struct EngineConfig {
     pub standard_rope: bool,
     /// Real-valued control model (`model::real`): RMSNorm, attention with output projection, SwiGLU, no complex
     /// numbers; `width` and `ffn_hidden` are real sizes.
+    /// Attention scores as the Hermitian product Re(q conj(k)) of the rotated complex queries and keys instead of
+    /// ComplexToLinear projections to real vectors.
+    #[serde(default)]
+    pub hermitian_scores: bool,
+    /// Complex output projection Wo (w x w) of the attention before the residual (needs `complex_values`).
+    #[serde(default)]
+    pub attention_output: bool,
     #[serde(default)]
     pub real: bool,
     /// Tokenizer file the model was trained with (empty: the GPT-NeoX tokenizer of the project).
@@ -60,7 +67,7 @@ impl Default for EngineConfig {
     fn default() -> Self {
         // New models: full attention over the sequence, complex values, plain residuals (checkpoints without these
         // fields keep the RM behaviour, see the serde defaults).
-        Self { vocab_size: 50282, width: 256, layers: 12, heads: 4, ffn_hidden: 1024, window: 512, seq_len: 512, complex_values: true, standard_residual: true, standard_rope: true, real: false, tokenizer: String::new() }
+        Self { vocab_size: 50282, width: 256, layers: 12, heads: 4, ffn_hidden: 1024, window: 512, seq_len: 512, complex_values: true, standard_residual: true, standard_rope: true, hermitian_scores: false, attention_output: false, real: false, tokenizer: String::new() }
     }
 }
 
@@ -104,6 +111,9 @@ impl EngineConfig {
             "rm-pos" => Some(Self { window: rm.seq_len, standard_rope: true, ..rm }),
             "complex-v" => Some(Self { window: rm.seq_len, standard_rope: true, complex_values: true, ..rm }),
             "new" => Some(Self::default()),
+            "herm" => Some(Self { hermitian_scores: true, ..Self::default() }),
+            "wo" => Some(Self { attention_output: true, ..Self::default() }),
+            "herm-wo" => Some(Self { hermitian_scores: true, attention_output: true, ..Self::default() }),
             // Real transformer with about the parameters of the complex model (21 M in the layers, 63 M in total).
             "real" => Some(Self { width: 384, heads: 6, ffn_hidden: 1024, complex_values: false, real: true, ..Self::default() }),
             _ => None,
@@ -161,8 +171,11 @@ pub struct LayerOffsets {
     /// Q, K and V of all heads: w x 3w, columns [q heads | k heads | v heads].
     pub wqkv: ComplexWeight,
     /// ComplexToLinear of the queries / keys, per head a (2 head_dim x head_dim) block [W1; W2].
+    /// (0 with Hermitian scores: no such parameters.)
     pub ctl_q: usize,
     pub ctl_k: usize,
+    /// Attention output projection (w x w), with `attention_output`.
+    pub wo: Option<ComplexWeight>,
     pub ffn_norm: NormOffsets,
     pub w1: ComplexWeight,
     /// Planar bias (re then im).
@@ -223,8 +236,13 @@ impl Layout {
         for l in 0..c.layers {
             let attention_norm = norm(&mut add, &format!("layer{l}.attention.norm"));
             let wqkv = complex(&mut add, &format!("layer{l}.attention.wqkv"), w, 3 * w);
-            let ctl_q = add(format!("layer{l}.attention.ctl_q"), vec![c.heads, 2 * hd, hd]);
-            let ctl_k = add(format!("layer{l}.attention.ctl_k"), vec![c.heads, 2 * hd, hd]);
+            let (ctl_q, ctl_k) = if c.hermitian_scores {
+                (0, 0)
+            } else {
+                (add(format!("layer{l}.attention.ctl_q"), vec![c.heads, 2 * hd, hd]), add(format!("layer{l}.attention.ctl_k"), vec![c.heads, 2 * hd, hd]))
+            };
+            assert!(!c.attention_output || c.complex_values, "attention_output needs complex_values");
+            let wo = c.attention_output.then(|| complex(&mut add, &format!("layer{l}.attention.wo"), w, w));
             let ffn_norm = norm(&mut add, &format!("layer{l}.ffn.norm"));
             let w1 = complex(&mut add, &format!("layer{l}.ffn.w_1"), w, 2 * hf);
             let b1 = add(format!("layer{l}.ffn.b_1.re"), vec![2 * hf]);
@@ -232,7 +250,7 @@ impl Layout {
             let w2 = complex(&mut add, &format!("layer{l}.ffn.w_2"), hf, w);
             let b2 = add(format!("layer{l}.ffn.b_2.re"), vec![w]);
             add(format!("layer{l}.ffn.b_2.im"), vec![w]);
-            layers.push(LayerOffsets { attention_norm, wqkv, ctl_q, ctl_k, ffn_norm, w1, b1, w2, b2 });
+            layers.push(LayerOffsets { attention_norm, wqkv, ctl_q, ctl_k, wo, ffn_norm, w1, b1, w2, b2 });
         }
         let final_norm = c.standard_residual.then(|| norm(&mut add, "final_norm"));
         let ctl = add("ctl".into(), vec![2 * w, w]);
@@ -318,8 +336,14 @@ pub fn initial_parameters(c: &EngineConfig, layout: &Layout, seed: u64) -> Vec<f
                 *v = rng.random_range(-((6.0 / (w + hd) as f64).sqrt())..(6.0 / (w + hd) as f64).sqrt()) as f32;
             }
         }
-        xavier(hd, hd, &mut p[l.ctl_q..l.ctl_q + c.heads * 2 * hd * hd], &mut rng);
-        xavier(hd, hd, &mut p[l.ctl_k..l.ctl_k + c.heads * 2 * hd * hd], &mut rng);
+        if !c.hermitian_scores {
+            xavier(hd, hd, &mut p[l.ctl_q..l.ctl_q + c.heads * 2 * hd * hd], &mut rng);
+            xavier(hd, hd, &mut p[l.ctl_k..l.ctl_k + c.heads * 2 * hd * hd], &mut rng);
+        }
+        if let Some(wo) = l.wo {
+            xavier(w, w, &mut p[wo.re..wo.re + w * w], &mut rng);
+            xavier(w, w, &mut p[wo.im..wo.im + w * w], &mut rng);
+        }
         for (weight, bias, bias_len) in [(l.w1, l.b1, 2 * hf), (l.w2, l.b2, w)] {
             xavier(weight.k, weight.n, &mut p[weight.re..weight.re + weight.k * weight.n], &mut rng);
             xavier(weight.k, weight.n, &mut p[weight.im..weight.im + weight.k * weight.n], &mut rng);
@@ -344,6 +368,8 @@ struct LayerActivations<B: Backend> {
     kr: B::Buf,
     probs: B::Buf,
     att: B::Buf,
+    /// Attention output after Wo (with `attention_output`).
+    att_o: B::Buf,
     mid: B::Buf,
     h2: B::Buf,
     stats2: B::Buf,
@@ -373,6 +399,8 @@ struct Workspace<B: Backend> {
     d_gated: B::Buf,
     d_hidden: B::Buf,
     d_att: B::Buf,
+    /// Gradient of the attention output after Wo.
+    d_o: B::Buf,
     d_probs: B::Buf,
     d_qkv: B::Buf,
     d_qr: B::Buf,
@@ -394,7 +422,8 @@ pub struct Model<B: Backend> {
     pub params: B::Buf,
     pub grads: B::Buf,
     /// Block matrices of the complex weights, per layer (wqkv, w1, w2).
-    blocks: Vec<[B::Buf; 3]>,
+    /// (wqkv, w1, w2 and, with `attention_output`, wo.)
+    blocks: Vec<Vec<B::Buf>>,
     /// Gradient of one block matrix (the largest one).
     block_grad: B::Buf,
     workspace: Option<Workspace<B>>,
@@ -416,19 +445,26 @@ impl<B: Backend> Model<B> {
         let blocks = layout
             .layers
             .iter()
-            .map(|l| [backend.zeros(4 * l.wqkv.k * l.wqkv.n), backend.zeros(4 * l.w1.k * l.w1.n), backend.zeros(4 * l.w2.k * l.w2.n)])
+            .map(|l| Self::block_weights(l).iter().map(|c| backend.zeros(4 * c.k * c.n)).collect())
             .collect();
-        let largest = layout.layers.iter().map(|l| [l.wqkv, l.w1, l.w2].iter().map(|c| 4 * c.k * c.n).max().unwrap()).max().unwrap_or(1);
+        let largest = layout.layers.iter().map(|l| Self::block_weights(l).iter().map(|c| 4 * c.k * c.n).max().unwrap()).max().unwrap_or(1);
         let block_grad = backend.zeros(largest);
         let mut model = Self { config, layout, backend, params, grads, blocks, block_grad, workspace: None, real_ws: None };
         model.refresh_blocks();
         model
     }
 
+    /// The complex weights of a layer that use block matrices: wqkv, w1, w2 (and wo).
+    fn block_weights(l: &LayerOffsets) -> Vec<ComplexWeight> {
+        let mut weights = vec![l.wqkv, l.w1, l.w2];
+        weights.extend(l.wo);
+        weights
+    }
+
     /// Rebuilds the block matrices from the parameters (after every parameter update).
     pub fn refresh_blocks(&mut self) {
         for (l, blocks) in self.layout.layers.iter().zip(self.blocks.iter_mut()) {
-            for (weight, block) in [l.wqkv, l.w1, l.w2].iter().zip(blocks.iter_mut()) {
+            for (weight, block) in Self::block_weights(l).iter().zip(blocks.iter_mut()) {
                 self.backend.build_block(&self.params, weight.re, weight.im, weight.k, weight.n, block);
             }
         }
@@ -462,6 +498,7 @@ impl<B: Backend> Model<B> {
                 kr: z(rows * w),
                 probs: z(batch * c.heads * t * t),
                 att: z(rows * c.attention_width()),
+                att_o: z(if c.attention_output { rows * 2 * w } else { 1 }),
                 mid: z(rows * 2 * w),
                 h2: z(rows * 2 * w),
                 stats2: z(rows * 3),
@@ -489,6 +526,7 @@ impl<B: Backend> Model<B> {
             d_gated: z(rows * 2 * hf),
             d_hidden: z(rows * 4 * hf),
             d_att: z(rows * c.attention_width()),
+            d_o: z(if c.attention_output { rows * 2 * w } else { 1 }),
             d_probs: z(batch * c.heads * t * t),
             d_qkv: z(rows * 6 * w),
             d_qr: z(rows * w),
@@ -629,7 +667,7 @@ impl<B: Backend> Model<B> {
     fn layer_forward(&self, ws: &mut Workspace<B>, i: usize) {
         let (b, c) = (&self.backend, &self.config);
         let lo = &self.layout.layers[i];
-        let [wqkv, w1, w2] = &self.blocks[i];
+        let (wqkv, w1, w2) = (&self.blocks[i][0], &self.blocks[i][1], &self.blocks[i][2]);
         let (rows, batch, w, t, heads, hd, hf) = (ws.rows, ws.batch, c.width, c.seq_len, c.heads, c.head_dim(), c.ffn_hidden);
         let beta = c.residual_beta();
         let a = &mut ws.layers[i];
@@ -639,15 +677,24 @@ impl<B: Backend> Model<B> {
         b.gemm(&Gemm::new(rows, 6 * w, 2 * w, false, false), &a.h1, wqkv, &mut a.qkv);
         b.rope_to_heads(&a.qkv, 6 * w, 0, 3 * w, rows, t, heads, hd, c.rope(), &mut a.qh);
         b.rope_to_heads(&a.qkv, 6 * w, w, 4 * w, rows, t, heads, hd, c.rope(), &mut a.kh);
-        // ComplexToLinear per head: [Qr_h | Qi_h] (rows x 2hd) times [W1; W2] (2hd x hd).
-        let ctl = |ctl_off: usize| Gemm::new(rows, hd, 2 * hd, false, false).ld(2 * w, hd, w).offsets(0, ctl_off, 0).batched(heads, 2 * hd, 2 * hd * hd, hd);
-        b.gemm(&ctl(lo.ctl_q), &a.qh, &self.params, &mut a.qr);
-        b.gemm(&ctl(lo.ctl_k), &a.kh, &self.params, &mut a.kr);
-        let scale = 1.0 / ((hd as f64).sqrt() + 1e-12) as f32;
-        for s in 0..batch {
-            // Scores of all heads of sample s: q_h k_h^T (t x t).
-            let g = Gemm::new(t, t, hd, false, true).ld(w, w, t).offsets(s * t * w, s * t * w, s * heads * t * t).batched(heads, hd, hd, t * t).alpha(scale);
-            b.gemm(&g, &a.qr, &a.kr, &mut a.probs);
+        if c.hermitian_scores {
+            // Re(q conj(k)) = [qr | qi] . [kr | ki]: the head-planar rows (2hd per head) directly.
+            let scale = 1.0 / ((2.0 * hd as f64).sqrt() + 1e-12) as f32;
+            for s in 0..batch {
+                let g = Gemm::new(t, t, 2 * hd, false, true).ld(2 * w, 2 * w, t).offsets(s * t * 2 * w, s * t * 2 * w, s * heads * t * t).batched(heads, 2 * hd, 2 * hd, t * t).alpha(scale);
+                b.gemm(&g, &a.qh, &a.kh, &mut a.probs);
+            }
+        } else {
+            // ComplexToLinear per head: [Qr_h | Qi_h] (rows x 2hd) times [W1; W2] (2hd x hd).
+            let ctl = |ctl_off: usize| Gemm::new(rows, hd, 2 * hd, false, false).ld(2 * w, hd, w).offsets(0, ctl_off, 0).batched(heads, 2 * hd, 2 * hd * hd, hd);
+            b.gemm(&ctl(lo.ctl_q), &a.qh, &self.params, &mut a.qr);
+            b.gemm(&ctl(lo.ctl_k), &a.kh, &self.params, &mut a.kr);
+            let scale = 1.0 / ((hd as f64).sqrt() + 1e-12) as f32;
+            for s in 0..batch {
+                // Scores of all heads of sample s: q_h k_h^T (t x t).
+                let g = Gemm::new(t, t, hd, false, true).ld(w, w, t).offsets(s * t * w, s * t * w, s * heads * t * t).batched(heads, hd, hd, t * t).alpha(scale);
+                b.gemm(&g, &a.qr, &a.kr, &mut a.probs);
+            }
         }
         b.softmax_window(&mut a.probs, batch * heads, t, c.window);
         let aw = c.attention_width();
@@ -658,7 +705,12 @@ impl<B: Backend> Model<B> {
                 b.gemm(&g, &a.probs, &a.qkv, &mut a.att);
             }
         }
-        if c.complex_values {
+        if c.attention_output {
+            // mid = input + beta att Wo.
+            b.gemm(&Gemm::new(rows, 2 * w, 2 * w, false, false), &a.att, &self.blocks[i][3], &mut a.att_o);
+            b.copy(&a.input, 0, &mut a.mid, 0, rows * 2 * w);
+            b.axpy(beta, &a.att_o, &mut a.mid, rows * 2 * w);
+        } else if c.complex_values {
             // mid = input + beta att (both halves).
             b.copy(&a.input, 0, &mut a.mid, 0, rows * 2 * w);
             b.axpy(beta, &a.att, &mut a.mid, rows * 2 * w);
@@ -727,7 +779,7 @@ impl<B: Backend> Model<B> {
         let aw = c.attention_width();
         for i in (0..c.layers).rev() {
             let lo = self.layout.layers[i].clone();
-            let [wqkv, w1, w2] = &self.blocks[i];
+            let (wqkv, w1, w2) = (&self.blocks[i][0], &self.blocks[i][1], &self.blocks[i][2]);
             let a = &ws.layers[i];
 
             // Feed-forward: y = mid + beta leaky(o) (or y = mid + o), o = g W2 + b2.
@@ -746,7 +798,12 @@ impl<B: Backend> Model<B> {
             b.axpy(1.0, &ws.d_out, &mut ws.dx, rows * 2 * w);
 
             // Attention: mid = input + beta [att | 0] (or input + beta att with complex values).
-            if c.complex_values {
+            if let Some(wo) = lo.wo {
+                // mid = input + beta att Wo: d(att Wo) = beta dx, then back through Wo.
+                b.copy(&ws.dx, 0, &mut ws.d_o, 0, rows * 2 * w);
+                b.scale(&mut ws.d_o, rows * 2 * w, beta);
+                Self::linear_backward(b, &a.att, &ws.d_o, &self.blocks[i][3], wo, rows, &mut self.block_grad, &mut self.grads, &mut ws.d_att);
+            } else if c.complex_values {
                 b.copy(&ws.dx, 0, &mut ws.d_att, 0, rows * 2 * w);
                 b.scale(&mut ws.d_att, rows * 2 * w, beta);
             } else {
@@ -767,19 +824,30 @@ impl<B: Backend> Model<B> {
                 }
             }
             b.softmax_window_backward(&a.probs, &mut ws.d_probs, batch * heads, t);
-            for s in 0..batch {
-                // dq = scale dS k, dk = scale dS^T q.
-                let g = Gemm::new(t, hd, t, false, false).ld(t, w, w).offsets(s * heads * t * t, s * t * w, s * t * w).batched(heads, t * t, hd, hd).alpha(scale);
-                b.gemm(&g, &ws.d_probs, &a.kr, &mut ws.d_qr);
-                let g = Gemm::new(t, hd, t, true, false).ld(t, w, w).offsets(s * heads * t * t, s * t * w, s * t * w).batched(heads, t * t, hd, hd).alpha(scale);
-                b.gemm(&g, &ws.d_probs, &a.qr, &mut ws.d_kr);
-            }
-            // ComplexToLinear per head: dW = [Qr|Qi]^T dq_real, d[Qr|Qi] = dq_real W^T.
-            for (heads_buf, d_real, d_heads, ctl_off) in [(&a.qh, &ws.d_qr, &mut ws.d_qh, lo.ctl_q), (&a.kh, &ws.d_kr, &mut ws.d_kh, lo.ctl_k)] {
-                let g = Gemm::new(2 * hd, hd, rows, true, false).ld(2 * w, w, hd).offsets(0, 0, ctl_off).batched(heads, 2 * hd, hd, 2 * hd * hd).accumulate();
-                b.gemm(&g, heads_buf, d_real, &mut self.grads);
-                let g = Gemm::new(rows, 2 * hd, hd, false, true).ld(w, hd, 2 * w).offsets(0, ctl_off, 0).batched(heads, hd, 2 * hd * hd, 2 * hd);
-                b.gemm(&g, d_real, &self.params, d_heads);
+            if c.hermitian_scores {
+                // d[qr|qi] = scale dS [kr|ki], d[kr|ki] = scale dS^T [qr|qi] (head-planar).
+                let hscale = 1.0 / ((2.0 * hd as f64).sqrt() + 1e-12) as f32;
+                for s in 0..batch {
+                    let g = Gemm::new(t, 2 * hd, t, false, false).ld(t, 2 * w, 2 * w).offsets(s * heads * t * t, s * t * 2 * w, s * t * 2 * w).batched(heads, t * t, 2 * hd, 2 * hd).alpha(hscale);
+                    b.gemm(&g, &ws.d_probs, &a.kh, &mut ws.d_qh);
+                    let g = Gemm::new(t, 2 * hd, t, true, false).ld(t, 2 * w, 2 * w).offsets(s * heads * t * t, s * t * 2 * w, s * t * 2 * w).batched(heads, t * t, 2 * hd, 2 * hd).alpha(hscale);
+                    b.gemm(&g, &ws.d_probs, &a.qh, &mut ws.d_kh);
+                }
+            } else {
+                for s in 0..batch {
+                    // dq = scale dS k, dk = scale dS^T q.
+                    let g = Gemm::new(t, hd, t, false, false).ld(t, w, w).offsets(s * heads * t * t, s * t * w, s * t * w).batched(heads, t * t, hd, hd).alpha(scale);
+                    b.gemm(&g, &ws.d_probs, &a.kr, &mut ws.d_qr);
+                    let g = Gemm::new(t, hd, t, true, false).ld(t, w, w).offsets(s * heads * t * t, s * t * w, s * t * w).batched(heads, t * t, hd, hd).alpha(scale);
+                    b.gemm(&g, &ws.d_probs, &a.qr, &mut ws.d_kr);
+                }
+                // ComplexToLinear per head: dW = [Qr|Qi]^T dq_real, d[Qr|Qi] = dq_real W^T.
+                for (heads_buf, d_real, d_heads, ctl_off) in [(&a.qh, &ws.d_qr, &mut ws.d_qh, lo.ctl_q), (&a.kh, &ws.d_kr, &mut ws.d_kh, lo.ctl_k)] {
+                    let g = Gemm::new(2 * hd, hd, rows, true, false).ld(2 * w, w, hd).offsets(0, 0, ctl_off).batched(heads, 2 * hd, hd, 2 * hd * hd).accumulate();
+                    b.gemm(&g, heads_buf, d_real, &mut self.grads);
+                    let g = Gemm::new(rows, 2 * hd, hd, false, true).ld(w, hd, 2 * w).offsets(0, ctl_off, 0).batched(heads, hd, 2 * hd * hd, 2 * hd);
+                    b.gemm(&g, d_real, &self.params, d_heads);
+                }
             }
             b.rope_from_heads(&ws.d_qh, rows, t, heads, hd, c.rope(), &mut ws.d_qkv, 6 * w, 0, 3 * w);
             b.rope_from_heads(&ws.d_kh, rows, t, heads, hd, c.rope(), &mut ws.d_qkv, 6 * w, w, 4 * w);
