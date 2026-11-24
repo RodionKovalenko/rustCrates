@@ -246,8 +246,15 @@ fn engine_pretrain_command(args: &[String]) -> Result<(), Box<dyn std::error::Er
         settings.learning_rate = lr.parse()?;
     }
     settings.resume = args.get(6).is_some_and(|m| m == "resume");
-    if let Some(window) = args.get(7) {
+    // Architecture of a new model: ENGINE_ARCH = rm | rm-pos | complex-v | new (default: new).
+    if let Ok(arch) = std::env::var("ENGINE_ARCH") {
+        settings.config = neural_networks::neural_networks::gpu_engine::model::EngineConfig::preset(&arch).ok_or_else(|| format!("unknown ENGINE_ARCH {arch} (rm, rm-pos, complex-v, new)"))?;
+    }
+    if let Some(window) = args.get(7).filter(|w| w.as_str() != "-") {
         settings.config.window = window.parse()?;
+    }
+    if !settings.resume {
+        println!("Architecture of a new model: {:?}", settings.config);
     }
     let half = args.get(8).is_none_or(|p| p != "f32");
     #[cfg(feature = "gpu-engine")]

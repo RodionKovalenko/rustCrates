@@ -306,6 +306,10 @@ fn old_checkpoint_configs_load_as_the_rm_architecture() {
     let config: EngineConfig = serde_json::from_str(old).unwrap();
     assert_eq!(config, EngineConfig::rm());
     assert!(Layout::new(&config).final_norm.is_none());
+    for name in ["rm", "rm-pos", "complex-v", "new"] {
+        assert_eq!(EngineConfig::preset(name).unwrap().seq_len, 512);
+    }
+    assert_eq!(EngineConfig::preset("new"), Some(EngineConfig::default()));
     let new = EngineConfig::default();
     assert!(new.complex_values && new.standard_residual && new.standard_rope && new.window >= new.seq_len);
 }

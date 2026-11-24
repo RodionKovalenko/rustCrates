@@ -73,6 +73,19 @@ impl EngineConfig {
         if self.complex_values { 2 * self.width } else { self.width }
     }
 
+    /// Named architectures for comparison runs: `rm` (pretraining runs 1-3), `rm-pos` (+ full attention window and
+    /// standard RoPE), `complex-v` (+ complex values), `new` (+ plain residuals = the default).
+    pub fn preset(name: &str) -> Option<Self> {
+        let rm = Self::rm();
+        match name {
+            "rm" => Some(rm),
+            "rm-pos" => Some(Self { window: rm.seq_len, standard_rope: true, ..rm }),
+            "complex-v" => Some(Self { window: rm.seq_len, standard_rope: true, complex_values: true, ..rm }),
+            "new" => Some(Self::default()),
+            _ => None,
+        }
+    }
+
     /// The RM model's architecture (the checkpoints of the pretraining runs 1 to 3).
     pub fn rm() -> Self {
         Self { window: 256, complex_values: false, standard_residual: false, standard_rope: false, ..Self::default() }
