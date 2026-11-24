@@ -367,3 +367,65 @@ extern "C" __global__ void adamw(float* params, const float* grads, float* m, fl
         params[i] = p - lr * (mi / c1) / (sqrtf(vi / c2) + eps);
     }
 }
+
+// ── Real model ──────────────────────────────────────────────────────────────
+
+// One block per row: y = x * rstd * gamma, stats[r] = rstd = 1 / sqrt(mean(x^2) + eps).
+extern "C" __global__ void rms_norm(const float* x, i64 w, float eps, const float* params, i64 gamma_off, float* y, float* stats) {
+    __shared__ float shared[32];
+    i64 r = blockIdx.x;
+    const float* xr = x + r * w;
+    float s = 0.0f;
+    for (i64 j = threadIdx.x; j < w; j += blockDim.x) s += xr[j] * xr[j];
+    float rstd = rsqrtf(block_sum(s, shared) / w + eps);
+    const float* gamma = params + gamma_off;
+    for (i64 j = threadIdx.x; j < w; j += blockDim.x) y[r * w + j] = xr[j] * rstd * gamma[j];
+    if (threadIdx.x == 0) stats[r] = rstd;
+}
+
+// One block per row: dx = rstd * gamma * dy - x * rstd^3 / w * sum(dy * gamma * x); row_grads = dy * x * rstd.
+extern "C" __global__ void rms_norm_backward(const float* x, const float* stats, const float* dy, i64 w, const float* params, i64 gamma_off, float* dx, float* row_grads) {
+    __shared__ float shared[32];
+    i64 r = blockIdx.x;
+    const float* xr = x + r * w;
+    const float* g = dy + r * w;
+    const float* gamma = params + gamma_off;
+    float rstd = stats[r];
+    float s = 0.0f;
+    for (i64 j = threadIdx.x; j < w; j += blockDim.x) {
+        s += g[j] * gamma[j] * xr[j];
+        row_grads[r * w + j] = g[j] * xr[j] * rstd;
+    }
+    float c = block_sum(s, shared) * rstd * rstd * rstd / w;
+    for (i64 j = threadIdx.x; j < w; j += blockDim.x) dx[r * w + j] = rstd * gamma[j] * g[j] - xr[j] * c;
+}
+
+extern "C" __global__ void swiglu(const float* h, i64 rows, i64 hidden, float* g) {
+    GRID_STRIDE(idx, rows * hidden) {
+        i64 r = idx / hidden, j = idx % hidden;
+        g[idx] = silu_f(h[r * 2 * hidden + j]) * h[r * 2 * hidden + hidden + j];
+    }
+}
+
+extern "C" __global__ void swiglu_backward(const float* h, const float* dg, i64 rows, i64 hidden, float* dh) {
+    GRID_STRIDE(idx, rows * hidden) {
+        i64 r = idx / hidden, j = idx % hidden;
+        float a = h[r * 2 * hidden + j], b = h[r * 2 * hidden + hidden + j], g = dg[idx];
+        dh[r * 2 * hidden + j] = g * b * silu_d(a);
+        dh[r * 2 * hidden + hidden + j] = g * silu_f(a);
+    }
+}
+
+// One thread per (row, head, pair).
+extern "C" __global__ void rope_rows(const float* src, i64 src_ld, i64 src_off, i64 rows, i64 seq_len, i64 heads, i64 head_dim, float rope_base, int clamp, float sign, float* dst, i64 dst_ld, i64 dst_off) {
+    i64 pairs = head_dim / 2;
+    GRID_STRIDE(idx, rows * heads * pairs) {
+        i64 i = idx % pairs, h = (idx / pairs) % heads, r = idx / (pairs * heads);
+        float c, s;
+        rope_cos_sin(r % seq_len, i, head_dim, rope_base, clamp, &c, &s);
+        s *= sign;
+        float e = src[r * src_ld + src_off + h * head_dim + 2 * i], o = src[r * src_ld + src_off + h * head_dim + 2 * i + 1];
+        dst[r * dst_ld + dst_off + h * head_dim + 2 * i] = e * c - o * s;
+        dst[r * dst_ld + dst_off + h * head_dim + 2 * i + 1] = e * s + o * c;
+    }
+}

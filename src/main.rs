@@ -453,7 +453,7 @@ fn engine_qa_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
     let question = if args.len() > 3 { args[3..].join(" ") } else { read_input("Frage: ")? };
     let checkpoint = std::path::Path::new("STORAGE/engine_qa");
     let (config, params, _, _) = load_checkpoint(checkpoint).map_err(|e| format!("STORAGE/engine_qa: {e} (fine-tune first: engine-finetune)"))?;
-    let head = load_head(checkpoint, config.width).ok();
+    let head = load_head(checkpoint, config.hidden_features()).ok();
     let eos = token_id("<eos>").ok_or("no <eos> token")?;
     fn run<B: Backend>(backend: B, config: EngineConfig, params: &[f32], head: Option<SpanHead>, question: &str, context: &str, eos: u32) -> Result<(), Box<dyn std::error::Error>> {
         let mut model = Model::from_parameters(backend, config, params);

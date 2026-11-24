@@ -96,8 +96,8 @@ pub struct SpanHead {
 }
 
 impl SpanHead {
-    pub fn new(width: usize, seed: u64) -> Self {
-        let features = 2 * width;
+    /// A head for hidden states of `features` values per position (`EngineConfig::hidden_features`).
+    pub fn new(features: usize, seed: u64) -> Self {
         let mut rng = StdRng::seed_from_u64(seed);
         let limit = (1.0 / features as f64).sqrt();
         let mut params = vec![0.0f32; 2 * (features + 1)];
@@ -234,12 +234,12 @@ pub fn save_head(head: &SpanHead, checkpoint: &std::path::Path) -> std::io::Resu
     std::fs::write(file(checkpoint, ".span"), bytes)
 }
 
-pub fn load_head(checkpoint: &std::path::Path, width: usize) -> std::io::Result<SpanHead> {
+pub fn load_head(checkpoint: &std::path::Path, features: usize) -> std::io::Result<SpanHead> {
     let params = read_f32(&file(checkpoint, ".span"))?;
-    if params.len() != 2 * (2 * width + 1) {
+    if params.len() != 2 * (features + 1) {
         return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "span head of a different width"));
     }
-    Ok(SpanHead { features: 2 * width, params })
+    Ok(SpanHead { features, params })
 }
 
 /// Mean span loss over fixed test sequences.
@@ -277,8 +277,8 @@ pub fn finetune_span<B: Backend>(backend: B, settings: &FinetuneSettings) -> Res
     let (config, params, _, base_state) = load_checkpoint(&settings.base).map_err(|e| format!("{}: {e}", settings.base.display()))?;
     println!("Span fine-tuning of {} (pretraining step {}, validation loss {:?}): {:?}", settings.base.display(), base_state.step, base_state.best_val_loss, config);
     let mut model = Model::from_parameters(backend, config, &params);
-    let (seq_len, width) = (model.config.seq_len, model.config.width);
-    let mut head = SpanHead::new(width, settings.seed);
+    let seq_len = model.config.seq_len;
+    let mut head = SpanHead::new(model.config.hidden_features(), settings.seed);
 
     let encode_all = |examples: &[QaExample]| -> TokenResult<Vec<EncodedQa>> {
         let mut out = Vec::new();

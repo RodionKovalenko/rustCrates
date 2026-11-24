@@ -341,6 +341,68 @@ impl Backend for CpuBackend {
         });
     }
 
+    fn rms_norm(&self, x: &Vec<f32>, rows: usize, w: usize, eps: f32, params: &Vec<f32>, gamma_off: usize, y: &mut Vec<f32>, stats: &mut Vec<f32>) {
+        let gamma = &params[gamma_off..gamma_off + w];
+        let rstd: Vec<f32> = (0..rows).into_par_iter().map(|r| {
+            let xr = &x[r * w..(r + 1) * w];
+            (1.0 / ((xr.iter().map(|v| (*v as f64).powi(2)).sum::<f64>() / w as f64 + eps as f64).sqrt())) as f32
+        }).collect();
+        y[..rows * w].par_chunks_mut(w).enumerate().for_each(|(r, yr)| {
+            for j in 0..w {
+                yr[j] = x[r * w + j] * rstd[r] * gamma[j];
+            }
+        });
+        stats[..rows].copy_from_slice(&rstd);
+    }
+
+    fn rms_norm_backward(&self, x: &Vec<f32>, stats: &Vec<f32>, dy: &Vec<f32>, rows: usize, w: usize, params: &Vec<f32>, gamma_off: usize, dx: &mut Vec<f32>, grads: &mut Vec<f32>, dgamma_off: usize) {
+        let gamma = &params[gamma_off..gamma_off + w];
+        dx[..rows * w].par_chunks_mut(w).enumerate().for_each(|(r, d)| {
+            let (xr, g, rs) = (&x[r * w..(r + 1) * w], &dy[r * w..(r + 1) * w], stats[r] as f64);
+            let s: f64 = (0..w).map(|j| (g[j] * gamma[j] * xr[j]) as f64).sum();
+            for j in 0..w {
+                d[j] = (rs * (g[j] * gamma[j]) as f64 - xr[j] as f64 * rs.powi(3) * s / w as f64) as f32;
+            }
+        });
+        for j in 0..w {
+            grads[dgamma_off + j] += (0..rows).map(|r| (dy[r * w + j] * x[r * w + j]) as f64 * stats[r] as f64).sum::<f64>() as f32;
+        }
+    }
+
+    fn swiglu(&self, h: &Vec<f32>, rows: usize, hidden: usize, g: &mut Vec<f32>) {
+        g[..rows * hidden].par_chunks_mut(hidden).enumerate().for_each(|(r, gr)| {
+            for j in 0..hidden {
+                gr[j] = silu(h[r * 2 * hidden + j]) * h[r * 2 * hidden + hidden + j];
+            }
+        });
+    }
+
+    fn swiglu_backward(&self, h: &Vec<f32>, dg: &Vec<f32>, rows: usize, hidden: usize, dh: &mut Vec<f32>) {
+        dh[..rows * 2 * hidden].par_chunks_mut(2 * hidden).enumerate().for_each(|(r, d)| {
+            for j in 0..hidden {
+                let (a, b, g) = (h[r * 2 * hidden + j], h[r * 2 * hidden + hidden + j], dg[r * hidden + j]);
+                d[j] = g * b * silu_derivative(a);
+                d[hidden + j] = g * silu(a);
+            }
+        });
+    }
+
+    fn rope_rows(&self, src: &Vec<f32>, src_ld: usize, src_off: usize, rows: usize, seq_len: usize, heads: usize, head_dim: usize, rope: Rope, sign: f32, dst: &mut Vec<f32>, dst_ld: usize, dst_off: usize) {
+        dst.par_chunks_mut(dst_ld).take(rows).enumerate().for_each(|(r, out)| {
+            let s = &src[r * src_ld + src_off..];
+            let position = r % seq_len;
+            for i in 0..head_dim / 2 {
+                let a = sign * rope.angle(position, i, head_dim);
+                let (cos, sin) = (a.cos(), a.sin());
+                for h in 0..heads {
+                    let (e, o) = (s[h * head_dim + 2 * i], s[h * head_dim + 2 * i + 1]);
+                    out[dst_off + h * head_dim + 2 * i] = e * cos - o * sin;
+                    out[dst_off + h * head_dim + 2 * i + 1] = e * sin + o * cos;
+                }
+            }
+        });
+    }
+
     fn cross_entropy(&self, logits: &mut Vec<f32>, rows: usize, vocab: usize, targets: &Vec<u32>, t_off: usize, scale: f32) -> f64 {
         logits[..rows * vocab]
             .par_chunks_mut(vocab)

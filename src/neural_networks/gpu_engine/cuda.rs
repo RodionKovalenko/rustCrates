@@ -21,6 +21,7 @@ const KERNEL_NAMES: &[&str] = &[
     "fill", "copy", "axpy", "scale", "sum_squares", "to_half", "build_block", "fold_block_grad", "add_row_vector", "column_sums", "layer_norm",
     "layer_norm_backward", "rope_to_heads", "rope_from_heads", "softmax_window", "softmax_window_backward", "attention_residual", "real_part_scaled",
     "gated", "gated_backward", "leaky_residual", "leaky_residual_backward", "cross_entropy", "embed", "embed_backward", "adamw",
+    "rms_norm", "rms_norm_backward", "swiglu", "swiglu_backward", "rope_rows",
 ];
 
 const THREADS: u32 = 256;
@@ -324,6 +325,35 @@ impl Backend for CudaBackend {
     fn real_part_scaled(&self, dy: &CudaSlice<f32>, rows: usize, w: usize, beta: f32, out: &mut CudaSlice<f32>) {
         let (r, ww) = (rows as i64, w as i64);
         unsafe { self.stream.launch_builder(self.f("real_part_scaled")).arg(dy).arg(&r).arg(&ww).arg(&beta).arg(out).launch(grid(rows * w)) }.expect("real_part_scaled");
+    }
+
+    fn rms_norm(&self, x: &CudaSlice<f32>, rows: usize, w: usize, eps: f32, params: &CudaSlice<f32>, gamma_off: usize, y: &mut CudaSlice<f32>, stats: &mut CudaSlice<f32>) {
+        let (ww, g) = (w as i64, gamma_off as i64);
+        unsafe { self.stream.launch_builder(self.f("rms_norm")).arg(x).arg(&ww).arg(&eps).arg(params).arg(&g).arg(y).arg(stats).launch(per_row(rows)) }.expect("rms_norm");
+    }
+
+    fn rms_norm_backward(&self, x: &CudaSlice<f32>, stats: &CudaSlice<f32>, dy: &CudaSlice<f32>, rows: usize, w: usize, params: &CudaSlice<f32>, gamma_off: usize, dx: &mut CudaSlice<f32>, grads: &mut CudaSlice<f32>, dgamma_off: usize) {
+        let mut scratch = self.scratch.borrow_mut();
+        self.ensure(&mut scratch.floats, rows * w);
+        let (ww, g) = (w as i64, gamma_off as i64);
+        unsafe { self.stream.launch_builder(self.f("rms_norm_backward")).arg(x).arg(stats).arg(dy).arg(&ww).arg(params).arg(&g).arg(dx).arg(&mut scratch.floats).launch(per_row(rows)) }.expect("rms_norm_backward");
+        self.column_sums(&scratch.floats, rows, w, grads, dgamma_off);
+    }
+
+    fn swiglu(&self, h: &CudaSlice<f32>, rows: usize, hidden: usize, g: &mut CudaSlice<f32>) {
+        let (r, hh) = (rows as i64, hidden as i64);
+        unsafe { self.stream.launch_builder(self.f("swiglu")).arg(h).arg(&r).arg(&hh).arg(g).launch(grid(rows * hidden)) }.expect("swiglu");
+    }
+
+    fn swiglu_backward(&self, h: &CudaSlice<f32>, dg: &CudaSlice<f32>, rows: usize, hidden: usize, dh: &mut CudaSlice<f32>) {
+        let (r, hh) = (rows as i64, hidden as i64);
+        unsafe { self.stream.launch_builder(self.f("swiglu_backward")).arg(h).arg(dg).arg(&r).arg(&hh).arg(dh).launch(grid(rows * hidden)) }.expect("swiglu_backward");
+    }
+
+    fn rope_rows(&self, src: &CudaSlice<f32>, src_ld: usize, src_off: usize, rows: usize, seq_len: usize, heads: usize, head_dim: usize, rope: Rope, sign: f32, dst: &mut CudaSlice<f32>, dst_ld: usize, dst_off: usize) {
+        let (sl, so, n, t, h, d, dl, doff) = (src_ld as i64, src_off as i64, rows as i64, seq_len as i64, heads as i64, head_dim as i64, dst_ld as i64, dst_off as i64);
+        let (base, clamp) = (rope.base, rope.clamp as i32);
+        unsafe { self.stream.launch_builder(self.f("rope_rows")).arg(src).arg(&sl).arg(&so).arg(&n).arg(&t).arg(&h).arg(&d).arg(&base).arg(&clamp).arg(&sign).arg(dst).arg(&dl).arg(&doff).launch(grid(rows * heads * head_dim / 2)) }.expect("rope_rows");
     }
 
     fn gated(&self, h: &CudaSlice<f32>, rows: usize, hidden: usize, g: &mut CudaSlice<f32>) {

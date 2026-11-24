@@ -7,7 +7,11 @@ use super::{
 };
 
 fn tiny() -> EngineConfig {
-    EngineConfig { vocab_size: 40, width: 32, layers: 2, heads: 2, ffn_hidden: 24, window: 3, seq_len: 8, complex_values: false, standard_residual: false, standard_rope: false }
+    EngineConfig { vocab_size: 40, width: 32, layers: 2, heads: 2, ffn_hidden: 24, window: 3, seq_len: 8, complex_values: false, standard_residual: false, standard_rope: false, real: false }
+}
+
+fn real_tiny(window: usize) -> EngineConfig {
+    EngineConfig { width: 24, heads: 2, ffn_hidden: 20, window, standard_residual: true, standard_rope: true, real: true, ..tiny() }
 }
 
 fn windows(config: &EngineConfig, batch: usize, seed: u64) -> Vec<u32> {
@@ -303,6 +307,10 @@ fn every_architecture_variant_has_exact_gradients() {
             }
         }
     }
+    // The real control model (window 3 and full).
+    for window in [3, 8] {
+        check_architecture(real_tiny(window));
+    }
 }
 
 #[test]
@@ -311,9 +319,14 @@ fn old_checkpoint_configs_load_as_the_rm_architecture() {
     let config: EngineConfig = serde_json::from_str(old).unwrap();
     assert_eq!(config, EngineConfig::rm());
     assert!(Layout::new(&config).final_norm.is_none());
-    for name in ["rm", "rm-pos", "complex-v", "new"] {
+    for name in ["rm", "rm-pos", "complex-v", "new", "real"] {
         assert_eq!(EngineConfig::preset(name).unwrap().seq_len, 512);
     }
+    // The real control model has about the parameters of the complex one.
+    let (complex_total, complex_layers) = Layout::new(&EngineConfig::default()).parameter_counts();
+    let (real_total, real_layers) = Layout::new(&EngineConfig::preset("real").unwrap()).parameter_counts();
+    assert!((real_total as f64 / complex_total as f64 - 1.0).abs() < 0.1, "{real_total} vs {complex_total}");
+    assert!((real_layers as f64 / complex_layers as f64 - 1.0).abs() < 0.2, "{real_layers} vs {complex_layers}");
     assert_eq!(EngineConfig::preset("new"), Some(EngineConfig::default()));
     let new = EngineConfig::default();
     assert!(new.complex_values && new.standard_residual && new.standard_rope && new.window >= new.seq_len);
@@ -322,7 +335,7 @@ fn old_checkpoint_configs_load_as_the_rm_architecture() {
 #[test]
 fn backward_hidden_gives_the_gradient_of_a_function_of_the_hidden_states() {
     use super::backend::Backend;
-    for config in [tiny(), EngineConfig { window: 8, ..EngineConfig { complex_values: true, standard_residual: true, standard_rope: true, ..tiny() } }] {
+    for config in [tiny(), EngineConfig { window: 8, ..EngineConfig { complex_values: true, standard_residual: true, standard_rope: true, ..tiny() } }, real_tiny(8)] {
         let t = config.seq_len;
         let mut model = Model::new(CpuBackend, config.clone(), 4);
         let inputs: Vec<u32> = windows(&config, 2, 3).chunks(t + 1).flat_map(|w| w[..t].to_vec()).collect();
@@ -392,7 +405,7 @@ fn span_loss_gradients_and_sequences() {
     assert!(neg > 5);
     // Loss gradient with respect to the hidden states and the head against central differences.
     let (f, t) = (6usize, 10usize);
-    let head = SpanHead::new(f / 2, 9);
+    let head = SpanHead::new(f, 9);
     let seqs = [span_sequence(&[1, 2], &[5, 6, 7, 8], Some((0, 2)), 0, t), span_sequence(&[1, 2], &[5, 6, 7], None, 0, t)];
     let refs: Vec<_> = seqs.iter().collect();
     let hidden: Vec<f32> = (0..2 * t * f).map(|i| (((i * 37) % 23) as f32 / 23.0) - 0.5).collect();
@@ -624,9 +637,17 @@ mod cuda_backend {
     /// Loss and every gradient of the CUDA backend against the CPU backend (same parameters, same batch).
     /// `grad_scale` is the loss scale of the GPU pass (as in training with f16 GEMMs); its gradients are divided by it.
     fn compare(precision: Precision, tolerance: f64, grad_scale: f32) {
+        let rm = EngineConfig { vocab_size: 300, width: 64, layers: 2, heads: 4, ffn_hidden: 96, window: 5, seq_len: 32, complex_values: false, standard_residual: false, standard_rope: false, real: false };
+        let new = EngineConfig { window: 32, complex_values: true, standard_residual: true, standard_rope: true, ..rm.clone() };
+        let real = EngineConfig { width: 48, heads: 4, ffn_hidden: 80, real: true, ..new.clone() };
+        for config in [rm, new, real] {
+            compare_config(precision, tolerance, grad_scale, config);
+        }
+    }
+
+    fn compare_config(precision: Precision, tolerance: f64, grad_scale: f32, config: EngineConfig) {
         let Some(backend) = gpu(precision) else { return };
-        println!("GPU: {}", backend.device_name());
-        let config = EngineConfig { vocab_size: 300, width: 64, layers: 2, heads: 4, ffn_hidden: 96, window: 5, seq_len: 32, complex_values: false, standard_residual: false, standard_rope: false };
+        println!("GPU: {}, {config:?}", backend.device_name());
         let mut cpu = Model::new(CpuBackend, config.clone(), 3);
         let params = cpu.params.clone();
         let mut cuda = Model::from_parameters(backend, config.clone(), &params);

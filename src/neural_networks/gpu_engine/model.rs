@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 use super::backend::{Backend, Gemm, Rope, IGNORE_TARGET};
 use crate::neural_networks::network_layers::wavelet_network::decompose_in_wavelet_2d_levels;
 
+pub mod real;
+
 /// Size of the raw token vectors that the wavelet decomposition compresses to the model width.
 pub const EMBEDDING_DIM_ORIGINAL: usize = 512;
 pub const NORM_EPSILON: f32 = 1e-8;
@@ -45,13 +47,17 @@ pub struct EngineConfig {
     /// where pair i cannot tell positions beyond 1250^(2i/head_dim) apart).
     #[serde(default)]
     pub standard_rope: bool,
+    /// Real-valued control model (`model::real`): RMSNorm, attention with output projection, SwiGLU, no complex
+    /// numbers; `width` and `ffn_hidden` are real sizes.
+    #[serde(default)]
+    pub real: bool,
 }
 
 impl Default for EngineConfig {
     fn default() -> Self {
         // New models: full attention over the sequence, complex values, plain residuals (checkpoints without these
         // fields keep the RM behaviour, see the serde defaults).
-        Self { vocab_size: 50282, width: 256, layers: 12, heads: 4, ffn_hidden: 1024, window: 512, seq_len: 512, complex_values: true, standard_residual: true, standard_rope: true }
+        Self { vocab_size: 50282, width: 256, layers: 12, heads: 4, ffn_hidden: 1024, window: 512, seq_len: 512, complex_values: true, standard_residual: true, standard_rope: true, real: false }
     }
 }
 
@@ -68,6 +74,11 @@ impl EngineConfig {
         if self.standard_rope { Rope { base: 10000.0, clamp: false } } else { Rope { base: super::ROPE_BASE as f32, clamp: true } }
     }
 
+    /// Features per position of the final hidden states (2w planar complex, w real).
+    pub fn hidden_features(&self) -> usize {
+        if self.real { self.width } else { 2 * self.width }
+    }
+
     /// Columns of the attention output per row: w (Re(V) only) or 2w (planar complex).
     pub fn attention_width(&self) -> usize {
         if self.complex_values { 2 * self.width } else { self.width }
@@ -82,13 +93,15 @@ impl EngineConfig {
             "rm-pos" => Some(Self { window: rm.seq_len, standard_rope: true, ..rm }),
             "complex-v" => Some(Self { window: rm.seq_len, standard_rope: true, complex_values: true, ..rm }),
             "new" => Some(Self::default()),
+            // Real transformer with about the parameters of the complex model (21 M in the layers, 63 M in total).
+            "real" => Some(Self { width: 384, heads: 6, ffn_hidden: 1024, complex_values: false, real: true, ..Self::default() }),
             _ => None,
         }
     }
 
     /// The RM model's architecture (the checkpoints of the pretraining runs 1 to 3).
     pub fn rm() -> Self {
-        Self { window: 256, complex_values: false, standard_residual: false, standard_rope: false, ..Self::default() }
+        Self { window: 256, complex_values: false, standard_residual: false, standard_rope: false, real: false, ..Self::default() }
     }
 
     pub fn head_dim(&self) -> usize {
@@ -116,7 +129,7 @@ impl Segment {
 }
 
 /// Offsets of a complex layer norm: gamma (re then im, 2w) and beta (2w).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct NormOffsets {
     pub gamma: usize,
     pub beta: usize,
@@ -159,12 +172,18 @@ pub struct Layout {
     pub final_norm: Option<NormOffsets>,
     /// ComplexToLinear before the head: (2w x w) = [W1; W2].
     pub ctl: usize,
+    /// Layers and final RMS norm gamma of the real model (empty / 0 for the complex model).
+    pub real_layers: Vec<real::RealLayerOffsets>,
+    pub real_final_gamma: usize,
     pub head: usize,
     pub head_bias: usize,
 }
 
 impl Layout {
     pub fn new(c: &EngineConfig) -> Self {
+        if c.real {
+            return real::real_layout(c);
+        }
         let mut segments = Vec::new();
         let mut total = 0;
         let mut add = |name: String, shape: Vec<usize>| -> usize {
@@ -208,7 +227,7 @@ impl Layout {
         let ctl = add("ctl".into(), vec![2 * w, w]);
         let head = add("head".into(), vec![w, c.vocab_size]);
         let head_bias = add("head_bias".into(), vec![c.vocab_size]);
-        Self { segments, total, embedding_re, embedding_im, input_norm, layers, final_norm, ctl, head, head_bias }
+        Self { segments, total, embedding_re, embedding_im, input_norm, layers, final_norm, ctl, head, head_bias, real_layers: Vec::new(), real_final_gamma: 0 }
     }
 
     pub fn segment(&self, name: &str) -> Option<&Segment> {
@@ -265,6 +284,9 @@ pub fn wavelet_embedding_table(vocab_size: usize, levels: i32, width: usize, see
 /// Initial parameters (as the candle model: wavelet embedding, Xavier weights, biases like `initialize_bias`,
 /// norms gamma = 1, beta = 0, head bias 0).
 pub fn initial_parameters(c: &EngineConfig, layout: &Layout, seed: u64) -> Vec<f32> {
+    if c.real {
+        return real::real_initial_parameters(c, layout, seed);
+    }
     let mut p = vec![0.0f32; layout.total];
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     let (w, hd, hf) = (c.width, c.head_dim(), c.ffn_hidden);
@@ -365,6 +387,7 @@ pub struct Model<B: Backend> {
     /// Gradient of one block matrix (the largest one).
     block_grad: B::Buf,
     workspace: Option<Workspace<B>>,
+    real_ws: Option<real::RealWorkspace<B>>,
 }
 
 impl<B: Backend> Model<B> {
@@ -386,7 +409,7 @@ impl<B: Backend> Model<B> {
             .collect();
         let largest = layout.layers.iter().map(|l| [l.wqkv, l.w1, l.w2].iter().map(|c| 4 * c.k * c.n).max().unwrap()).max().unwrap_or(1);
         let block_grad = backend.zeros(largest);
-        let mut model = Self { config, layout, backend, params, grads, blocks, block_grad, workspace: None };
+        let mut model = Self { config, layout, backend, params, grads, blocks, block_grad, workspace: None, real_ws: None };
         model.refresh_blocks();
         model
     }
@@ -490,6 +513,9 @@ impl<B: Backend> Model<B> {
             return 0.0;
         }
         let batch = inputs.len() / t;
+        if self.config.real {
+            return self.real_forward_backward(inputs, targets, backward, grad_scale, counted);
+        }
         let inputs = self.backend.upload_ids(inputs);
         let targets = self.backend.upload_ids(targets);
         let mut ws = self.workspace(batch);
@@ -507,6 +533,9 @@ impl<B: Backend> Model<B> {
     pub fn forward_hidden(&mut self, inputs: &[u32]) -> Vec<f32> {
         let t = self.config.seq_len;
         assert!(!inputs.is_empty() && inputs.len() % t == 0, "inputs must be batch x seq_len ids");
+        if self.config.real {
+            return self.real_forward_hidden(inputs);
+        }
         let ids = self.backend.upload_ids(inputs);
         let mut ws = self.workspace(inputs.len() / t);
         self.forward(&mut ws, &ids);
@@ -520,6 +549,9 @@ impl<B: Backend> Model<B> {
     /// Adds to `grads` the parameter gradient for the gradient `d_hidden` of the hidden states of the last
     /// `forward_hidden` call (same `inputs`).
     pub fn backward_hidden(&mut self, inputs: &[u32], d_hidden: &[f32]) {
+        if self.config.real {
+            return self.real_backward_hidden(inputs, d_hidden);
+        }
         let mut ws = self.workspace.take().expect("backward_hidden needs a forward_hidden first");
         assert_eq!(d_hidden.len(), ws.rows * 2 * self.config.width, "d_hidden must have the shape of the hidden states");
         let ids = self.backend.upload_ids(inputs);
@@ -538,6 +570,9 @@ impl<B: Backend> Model<B> {
         let t = context.len().div_ceil(CONTEXT_BUCKET).saturating_mul(CONTEXT_BUCKET).min(full);
         let mut ids = context.to_vec();
         ids.resize(t, last);
+        if self.config.real {
+            return self.real_next_token_logits(&ids, t, context.len() - 1);
+        }
         let inputs = self.backend.upload_ids(&ids);
         self.config.seq_len = t;
         let mut ws = self.workspace(1);

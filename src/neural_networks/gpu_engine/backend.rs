@@ -184,6 +184,22 @@ pub trait Backend {
     #[allow(clippy::too_many_arguments)]
     fn leaky_residual_backward(&self, o: &Self::Buf, dy: &Self::Buf, rows: usize, w: usize, beta: f32, slope: f32, d_o: &mut Self::Buf);
 
+    /// RMS norm of `rows` real rows of width `w`: `y = x / rms(x) * gamma` (gamma at `gamma_off`, w floats);
+    /// `stats[r]` = 1 / rms of row r.
+    #[allow(clippy::too_many_arguments)]
+    fn rms_norm(&self, x: &Self::Buf, rows: usize, w: usize, eps: f32, params: &Self::Buf, gamma_off: usize, y: &mut Self::Buf, stats: &mut Self::Buf);
+    /// Backward pass of `rms_norm`: writes `dx`, adds the gamma gradient to `grads[dgamma_off ..]`.
+    #[allow(clippy::too_many_arguments)]
+    fn rms_norm_backward(&self, x: &Self::Buf, stats: &Self::Buf, dy: &Self::Buf, rows: usize, w: usize, params: &Self::Buf, gamma_off: usize, dx: &mut Self::Buf, grads: &mut Self::Buf, dgamma_off: usize);
+    /// SwiGLU on real rows `[a | b]` (each `hidden` wide): `g = silu(a) * b`, `rows x hidden`.
+    fn swiglu(&self, h: &Self::Buf, rows: usize, hidden: usize, g: &mut Self::Buf);
+    fn swiglu_backward(&self, h: &Self::Buf, dg: &Self::Buf, rows: usize, hidden: usize, dh: &mut Self::Buf);
+    /// Real RoPE: rotates the (even, odd) pairs of the `heads * head_dim` columns at `src_off` of every row of `src`
+    /// (row stride `src_ld`) by `sign` times the angle of the row's position (row % seq_len) and writes them to the
+    /// columns at `dst_off` of `dst` (row stride `dst_ld`). `sign` -1 is the backward pass.
+    #[allow(clippy::too_many_arguments)]
+    fn rope_rows(&self, src: &Self::Buf, src_ld: usize, src_off: usize, rows: usize, seq_len: usize, heads: usize, head_dim: usize, rope: Rope, sign: f32, dst: &mut Self::Buf, dst_ld: usize, dst_off: usize);
+
     /// Softmax cross-entropy of `rows x vocab` logits against `targets[t_off ..]`: returns the summed loss and
     /// replaces the logits by `scale * (softmax - onehot)` (the gradient of `scale * loss`). Rows whose target is
     /// `IGNORE_TARGET` add no loss and get a zero gradient.
