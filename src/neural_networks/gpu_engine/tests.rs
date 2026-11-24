@@ -7,7 +7,7 @@ use super::{
 };
 
 fn tiny() -> EngineConfig {
-    EngineConfig { vocab_size: 40, width: 32, layers: 2, heads: 2, ffn_hidden: 24, window: 3, seq_len: 8, complex_values: false, standard_residual: false, standard_rope: false, real: false }
+    EngineConfig { vocab_size: 40, width: 32, layers: 2, heads: 2, ffn_hidden: 24, window: 3, seq_len: 8, complex_values: false, standard_residual: false, standard_rope: false, real: false, tokenizer: String::new() }
 }
 
 fn real_tiny(window: usize) -> EngineConfig {
@@ -318,6 +318,9 @@ fn old_checkpoint_configs_load_as_the_rm_architecture() {
     let old = r#"{"vocab_size": 50282, "width": 256, "layers": 12, "heads": 4, "ffn_hidden": 1024, "window": 256, "seq_len": 512}"#;
     let config: EngineConfig = serde_json::from_str(old).unwrap();
     assert_eq!(config, EngineConfig::rm());
+    assert!(config.tokenizer.is_empty() && !serde_json::to_string(&config).unwrap().contains("tokenizer"));
+    let german = EngineConfig { tokenizer: "src/neural_networks/tokenizers/german_bpe_32k.json".into(), vocab_size: 32000, ..EngineConfig::default() };
+    assert_eq!(serde_json::from_str::<EngineConfig>(&serde_json::to_string(&german).unwrap()).unwrap(), german);
     assert!(Layout::new(&config).final_norm.is_none());
     for name in ["rm", "rm-pos", "complex-v", "new", "real"] {
         assert_eq!(EngineConfig::preset(name).unwrap().seq_len, 512);
@@ -637,7 +640,7 @@ mod cuda_backend {
     /// Loss and every gradient of the CUDA backend against the CPU backend (same parameters, same batch).
     /// `grad_scale` is the loss scale of the GPU pass (as in training with f16 GEMMs); its gradients are divided by it.
     fn compare(precision: Precision, tolerance: f64, grad_scale: f32) {
-        let rm = EngineConfig { vocab_size: 300, width: 64, layers: 2, heads: 4, ffn_hidden: 96, window: 5, seq_len: 32, complex_values: false, standard_residual: false, standard_rope: false, real: false };
+        let rm = EngineConfig { vocab_size: 300, width: 64, layers: 2, heads: 4, ffn_hidden: 96, window: 5, seq_len: 32, complex_values: false, standard_residual: false, standard_rope: false, real: false, tokenizer: String::new() };
         let new = EngineConfig { window: 32, complex_values: true, standard_residual: true, standard_rope: true, ..rm.clone() };
         let real = EngineConfig { width: 48, heads: 4, ffn_hidden: 80, real: true, ..new.clone() };
         for config in [rm, new, real] {
@@ -737,3 +740,15 @@ fn germanquad_sequences() {
 }
 
 
+
+#[test]
+fn german_tokenizer_loads_in_rust_and_round_trips() {
+    let tokenizer = tokenizers::Tokenizer::from_file("src/neural_networks/tokenizers/german_bpe_32k.json").unwrap();
+    assert_eq!(tokenizer.get_vocab_size(true), 32000);
+    assert!(tokenizer.token_to_id("<eos>").is_some());
+    let text = "Die Straßenbahn fährt über die Brücke nach Köln.\n\nÄrztinnen und Ärzte";
+    let encoding = tokenizer.encode(text, false).unwrap();
+    assert_eq!(tokenizer.decode(encoding.get_ids(), false).unwrap(), text);
+    let neox = tokenizers::Tokenizer::from_file("src/neural_networks/tokenizers/gtp_neox_tokenizer.json").unwrap();
+    assert!(encoding.get_ids().len() < neox.encode(text, false).unwrap().get_ids().len());
+}

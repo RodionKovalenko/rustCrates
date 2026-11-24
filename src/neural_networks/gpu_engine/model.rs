@@ -51,13 +51,16 @@ pub struct EngineConfig {
     /// numbers; `width` and `ffn_hidden` are real sizes.
     #[serde(default)]
     pub real: bool,
+    /// Tokenizer file the model was trained with (empty: the GPT-NeoX tokenizer of the project).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub tokenizer: String,
 }
 
 impl Default for EngineConfig {
     fn default() -> Self {
         // New models: full attention over the sequence, complex values, plain residuals (checkpoints without these
         // fields keep the RM behaviour, see the serde defaults).
-        Self { vocab_size: 50282, width: 256, layers: 12, heads: 4, ffn_hidden: 1024, window: 512, seq_len: 512, complex_values: true, standard_residual: true, standard_rope: true, real: false }
+        Self { vocab_size: 50282, width: 256, layers: 12, heads: 4, ffn_hidden: 1024, window: 512, seq_len: 512, complex_values: true, standard_residual: true, standard_rope: true, real: false, tokenizer: String::new() }
     }
 }
 
@@ -72,6 +75,14 @@ impl EngineConfig {
 
     pub fn rope(&self) -> Rope {
         if self.standard_rope { Rope { base: 10000.0, clamp: false } } else { Rope { base: super::ROPE_BASE as f32, clamp: true } }
+    }
+
+    /// Makes the tokenizer of this model the one used for encoding and decoding (before the first use).
+    pub fn select_tokenizer(&self) -> Result<(), String> {
+        if self.tokenizer.is_empty() {
+            return Ok(());
+        }
+        crate::neural_networks::utils::tokenizer::use_tokenizer(&self.tokenizer)
     }
 
     /// Features per position of the final hidden states (2w planar complex, w real).

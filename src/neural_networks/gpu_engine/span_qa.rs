@@ -268,7 +268,6 @@ fn adamw_cpu(params: &mut [f32], grads: &[f32], m: &mut [f32], v: &mut [f32], lr
 }
 
 pub fn finetune_span<B: Backend>(backend: B, settings: &FinetuneSettings) -> Result<(), Box<dyn std::error::Error>> {
-    let pad = token_id("<eos>").ok_or("the tokenizer has no <eos> token")?;
     let train = load_squad(&squad_files(&settings.data_dir, &settings.train_prefix)?)?;
     let test = load_squad(&squad_files(&settings.data_dir, &settings.test_prefix)?)?;
     if train.is_empty() || test.is_empty() {
@@ -276,6 +275,8 @@ pub fn finetune_span<B: Backend>(backend: B, settings: &FinetuneSettings) -> Res
     }
     let (config, params, _, base_state) = load_checkpoint(&settings.base).map_err(|e| format!("{}: {e}", settings.base.display()))?;
     println!("Span fine-tuning of {} (pretraining step {}, validation loss {:?}): {:?}", settings.base.display(), base_state.step, base_state.best_val_loss, config);
+    config.select_tokenizer()?;
+    let pad = token_id("<eos>").ok_or("the tokenizer has no <eos> token")?;
     let mut model = Model::from_parameters(backend, config, &params);
     let seq_len = model.config.seq_len;
     let mut head = SpanHead::new(model.config.hidden_features(), settings.seed);

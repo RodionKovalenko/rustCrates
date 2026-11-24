@@ -1,17 +1,37 @@
 use tokenizers::{AddedToken, Tokenizer};
 use std::{error::Error, path::Path};
-use lazy_static::lazy_static;
+use std::sync::OnceLock;
 
 // https://huggingface.co/togethercomputer/GPT-NeoXT-Chat-Base-20B/tree/main
 // "vocab_size": 50432 defined in https://huggingface.co/togethercomputer/GPT-NeoXT-Chat-Base-20B/blob/main/config.json
 pub const TOKENIZER_GTP_NEOXT_PATH: &str = "src/neural_networks/tokenizers/gtp_neox_tokenizer.json";
 
-// Cache the tokenizer to avoid loading from disk on every call
-lazy_static! {
-    static ref TOKENIZER: Tokenizer = {
-        let path = Path::new(TOKENIZER_GTP_NEOXT_PATH).to_path_buf();
-        Tokenizer::from_file(path).expect("Failed to load tokenizer")
-    };
+/// Tokenizer file chosen before the first use (`use_tokenizer`); the GPT-NeoX tokenizer otherwise.
+static TOKENIZER_CHOICE: OnceLock<String> = OnceLock::new();
+static TOKENIZER_CELL: OnceLock<(String, Tokenizer)> = OnceLock::new();
+
+/// The tokenizer, loaded once (cached to avoid loading from disk on every call).
+fn tokenizer() -> &'static Tokenizer {
+    &TOKENIZER_CELL
+        .get_or_init(|| {
+            let path = TOKENIZER_CHOICE.get().cloned().unwrap_or_else(|| TOKENIZER_GTP_NEOXT_PATH.to_string());
+            let tokenizer = Tokenizer::from_file(Path::new(&path)).unwrap_or_else(|e| panic!("Failed to load tokenizer {path}: {e}"));
+            (path, tokenizer)
+        })
+        .1
+}
+
+/// Selects the tokenizer file (e.g. the one a model was trained with). Must come before the first tokenization;
+/// choosing the file already in use is fine, another one is an error.
+pub fn use_tokenizer(path: &str) -> Result<(), String> {
+    if let Some((current, _)) = TOKENIZER_CELL.get() {
+        return if current == path { Ok(()) } else { Err(format!("tokenizer {current} is already in use, cannot switch to {path}")) };
+    }
+    match TOKENIZER_CHOICE.set(path.to_string()) {
+        Ok(()) => Ok(()),
+        Err(_) if TOKENIZER_CHOICE.get().is_some_and(|p| p == path) => Ok(()),
+        Err(_) => Err(format!("another tokenizer than {path} was already chosen")),
+    }
 }
 
 
@@ -36,7 +56,7 @@ pub fn tokenize_batch(text_batch: &Vec<String>, with_eos: bool) -> Result<(Vec<V
 
 pub fn tokenize(text: &str) -> Result<(Vec<String>, Vec<u32>), Box<dyn Error + Send + Sync>> {
     // Use the cached tokenizer
-    let encoding = TOKENIZER.encode(text, true)?;
+    let encoding = tokenizer().encode(text, true)?;
     let encoded_tokens= encoding.get_tokens().to_vec();
     let encoded_ids = encoding.get_ids().to_vec();
 
@@ -45,18 +65,18 @@ pub fn tokenize(text: &str) -> Result<(Vec<String>, Vec<u32>), Box<dyn Error + S
 
 /// Token ids of `text` (no special tokens added) with the byte range of `text` each token covers.
 pub fn encode_with_offsets(text: &str) -> Result<(Vec<u32>, Vec<(usize, usize)>), Box<dyn Error + Send + Sync>> {
-    let encoding = TOKENIZER.encode(text, false)?;
+    let encoding = tokenizer().encode(text, false)?;
     Ok((encoding.get_ids().to_vec(), encoding.get_offsets().to_vec()))
 }
 
 /// Id of a token of the vocabulary (e.g. `"<eos>"`), `None` if it does not exist.
 pub fn token_id(token: &str) -> Option<u32> {
-    TOKENIZER.token_to_id(token)
+    tokenizer().token_to_id(token)
 }
 
 pub fn detokenize(ids: &Vec<u32>, skip_speical_tokens: bool) -> Result<String, Box<dyn Error + Send + Sync>> {
     // Use the cached tokenizer
-    let decoded_text = TOKENIZER.decode(ids, skip_speical_tokens)?;
+    let decoded_text = tokenizer().decode(ids, skip_speical_tokens)?;
     Ok(decoded_text)
 }
 

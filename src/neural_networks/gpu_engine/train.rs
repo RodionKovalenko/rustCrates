@@ -188,8 +188,19 @@ pub fn pretrain<B: Backend>(backend: B, settings: &EngineTrainSettings) -> Resul
         println!("Continuing {} at step {} (best validation loss {:?}, AdamW moments {})", settings.checkpoint.display(), state.step, state.best_val_loss, if adam.is_some() { "restored" } else { "new" });
         (Model::from_parameters(backend, config, &params), state, adam)
     } else {
-        println!("Creating a new model: {:?}", settings.config);
-        (Model::new(backend, settings.config.clone(), 42), EngineTrainState::default(), None)
+        let mut config = settings.config.clone();
+        // A new model takes the tokenizer and vocabulary of the shards (meta.json of prepare_pretrain.py).
+        if let Ok(meta) = std::fs::read_to_string(settings.data_dir.join("meta.json")) {
+            let meta: serde_json::Value = serde_json::from_str(&meta)?;
+            if let (Some(tokenizer), Some(vocab)) = (meta["tokenizer"].as_str(), meta["vocab_size"].as_u64()) {
+                if !tokenizer.ends_with("gtp_neox_tokenizer.json") {
+                    config.tokenizer = tokenizer.to_string();
+                }
+                config.vocab_size = vocab as usize;
+            }
+        }
+        println!("Creating a new model: {:?}", config);
+        (Model::new(backend, config, 42), EngineTrainState::default(), None)
     };
     if !settings.loss_scaling {
         state.loss_scale = 1.0;
@@ -216,6 +227,10 @@ pub fn pretrain<B: Backend>(backend: B, settings: &EngineTrainSettings) -> Resul
     let last_step = first_step + settings.steps;
     let mut shard_tokens = read_shard(&train_files[state.shard % train_files.len()])?;
     let mut order = window_order(state.shard, shard_tokens.len() / len);
+    let largest = shard_tokens.iter().chain(val.iter()).copied().max().unwrap_or(0) as usize;
+    if largest >= model.config.vocab_size {
+        return Err(format!("token id {largest} in the shards, but the model has a vocabulary of {} (shards of another tokenizer?)", model.config.vocab_size).into());
+    }
     println!("{} train shards, {} validation tokens; steps {}..{}, batch {} x {} tokens, micro-batch {}", train_files.len(), val.len(), first_step, last_step, settings.batch_size, model.config.seq_len, settings.micro_batch);
 
     let mut history = std::fs::OpenOptions::new().create(true).append(true).open({

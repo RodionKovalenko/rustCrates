@@ -360,7 +360,6 @@ pub fn finetune<B: Backend>(backend: B, settings: &FinetuneSettings) -> Result<(
     if settings.span {
         return super::span_qa::finetune_span(backend, settings);
     }
-    let eos = token_id("<eos>").ok_or("the tokenizer has no <eos> token")?;
     let train = load_squad(&squad_files(&settings.data_dir, &settings.train_prefix)?)?;
     let test = load_squad(&squad_files(&settings.data_dir, &settings.test_prefix)?)?;
     if train.is_empty() || test.is_empty() {
@@ -368,6 +367,8 @@ pub fn finetune<B: Backend>(backend: B, settings: &FinetuneSettings) -> Result<(
     }
     let (config, params, _, base_state) = load_checkpoint(&settings.base).map_err(|e| format!("{}: {e}", settings.base.display()))?;
     println!("Fine-tuning {} (pretraining step {}, validation loss {:?})", settings.base.display(), base_state.step, base_state.best_val_loss);
+    config.select_tokenizer()?;
+    let eos = token_id("<eos>").ok_or("the tokenizer has no <eos> token")?;
     let mut model = Model::from_parameters(backend, config, &params);
     let seq_len = model.config.seq_len;
 

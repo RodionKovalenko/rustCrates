@@ -86,10 +86,11 @@ def main():
     parser.add_argument("--shard-tokens", type=int, default=50_000_000, help="tokens per shard file (2 bytes each)")
     parser.add_argument("--val-articles", type=int, default=2000, help="articles held out for validation")
     parser.add_argument("--batch", type=int, default=2000, help="articles tokenized per call")
+    parser.add_argument("--tokenizer", default=TOKENIZER_PATH, help="tokenizers JSON (default: the GPT-NeoX tokenizer of the project)")
     args = parser.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
-    tokenizer = Tokenizer.from_file(TOKENIZER_PATH)
+    tokenizer = Tokenizer.from_file(args.tokenizer)
     eos = tokenizer.token_to_id(EOS)
     assert eos is not None and tokenizer.get_vocab_size() <= 65536
 
@@ -127,9 +128,10 @@ def main():
     meta = {
         "dataset": "wikimedia/wikipedia 20231101.de (CC BY-SA 4.0 / GFDL)",
         "sources": sources,
-        "tokenizer": "src/neural_networks/tokenizers/gtp_neox_tokenizer.json",
+        "tokenizer": os.path.relpath(os.path.abspath(args.tokenizer), os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")),
         "dtype": "uint16 little-endian",
         "eos_id": eos,
+        "vocab_size": tokenizer.get_vocab_size(),
         "articles": articles,
         "train_tokens": train.total,
         "val_tokens": val.total,

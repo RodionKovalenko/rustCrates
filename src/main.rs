@@ -358,11 +358,12 @@ fn engine_generate_command(args: &[String]) -> Result<(), Box<dyn std::error::Er
     let text = if words.is_empty() { read_input("Text: ")? } else { words.join(" ") };
     // Articles were trained as "title\n\ntext<eos>": a literal "\n" in the argument becomes a line break.
     let text = text.replace("\\n", "\n");
+    let (config, params, _, state) = load_checkpoint(std::path::Path::new(CHECKPOINT)).map_err(|e| format!("{CHECKPOINT}: {e} (download the trained model first)"))?;
+    config.select_tokenizer()?;
     let (_, prompt) = tokenize(&text).map_err(|e| e.to_string())?;
     if prompt.is_empty() {
         return Err("the text gives no tokens".into());
     }
-    let (config, params, _, state) = load_checkpoint(std::path::Path::new(CHECKPOINT)).map_err(|e| format!("{CHECKPOINT}: {e} (download the trained model first)"))?;
     println!("model: step {}, best validation loss {:?}; temperature {}, top-k {}, penalty {}, seed {}", state.step, state.best_val_loss, settings.temperature, settings.top_k, settings.repetition_penalty, settings.seed);
     let eos = token_id("<eos>");
 
@@ -454,6 +455,7 @@ fn engine_qa_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
     let checkpoint = std::path::Path::new("STORAGE/engine_qa");
     let (config, params, _, _) = load_checkpoint(checkpoint).map_err(|e| format!("STORAGE/engine_qa: {e} (fine-tune first: engine-finetune)"))?;
     let head = load_head(checkpoint, config.hidden_features()).ok();
+    config.select_tokenizer()?;
     let eos = token_id("<eos>").ok_or("no <eos> token")?;
     fn run<B: Backend>(backend: B, config: EngineConfig, params: &[f32], head: Option<SpanHead>, question: &str, context: &str, eos: u32) -> Result<(), Box<dyn std::error::Error>> {
         let mut model = Model::from_parameters(backend, config, params);
