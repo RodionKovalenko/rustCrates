@@ -14,7 +14,7 @@ use rand::{Rng, RngExt, SeedableRng};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use super::backend::{Backend, Gemm, IGNORE_TARGET};
+use super::backend::{Backend, Gemm, Rope, IGNORE_TARGET};
 use crate::neural_networks::network_layers::wavelet_network::decompose_in_wavelet_2d_levels;
 
 /// Size of the raw token vectors that the wavelet decomposition compresses to the model width.
@@ -41,13 +41,17 @@ pub struct EngineConfig {
     /// by `residual_beta` and a leaky ReLU on the feed-forward output (the RM model).
     #[serde(default)]
     pub standard_residual: bool,
+    /// RoPE with base 10000 and unclamped angles; false: base 1250 with angles clamped to [-1, 1] (the RM model,
+    /// where pair i cannot tell positions beyond 1250^(2i/head_dim) apart).
+    #[serde(default)]
+    pub standard_rope: bool,
 }
 
 impl Default for EngineConfig {
     fn default() -> Self {
         // New models: full attention over the sequence, complex values, plain residuals (checkpoints without these
         // fields keep the RM behaviour, see the serde defaults).
-        Self { vocab_size: 50282, width: 256, layers: 12, heads: 4, ffn_hidden: 1024, window: 512, seq_len: 512, complex_values: true, standard_residual: true }
+        Self { vocab_size: 50282, width: 256, layers: 12, heads: 4, ffn_hidden: 1024, window: 512, seq_len: 512, complex_values: true, standard_residual: true, standard_rope: true }
     }
 }
 
@@ -60,6 +64,10 @@ impl EngineConfig {
         (1.0 / (3.0 * self.layers as f64).powf(0.25)) as f32
     }
 
+    pub fn rope(&self) -> Rope {
+        if self.standard_rope { Rope { base: 10000.0, clamp: false } } else { Rope { base: super::ROPE_BASE as f32, clamp: true } }
+    }
+
     /// Columns of the attention output per row: w (Re(V) only) or 2w (planar complex).
     pub fn attention_width(&self) -> usize {
         if self.complex_values { 2 * self.width } else { self.width }
@@ -67,7 +75,7 @@ impl EngineConfig {
 
     /// The RM model's architecture (the checkpoints of the pretraining runs 1 to 3).
     pub fn rm() -> Self {
-        Self { window: 256, complex_values: false, standard_residual: false, ..Self::default() }
+        Self { window: 256, complex_values: false, standard_residual: false, standard_rope: false, ..Self::default() }
     }
 
     pub fn head_dim(&self) -> usize {
@@ -544,8 +552,8 @@ impl<B: Backend> Model<B> {
         // Attention.
         b.layer_norm(&a.input, rows, w, NORM_EPSILON, &self.params, lo.attention_norm.gamma, lo.attention_norm.beta, &mut a.h1, &mut a.stats1);
         b.gemm(&Gemm::new(rows, 6 * w, 2 * w, false, false), &a.h1, wqkv, &mut a.qkv);
-        b.rope_to_heads(&a.qkv, 6 * w, 0, 3 * w, rows, t, heads, hd, &mut a.qh);
-        b.rope_to_heads(&a.qkv, 6 * w, w, 4 * w, rows, t, heads, hd, &mut a.kh);
+        b.rope_to_heads(&a.qkv, 6 * w, 0, 3 * w, rows, t, heads, hd, c.rope(), &mut a.qh);
+        b.rope_to_heads(&a.qkv, 6 * w, w, 4 * w, rows, t, heads, hd, c.rope(), &mut a.kh);
         // ComplexToLinear per head: [Qr_h | Qi_h] (rows x 2hd) times [W1; W2] (2hd x hd).
         let ctl = |ctl_off: usize| Gemm::new(rows, hd, 2 * hd, false, false).ld(2 * w, hd, w).offsets(0, ctl_off, 0).batched(heads, 2 * hd, 2 * hd * hd, hd);
         b.gemm(&ctl(lo.ctl_q), &a.qh, &self.params, &mut a.qr);
@@ -688,8 +696,8 @@ impl<B: Backend> Model<B> {
                 let g = Gemm::new(rows, 2 * hd, hd, false, true).ld(w, hd, 2 * w).offsets(0, ctl_off, 0).batched(heads, hd, 2 * hd * hd, 2 * hd);
                 b.gemm(&g, d_real, &self.params, d_heads);
             }
-            b.rope_from_heads(&ws.d_qh, rows, t, heads, hd, &mut ws.d_qkv, 6 * w, 0, 3 * w);
-            b.rope_from_heads(&ws.d_kh, rows, t, heads, hd, &mut ws.d_qkv, 6 * w, w, 4 * w);
+            b.rope_from_heads(&ws.d_qh, rows, t, heads, hd, c.rope(), &mut ws.d_qkv, 6 * w, 0, 3 * w);
+            b.rope_from_heads(&ws.d_kh, rows, t, heads, hd, c.rope(), &mut ws.d_qkv, 6 * w, w, 4 * w);
             Self::linear_backward(b, &a.h1, &ws.d_qkv, wqkv, lo.wqkv, rows, &mut self.block_grad, &mut self.grads, &mut ws.dtmp);
             b.layer_norm_backward(&a.input, &a.stats1, &ws.dtmp, rows, w, &self.params, lo.attention_norm.gamma, &mut ws.d_out, &mut self.grads, lo.attention_norm.gamma, lo.attention_norm.beta);
             b.axpy(1.0, &ws.d_out, &mut ws.dx, rows * 2 * w);

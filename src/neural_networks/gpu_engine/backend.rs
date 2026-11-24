@@ -11,6 +11,20 @@
 /// Target id of a position that does not count in the loss (e.g. the question and context in fine-tuning).
 pub const IGNORE_TARGET: u32 = u32::MAX;
 
+/// Rotary position encoding: angle `position / base^(2i / head_dim)` of pair `i`, clamped to [-1, 1] in the RM model.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Rope {
+    pub base: f32,
+    pub clamp: bool,
+}
+
+impl Rope {
+    pub fn angle(&self, position: usize, i: usize, head_dim: usize) -> f32 {
+        let theta = position as f64 / (self.base as f64).powf(2.0 * i as f64 / head_dim as f64);
+        (if self.clamp { theta.clamp(-1.0, 1.0) } else { theta }) as f32
+    }
+}
+
 /// Batched, strided GEMM on row-major matrices:
 /// `C_i = alpha * op(A_i) * op(B_i) + beta * C_i` for `i < batch`, with `A_i` starting at `a_off + i * stride_a`
 /// (likewise B, C). `op(A)` is `m x k`, `op(B)` is `k x n`, `C` is `m x n`; `trans_*` transposes the stored matrix.
@@ -139,11 +153,11 @@ pub trait Backend {
     /// angle of the row's position (row % seq_len) and writes them *head-planar* to `dst` (row stride
     /// 2 * heads * head_dim, head h at `h * 2 * head_dim`: `[re | im]`).
     #[allow(clippy::too_many_arguments)]
-    fn rope_to_heads(&self, src: &Self::Buf, src_ld: usize, re_off: usize, im_off: usize, rows: usize, seq_len: usize, heads: usize, head_dim: usize, dst: &mut Self::Buf);
+    fn rope_to_heads(&self, src: &Self::Buf, src_ld: usize, re_off: usize, im_off: usize, rows: usize, seq_len: usize, heads: usize, head_dim: usize, rope: Rope, dst: &mut Self::Buf);
     /// Backward pass of `rope_to_heads`: rotates the head-planar gradient back and writes it to the planar
     /// columns of `dst` (other columns untouched).
     #[allow(clippy::too_many_arguments)]
-    fn rope_from_heads(&self, src: &Self::Buf, rows: usize, seq_len: usize, heads: usize, head_dim: usize, dst: &mut Self::Buf, dst_ld: usize, re_off: usize, im_off: usize);
+    fn rope_from_heads(&self, src: &Self::Buf, rows: usize, seq_len: usize, heads: usize, head_dim: usize, rope: Rope, dst: &mut Self::Buf, dst_ld: usize, re_off: usize, im_off: usize);
 
     /// Row-wise softmax of `groups` blocks of `t x t` scores, in place; key j is visible to query i when
     /// `i - window <= j <= i`, all other weights are 0.

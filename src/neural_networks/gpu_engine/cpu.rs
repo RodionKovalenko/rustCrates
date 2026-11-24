@@ -3,7 +3,7 @@
 
 use rayon::prelude::*;
 
-use super::backend::{Backend, Gemm, IGNORE_TARGET};
+use super::backend::{Backend, Gemm, Rope, IGNORE_TARGET};
 
 pub struct CpuBackend;
 
@@ -23,11 +23,6 @@ fn silu(t: f32) -> f32 {
 fn silu_derivative(t: f32) -> f32 {
     let s = sigmoid(t);
     s * (1.0 + t * (1.0 - s))
-}
-
-/// RoPE angle of the pair `i` of a head at `position` (as the RM layer, including the clamp to [-1, 1]).
-pub fn rope_angle(position: usize, i: usize, head_dim: usize) -> f32 {
-    (position as f64 / super::ROPE_BASE.powf(2.0 * i as f64 / head_dim as f64)).clamp(-1.0, 1.0) as f32
 }
 
 impl Backend for CpuBackend {
@@ -217,14 +212,14 @@ impl Backend for CpuBackend {
         }
     }
 
-    fn rope_to_heads(&self, src: &Vec<f32>, src_ld: usize, re_off: usize, im_off: usize, rows: usize, seq_len: usize, heads: usize, head_dim: usize, dst: &mut Vec<f32>) {
+    fn rope_to_heads(&self, src: &Vec<f32>, src_ld: usize, re_off: usize, im_off: usize, rows: usize, seq_len: usize, heads: usize, head_dim: usize, rope: Rope, dst: &mut Vec<f32>) {
         let dst_ld = 2 * heads * head_dim;
         dst[..rows * dst_ld].par_chunks_mut(dst_ld).enumerate().for_each(|(r, out)| {
             let s = &src[r * src_ld..(r + 1) * src_ld];
             let position = r % seq_len;
             for h in 0..heads {
                 for i in 0..head_dim / 2 {
-                    let (cos, sin) = { let a = rope_angle(position, i, head_dim); (a.cos(), a.sin()) };
+                    let (cos, sin) = { let a = rope.angle(position, i, head_dim); (a.cos(), a.sin()) };
                     for (part, off) in [(0, re_off), (1, im_off)] {
                         let (e, o) = (s[off + h * head_dim + 2 * i], s[off + h * head_dim + 2 * i + 1]);
                         let base = h * 2 * head_dim + part * head_dim + 2 * i;
@@ -236,14 +231,14 @@ impl Backend for CpuBackend {
         });
     }
 
-    fn rope_from_heads(&self, src: &Vec<f32>, rows: usize, seq_len: usize, heads: usize, head_dim: usize, dst: &mut Vec<f32>, dst_ld: usize, re_off: usize, im_off: usize) {
+    fn rope_from_heads(&self, src: &Vec<f32>, rows: usize, seq_len: usize, heads: usize, head_dim: usize, rope: Rope, dst: &mut Vec<f32>, dst_ld: usize, re_off: usize, im_off: usize) {
         let src_ld = 2 * heads * head_dim;
         dst[..rows * dst_ld].par_chunks_mut(dst_ld).enumerate().for_each(|(r, out)| {
             let s = &src[r * src_ld..(r + 1) * src_ld];
             let position = r % seq_len;
             for h in 0..heads {
                 for i in 0..head_dim / 2 {
-                    let (cos, sin) = { let a = rope_angle(position, i, head_dim); (a.cos(), a.sin()) };
+                    let (cos, sin) = { let a = rope.angle(position, i, head_dim); (a.cos(), a.sin()) };
                     for (part, off) in [(0, re_off), (1, im_off)] {
                         let base = h * 2 * head_dim + part * head_dim + 2 * i;
                         let (e, o) = (s[base], s[base + 1]);

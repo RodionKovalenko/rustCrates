@@ -182,20 +182,20 @@ extern "C" __global__ void layer_norm_backward(const float* x, const float* stat
     }
 }
 
-__device__ __forceinline__ void rope_cos_sin(i64 position, i64 i, i64 head_dim, float rope_base, float* c, float* s) {
+__device__ __forceinline__ void rope_cos_sin(i64 position, i64 i, i64 head_dim, float rope_base, int clamp, float* c, float* s) {
     double theta = (double)position / pow((double)rope_base, 2.0 * (double)i / (double)head_dim);
-    theta = fmin(fmax(theta, -1.0), 1.0);
+    if (clamp) theta = fmin(fmax(theta, -1.0), 1.0);
     *c = (float)cos(theta);
     *s = (float)sin(theta);
 }
 
 // One thread per (row, head, pair, part).
-extern "C" __global__ void rope_to_heads(const float* src, i64 src_ld, i64 re_off, i64 im_off, i64 rows, i64 seq_len, i64 heads, i64 head_dim, float rope_base, float* dst) {
+extern "C" __global__ void rope_to_heads(const float* src, i64 src_ld, i64 re_off, i64 im_off, i64 rows, i64 seq_len, i64 heads, i64 head_dim, float rope_base, int clamp, float* dst) {
     i64 pairs = head_dim / 2;
     GRID_STRIDE(idx, rows * heads * pairs * 2) {
         i64 part = idx % 2, i = (idx / 2) % pairs, h = (idx / (2 * pairs)) % heads, r = idx / (2 * pairs * heads);
         float c, s;
-        rope_cos_sin(r % seq_len, i, head_dim, rope_base, &c, &s);
+        rope_cos_sin(r % seq_len, i, head_dim, rope_base, clamp, &c, &s);
         i64 off = part == 0 ? re_off : im_off;
         float e = src[r * src_ld + off + h * head_dim + 2 * i], o = src[r * src_ld + off + h * head_dim + 2 * i + 1];
         i64 base = r * 2 * heads * head_dim + h * 2 * head_dim + part * head_dim + 2 * i;
@@ -204,12 +204,12 @@ extern "C" __global__ void rope_to_heads(const float* src, i64 src_ld, i64 re_of
     }
 }
 
-extern "C" __global__ void rope_from_heads(const float* src, i64 rows, i64 seq_len, i64 heads, i64 head_dim, float rope_base, float* dst, i64 dst_ld, i64 re_off, i64 im_off) {
+extern "C" __global__ void rope_from_heads(const float* src, i64 rows, i64 seq_len, i64 heads, i64 head_dim, float rope_base, int clamp, float* dst, i64 dst_ld, i64 re_off, i64 im_off) {
     i64 pairs = head_dim / 2;
     GRID_STRIDE(idx, rows * heads * pairs * 2) {
         i64 part = idx % 2, i = (idx / 2) % pairs, h = (idx / (2 * pairs)) % heads, r = idx / (2 * pairs * heads);
         float c, s;
-        rope_cos_sin(r % seq_len, i, head_dim, rope_base, &c, &s);
+        rope_cos_sin(r % seq_len, i, head_dim, rope_base, clamp, &c, &s);
         i64 base = r * 2 * heads * head_dim + h * 2 * head_dim + part * head_dim + 2 * i;
         float e = src[base], o = src[base + 1];
         i64 off = part == 0 ? re_off : im_off;

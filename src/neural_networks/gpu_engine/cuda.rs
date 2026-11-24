@@ -13,7 +13,7 @@ use cudarc::cublas::sys::{cublasComputeType_t, cublasGemmAlgo_t, cublasOperation
 use cudarc::driver::safe::{CudaContext, CudaFunction, CudaSlice, CudaStream, DevicePtr, DevicePtrMut, LaunchConfig, PushKernelArg};
 use cudarc::nvrtc::{compile_ptx_with_opts, CompileOptions};
 
-use super::backend::{Backend, Gemm};
+use super::backend::{Rope, Backend, Gemm};
 
 pub const KERNELS: &str = include_str!("kernels.cu");
 
@@ -294,16 +294,16 @@ impl Backend for CudaBackend {
         self.column_sums(&scratch.floats, rows, 4 * w, grads, dgamma_off);
     }
 
-    fn rope_to_heads(&self, src: &CudaSlice<f32>, src_ld: usize, re_off: usize, im_off: usize, rows: usize, seq_len: usize, heads: usize, head_dim: usize, dst: &mut CudaSlice<f32>) {
+    fn rope_to_heads(&self, src: &CudaSlice<f32>, src_ld: usize, re_off: usize, im_off: usize, rows: usize, seq_len: usize, heads: usize, head_dim: usize, rope: Rope, dst: &mut CudaSlice<f32>) {
         let (ld, r, i, n, t, h, d) = (src_ld as i64, re_off as i64, im_off as i64, rows as i64, seq_len as i64, heads as i64, head_dim as i64);
-        let base = super::ROPE_BASE as f32;
-        unsafe { self.stream.launch_builder(self.f("rope_to_heads")).arg(src).arg(&ld).arg(&r).arg(&i).arg(&n).arg(&t).arg(&h).arg(&d).arg(&base).arg(dst).launch(grid(rows * heads * head_dim)) }.expect("rope_to_heads");
+        let (base, clamp) = (rope.base, rope.clamp as i32);
+        unsafe { self.stream.launch_builder(self.f("rope_to_heads")).arg(src).arg(&ld).arg(&r).arg(&i).arg(&n).arg(&t).arg(&h).arg(&d).arg(&base).arg(&clamp).arg(dst).launch(grid(rows * heads * head_dim)) }.expect("rope_to_heads");
     }
 
-    fn rope_from_heads(&self, src: &CudaSlice<f32>, rows: usize, seq_len: usize, heads: usize, head_dim: usize, dst: &mut CudaSlice<f32>, dst_ld: usize, re_off: usize, im_off: usize) {
+    fn rope_from_heads(&self, src: &CudaSlice<f32>, rows: usize, seq_len: usize, heads: usize, head_dim: usize, rope: Rope, dst: &mut CudaSlice<f32>, dst_ld: usize, re_off: usize, im_off: usize) {
         let (n, t, h, d, ld, r, i) = (rows as i64, seq_len as i64, heads as i64, head_dim as i64, dst_ld as i64, re_off as i64, im_off as i64);
-        let base = super::ROPE_BASE as f32;
-        unsafe { self.stream.launch_builder(self.f("rope_from_heads")).arg(src).arg(&n).arg(&t).arg(&h).arg(&d).arg(&base).arg(dst).arg(&ld).arg(&r).arg(&i).launch(grid(rows * heads * head_dim)) }.expect("rope_from_heads");
+        let (base, clamp) = (rope.base, rope.clamp as i32);
+        unsafe { self.stream.launch_builder(self.f("rope_from_heads")).arg(src).arg(&n).arg(&t).arg(&h).arg(&d).arg(&base).arg(&clamp).arg(dst).arg(&ld).arg(&r).arg(&i).launch(grid(rows * heads * head_dim)) }.expect("rope_from_heads");
     }
 
     fn softmax_window(&self, s: &mut CudaSlice<f32>, groups: usize, t: usize, window: usize) {

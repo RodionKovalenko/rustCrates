@@ -7,7 +7,7 @@ use super::{
 };
 
 fn tiny() -> EngineConfig {
-    EngineConfig { vocab_size: 40, width: 32, layers: 2, heads: 2, ffn_hidden: 24, window: 3, seq_len: 8, complex_values: false, standard_residual: false }
+    EngineConfig { vocab_size: 40, width: 32, layers: 2, heads: 2, ffn_hidden: 24, window: 3, seq_len: 8, complex_values: false, standard_residual: false, standard_rope: false }
 }
 
 fn windows(config: &EngineConfig, batch: usize, seed: u64) -> Vec<u32> {
@@ -293,8 +293,8 @@ fn check_architecture(config: EngineConfig) {
 fn every_architecture_variant_has_exact_gradients() {
     for complex_values in [false, true] {
         for standard_residual in [false, true] {
-            for window in [3, 8] {
-                check_architecture(EngineConfig { window, complex_values, standard_residual, ..tiny() });
+            for (window, standard_rope) in [(3, false), (8, true)] {
+                check_architecture(EngineConfig { window, complex_values, standard_residual, standard_rope, ..tiny() });
             }
         }
     }
@@ -307,7 +307,7 @@ fn old_checkpoint_configs_load_as_the_rm_architecture() {
     assert_eq!(config, EngineConfig::rm());
     assert!(Layout::new(&config).final_norm.is_none());
     let new = EngineConfig::default();
-    assert!(new.complex_values && new.standard_residual && new.window >= new.seq_len);
+    assert!(new.complex_values && new.standard_residual && new.standard_rope && new.window >= new.seq_len);
 }
 
 #[test]
@@ -516,7 +516,7 @@ mod cuda_backend {
     fn compare(precision: Precision, tolerance: f64, grad_scale: f32) {
         let Some(backend) = gpu(precision) else { return };
         println!("GPU: {}", backend.device_name());
-        let config = EngineConfig { vocab_size: 300, width: 64, layers: 2, heads: 4, ffn_hidden: 96, window: 5, seq_len: 32, complex_values: false, standard_residual: false };
+        let config = EngineConfig { vocab_size: 300, width: 64, layers: 2, heads: 4, ffn_hidden: 96, window: 5, seq_len: 32, complex_values: false, standard_residual: false, standard_rope: false };
         let mut cpu = Model::new(CpuBackend, config.clone(), 3);
         let params = cpu.params.clone();
         let mut cuda = Model::from_parameters(backend, config.clone(), &params);
