@@ -15,6 +15,7 @@ pub mod cuda;
 pub mod finetune;
 pub mod generate;
 pub mod model;
+pub mod span_qa;
 pub mod train;
 
 #[cfg(test)]

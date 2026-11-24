@@ -419,6 +419,11 @@ fn engine_finetune_command(args: &[String]) -> Result<(), Box<dyn std::error::Er
     if let Ok(n) = std::env::var("EVAL_QUESTIONS") {
         settings.eval_questions = n.parse()?;
     }
+    // QA_MODE = span (default: start/end of the answer in the context) | generate (answer as generated text).
+    settings.span = std::env::var("QA_MODE").map(|m| m != "generate").unwrap_or(true);
+    if let Ok(base) = std::env::var("BASE_MODEL") {
+        settings.base = base.into();
+    }
     let half = args.get(5).is_none_or(|p| p != "f32");
     #[cfg(feature = "gpu-engine")]
     {
@@ -437,36 +442,43 @@ fn engine_finetune_command(args: &[String]) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
-/// engine-qa <context file> <question>: answer with the fine-tuned model STORAGE/engine_qa.
+/// engine-qa <context file> <question>: answer with the fine-tuned model STORAGE/engine_qa (span head if present).
 fn engine_qa_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     use neural_networks::neural_networks::{
-        gpu_engine::{backend::Backend, finetune::answer_question, model::{EngineConfig, Model}, train::load_checkpoint},
+        gpu_engine::{backend::Backend, finetune::answer_question, model::{EngineConfig, Model}, span_qa::{answer_span, load_head, SpanHead}, train::load_checkpoint},
         utils::tokenizer::{detokenize, token_id},
     };
     let path = args.get(2).ok_or("usage: engine-qa <context file> <question>")?;
     let context = std::fs::read_to_string(path)?;
     let question = if args.len() > 3 { args[3..].join(" ") } else { read_input("Frage: ")? };
-    let (config, params, _, _) = load_checkpoint(std::path::Path::new("STORAGE/engine_qa")).map_err(|e| format!("STORAGE/engine_qa: {e} (fine-tune first: engine-finetune)"))?;
+    let checkpoint = std::path::Path::new("STORAGE/engine_qa");
+    let (config, params, _, _) = load_checkpoint(checkpoint).map_err(|e| format!("STORAGE/engine_qa: {e} (fine-tune first: engine-finetune)"))?;
+    let head = load_head(checkpoint, config.width).ok();
     let eos = token_id("<eos>").ok_or("no <eos> token")?;
-    fn run<B: Backend>(backend: B, config: EngineConfig, params: &[f32], question: &str, context: &str, eos: u32) -> Result<(), Box<dyn std::error::Error>> {
+    fn run<B: Backend>(backend: B, config: EngineConfig, params: &[f32], head: Option<SpanHead>, question: &str, context: &str, eos: u32) -> Result<(), Box<dyn std::error::Error>> {
         let mut model = Model::from_parameters(backend, config, params);
         let started = std::time::Instant::now();
-        let (answer, log_prob) = answer_question(&mut model, question, context, eos).map_err(|e| e.to_string())?;
-        let text = detokenize(&answer, true).map_err(|e| e.to_string())?;
-        if answer.is_empty() {
+        let (text, score) = match &head {
+            Some(head) => answer_span(&mut model, head, question, context, eos).map_err(|e| e.to_string())?,
+            None => {
+                let (answer, log_prob) = answer_question(&mut model, question, context, eos).map_err(|e| e.to_string())?;
+                (detokenize(&answer, true).map_err(|e| e.to_string())?.trim().to_string(), log_prob as f32)
+            }
+        };
+        if text.is_empty() {
             println!("Antwort: (keine Antwort im Text gefunden)");
         } else {
-            println!("Antwort: {}\n(mean log-probability {:.2}, {:.1} s)", text.trim(), log_prob, started.elapsed().as_secs_f64());
+            println!("Antwort: {text}\n({}, score {score:.2}, {:.1} s)", if head.is_some() { "span" } else { "generated" }, started.elapsed().as_secs_f64());
         }
         Ok(())
     }
     #[cfg(feature = "gpu-engine")]
     {
         use neural_networks::neural_networks::gpu_engine::cuda::{CudaBackend, Precision};
-        return run(CudaBackend::new(0, Precision::F32)?, config, &params, &question, &context, eos);
+        return run(CudaBackend::new(0, Precision::F32)?, config, &params, head, &question, &context, eos);
     }
     #[cfg(not(feature = "gpu-engine"))]
-    run(neural_networks::neural_networks::gpu_engine::cpu::CpuBackend, config, &params, &question, &context, eos)
+    run(neural_networks::neural_networks::gpu_engine::cpu::CpuBackend, config, &params, head, &question, &context, eos)
 }
 
 /// lm-generate [max_tokens] <text>

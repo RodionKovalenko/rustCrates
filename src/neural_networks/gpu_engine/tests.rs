@@ -231,6 +231,11 @@ fn finetuning_runs_end_to_end_on_a_small_model() {
     settings.eval_every = 6;
     settings.eval_questions = 4;
     finetune(CpuBackend, &settings).unwrap();
+    assert!(dir.join("qa.span").exists(), "span head not saved");
+    settings.span = false;
+    settings.checkpoint = dir.join("qa_gen");
+    finetune(CpuBackend, &settings).unwrap();
+    assert!(dir.join("qa_gen.params").exists());
     let state: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("qa.state.json")).unwrap()).unwrap();
     assert!(state["best_val_loss"].as_f64().is_some_and(|l| l.is_finite()), "{state}");
     assert!(dir.join("qa.params").exists());
@@ -312,6 +317,107 @@ fn old_checkpoint_configs_load_as_the_rm_architecture() {
     assert_eq!(EngineConfig::preset("new"), Some(EngineConfig::default()));
     let new = EngineConfig::default();
     assert!(new.complex_values && new.standard_residual && new.standard_rope && new.window >= new.seq_len);
+}
+
+#[test]
+fn backward_hidden_gives_the_gradient_of_a_function_of_the_hidden_states() {
+    use super::backend::Backend;
+    for config in [tiny(), EngineConfig { window: 8, ..EngineConfig { complex_values: true, standard_residual: true, standard_rope: true, ..tiny() } }] {
+        let t = config.seq_len;
+        let mut model = Model::new(CpuBackend, config.clone(), 4);
+        let inputs: Vec<u32> = windows(&config, 2, 3).chunks(t + 1).flat_map(|w| w[..t].to_vec()).collect();
+        let hidden = model.forward_hidden(&inputs);
+        // L = sum hidden * r for a fixed r.
+        let r: Vec<f32> = (0..hidden.len()).map(|i| ((i * 7919 % 101) as f32 / 101.0) - 0.5).collect();
+        model.zero_grads();
+        model.backward_hidden(&inputs, &r);
+        let grads = CpuBackend.download(&model.grads);
+        let params = CpuBackend.download(&model.params);
+        let lossf = |p: &[f32]| -> f64 { Model::from_parameters(CpuBackend, config.clone(), p).forward_hidden(&inputs).iter().zip(&r).map(|(h, r)| (*h as f64) * (*r as f64)).sum() };
+        let mut checked = 0;
+        for segment in &model.layout.segments {
+            let i = segment.offset + segment.len() / 3;
+            let h = 1e-3f32;
+            let (mut a, mut b) = (params.clone(), params.clone());
+            a[i] += h;
+            b[i] -= h;
+            let numeric = (lossf(&a) - lossf(&b)) / (2.0 * h as f64);
+            let (mut a2, mut b2) = (params.clone(), params.clone());
+            a2[i] += h / 2.0;
+            b2[i] -= h / 2.0;
+            let half = (lossf(&a2) - lossf(&b2)) / h as f64;
+            // The sum over all hidden values in f32 carries rounding noise of ~1e-3 in these differences.
+            if (numeric - half).abs() > 0.1 * numeric.abs().max(half.abs()) + 1e-2 {
+                assert!(!config.standard_residual, "{}: jump ({numeric} vs {half})", segment.name);
+                continue;
+            }
+            let analytic = grads[i] as f64;
+            let scale = numeric.abs().max(analytic.abs());
+            if scale > 2e-2 {
+                checked += 1;
+                assert!((numeric - analytic).abs() <= 0.05 * scale + 5e-3, "{config:?}: {} [{i}]: numeric {numeric} vs analytic {analytic}", segment.name);
+            }
+        }
+        assert!(checked >= 6, "only {checked} checked");
+    }
+}
+
+#[test]
+fn span_loss_gradients_and_sequences() {
+    use super::span_qa::{best_span, span_loss, span_sequence, span_training_sequences, SpanHead};
+    use super::finetune::EncodedQa;
+    use rand::{rngs::StdRng, SeedableRng};
+    // Sequence layout: prefix, window, padding; the answer positions are shifted by the prefix.
+    let s = span_sequence(&[1, 2, 3], &[10, 11, 12, 13], Some((1, 2)), 0, 10);
+    assert_eq!(s.inputs, vec![1, 2, 3, 10, 11, 12, 13, 0, 0, 0]);
+    assert_eq!((s.context, s.start, s.end), ((3, 7), 4, 5));
+    let none = span_sequence(&[1, 2, 3], &[10, 11], None, 0, 10);
+    assert_eq!((none.start, none.end), (0, 0));
+    // Long context: the answer span (300..303) always inside the window, at the right positions.
+    let e = EncodedQa { prefix: vec![1; 10], suffix: vec![], context: (1000..1600).collect(), answer_span: (300, 303), answer: vec![] };
+    let mut rng = StdRng::seed_from_u64(2);
+    let (mut pos, mut neg) = (0, 0);
+    for _ in 0..40 {
+        for seq in span_training_sequences(&e, 0, 128, &mut rng) {
+            if seq.start == 0 {
+                neg += 1;
+                assert!(!seq.inputs.contains(&1300));
+            } else {
+                pos += 1;
+                assert_eq!((seq.inputs[seq.start], seq.inputs[seq.end]), (1300, 1302));
+            }
+        }
+    }
+    assert_eq!(pos, 40);
+    assert!(neg > 5);
+    // Loss gradient with respect to the hidden states and the head against central differences.
+    let (f, t) = (6usize, 10usize);
+    let head = SpanHead::new(f / 2, 9);
+    let seqs = [span_sequence(&[1, 2], &[5, 6, 7, 8], Some((0, 2)), 0, t), span_sequence(&[1, 2], &[5, 6, 7], None, 0, t)];
+    let refs: Vec<_> = seqs.iter().collect();
+    let hidden: Vec<f32> = (0..2 * t * f).map(|i| (((i * 37) % 23) as f32 / 23.0) - 0.5).collect();
+    let mut hg = vec![0.0f32; head.params.len()];
+    let (_, dh) = span_loss(&head, &hidden, &refs, t, 1.0, Some(&mut hg));
+    let loss = |h: &[f32], hd: &SpanHead| span_loss(hd, h, &refs, t, 1.0, None).0;
+    for i in [0, 13, 2 * f + 1, (t + 3) * f + 2] {
+        let (mut a, mut b) = (hidden.clone(), hidden.clone());
+        a[i] += 1e-3;
+        b[i] -= 1e-3;
+        let numeric = (loss(&a, &head) - loss(&b, &head)) / 2e-3;
+        assert!((numeric - dh[i] as f64).abs() < 1e-3, "hidden [{i}]: {numeric} vs {}", dh[i]);
+    }
+    for i in 0..head.params.len() {
+        let (mut a, mut b) = (head.clone(), head.clone());
+        a.params[i] += 1e-3;
+        b.params[i] -= 1e-3;
+        let numeric = (loss(&hidden, &a) - loss(&hidden, &b)) / 2e-3;
+        assert!((numeric - hg[i] as f64).abs() < 1e-3, "head [{i}]: {numeric} vs {}", hg[i]);
+    }
+    // Best span: highest start + end with start <= end within the context.
+    let starts = [9.0, 0.0, 3.0, 0.0, 1.0];
+    let ends = [9.0, 0.0, 0.0, 2.0, 0.0];
+    assert_eq!(best_span(&starts, &ends, (1, 5), 10), Some((5.0, 2, 3)));
+    assert_eq!(best_span(&starts, &ends, (1, 5), 1), Some((3.0, 2, 2)));
 }
 
 #[test]

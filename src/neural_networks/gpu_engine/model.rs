@@ -502,6 +502,32 @@ impl<B: Backend> Model<B> {
         loss
     }
 
+    /// Final hidden states (the head input: after the final layer norm if the model has one) of `inputs`
+    /// (batch x seq_len ids), `rows x 2w` planar; the activations stay for `backward_hidden`.
+    pub fn forward_hidden(&mut self, inputs: &[u32]) -> Vec<f32> {
+        let t = self.config.seq_len;
+        assert!(!inputs.is_empty() && inputs.len() % t == 0, "inputs must be batch x seq_len ids");
+        let ids = self.backend.upload_ids(inputs);
+        let mut ws = self.workspace(inputs.len() / t);
+        self.forward(&mut ws, &ids);
+        let x = if self.layout.final_norm.is_some() { &ws.final_normed } else { &ws.final_x };
+        let mut hidden = self.backend.download(x);
+        hidden.truncate(ws.rows * 2 * self.config.width);
+        self.workspace = Some(ws);
+        hidden
+    }
+
+    /// Adds to `grads` the parameter gradient for the gradient `d_hidden` of the hidden states of the last
+    /// `forward_hidden` call (same `inputs`).
+    pub fn backward_hidden(&mut self, inputs: &[u32], d_hidden: &[f32]) {
+        let mut ws = self.workspace.take().expect("backward_hidden needs a forward_hidden first");
+        assert_eq!(d_hidden.len(), ws.rows * 2 * self.config.width, "d_hidden must have the shape of the hidden states");
+        let ids = self.backend.upload_ids(inputs);
+        ws.dx = self.backend.upload(d_hidden);
+        self.backward(&mut ws, &ids);
+        self.workspace = Some(ws);
+    }
+
     /// Logits of the token after `context` (inference, no gradients). Uses the last `seq_len` ids; a shorter context
     /// is padded at the end, which does not change the logits at its last position because attention is causal.
     /// Only the context length rounded up to `CONTEXT_BUCKET` is computed (positions start at 0 either way).

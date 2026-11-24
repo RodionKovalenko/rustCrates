@@ -120,6 +120,11 @@ pub fn prompt_parts(question: &str) -> TokenResult<(Vec<u32>, Vec<u32>)> {
 }
 
 pub fn encode_example(example: &QaExample) -> TokenResult<Option<EncodedQa>> {
+    encode_example_limited(example, MAX_ANSWER_TOKENS)
+}
+
+/// As `encode_example` with answers of up to `max_answer` tokens.
+pub fn encode_example_limited(example: &QaExample, max_answer: usize) -> TokenResult<Option<EncodedQa>> {
     let (prefix, suffix) = prompt_parts(&example.question)?;
     let (context, offsets) = encode_with_offsets(&example.context)?;
     let answer = encode_with_offsets(&format!(" {}", example.answer.trim()))?.0;
@@ -127,7 +132,7 @@ pub fn encode_example(example: &QaExample) -> TokenResult<Option<EncodedQa>> {
     let first = offsets.iter().position(|o| o.1 > start);
     let last = offsets.iter().rposition(|o| o.0 < end);
     match (first, last) {
-        (Some(first), Some(last)) if first <= last && !answer.is_empty() && answer.len() <= MAX_ANSWER_TOKENS => {
+        (Some(first), Some(last)) if first <= last && !answer.is_empty() && answer.len() <= max_answer => {
             Ok(Some(EncodedQa { prefix, suffix, context, answer_span: (first, last + 1), answer }))
         }
         _ => Ok(None),
@@ -312,6 +317,8 @@ pub struct FinetuneSettings {
     pub eval_questions: usize,
     pub loss_scaling: bool,
     pub seed: u64,
+    /// Answers as a span of the context (start / end position heads, `span_qa`) instead of generated text.
+    pub span: bool,
 }
 
 impl FinetuneSettings {
@@ -331,12 +338,13 @@ impl FinetuneSettings {
             eval_questions: 300,
             loss_scaling: false,
             seed: 1,
+            span: true,
         }
     }
 }
 
 /// Mean answer loss over the test sequences (fixed: the answer window of every question).
-fn test_loss<B: Backend>(model: &mut Model<B>, sequences: &[(Vec<u32>, Vec<u32>)], micro: usize) -> f64 {
+pub(crate) fn test_loss_generative<B: Backend>(model: &mut Model<B>, sequences: &[(Vec<u32>, Vec<u32>)], micro: usize) -> f64 {
     let (mut total, mut counted) = (0.0, 0usize);
     for chunk in sequences.chunks(micro) {
         let inputs: Vec<u32> = chunk.iter().flat_map(|s| s.0.iter().copied()).collect();
@@ -349,6 +357,9 @@ fn test_loss<B: Backend>(model: &mut Model<B>, sequences: &[(Vec<u32>, Vec<u32>)
 }
 
 pub fn finetune<B: Backend>(backend: B, settings: &FinetuneSettings) -> Result<(), Box<dyn std::error::Error>> {
+    if settings.span {
+        return super::span_qa::finetune_span(backend, settings);
+    }
     let eos = token_id("<eos>").ok_or("the tokenizer has no <eos> token")?;
     let train = load_squad(&squad_files(&settings.data_dir, &settings.train_prefix)?)?;
     let test = load_squad(&squad_files(&settings.data_dir, &settings.test_prefix)?)?;
@@ -390,7 +401,7 @@ pub fn finetune<B: Backend>(backend: B, settings: &FinetuneSettings) -> Result<(
     }
     let mut history = std::fs::OpenOptions::new().create(true).append(true).open(super::train::file(&settings.checkpoint, ".history.csv"))?;
 
-    let initial = test_loss(&mut model, &test_sequences, micro);
+    let initial = test_loss_generative(&mut model, &test_sequences, micro);
     println!("before fine-tuning: test answer loss {initial:.4}");
     let (mut loss_sum, mut loss_count, mut skipped, mut clean) = (0.0, 0usize, 0usize, 0usize);
     let mut step = 0;
@@ -432,7 +443,7 @@ pub fn finetune<B: Backend>(backend: B, settings: &FinetuneSettings) -> Result<(
                 (loss_sum, loss_count) = (0.0, 0);
             }
             if step % settings.eval_every == 0 || step == total_steps {
-                let loss = test_loss(&mut model, &test_sequences, micro);
+                let loss = test_loss_generative(&mut model, &test_sequences, micro);
                 writeln!(history, "{step},{loss:.6},{lr:.6}")?;
                 state.step = step;
                 if state.best_val_loss.is_none_or(|b| loss < b) {
