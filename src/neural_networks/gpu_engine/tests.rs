@@ -147,7 +147,7 @@ fn masked_loss_counts_only_the_targets_and_its_gradient_matches_finite_differenc
     let h = 1e-2f32;
     let mut checked = 0;
     for &i in &[3usize, 777, 1500, 2600, model.layout.total - 5] {
-        let mut eval = |delta: f32| {
+        let eval = |delta: f32| {
             let mut p = params.clone();
             p[i] += delta;
             let mut m = Model::from_parameters(CpuBackend, config.clone(), &p);
@@ -275,7 +275,7 @@ fn check_architecture(config: EngineConfig) {
         let h = 1e-3f32;
         // Two parameters of every segment (first and middle).
         for i in [segment.offset, segment.offset + segment.len() / 2] {
-            let mut eval = |delta: f32| {
+            let eval = |delta: f32| {
                 let mut p = params.clone();
                 p[i] += delta;
                 Model::from_parameters(CpuBackend, config.clone(), &p).forward_backward(&window, false, 1.0)
