@@ -33,18 +33,41 @@ pub struct EngineConfig {
     pub window: usize,
     /// Training sequence length (tokens per sample).
     pub seq_len: usize,
+    /// Attention weights the complex values (real and imaginary part of V) and writes into both halves of the
+    /// residual stream; false: only Re(V), written into the real half (the RM model).
+    #[serde(default)]
+    pub complex_values: bool,
+    /// Plain residuals `x + attention`, `x + feed-forward` and a layer norm before the head; false: residuals scaled
+    /// by `residual_beta` and a leaky ReLU on the feed-forward output (the RM model).
+    #[serde(default)]
+    pub standard_residual: bool,
 }
 
 impl Default for EngineConfig {
     fn default() -> Self {
-        Self { vocab_size: 50282, width: 256, layers: 12, heads: 4, ffn_hidden: 1024, window: 256, seq_len: 512 }
+        // New models: full attention over the sequence, complex values, plain residuals (checkpoints without these
+        // fields keep the RM behaviour, see the serde defaults).
+        Self { vocab_size: 50282, width: 256, layers: 12, heads: 4, ffn_hidden: 1024, window: 512, seq_len: 512, complex_values: true, standard_residual: true }
     }
 }
 
 impl EngineConfig {
-    /// Residual scale of the RM model: 1 / (3 * layers)^(1/4).
+    /// Residual scale: 1 / (3 * layers)^(1/4) in the RM model, 1 with plain residuals.
     pub fn residual_beta(&self) -> f32 {
+        if self.standard_residual {
+            return 1.0;
+        }
         (1.0 / (3.0 * self.layers as f64).powf(0.25)) as f32
+    }
+
+    /// Columns of the attention output per row: w (Re(V) only) or 2w (planar complex).
+    pub fn attention_width(&self) -> usize {
+        if self.complex_values { 2 * self.width } else { self.width }
+    }
+
+    /// The RM model's architecture (the checkpoints of the pretraining runs 1 to 3).
+    pub fn rm() -> Self {
+        Self { window: 256, complex_values: false, standard_residual: false, ..Self::default() }
     }
 
     pub fn head_dim(&self) -> usize {
@@ -111,6 +134,8 @@ pub struct Layout {
     pub embedding_im: usize,
     pub input_norm: NormOffsets,
     pub layers: Vec<LayerOffsets>,
+    /// Layer norm before the head (plain residuals only).
+    pub final_norm: Option<NormOffsets>,
     /// ComplexToLinear before the head: (2w x w) = [W1; W2].
     pub ctl: usize,
     pub head: usize,
@@ -158,10 +183,11 @@ impl Layout {
             add(format!("layer{l}.ffn.b_2.im"), vec![w]);
             layers.push(LayerOffsets { attention_norm, wqkv, ctl_q, ctl_k, ffn_norm, w1, b1, w2, b2 });
         }
+        let final_norm = c.standard_residual.then(|| norm(&mut add, "final_norm"));
         let ctl = add("ctl".into(), vec![2 * w, w]);
         let head = add("head".into(), vec![w, c.vocab_size]);
         let head_bias = add("head_bias".into(), vec![c.vocab_size]);
-        Self { segments, total, embedding_re, embedding_im, input_norm, layers, ctl, head, head_bias }
+        Self { segments, total, embedding_re, embedding_im, input_norm, layers, final_norm, ctl, head, head_bias }
     }
 
     pub fn segment(&self, name: &str) -> Option<&Segment> {
@@ -226,6 +252,9 @@ pub fn initial_parameters(c: &EngineConfig, layout: &Layout, seed: u64) -> Vec<f
     p[layout.embedding_im..layout.embedding_im + ei.len()].copy_from_slice(&ei);
     let set_norm = |p: &mut [f32], n: NormOffsets| p[n.gamma..n.gamma + w].fill(1.0);
     set_norm(&mut p, layout.input_norm);
+    if let Some(n) = layout.final_norm {
+        set_norm(&mut p, n);
+    }
     for l in &layout.layers {
         set_norm(&mut p, l.attention_norm);
         set_norm(&mut p, l.ffn_norm);
@@ -277,6 +306,9 @@ struct Workspace<B: Backend> {
     stats0: B::Buf,
     layers: Vec<LayerActivations<B>>,
     final_x: B::Buf,
+    /// Layer norm of `final_x` (plain residuals) and its statistics.
+    final_normed: B::Buf,
+    stats_final: B::Buf,
     real: B::Buf,
     d_real: B::Buf,
     logits: B::Buf,
@@ -374,7 +406,7 @@ impl<B: Backend> Model<B> {
                 qr: z(rows * w),
                 kr: z(rows * w),
                 probs: z(batch * c.heads * t * t),
-                att: z(rows * w),
+                att: z(rows * c.attention_width()),
                 mid: z(rows * 2 * w),
                 h2: z(rows * 2 * w),
                 stats2: z(rows * 3),
@@ -391,6 +423,8 @@ impl<B: Backend> Model<B> {
             stats0: z(rows * 3),
             layers,
             final_x: z(rows * 2 * w),
+            final_normed: z(if c.standard_residual { rows * 2 * w } else { 1 }),
+            stats_final: z(if c.standard_residual { rows * 3 } else { 1 }),
             real: z(rows * w),
             d_real: z(rows * w),
             logits: z(chunk * c.vocab_size),
@@ -399,7 +433,7 @@ impl<B: Backend> Model<B> {
             d_out: z(rows * 2 * w),
             d_gated: z(rows * 2 * hf),
             d_hidden: z(rows * 4 * hf),
-            d_att: z(rows * w),
+            d_att: z(rows * c.attention_width()),
             d_probs: z(batch * c.heads * t * t),
             d_qkv: z(rows * 6 * w),
             d_qr: z(rows * w),
@@ -464,7 +498,8 @@ impl<B: Backend> Model<B> {
         self.config.seq_len = full;
         let (b, l, w, v) = (&self.backend, &self.layout, self.config.width, self.config.vocab_size);
         let position = context.len() - 1;
-        b.gemm(&Gemm::new(1, w, 2 * w, false, false).offsets(position * 2 * w, l.ctl, 0), &ws.final_x, &self.params, &mut ws.real);
+        let x = if l.final_norm.is_some() { &ws.final_normed } else { &ws.final_x };
+        b.gemm(&Gemm::new(1, w, 2 * w, false, false).offsets(position * 2 * w, l.ctl, 0), x, &self.params, &mut ws.real);
         b.gemm(&Gemm::new(1, v, w, false, false).offsets(0, l.head, 0), &ws.real, &self.params, &mut ws.logits);
         b.add_row_vector(&mut ws.logits, 1, v, &self.params, l.head_bias);
         let mut logits = b.download(&ws.logits);
@@ -485,7 +520,15 @@ impl<B: Backend> Model<B> {
             // Layer output y = mid + beta leaky(o): the input of the next layer (or of the head).
             let (head, tail) = ws.layers.split_at_mut(i + 1);
             let next = if i + 1 < c.layers { &mut tail[0].input } else { &mut ws.final_x };
-            b.leaky_residual(&head[i].out, &head[i].mid, rows, w, beta, LEAKY_SLOPE, next);
+            if c.standard_residual {
+                b.copy(&head[i].mid, 0, next, 0, rows * 2 * w);
+                b.axpy(1.0, &head[i].out, next, rows * 2 * w);
+            } else {
+                b.leaky_residual(&head[i].out, &head[i].mid, rows, w, beta, LEAKY_SLOPE, next);
+            }
+        }
+        if let Some(n) = l.final_norm {
+            b.layer_norm(&ws.final_x, rows, w, NORM_EPSILON, &self.params, n.gamma, n.beta, &mut ws.final_normed, &mut ws.stats_final);
         }
     }
 
@@ -514,12 +557,21 @@ impl<B: Backend> Model<B> {
             b.gemm(&g, &a.qr, &a.kr, &mut a.probs);
         }
         b.softmax_window(&mut a.probs, batch * heads, t, c.window);
+        let aw = c.attention_width();
         for s in 0..batch {
-            // Weighted real parts of V (columns 2w + h hd of qkv).
-            let g = Gemm::new(t, hd, t, false, false).ld(t, 6 * w, w).offsets(s * heads * t * t, s * t * 6 * w + 2 * w, s * t * w).batched(heads, t * t, hd, hd);
-            b.gemm(&g, &a.probs, &a.qkv, &mut a.att);
+            // Weighted values: Re(V) at columns 2w + h hd of qkv (and Im(V) at 5w + h hd with complex values).
+            for part in 0..aw / w {
+                let g = Gemm::new(t, hd, t, false, false).ld(t, 6 * w, aw).offsets(s * heads * t * t, s * t * 6 * w + 2 * w + part * 3 * w, s * t * aw + part * w).batched(heads, t * t, hd, hd);
+                b.gemm(&g, &a.probs, &a.qkv, &mut a.att);
+            }
         }
-        b.attention_residual(&a.input, &a.att, rows, w, beta, &mut a.mid);
+        if c.complex_values {
+            // mid = input + beta att (both halves).
+            b.copy(&a.input, 0, &mut a.mid, 0, rows * 2 * w);
+            b.axpy(beta, &a.att, &mut a.mid, rows * 2 * w);
+        } else {
+            b.attention_residual(&a.input, &a.att, rows, w, beta, &mut a.mid);
+        }
 
         // Feed-forward.
         b.layer_norm(&a.mid, rows, w, NORM_EPSILON, &self.params, lo.ffn_norm.gamma, lo.ffn_norm.beta, &mut a.h2, &mut a.stats2);
@@ -535,7 +587,8 @@ impl<B: Backend> Model<B> {
         let (c, l) = (&self.config, &self.layout);
         let (rows, w, v) = (ws.rows, c.width, c.vocab_size);
         let b = &self.backend;
-        b.gemm(&Gemm::new(rows, w, 2 * w, false, false).offsets(0, l.ctl, 0), &ws.final_x, &self.params, &mut ws.real);
+        let x = if l.final_norm.is_some() { &ws.final_normed } else { &ws.final_x };
+        b.gemm(&Gemm::new(rows, w, 2 * w, false, false).offsets(0, l.ctl, 0), x, &self.params, &mut ws.real);
         let mut loss = 0.0;
         let chunk = HEAD_CHUNK.min(rows);
         let scale = grad_scale / counted as f32;
@@ -551,7 +604,8 @@ impl<B: Backend> Model<B> {
             }
         }
         if backward {
-            b.gemm(&Gemm::new(2 * w, w, rows, true, false).offsets(0, 0, l.ctl).accumulate(), &ws.final_x, &ws.d_real, &mut self.grads);
+            let x = if l.final_norm.is_some() { &ws.final_normed } else { &ws.final_x };
+            b.gemm(&Gemm::new(2 * w, w, rows, true, false).offsets(0, 0, l.ctl).accumulate(), x, &ws.d_real, &mut self.grads);
             b.gemm(&Gemm::new(rows, 2 * w, w, false, true).offsets(0, l.ctl, 0), &ws.d_real, &self.params, &mut ws.dx);
         }
         loss / counted as f64
@@ -572,14 +626,23 @@ impl<B: Backend> Model<B> {
         let beta = c.residual_beta();
         let scale = 1.0 / ((hd as f64).sqrt() + 1e-12) as f32;
         let b = &self.backend;
-        // ws.dx holds d(layer output) of the last layer.
+        // ws.dx holds d(head input); through the final norm to d(layer output) of the last layer.
+        if let Some(n) = self.layout.final_norm {
+            b.layer_norm_backward(&ws.final_x, &ws.stats_final, &ws.dx, rows, w, &self.params, n.gamma, &mut ws.d_out, &mut self.grads, n.gamma, n.beta);
+            b.copy(&ws.d_out, 0, &mut ws.dx, 0, rows * 2 * w);
+        }
+        let aw = c.attention_width();
         for i in (0..c.layers).rev() {
             let lo = self.layout.layers[i].clone();
             let [wqkv, w1, w2] = &self.blocks[i];
             let a = &ws.layers[i];
 
-            // Feed-forward: y = mid + beta leaky(o), o = g W2 + b2.
-            b.leaky_residual_backward(&a.out, &ws.dx, rows, w, beta, LEAKY_SLOPE, &mut ws.d_out);
+            // Feed-forward: y = mid + beta leaky(o) (or y = mid + o), o = g W2 + b2.
+            if c.standard_residual {
+                b.copy(&ws.dx, 0, &mut ws.d_out, 0, rows * 2 * w);
+            } else {
+                b.leaky_residual_backward(&a.out, &ws.dx, rows, w, beta, LEAKY_SLOPE, &mut ws.d_out);
+            }
             b.column_sums(&ws.d_out, rows, 2 * w, &mut self.grads, lo.b2);
             Self::linear_backward(b, &a.gated, &ws.d_out, w2, lo.w2, rows, &mut self.block_grad, &mut self.grads, &mut ws.d_gated);
             b.gated_backward(&a.hidden, &ws.d_gated, rows, hf, &mut ws.d_hidden);
@@ -589,15 +652,26 @@ impl<B: Backend> Model<B> {
             b.layer_norm_backward(&a.mid, &a.stats2, &ws.dtmp, rows, w, &self.params, lo.ffn_norm.gamma, &mut ws.d_out, &mut self.grads, lo.ffn_norm.gamma, lo.ffn_norm.beta);
             b.axpy(1.0, &ws.d_out, &mut ws.dx, rows * 2 * w);
 
-            // Attention: mid = input + beta [att | 0].
-            b.real_part_scaled(&ws.dx, rows, w, beta, &mut ws.d_att);
+            // Attention: mid = input + beta [att | 0] (or input + beta att with complex values).
+            if c.complex_values {
+                b.copy(&ws.dx, 0, &mut ws.d_att, 0, rows * 2 * w);
+                b.scale(&mut ws.d_att, rows * 2 * w, beta);
+            } else {
+                b.real_part_scaled(&ws.dx, rows, w, beta, &mut ws.d_att);
+            }
             b.fill(&mut ws.d_qkv, 0, rows * 6 * w, 0.0);
             for s in 0..batch {
-                // dP = d_att V_r^T, dV_r = P^T d_att.
-                let g = Gemm::new(t, t, hd, false, true).ld(w, 6 * w, t).offsets(s * t * w, s * t * 6 * w + 2 * w, s * heads * t * t).batched(heads, hd, hd, t * t);
-                b.gemm(&g, &ws.d_att, &a.qkv, &mut ws.d_probs);
-                let g = Gemm::new(t, hd, t, true, false).ld(t, w, 6 * w).offsets(s * heads * t * t, s * t * w, s * t * 6 * w + 2 * w).batched(heads, t * t, hd, hd);
-                b.gemm(&g, &a.probs, &ws.d_att, &mut ws.d_qkv);
+                for part in 0..aw / w {
+                    // dP = sum over parts of d_att V^T, dV = P^T d_att (V = Re(V), and Im(V) with complex values).
+                    let v_off = s * t * 6 * w + 2 * w + part * 3 * w;
+                    let mut g = Gemm::new(t, t, hd, false, true).ld(aw, 6 * w, t).offsets(s * t * aw + part * w, v_off, s * heads * t * t).batched(heads, hd, hd, t * t);
+                    if part > 0 {
+                        g = g.accumulate();
+                    }
+                    b.gemm(&g, &ws.d_att, &a.qkv, &mut ws.d_probs);
+                    let g = Gemm::new(t, hd, t, true, false).ld(t, aw, 6 * w).offsets(s * heads * t * t, s * t * aw + part * w, v_off).batched(heads, t * t, hd, hd);
+                    b.gemm(&g, &a.probs, &ws.d_att, &mut ws.d_qkv);
+                }
             }
             b.softmax_window_backward(&a.probs, &mut ws.d_probs, batch * heads, t);
             for s in 0..batch {

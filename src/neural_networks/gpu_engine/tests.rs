@@ -7,7 +7,7 @@ use super::{
 };
 
 fn tiny() -> EngineConfig {
-    EngineConfig { vocab_size: 40, width: 32, layers: 2, heads: 2, ffn_hidden: 24, window: 3, seq_len: 8 }
+    EngineConfig { vocab_size: 40, width: 32, layers: 2, heads: 2, ffn_hidden: 24, window: 3, seq_len: 8, complex_values: false, standard_residual: false }
 }
 
 fn windows(config: &EngineConfig, batch: usize, seed: u64) -> Vec<u32> {
@@ -214,7 +214,7 @@ fn finetuning_runs_end_to_end_on_a_small_model() {
     for name in ["qa_train_001.json", "qa_test_001.json"] {
         std::fs::write(dir.join(name), squad.to_string()).unwrap();
     }
-    let config = EngineConfig { vocab_size: 50282, width: 16, layers: 1, heads: 2, ffn_hidden: 16, window: 64, seq_len: 64 };
+    let config = EngineConfig { vocab_size: 50282, width: 16, layers: 1, heads: 2, ffn_hidden: 16, window: 64, seq_len: 64, ..EngineConfig::default() };
     let base = dir.join("base");
     let model = Model::new(CpuBackend, config, 5);
     save_checkpoint(&model, &base, None, &Default::default()).unwrap();
@@ -235,6 +235,79 @@ fn finetuning_runs_end_to_end_on_a_small_model() {
     assert!(state["best_val_loss"].as_f64().is_some_and(|l| l.is_finite()), "{state}");
     assert!(dir.join("qa.params").exists());
     std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Loss and gradient of `config` against central differences (f64 accumulation of the CPU backend in f32: h = 1e-2),
+/// checking parameters in every segment kind; plus the next-token logits against the training loss.
+fn check_architecture(config: EngineConfig) {
+    use super::backend::Backend;
+    let mut model = Model::new(CpuBackend, config.clone(), 21);
+    let window = windows(&config, 2, 17);
+    let t = config.seq_len;
+    let loss = model.forward_backward(&window, false, 1.0);
+    let mut total = 0.0;
+    for p in 0..t {
+        let logits = model.next_token_logits(&window[..=p]);
+        let max = logits.iter().fold(f32::NEG_INFINITY, |m, v| m.max(*v)) as f64;
+        let log_sum = logits.iter().map(|v| (*v as f64 - max).exp()).sum::<f64>().ln() + max;
+        total += log_sum - logits[window[p + 1] as usize] as f64;
+    }
+    // Only the first sequence was walked: compare with its own loss.
+    let first = model.forward_backward(&window[..t + 1], false, 1.0);
+    assert!((total / t as f64 - first).abs() < 1e-4, "{config:?}: next-token logits {} vs loss {first}", total / t as f64);
+    assert!(loss.is_finite());
+    model.zero_grads();
+    model.forward_backward(&window, true, 1.0);
+    let grads = CpuBackend.download(&model.grads);
+    let params = CpuBackend.download(&model.params);
+    let mut checked = 0;
+    for segment in &model.layout.segments {
+        // Small step: 1e-2 already crosses kinks of the loss (leaky ReLU, window edges) for some parameters.
+        let h = 1e-3f32;
+        // Two parameters of every segment (first and middle).
+        for i in [segment.offset, segment.offset + segment.len() / 2] {
+            let mut eval = |delta: f32| {
+                let mut p = params.clone();
+                p[i] += delta;
+                Model::from_parameters(CpuBackend, config.clone(), &p).forward_backward(&window, false, 1.0)
+            };
+            let numeric = (eval(h) - eval(-h)) / (2.0 * h as f64);
+            let half = (eval(h / 2.0) - eval(-h / 2.0)) / (h as f64);
+            let analytic = grads[i] as f64;
+            let scale = numeric.abs().max(analytic.abs());
+            // The RM residual is discontinuous (its leaky ReLU switches both parts on the sign of the real part):
+            // a step across such a jump shows as two central differences that disagree; skip those.
+            let jump = (numeric - half).abs() > 0.1 * numeric.abs().max(half.abs()) + 1e-3;
+            if jump {
+                assert!(!config.standard_residual, "{config:?}: {} [{i}]: the loss jumps ({numeric} vs {half})", segment.name);
+            } else if scale > 2e-3 {
+                checked += 1;
+                assert!((numeric - analytic).abs() <= 0.05 * scale + 2e-4, "{config:?}: {} [{i}]: numeric {numeric} vs analytic {analytic}", segment.name);
+            }
+        }
+    }
+    assert!(checked >= 10, "{config:?}: only {checked} parameters with a visible gradient");
+}
+
+#[test]
+fn every_architecture_variant_has_exact_gradients() {
+    for complex_values in [false, true] {
+        for standard_residual in [false, true] {
+            for window in [3, 8] {
+                check_architecture(EngineConfig { window, complex_values, standard_residual, ..tiny() });
+            }
+        }
+    }
+}
+
+#[test]
+fn old_checkpoint_configs_load_as_the_rm_architecture() {
+    let old = r#"{"vocab_size": 50282, "width": 256, "layers": 12, "heads": 4, "ffn_hidden": 1024, "window": 256, "seq_len": 512}"#;
+    let config: EngineConfig = serde_json::from_str(old).unwrap();
+    assert_eq!(config, EngineConfig::rm());
+    assert!(Layout::new(&config).final_norm.is_none());
+    let new = EngineConfig::default();
+    assert!(new.complex_values && new.standard_residual && new.window >= new.seq_len);
 }
 
 #[test]
@@ -443,7 +516,7 @@ mod cuda_backend {
     fn compare(precision: Precision, tolerance: f64, grad_scale: f32) {
         let Some(backend) = gpu(precision) else { return };
         println!("GPU: {}", backend.device_name());
-        let config = EngineConfig { vocab_size: 300, width: 64, layers: 2, heads: 4, ffn_hidden: 96, window: 5, seq_len: 32 };
+        let config = EngineConfig { vocab_size: 300, width: 64, layers: 2, heads: 4, ffn_hidden: 96, window: 5, seq_len: 32, complex_values: false, standard_residual: false };
         let mut cpu = Model::new(CpuBackend, config.clone(), 3);
         let params = cpu.params.clone();
         let mut cuda = Model::from_parameters(backend, config.clone(), &params);
@@ -531,3 +604,5 @@ fn germanquad_sequences() {
         println!("  example input end: {:?}\n  target: {:?}", detokenize(&inputs[end.saturating_sub(40)..=end].to_vec(), false).unwrap(), detokenize(&answer, false).unwrap());
     }
 }
+
+
