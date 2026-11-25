@@ -7,7 +7,7 @@ use super::{
 };
 
 fn tiny() -> EngineConfig {
-    EngineConfig { vocab_size: 40, width: 32, layers: 2, heads: 2, ffn_hidden: 24, window: 3, seq_len: 8, complex_values: false, standard_residual: false, standard_rope: false, hermitian_scores: false, attention_output: false, rms_norm: false, scaled_init: false, tied_head: false, real: false, tokenizer: String::new() }
+    EngineConfig { vocab_size: 40, width: 32, layers: 2, heads: 2, ffn_hidden: 24, window: 3, seq_len: 8, complex_values: false, standard_residual: false, standard_rope: false, hermitian_scores: false, attention_output: false, rms_norm: false, scaled_init: false, tied_head: false, wavelet_mixer: crate::neural_networks::gpu_engine::model::WaveletMixer::None, real: false, tokenizer: String::new() }
 }
 
 fn real_tiny(window: usize) -> EngineConfig {
@@ -316,6 +316,10 @@ fn every_architecture_variant_has_exact_gradients() {
     for (rms_norm, scaled_init, tied_head) in [(true, false, false), (false, true, false), (false, false, true), (true, true, true)] {
         check_architecture(EngineConfig { rms_norm, scaled_init, tied_head, ..herm_wo.clone() });
     }
+    // The wavelet mixer, hybrid (layer 1 without attention) and parallel.
+    for wavelet_mixer in [super::model::WaveletMixer::Hybrid, super::model::WaveletMixer::Parallel] {
+        check_architecture(EngineConfig { wavelet_mixer, ..herm_wo.clone() });
+    }
     // The real control model (window 3 and full).
     for window in [3, 8] {
         check_architecture(real_tiny(window));
@@ -331,7 +335,7 @@ fn old_checkpoint_configs_load_as_the_rm_architecture() {
     let german = EngineConfig { tokenizer: "src/neural_networks/tokenizers/german_bpe_32k.json".into(), vocab_size: 32000, ..EngineConfig::default() };
     assert_eq!(serde_json::from_str::<EngineConfig>(&serde_json::to_string(&german).unwrap()).unwrap(), german);
     assert!(Layout::new(&config).final_norm.is_none());
-    for name in ["rm", "rm-pos", "complex-v", "new", "herm", "wo", "herm-wo", "herm-wo-init", "herm-wo-rms", "herm-wo-tied", "herm-wo-all", "real"] {
+    for name in ["rm", "rm-pos", "complex-v", "new", "herm", "wo", "herm-wo", "herm-wo-init", "herm-wo-rms", "herm-wo-tied", "herm-wo-all", "herm-wo-wav-hybrid", "herm-wo-wav-parallel", "real"] {
         assert_eq!(EngineConfig::preset(name).unwrap().seq_len, 512);
     }
     // The real control model has about the parameters of the complex one.
@@ -443,6 +447,74 @@ fn span_loss_gradients_and_sequences() {
     let ends = [9.0, 0.0, 0.0, 2.0, 0.0];
     assert_eq!(best_span(&starts, &ends, (1, 5), 10), Some((5.0, 2, 3)));
     assert_eq!(best_span(&starts, &ends, (1, 5), 1), Some((3.0, 2, 2)));
+}
+
+#[test]
+fn wavelet_mixer_taps_of_every_reachable_scale_have_exact_gradients() {
+    use super::backend::Backend;
+    use super::model::{WaveletMixer, WAVELET_TAPS};
+    let config = EngineConfig { vocab_size: 40, width: 16, layers: 1, heads: 2, ffn_hidden: 12, window: 32, seq_len: 32, complex_values: true, standard_residual: true, standard_rope: true, hermitian_scores: true, attention_output: true, wavelet_mixer: WaveletMixer::Parallel, ..tiny() };
+    let mut model = Model::new(CpuBackend, config.clone(), 8);
+    let window = windows(&config, 2, 5);
+    model.zero_grads();
+    model.forward_backward(&window, true, 1.0);
+    let grads = CpuBackend.download(&model.grads);
+    let params = CpuBackend.download(&model.params);
+    let m = model.layout.layers[0].mixer.unwrap();
+    let w = config.width;
+    let mut checked = 0;
+    // Taps with lags 0 .. 28 (scales 0 to 2 fully, 3 partly) of channels 0 and 7, real and imaginary part.
+    for (s, k) in [(0, 0), (0, 5), (1, 3), (2, 7), (3, 2)] {
+        assert!(k << s < config.seq_len);
+        for j in [0, 7] {
+            for base in [m.taps_re, m.taps_im] {
+                let i = base + (s * WAVELET_TAPS + k) * w + j;
+                let h = 1e-3f32;
+                let loss = |d: f32| {
+                    let mut p = params.clone();
+                    p[i] += d;
+                    Model::from_parameters(CpuBackend, config.clone(), &p).forward_backward(&window, false, 1.0)
+                };
+                let numeric = (loss(h) - loss(-h)) / (2.0 * h as f64);
+                let analytic = grads[i] as f64;
+                let scale = numeric.abs().max(analytic.abs());
+                if scale > 1e-3 {
+                    checked += 1;
+                    assert!((numeric - analytic).abs() <= 0.05 * scale + 2e-4, "tap s{s} k{k} j{j}: numeric {numeric} vs analytic {analytic}");
+                }
+            }
+        }
+    }
+    assert!(checked >= 12, "only {checked} taps with a visible gradient");
+}
+
+#[test]
+fn wavelet_conv_is_causal_and_matches_a_direct_sum() {
+    use super::backend::Backend;
+    // One channel (w = 1), v = 1 + 0i at a single position p: z[t] = c[s, k] for t - k 2^s = p, else 0; never before p.
+    let (rows, seq_len, scales, taps) = (40, 20, 3, 4);
+    let mut params = vec![0.0f32; 2 * scales * taps];
+    for i in 0..scales * taps {
+        params[i] = (i + 1) as f32;
+        params[scales * taps + i] = -0.5 * i as f32;
+    }
+    let p = 23usize; // second sequence, position 3
+    let mut v = vec![0.0f32; rows * 2];
+    v[p * 2] = 1.0;
+    let mut z = vec![0.0f32; rows * 2];
+    CpuBackend.wavelet_conv(&v, 2, 0, 1, rows, seq_len, 1, &params, 0, scales * taps, scales, taps, &mut z);
+    for r in 0..rows {
+        let mut expected = (0.0f32, 0.0f32);
+        for s in 0..scales {
+            for k in 0..taps {
+                if r / seq_len == p / seq_len && r >= p && r - p == k << s {
+                    expected.0 += params[s * taps + k];
+                    expected.1 += params[scales * taps + s * taps + k];
+                }
+            }
+        }
+        assert_eq!((z[r * 2], z[r * 2 + 1]), expected, "row {r}");
+    }
 }
 
 #[test]
@@ -649,12 +721,14 @@ mod cuda_backend {
     /// Loss and every gradient of the CUDA backend against the CPU backend (same parameters, same batch).
     /// `grad_scale` is the loss scale of the GPU pass (as in training with f16 GEMMs); its gradients are divided by it.
     fn compare(precision: Precision, tolerance: f64, grad_scale: f32) {
-        let rm = EngineConfig { vocab_size: 300, width: 64, layers: 2, heads: 4, ffn_hidden: 96, window: 5, seq_len: 32, complex_values: false, standard_residual: false, standard_rope: false, hermitian_scores: false, attention_output: false, rms_norm: false, scaled_init: false, tied_head: false, real: false, tokenizer: String::new() };
+        let rm = EngineConfig { vocab_size: 300, width: 64, layers: 2, heads: 4, ffn_hidden: 96, window: 5, seq_len: 32, complex_values: false, standard_residual: false, standard_rope: false, hermitian_scores: false, attention_output: false, rms_norm: false, scaled_init: false, tied_head: false, wavelet_mixer: crate::neural_networks::gpu_engine::model::WaveletMixer::None, real: false, tokenizer: String::new() };
         let new = EngineConfig { window: 32, complex_values: true, standard_residual: true, standard_rope: true, ..rm.clone() };
         let real = EngineConfig { width: 48, heads: 4, ffn_hidden: 80, real: true, ..new.clone() };
         let herm_wo = EngineConfig { hermitian_scores: true, attention_output: true, ..new.clone() };
         let all = EngineConfig { rms_norm: true, scaled_init: true, tied_head: true, ..herm_wo.clone() };
-        for config in [rm, new, herm_wo, all, real] {
+        let hybrid = EngineConfig { wavelet_mixer: crate::neural_networks::gpu_engine::model::WaveletMixer::Hybrid, ..herm_wo.clone() };
+        let parallel = EngineConfig { wavelet_mixer: crate::neural_networks::gpu_engine::model::WaveletMixer::Parallel, ..herm_wo.clone() };
+        for config in [rm, new, herm_wo, all, hybrid, parallel, real] {
             compare_config(precision, tolerance, grad_scale, config);
         }
     }

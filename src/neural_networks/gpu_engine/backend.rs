@@ -200,6 +200,21 @@ pub trait Backend {
     #[allow(clippy::too_many_arguments)]
     fn rope_rows(&self, src: &Self::Buf, src_ld: usize, src_off: usize, rows: usize, seq_len: usize, heads: usize, head_dim: usize, rope: Rope, sign: f32, dst: &mut Self::Buf, dst_ld: usize, dst_off: usize);
 
+    /// Causal dilated wavelet convolution of complex values: for every row r (position t = r % seq_len) and
+    /// channel j < w, `z[r, j] = sum_s sum_k c[s, k, j] * v[r - k 2^s, j]` over `scales` scales and `taps` taps,
+    /// terms reaching before the start of the sequence left out. v and z are complex with the real part at column
+    /// `re_off + j` and the imaginary part at `im_off + j` of rows of stride `ld` (the same for src and dst); the taps
+    /// c are planar in `params` (`taps_re` / `taps_im`, each scales x taps x w).
+    #[allow(clippy::too_many_arguments)]
+    fn wavelet_conv(&self, v: &Self::Buf, ld: usize, re_off: usize, im_off: usize, rows: usize, seq_len: usize, w: usize, params: &Self::Buf, taps_re: usize, taps_im: usize, scales: usize, taps: usize, z: &mut Self::Buf);
+    /// Input gradient of `wavelet_conv`: `dv[r, j] = sum_s sum_k dz[r + k 2^s, j] conj(c[s, k, j])` (within the
+    /// sequence); writes the v columns of `dv` (same layout).
+    #[allow(clippy::too_many_arguments)]
+    fn wavelet_conv_backward_input(&self, dz: &Self::Buf, ld: usize, re_off: usize, im_off: usize, rows: usize, seq_len: usize, w: usize, params: &Self::Buf, taps_re: usize, taps_im: usize, scales: usize, taps: usize, dv: &mut Self::Buf);
+    /// Tap gradient of `wavelet_conv`: `grads[c[s, k, j]] += sum_r dz[r, j] conj(v[r - k 2^s, j])`.
+    #[allow(clippy::too_many_arguments)]
+    fn wavelet_conv_backward_taps(&self, dz: &Self::Buf, v: &Self::Buf, ld: usize, re_off: usize, im_off: usize, rows: usize, seq_len: usize, w: usize, scales: usize, taps: usize, grads: &mut Self::Buf, taps_re: usize, taps_im: usize);
+
     /// Softmax cross-entropy of `rows x vocab` logits against `targets[t_off ..]`: returns the summed loss and
     /// replaces the logits by `scale * (softmax - onehot)` (the gradient of `scale * loss`). Rows whose target is
     /// `IGNORE_TARGET` add no loss and get a zero gradient.

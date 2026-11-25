@@ -341,6 +341,99 @@ impl Backend for CpuBackend {
         });
     }
 
+    fn wavelet_conv(&self, v: &Vec<f32>, ld: usize, re_off: usize, im_off: usize, rows: usize, seq_len: usize, w: usize, params: &Vec<f32>, taps_re: usize, taps_im: usize, scales: usize, taps: usize, z: &mut Vec<f32>) {
+        let out: Vec<(usize, Vec<(f32, f32)>)> = (0..rows)
+            .into_par_iter()
+            .map(|r| {
+                let t = r % seq_len;
+                let mut row = vec![(0.0f32, 0.0f32); w];
+                for s in 0..scales {
+                    for k in 0..taps {
+                        let lag = k << s;
+                        if lag > t {
+                            break;
+                        }
+                        let src = (r - lag) * ld;
+                        let c = (s * taps + k) * w;
+                        for (j, acc) in row.iter_mut().enumerate() {
+                            let (cr, ci) = (params[taps_re + c + j], params[taps_im + c + j]);
+                            let (vr, vi) = (v[src + re_off + j], v[src + im_off + j]);
+                            acc.0 += cr * vr - ci * vi;
+                            acc.1 += cr * vi + ci * vr;
+                        }
+                    }
+                }
+                (r, row)
+            })
+            .collect();
+        for (r, row) in out {
+            for (j, (zr, zi)) in row.into_iter().enumerate() {
+                z[r * ld + re_off + j] = zr;
+                z[r * ld + im_off + j] = zi;
+            }
+        }
+    }
+
+    fn wavelet_conv_backward_input(&self, dz: &Vec<f32>, ld: usize, re_off: usize, im_off: usize, rows: usize, seq_len: usize, w: usize, params: &Vec<f32>, taps_re: usize, taps_im: usize, scales: usize, taps: usize, dv: &mut Vec<f32>) {
+        let out: Vec<(usize, Vec<(f32, f32)>)> = (0..rows)
+            .into_par_iter()
+            .map(|r| {
+                let t = r % seq_len;
+                let mut row = vec![(0.0f32, 0.0f32); w];
+                for s in 0..scales {
+                    for k in 0..taps {
+                        let lag = k << s;
+                        if t + lag >= seq_len {
+                            break;
+                        }
+                        let src = (r + lag) * ld;
+                        let c = (s * taps + k) * w;
+                        for (j, acc) in row.iter_mut().enumerate() {
+                            // dz * conj(c)
+                            let (cr, ci) = (params[taps_re + c + j], params[taps_im + c + j]);
+                            let (gr, gi) = (dz[src + re_off + j], dz[src + im_off + j]);
+                            acc.0 += gr * cr + gi * ci;
+                            acc.1 += gi * cr - gr * ci;
+                        }
+                    }
+                }
+                (r, row)
+            })
+            .collect();
+        for (r, row) in out {
+            for (j, (a, b)) in row.into_iter().enumerate() {
+                dv[r * ld + re_off + j] = a;
+                dv[r * ld + im_off + j] = b;
+            }
+        }
+    }
+
+    fn wavelet_conv_backward_taps(&self, dz: &Vec<f32>, v: &Vec<f32>, ld: usize, re_off: usize, im_off: usize, rows: usize, seq_len: usize, w: usize, scales: usize, taps: usize, grads: &mut Vec<f32>, taps_re: usize, taps_im: usize) {
+        let sums: Vec<(f64, f64)> = (0..scales * taps * w)
+            .into_par_iter()
+            .map(|idx| {
+                let (s, k, j) = (idx / (taps * w), (idx / w) % taps, idx % w);
+                let lag = k << s;
+                let (mut ar, mut ai) = (0.0f64, 0.0f64);
+                for r in 0..rows {
+                    if r % seq_len < lag {
+                        continue;
+                    }
+                    // dz * conj(v)
+                    let (gr, gi) = (dz[r * ld + re_off + j] as f64, dz[r * ld + im_off + j] as f64);
+                    let (vr, vi) = (v[(r - lag) * ld + re_off + j] as f64, v[(r - lag) * ld + im_off + j] as f64);
+                    ar += gr * vr + gi * vi;
+                    ai += gi * vr - gr * vi;
+                }
+                (ar, ai)
+            })
+            .collect();
+        for (idx, (ar, ai)) in sums.into_iter().enumerate() {
+            grads[taps_re + idx] += ar as f32;
+            grads[taps_im + idx] += ai as f32;
+        }
+    }
+
     fn rms_norm(&self, x: &Vec<f32>, rows: usize, w: usize, eps: f32, params: &Vec<f32>, gamma_off: usize, y: &mut Vec<f32>, stats: &mut Vec<f32>) {
         let gamma = &params[gamma_off..gamma_off + w];
         let rstd: Vec<f32> = (0..rows).into_par_iter().map(|r| {

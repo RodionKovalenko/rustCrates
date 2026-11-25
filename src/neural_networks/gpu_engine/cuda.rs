@@ -21,7 +21,7 @@ const KERNEL_NAMES: &[&str] = &[
     "fill", "copy", "axpy", "scale", "sum_squares", "to_half", "build_block", "fold_block_grad", "add_row_vector", "column_sums", "layer_norm",
     "layer_norm_backward", "rope_to_heads", "rope_from_heads", "softmax_window", "softmax_window_backward", "attention_residual", "real_part_scaled",
     "gated", "gated_backward", "leaky_residual", "leaky_residual_backward", "cross_entropy", "embed", "embed_backward", "adamw",
-    "rms_norm", "rms_norm_backward", "swiglu", "swiglu_backward", "rope_rows",
+    "rms_norm", "rms_norm_backward", "swiglu", "swiglu_backward", "rope_rows", "wavelet_conv", "wavelet_conv_backward_input", "wavelet_conv_backward_taps",
 ];
 
 const THREADS: u32 = 256;
@@ -326,6 +326,28 @@ impl Backend for CudaBackend {
     fn real_part_scaled(&self, dy: &CudaSlice<f32>, rows: usize, w: usize, beta: f32, out: &mut CudaSlice<f32>) {
         let (r, ww) = (rows as i64, w as i64);
         unsafe { self.stream.launch_builder(self.f("real_part_scaled")).arg(dy).arg(&r).arg(&ww).arg(&beta).arg(out).launch(grid(rows * w)) }.expect("real_part_scaled");
+    }
+
+    fn wavelet_conv(&self, v: &CudaSlice<f32>, ld: usize, re_off: usize, im_off: usize, rows: usize, seq_len: usize, w: usize, params: &CudaSlice<f32>, taps_re: usize, taps_im: usize, scales: usize, taps: usize, z: &mut CudaSlice<f32>) {
+        let a = [ld, re_off, im_off, rows, seq_len, w].map(|x| x as i64);
+        let (tr, ti, sc, tp) = (taps_re as i64, taps_im as i64, scales as i64, taps as i64);
+        unsafe { self.stream.launch_builder(self.f("wavelet_conv")).arg(v).arg(&a[0]).arg(&a[1]).arg(&a[2]).arg(&a[3]).arg(&a[4]).arg(&a[5]).arg(params).arg(&tr).arg(&ti).arg(&sc).arg(&tp).arg(z).launch(grid(rows * w)) }.expect("wavelet_conv");
+    }
+
+    fn wavelet_conv_backward_input(&self, dz: &CudaSlice<f32>, ld: usize, re_off: usize, im_off: usize, rows: usize, seq_len: usize, w: usize, params: &CudaSlice<f32>, taps_re: usize, taps_im: usize, scales: usize, taps: usize, dv: &mut CudaSlice<f32>) {
+        let a = [ld, re_off, im_off, rows, seq_len, w].map(|x| x as i64);
+        let (tr, ti, sc, tp) = (taps_re as i64, taps_im as i64, scales as i64, taps as i64);
+        unsafe { self.stream.launch_builder(self.f("wavelet_conv_backward_input")).arg(dz).arg(&a[0]).arg(&a[1]).arg(&a[2]).arg(&a[3]).arg(&a[4]).arg(&a[5]).arg(params).arg(&tr).arg(&ti).arg(&sc).arg(&tp).arg(dv).launch(grid(rows * w)) }.expect("wavelet_conv_backward_input");
+    }
+
+    fn wavelet_conv_backward_taps(&self, dz: &CudaSlice<f32>, v: &CudaSlice<f32>, ld: usize, re_off: usize, im_off: usize, rows: usize, seq_len: usize, w: usize, scales: usize, taps: usize, grads: &mut CudaSlice<f32>, taps_re: usize, taps_im: usize) {
+        let a = [ld, re_off, im_off, rows, seq_len, w].map(|x| x as i64);
+        let (tp, tr, ti) = (taps as i64, taps_re as i64, taps_im as i64);
+        // Chunks of 256 rows: enough blocks to fill the GPU, few atomics per tap.
+        let chunk = 256usize;
+        let config = LaunchConfig { grid_dim: ((scales * taps * w.div_ceil(THREADS as usize)) as u32, rows.div_ceil(chunk) as u32, 1), block_dim: (THREADS, 1, 1), shared_mem_bytes: 0 };
+        let rpc = chunk as i64;
+        unsafe { self.stream.launch_builder(self.f("wavelet_conv_backward_taps")).arg(dz).arg(v).arg(&a[0]).arg(&a[1]).arg(&a[2]).arg(&a[3]).arg(&a[4]).arg(&a[5]).arg(&tp).arg(&rpc).arg(grads).arg(&tr).arg(&ti).launch(config) }.expect("wavelet_conv_backward_taps");
     }
 
     fn rms_norm(&self, x: &CudaSlice<f32>, rows: usize, w: usize, eps: f32, params: &CudaSlice<f32>, gamma_off: usize, y: &mut CudaSlice<f32>, stats: &mut CudaSlice<f32>) {

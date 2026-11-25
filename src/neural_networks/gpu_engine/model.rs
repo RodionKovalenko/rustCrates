@@ -19,6 +19,26 @@ use crate::neural_networks::network_layers::wavelet_network::decompose_in_wavele
 
 pub mod real;
 
+/// Scales (dilations 1, 2, 4, ... 2^(scales - 1)) and taps per scale of the wavelet mixer: reach
+/// (taps - 1) 2^(scales - 1) + 1 = 449 positions.
+pub const WAVELET_SCALES: usize = 7;
+pub const WAVELET_TAPS: usize = 8;
+
+/// Where the causal complex wavelet mixer goes. The mixer: [v | g] = h Wvg, z = sum over scales of the causal
+/// dilated convolution of v (complex taps per channel, initialized as Morlet wavelets), u = z * split_silu(g),
+/// out = u Wo (h: the normed layer input, shared with the attention).
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum WaveletMixer {
+    #[default]
+    None,
+    /// Odd layers have the mixer instead of the attention.
+    Hybrid,
+    /// Every layer has the mixer as a second branch next to the attention.
+    Parallel,
+}
+
+
 /// Size of the raw token vectors that the wavelet decomposition compresses to the model width.
 pub const EMBEDDING_DIM_ORIGINAL: usize = 512;
 pub const NORM_EPSILON: f32 = 1e-8;
@@ -66,6 +86,9 @@ pub struct EngineConfig {
     /// and no separate head matrix).
     #[serde(default)]
     pub tied_head: bool,
+    /// Causal complex wavelet mixer (`WaveletMixer`): in place of every second attention or next to every attention.
+    #[serde(default)]
+    pub wavelet_mixer: WaveletMixer,
     #[serde(default)]
     pub real: bool,
     /// Tokenizer file the model was trained with (empty: the GPT-NeoX tokenizer of the project).
@@ -77,7 +100,7 @@ impl Default for EngineConfig {
     fn default() -> Self {
         // New models: full attention over the sequence, complex values, plain residuals (checkpoints without these
         // fields keep the RM behaviour, see the serde defaults).
-        Self { vocab_size: 50282, width: 256, layers: 12, heads: 4, ffn_hidden: 1024, window: 512, seq_len: 512, complex_values: true, standard_residual: true, standard_rope: true, hermitian_scores: false, attention_output: false, rms_norm: false, scaled_init: false, tied_head: false, real: false, tokenizer: String::new() }
+        Self { vocab_size: 50282, width: 256, layers: 12, heads: 4, ffn_hidden: 1024, window: 512, seq_len: 512, complex_values: true, standard_residual: true, standard_rope: true, hermitian_scores: false, attention_output: false, rms_norm: false, scaled_init: false, tied_head: false, wavelet_mixer: WaveletMixer::None, real: false, tokenizer: String::new() }
     }
 }
 
@@ -103,6 +126,19 @@ impl EngineConfig {
     }
 
     /// Features per position of the final hidden states (2w planar complex, w real).
+    /// Whether layer `l` has an attention / a wavelet mixer.
+    pub fn layer_has_attention(&self, l: usize) -> bool {
+        !(self.wavelet_mixer == WaveletMixer::Hybrid && l % 2 == 1)
+    }
+
+    pub fn layer_has_mixer(&self, l: usize) -> bool {
+        match self.wavelet_mixer {
+            WaveletMixer::None => false,
+            WaveletMixer::Hybrid => l % 2 == 1,
+            WaveletMixer::Parallel => true,
+        }
+    }
+
     pub fn hidden_features(&self) -> usize {
         if self.real { self.width } else { 2 * self.width }
     }
@@ -127,6 +163,8 @@ impl EngineConfig {
             "herm-wo-init" => Some(Self { hermitian_scores: true, attention_output: true, scaled_init: true, ..Self::default() }),
             "herm-wo-rms" => Some(Self { hermitian_scores: true, attention_output: true, rms_norm: true, ..Self::default() }),
             "herm-wo-tied" => Some(Self { hermitian_scores: true, attention_output: true, tied_head: true, ..Self::default() }),
+            "herm-wo-wav-hybrid" => Some(Self { hermitian_scores: true, attention_output: true, wavelet_mixer: WaveletMixer::Hybrid, ..Self::default() }),
+            "herm-wo-wav-parallel" => Some(Self { hermitian_scores: true, attention_output: true, wavelet_mixer: WaveletMixer::Parallel, ..Self::default() }),
             "herm-wo-all" => Some(Self { hermitian_scores: true, attention_output: true, scaled_init: true, rms_norm: true, tied_head: true, ..Self::default() }),
             // Real transformer with about the parameters of the complex model (21 M in the layers, 63 M in total).
             "real" => Some(Self { width: 384, heads: 6, ffn_hidden: 1024, complex_values: false, real: true, ..Self::default() }),
@@ -182,20 +220,34 @@ pub struct ComplexWeight {
 #[derive(Clone, Debug)]
 pub struct LayerOffsets {
     pub attention_norm: NormOffsets,
-    /// Q, K and V of all heads: w x 3w, columns [q heads | k heads | v heads].
-    pub wqkv: ComplexWeight,
+    /// Q, K and V of all heads: w x 3w, columns [q heads | k heads | v heads] (None: a mixer-only layer).
+    pub wqkv: Option<ComplexWeight>,
     /// ComplexToLinear of the queries / keys, per head a (2 head_dim x head_dim) block [W1; W2].
     /// (0 with Hermitian scores: no such parameters.)
     pub ctl_q: usize,
     pub ctl_k: usize,
     /// Attention output projection (w x w), with `attention_output`.
     pub wo: Option<ComplexWeight>,
+    /// Wavelet mixer of the layer.
+    pub mixer: Option<MixerOffsets>,
     pub ffn_norm: NormOffsets,
     pub w1: ComplexWeight,
     /// Planar bias (re then im).
     pub b1: usize,
     pub w2: ComplexWeight,
     pub b2: usize,
+}
+
+/// Parameters of a wavelet mixer.
+#[derive(Clone, Copy, Debug)]
+pub struct MixerOffsets {
+    /// w x 2w: [v | g].
+    pub wvg: ComplexWeight,
+    /// Taps (scales x taps x w each).
+    pub taps_re: usize,
+    pub taps_im: usize,
+    /// Output projection, w x w.
+    pub wo: ComplexWeight,
 }
 
 #[derive(Clone, Debug)]
@@ -249,14 +301,23 @@ impl Layout {
         let mut layers = Vec::new();
         for l in 0..c.layers {
             let attention_norm = norm(&mut add, &format!("layer{l}.attention.norm"));
-            let wqkv = complex(&mut add, &format!("layer{l}.attention.wqkv"), w, 3 * w);
-            let (ctl_q, ctl_k) = if c.hermitian_scores {
+            let attention = c.layer_has_attention(l);
+            let wqkv = attention.then(|| complex(&mut add, &format!("layer{l}.attention.wqkv"), w, 3 * w));
+            let (ctl_q, ctl_k) = if c.hermitian_scores || !attention {
                 (0, 0)
             } else {
                 (add(format!("layer{l}.attention.ctl_q"), vec![c.heads, 2 * hd, hd]), add(format!("layer{l}.attention.ctl_k"), vec![c.heads, 2 * hd, hd]))
             };
             assert!(!c.attention_output || c.complex_values, "attention_output needs complex_values");
-            let wo = c.attention_output.then(|| complex(&mut add, &format!("layer{l}.attention.wo"), w, w));
+            let wo = (c.attention_output && attention).then(|| complex(&mut add, &format!("layer{l}.attention.wo"), w, w));
+            assert!(c.wavelet_mixer == WaveletMixer::None || (c.complex_values && c.standard_residual), "the wavelet mixer needs complex_values and standard_residual");
+            let mixer = c.layer_has_mixer(l).then(|| {
+                let wvg = complex(&mut add, &format!("layer{l}.mixer.wvg"), w, 2 * w);
+                let taps_re = add(format!("layer{l}.mixer.taps.re"), vec![WAVELET_SCALES, WAVELET_TAPS, w]);
+                let taps_im = add(format!("layer{l}.mixer.taps.im"), vec![WAVELET_SCALES, WAVELET_TAPS, w]);
+                let wo = complex(&mut add, &format!("layer{l}.mixer.wo"), w, w);
+                MixerOffsets { wvg, taps_re, taps_im, wo }
+            });
             let ffn_norm = norm(&mut add, &format!("layer{l}.ffn.norm"));
             let w1 = complex(&mut add, &format!("layer{l}.ffn.w_1"), w, 2 * hf);
             let b1 = add(format!("layer{l}.ffn.b_1.re"), vec![2 * hf]);
@@ -264,7 +325,7 @@ impl Layout {
             let w2 = complex(&mut add, &format!("layer{l}.ffn.w_2"), hf, w);
             let b2 = add(format!("layer{l}.ffn.b_2.re"), vec![w]);
             add(format!("layer{l}.ffn.b_2.im"), vec![w]);
-            layers.push(LayerOffsets { attention_norm, wqkv, ctl_q, ctl_k, wo, ffn_norm, w1, b1, w2, b2 });
+            layers.push(LayerOffsets { attention_norm, wqkv, ctl_q, ctl_k, wo, mixer, ffn_norm, w1, b1, w2, b2 });
         }
         let final_norm = c.standard_residual.then(|| norm(&mut add, "final_norm"));
         let (ctl, head) = if c.tied_head { (0, 0) } else { (add("ctl".into(), vec![2 * w, w]), add("head".into(), vec![w, c.vocab_size])) };
@@ -344,12 +405,38 @@ pub fn initial_parameters(c: &EngineConfig, layout: &Layout, seed: u64) -> Vec<f
         set_norm(&mut p, l.attention_norm);
         set_norm(&mut p, l.ffn_norm);
         // Every head's Q, K, V is a w x head_dim Xavier matrix (fan-in w, fan-out head_dim).
-        for part in [l.wqkv.re, l.wqkv.im] {
+        for part in l.wqkv.iter().flat_map(|q| [q.re, q.im]) {
             for v in p[part..part + w * 3 * w].iter_mut() {
                 *v = rng.random_range(-((6.0 / (w + hd) as f64).sqrt())..(6.0 / (w + hd) as f64).sqrt()) as f32;
             }
         }
-        if !c.hermitian_scores {
+        if let Some(m) = l.mixer {
+            for weight in [m.wvg, m.wo] {
+                xavier(weight.k, weight.n, &mut p[weight.re..weight.re + weight.k * weight.n], &mut rng);
+                xavier(weight.k, weight.n, &mut p[weight.im..weight.im + weight.k * weight.n], &mut rng);
+            }
+            if c.scaled_init {
+                let factor = (1.0 / (2.0 * c.layers as f64).sqrt()) as f32;
+                p[m.wo.re..m.wo.re + w * w].iter_mut().for_each(|v| *v *= factor);
+                p[m.wo.im..m.wo.im + w * w].iter_mut().for_each(|v| *v *= factor);
+            }
+            // Morlet taps: Gaussian envelope over the taps, channel j oscillating at frequency pi j / w, the sum over
+            // scales and taps normalized to about 1.
+            let sigma = WAVELET_TAPS as f64 / 2.5;
+            let envelope: Vec<f64> = (0..WAVELET_TAPS).map(|k| (-0.5 * (k as f64 / sigma).powi(2)).exp()).collect();
+            let norm = WAVELET_SCALES as f64 * envelope.iter().sum::<f64>();
+            for s in 0..WAVELET_SCALES {
+                for (k, e) in envelope.iter().enumerate() {
+                    for j in 0..w {
+                        let omega = std::f64::consts::PI * j as f64 / w as f64;
+                        let idx = (s * WAVELET_TAPS + k) * w + j;
+                        p[m.taps_re + idx] = (e * (omega * k as f64).cos() / norm) as f32;
+                        p[m.taps_im + idx] = (-e * (omega * k as f64).sin() / norm) as f32;
+                    }
+                }
+            }
+        }
+        if !c.hermitian_scores && l.wqkv.is_some() {
             xavier(hd, hd, &mut p[l.ctl_q..l.ctl_q + c.heads * 2 * hd * hd], &mut rng);
             xavier(hd, hd, &mut p[l.ctl_k..l.ctl_k + c.heads * 2 * hd * hd], &mut rng);
         }
@@ -392,6 +479,11 @@ struct LayerActivations<B: Backend> {
     att: B::Buf,
     /// Attention output after Wo (with `attention_output`).
     att_o: B::Buf,
+    /// Wavelet mixer: [vr | gr | vi | gi] = h Wvg, the same with z in place of v, u = z * silu(g), u Wo.
+    vg: B::Buf,
+    cg: B::Buf,
+    u: B::Buf,
+    mix_o: B::Buf,
     mid: B::Buf,
     h2: B::Buf,
     stats2: B::Buf,
@@ -423,6 +515,10 @@ struct Workspace<B: Backend> {
     d_att: B::Buf,
     /// Gradient of the attention output after Wo.
     d_o: B::Buf,
+    d_mo: B::Buf,
+    d_u: B::Buf,
+    d_cg: B::Buf,
+    d_vg: B::Buf,
     d_probs: B::Buf,
     d_qkv: B::Buf,
     d_qr: B::Buf,
@@ -437,15 +533,24 @@ pub const HEAD_CHUNK: usize = 1024;
 /// Generation computes the context length rounded up to a multiple of this (fewer workspace reallocations).
 const CONTEXT_BUCKET: usize = if cfg!(test) { 4 } else { 64 };
 
+/// Block matrices [[Wr, Wi], [-Wi, Wr]] of a layer's complex weights.
+struct LayerBlocks<B: Backend> {
+    wqkv: Option<B::Buf>,
+    w1: B::Buf,
+    w2: B::Buf,
+    wo: Option<B::Buf>,
+    wvg: Option<B::Buf>,
+    mixer_wo: Option<B::Buf>,
+}
+
 pub struct Model<B: Backend> {
     pub config: EngineConfig,
     pub layout: Layout,
     pub backend: B,
     pub params: B::Buf,
     pub grads: B::Buf,
-    /// Block matrices of the complex weights, per layer (wqkv, w1, w2).
-    /// (wqkv, w1, w2 and, with `attention_output`, wo.)
-    blocks: Vec<Vec<B::Buf>>,
+    /// Block matrices of the complex weights, per layer.
+    blocks: Vec<LayerBlocks<B>>,
     /// Gradient of one block matrix (the largest one).
     block_grad: B::Buf,
     workspace: Option<Workspace<B>>,
@@ -464,30 +569,55 @@ impl<B: Backend> Model<B> {
         assert_eq!(params.len(), layout.total, "parameter count does not match the configuration");
         let params = backend.upload(params);
         let grads = backend.zeros(layout.total);
+        let block = |c: &ComplexWeight| backend.zeros(4 * c.k * c.n);
         let blocks = layout
             .layers
             .iter()
-            .map(|l| Self::block_weights(l).iter().map(|c| backend.zeros(4 * c.k * c.n)).collect())
+            .map(|l| LayerBlocks {
+                wqkv: l.wqkv.as_ref().map(block),
+                w1: block(&l.w1),
+                w2: block(&l.w2),
+                wo: l.wo.as_ref().map(block),
+                wvg: l.mixer.as_ref().map(|m| block(&m.wvg)),
+                mixer_wo: l.mixer.as_ref().map(|m| block(&m.wo)),
+            })
             .collect();
-        let largest = layout.layers.iter().map(|l| Self::block_weights(l).iter().map(|c| 4 * c.k * c.n).max().unwrap()).max().unwrap_or(1);
+        let largest = layout.layers.iter().flat_map(Self::block_weights).map(|c| 4 * c.k * c.n).max().unwrap_or(1);
         let block_grad = backend.zeros(largest);
         let mut model = Self { config, layout, backend, params, grads, blocks, block_grad, workspace: None, real_ws: None };
         model.refresh_blocks();
         model
     }
 
-    /// The complex weights of a layer that use block matrices: wqkv, w1, w2 (and wo).
+    /// The complex weights of a layer that use block matrices.
     fn block_weights(l: &LayerOffsets) -> Vec<ComplexWeight> {
-        let mut weights = vec![l.wqkv, l.w1, l.w2];
+        let mut weights = vec![l.w1, l.w2];
+        weights.extend(l.wqkv);
         weights.extend(l.wo);
+        if let Some(m) = l.mixer {
+            weights.extend([m.wvg, m.wo]);
+        }
         weights
     }
 
     /// Rebuilds the block matrices from the parameters (after every parameter update).
     pub fn refresh_blocks(&mut self) {
+        let b = &self.backend;
         for (l, blocks) in self.layout.layers.iter().zip(self.blocks.iter_mut()) {
-            for (weight, block) in Self::block_weights(l).iter().zip(blocks.iter_mut()) {
-                self.backend.build_block(&self.params, weight.re, weight.im, weight.k, weight.n, block);
+            let build = |weight: &ComplexWeight, block: &mut B::Buf| b.build_block(&self.params, weight.re, weight.im, weight.k, weight.n, block);
+            build(&l.w1, &mut blocks.w1);
+            build(&l.w2, &mut blocks.w2);
+            if let (Some(wt), Some(bl)) = (&l.wqkv, &mut blocks.wqkv) {
+                build(wt, bl);
+            }
+            if let (Some(wt), Some(bl)) = (&l.wo, &mut blocks.wo) {
+                build(wt, bl);
+            }
+            if let (Some(m), Some(bl)) = (&l.mixer, &mut blocks.wvg) {
+                build(&m.wvg, bl);
+            }
+            if let (Some(m), Some(bl)) = (&l.mixer, &mut blocks.mixer_wo) {
+                build(&m.wo, bl);
             }
         }
     }
@@ -508,6 +638,7 @@ impl<B: Backend> Model<B> {
         let c = &self.config;
         let (w, hf, t) = (c.width, c.ffn_hidden, c.seq_len);
         let z = |len: usize| b.zeros(len.max(1));
+        let mixer = c.wavelet_mixer != WaveletMixer::None;
         let layers = (0..c.layers)
             .map(|_| LayerActivations {
                 input: z(rows * 2 * w),
@@ -521,6 +652,10 @@ impl<B: Backend> Model<B> {
                 probs: z(batch * c.heads * t * t),
                 att: z(rows * c.attention_width()),
                 att_o: z(if c.attention_output { rows * 2 * w } else { 1 }),
+                vg: z(if mixer { rows * 4 * w } else { 1 }),
+                cg: z(if mixer { rows * 4 * w } else { 1 }),
+                u: z(if mixer { rows * 2 * w } else { 1 }),
+                mix_o: z(if mixer { rows * 2 * w } else { 1 }),
                 mid: z(rows * 2 * w),
                 h2: z(rows * 2 * w),
                 stats2: z(rows * 3),
@@ -549,6 +684,10 @@ impl<B: Backend> Model<B> {
             d_hidden: z(rows * 4 * hf),
             d_att: z(rows * c.attention_width()),
             d_o: z(if c.attention_output { rows * 2 * w } else { 1 }),
+            d_mo: z(if mixer { rows * 2 * w } else { 1 }),
+            d_u: z(if mixer { rows * 2 * w } else { 1 }),
+            d_cg: z(if mixer { rows * 4 * w } else { 1 }),
+            d_vg: z(if mixer { rows * 4 * w } else { 1 }),
             d_probs: z(batch * c.heads * t * t),
             d_qkv: z(rows * 6 * w),
             d_qr: z(rows * w),
@@ -695,55 +834,67 @@ impl<B: Backend> Model<B> {
     fn layer_forward(&self, ws: &mut Workspace<B>, i: usize) {
         let (b, c) = (&self.backend, &self.config);
         let lo = &self.layout.layers[i];
-        let (wqkv, w1, w2) = (&self.blocks[i][0], &self.blocks[i][1], &self.blocks[i][2]);
+        let blk = &self.blocks[i];
+        let (w1, w2) = (&blk.w1, &blk.w2);
         let (rows, batch, w, t, heads, hd, hf) = (ws.rows, ws.batch, c.width, c.seq_len, c.heads, c.head_dim(), c.ffn_hidden);
         let beta = c.residual_beta();
         let a = &mut ws.layers[i];
 
         // Attention.
         b.layer_norm(&a.input, rows, w, NORM_EPSILON, !c.rms_norm, &self.params, lo.attention_norm.gamma, lo.attention_norm.beta, &mut a.h1, &mut a.stats1);
-        b.gemm(&Gemm::new(rows, 6 * w, 2 * w, false, false), &a.h1, wqkv, &mut a.qkv);
-        b.rope_to_heads(&a.qkv, 6 * w, 0, 3 * w, rows, t, heads, hd, c.rope(), &mut a.qh);
-        b.rope_to_heads(&a.qkv, 6 * w, w, 4 * w, rows, t, heads, hd, c.rope(), &mut a.kh);
-        if c.hermitian_scores {
-            // Re(q conj(k)) = [qr | qi] . [kr | ki]: the head-planar rows (2hd per head) directly.
-            let scale = 1.0 / ((2.0 * hd as f64).sqrt() + 1e-12) as f32;
-            for s in 0..batch {
-                let g = Gemm::new(t, t, 2 * hd, false, true).ld(2 * w, 2 * w, t).offsets(s * t * 2 * w, s * t * 2 * w, s * heads * t * t).batched(heads, 2 * hd, 2 * hd, t * t).alpha(scale);
-                b.gemm(&g, &a.qh, &a.kh, &mut a.probs);
+        if let Some(wqkv) = &blk.wqkv {
+            b.gemm(&Gemm::new(rows, 6 * w, 2 * w, false, false), &a.h1, wqkv, &mut a.qkv);
+            b.rope_to_heads(&a.qkv, 6 * w, 0, 3 * w, rows, t, heads, hd, c.rope(), &mut a.qh);
+            b.rope_to_heads(&a.qkv, 6 * w, w, 4 * w, rows, t, heads, hd, c.rope(), &mut a.kh);
+            if c.hermitian_scores {
+                // Re(q conj(k)) = [qr | qi] . [kr | ki]: the head-planar rows (2hd per head) directly.
+                let scale = 1.0 / ((2.0 * hd as f64).sqrt() + 1e-12) as f32;
+                for s in 0..batch {
+                    let g = Gemm::new(t, t, 2 * hd, false, true).ld(2 * w, 2 * w, t).offsets(s * t * 2 * w, s * t * 2 * w, s * heads * t * t).batched(heads, 2 * hd, 2 * hd, t * t).alpha(scale);
+                    b.gemm(&g, &a.qh, &a.kh, &mut a.probs);
+                }
+            } else {
+                // ComplexToLinear per head: [Qr_h | Qi_h] (rows x 2hd) times [W1; W2] (2hd x hd).
+                let ctl = |ctl_off: usize| Gemm::new(rows, hd, 2 * hd, false, false).ld(2 * w, hd, w).offsets(0, ctl_off, 0).batched(heads, 2 * hd, 2 * hd * hd, hd);
+                b.gemm(&ctl(lo.ctl_q), &a.qh, &self.params, &mut a.qr);
+                b.gemm(&ctl(lo.ctl_k), &a.kh, &self.params, &mut a.kr);
+                let scale = 1.0 / ((hd as f64).sqrt() + 1e-12) as f32;
+                for s in 0..batch {
+                    // Scores of all heads of sample s: q_h k_h^T (t x t).
+                    let g = Gemm::new(t, t, hd, false, true).ld(w, w, t).offsets(s * t * w, s * t * w, s * heads * t * t).batched(heads, hd, hd, t * t).alpha(scale);
+                    b.gemm(&g, &a.qr, &a.kr, &mut a.probs);
+                }
             }
-        } else {
-            // ComplexToLinear per head: [Qr_h | Qi_h] (rows x 2hd) times [W1; W2] (2hd x hd).
-            let ctl = |ctl_off: usize| Gemm::new(rows, hd, 2 * hd, false, false).ld(2 * w, hd, w).offsets(0, ctl_off, 0).batched(heads, 2 * hd, 2 * hd * hd, hd);
-            b.gemm(&ctl(lo.ctl_q), &a.qh, &self.params, &mut a.qr);
-            b.gemm(&ctl(lo.ctl_k), &a.kh, &self.params, &mut a.kr);
-            let scale = 1.0 / ((hd as f64).sqrt() + 1e-12) as f32;
+            b.softmax_window(&mut a.probs, batch * heads, t, c.window);
+            let aw = c.attention_width();
             for s in 0..batch {
-                // Scores of all heads of sample s: q_h k_h^T (t x t).
-                let g = Gemm::new(t, t, hd, false, true).ld(w, w, t).offsets(s * t * w, s * t * w, s * heads * t * t).batched(heads, hd, hd, t * t).alpha(scale);
-                b.gemm(&g, &a.qr, &a.kr, &mut a.probs);
+                // Weighted values: Re(V) at columns 2w + h hd of qkv (and Im(V) at 5w + h hd with complex values).
+                for part in 0..aw / w {
+                    let g = Gemm::new(t, hd, t, false, false).ld(t, 6 * w, aw).offsets(s * heads * t * t, s * t * 6 * w + 2 * w + part * 3 * w, s * t * aw + part * w).batched(heads, t * t, hd, hd);
+                    b.gemm(&g, &a.probs, &a.qkv, &mut a.att);
+                }
+            }
+            if let Some(wo) = &blk.wo {
+                b.gemm(&Gemm::new(rows, 2 * w, 2 * w, false, false), &a.att, wo, &mut a.att_o);
             }
         }
-        b.softmax_window(&mut a.probs, batch * heads, t, c.window);
-        let aw = c.attention_width();
-        for s in 0..batch {
-            // Weighted values: Re(V) at columns 2w + h hd of qkv (and Im(V) at 5w + h hd with complex values).
-            for part in 0..aw / w {
-                let g = Gemm::new(t, hd, t, false, false).ld(t, 6 * w, aw).offsets(s * heads * t * t, s * t * 6 * w + 2 * w + part * 3 * w, s * t * aw + part * w).batched(heads, t * t, hd, hd);
-                b.gemm(&g, &a.probs, &a.qkv, &mut a.att);
+        // mid = input + beta (attention output, Wo applied if present) + beta (mixer output).
+        if c.complex_values {
+            b.copy(&a.input, 0, &mut a.mid, 0, rows * 2 * w);
+            if blk.wqkv.is_some() {
+                b.axpy(beta, if blk.wo.is_some() { &a.att_o } else { &a.att }, &mut a.mid, rows * 2 * w);
             }
-        }
-        if c.attention_output {
-            // mid = input + beta att Wo.
-            b.gemm(&Gemm::new(rows, 2 * w, 2 * w, false, false), &a.att, &self.blocks[i][3], &mut a.att_o);
-            b.copy(&a.input, 0, &mut a.mid, 0, rows * 2 * w);
-            b.axpy(beta, &a.att_o, &mut a.mid, rows * 2 * w);
-        } else if c.complex_values {
-            // mid = input + beta att (both halves).
-            b.copy(&a.input, 0, &mut a.mid, 0, rows * 2 * w);
-            b.axpy(beta, &a.att, &mut a.mid, rows * 2 * w);
         } else {
             b.attention_residual(&a.input, &a.att, rows, w, beta, &mut a.mid);
+        }
+        if let (Some(m), Some(wvg), Some(mixer_wo)) = (&lo.mixer, &blk.wvg, &blk.mixer_wo) {
+            // [v | g] = h Wvg as planar rows [vr | gr | vi | gi]; z = wavelet conv of v in place of v; u = z * silu(g).
+            b.gemm(&Gemm::new(rows, 4 * w, 2 * w, false, false), &a.h1, wvg, &mut a.vg);
+            b.copy(&a.vg, 0, &mut a.cg, 0, rows * 4 * w);
+            b.wavelet_conv(&a.vg, 4 * w, 0, 2 * w, rows, t, w, &self.params, m.taps_re, m.taps_im, WAVELET_SCALES, WAVELET_TAPS, &mut a.cg);
+            b.gated(&a.cg, rows, w, &mut a.u);
+            b.gemm(&Gemm::new(rows, 2 * w, 2 * w, false, false), &a.u, mixer_wo, &mut a.mix_o);
+            b.axpy(beta, &a.mix_o, &mut a.mid, rows * 2 * w);
         }
 
         // Feed-forward.
@@ -843,7 +994,8 @@ impl<B: Backend> Model<B> {
         let aw = c.attention_width();
         for i in (0..c.layers).rev() {
             let lo = self.layout.layers[i].clone();
-            let (wqkv, w1, w2) = (&self.blocks[i][0], &self.blocks[i][1], &self.blocks[i][2]);
+            let blk = &self.blocks[i];
+            let (w1, w2) = (&blk.w1, &blk.w2);
             let a = &ws.layers[i];
 
             // Feed-forward: y = mid + beta leaky(o) (or y = mid + o), o = g W2 + b2.
@@ -861,61 +1013,79 @@ impl<B: Backend> Model<B> {
             b.layer_norm_backward(&a.mid, &a.stats2, &ws.dtmp, rows, w, !c.rms_norm, &self.params, lo.ffn_norm.gamma, &mut ws.d_out, &mut self.grads, lo.ffn_norm.gamma, lo.ffn_norm.beta);
             b.axpy(1.0, &ws.d_out, &mut ws.dx, rows * 2 * w);
 
-            // Attention: mid = input + beta [att | 0] (or input + beta att with complex values).
-            if let Some(wo) = lo.wo {
-                // mid = input + beta att Wo: d(att Wo) = beta dx, then back through Wo.
-                b.copy(&ws.dx, 0, &mut ws.d_o, 0, rows * 2 * w);
-                b.scale(&mut ws.d_o, rows * 2 * w, beta);
-                Self::linear_backward(b, &a.att, &ws.d_o, &self.blocks[i][3], wo, rows, &mut self.block_grad, &mut self.grads, &mut ws.d_att);
-            } else if c.complex_values {
-                b.copy(&ws.dx, 0, &mut ws.d_att, 0, rows * 2 * w);
-                b.scale(&mut ws.d_att, rows * 2 * w, beta);
-            } else {
-                b.real_part_scaled(&ws.dx, rows, w, beta, &mut ws.d_att);
-            }
-            b.fill(&mut ws.d_qkv, 0, rows * 6 * w, 0.0);
-            for s in 0..batch {
-                for part in 0..aw / w {
-                    // dP = sum over parts of d_att V^T, dV = P^T d_att (V = Re(V), and Im(V) with complex values).
-                    let v_off = s * t * 6 * w + 2 * w + part * 3 * w;
-                    let mut g = Gemm::new(t, t, hd, false, true).ld(aw, 6 * w, t).offsets(s * t * aw + part * w, v_off, s * heads * t * t).batched(heads, hd, hd, t * t);
-                    if part > 0 {
-                        g = g.accumulate();
+            if let (Some(wqkv), Some(wqkv_block)) = (lo.wqkv, &blk.wqkv) {
+                // Attention: mid = input + beta [att | 0] (or input + beta att with complex values).
+                if let (Some(wo), Some(wo_block)) = (lo.wo, &blk.wo) {
+                    // mid = input + beta att Wo: d(att Wo) = beta dx, then back through Wo.
+                    b.copy(&ws.dx, 0, &mut ws.d_o, 0, rows * 2 * w);
+                    b.scale(&mut ws.d_o, rows * 2 * w, beta);
+                    Self::linear_backward(b, &a.att, &ws.d_o, wo_block, wo, rows, &mut self.block_grad, &mut self.grads, &mut ws.d_att);
+                } else if c.complex_values {
+                    b.copy(&ws.dx, 0, &mut ws.d_att, 0, rows * 2 * w);
+                    b.scale(&mut ws.d_att, rows * 2 * w, beta);
+                } else {
+                    b.real_part_scaled(&ws.dx, rows, w, beta, &mut ws.d_att);
+                }
+                b.fill(&mut ws.d_qkv, 0, rows * 6 * w, 0.0);
+                for s in 0..batch {
+                    for part in 0..aw / w {
+                        // dP = sum over parts of d_att V^T, dV = P^T d_att (V = Re(V), and Im(V) with complex values).
+                        let v_off = s * t * 6 * w + 2 * w + part * 3 * w;
+                        let mut g = Gemm::new(t, t, hd, false, true).ld(aw, 6 * w, t).offsets(s * t * aw + part * w, v_off, s * heads * t * t).batched(heads, hd, hd, t * t);
+                        if part > 0 {
+                            g = g.accumulate();
+                        }
+                        b.gemm(&g, &ws.d_att, &a.qkv, &mut ws.d_probs);
+                        let g = Gemm::new(t, hd, t, true, false).ld(t, aw, 6 * w).offsets(s * heads * t * t, s * t * aw + part * w, v_off).batched(heads, t * t, hd, hd);
+                        b.gemm(&g, &a.probs, &ws.d_att, &mut ws.d_qkv);
                     }
-                    b.gemm(&g, &ws.d_att, &a.qkv, &mut ws.d_probs);
-                    let g = Gemm::new(t, hd, t, true, false).ld(t, aw, 6 * w).offsets(s * heads * t * t, s * t * aw + part * w, v_off).batched(heads, t * t, hd, hd);
-                    b.gemm(&g, &a.probs, &ws.d_att, &mut ws.d_qkv);
+                }
+                b.softmax_window_backward(&a.probs, &mut ws.d_probs, batch * heads, t);
+                if c.hermitian_scores {
+                    // d[qr|qi] = scale dS [kr|ki], d[kr|ki] = scale dS^T [qr|qi] (head-planar).
+                    let hscale = 1.0 / ((2.0 * hd as f64).sqrt() + 1e-12) as f32;
+                    for s in 0..batch {
+                        let g = Gemm::new(t, 2 * hd, t, false, false).ld(t, 2 * w, 2 * w).offsets(s * heads * t * t, s * t * 2 * w, s * t * 2 * w).batched(heads, t * t, 2 * hd, 2 * hd).alpha(hscale);
+                        b.gemm(&g, &ws.d_probs, &a.kh, &mut ws.d_qh);
+                        let g = Gemm::new(t, 2 * hd, t, true, false).ld(t, 2 * w, 2 * w).offsets(s * heads * t * t, s * t * 2 * w, s * t * 2 * w).batched(heads, t * t, 2 * hd, 2 * hd).alpha(hscale);
+                        b.gemm(&g, &ws.d_probs, &a.qh, &mut ws.d_kh);
+                    }
+                } else {
+                    for s in 0..batch {
+                        // dq = scale dS k, dk = scale dS^T q.
+                        let g = Gemm::new(t, hd, t, false, false).ld(t, w, w).offsets(s * heads * t * t, s * t * w, s * t * w).batched(heads, t * t, hd, hd).alpha(scale);
+                        b.gemm(&g, &ws.d_probs, &a.kr, &mut ws.d_qr);
+                        let g = Gemm::new(t, hd, t, true, false).ld(t, w, w).offsets(s * heads * t * t, s * t * w, s * t * w).batched(heads, t * t, hd, hd).alpha(scale);
+                        b.gemm(&g, &ws.d_probs, &a.qr, &mut ws.d_kr);
+                    }
+                    // ComplexToLinear per head: dW = [Qr|Qi]^T dq_real, d[Qr|Qi] = dq_real W^T.
+                    for (heads_buf, d_real, d_heads, ctl_off) in [(&a.qh, &ws.d_qr, &mut ws.d_qh, lo.ctl_q), (&a.kh, &ws.d_kr, &mut ws.d_kh, lo.ctl_k)] {
+                        let g = Gemm::new(2 * hd, hd, rows, true, false).ld(2 * w, w, hd).offsets(0, 0, ctl_off).batched(heads, 2 * hd, hd, 2 * hd * hd).accumulate();
+                        b.gemm(&g, heads_buf, d_real, &mut self.grads);
+                        let g = Gemm::new(rows, 2 * hd, hd, false, true).ld(w, hd, 2 * w).offsets(0, ctl_off, 0).batched(heads, hd, 2 * hd * hd, 2 * hd);
+                        b.gemm(&g, d_real, &self.params, d_heads);
+                    }
+                }
+                b.rope_from_heads(&ws.d_qh, rows, t, heads, hd, c.rope(), &mut ws.d_qkv, 6 * w, 0, 3 * w);
+                b.rope_from_heads(&ws.d_kh, rows, t, heads, hd, c.rope(), &mut ws.d_qkv, 6 * w, w, 4 * w);
+                Self::linear_backward(b, &a.h1, &ws.d_qkv, wqkv_block, wqkv, rows, &mut self.block_grad, &mut self.grads, &mut ws.dtmp);
+            }
+            if let (Some(m), Some(wvg), Some(mixer_wo)) = (lo.mixer, &blk.wvg, &blk.mixer_wo) {
+                // Mixer: d(u Wo) = beta dx -> du -> d[z | g] -> d[v | g] (wavelet conv backward) -> dh.
+                b.copy(&ws.dx, 0, &mut ws.d_mo, 0, rows * 2 * w);
+                b.scale(&mut ws.d_mo, rows * 2 * w, beta);
+                Self::linear_backward(b, &a.u, &ws.d_mo, mixer_wo, m.wo, rows, &mut self.block_grad, &mut self.grads, &mut ws.d_u);
+                b.gated_backward(&a.cg, &ws.d_u, rows, w, &mut ws.d_cg);
+                b.copy(&ws.d_cg, 0, &mut ws.d_vg, 0, rows * 4 * w);
+                b.wavelet_conv_backward_input(&ws.d_cg, 4 * w, 0, 2 * w, rows, t, w, &self.params, m.taps_re, m.taps_im, WAVELET_SCALES, WAVELET_TAPS, &mut ws.d_vg);
+                b.wavelet_conv_backward_taps(&ws.d_cg, &a.vg, 4 * w, 0, 2 * w, rows, t, w, WAVELET_SCALES, WAVELET_TAPS, &mut self.grads, m.taps_re, m.taps_im);
+                Self::linear_backward(b, &a.h1, &ws.d_vg, wvg, m.wvg, rows, &mut self.block_grad, &mut self.grads, &mut ws.d_mo);
+                if lo.wqkv.is_some() {
+                    b.axpy(1.0, &ws.d_mo, &mut ws.dtmp, rows * 2 * w);
+                } else {
+                    b.copy(&ws.d_mo, 0, &mut ws.dtmp, 0, rows * 2 * w);
                 }
             }
-            b.softmax_window_backward(&a.probs, &mut ws.d_probs, batch * heads, t);
-            if c.hermitian_scores {
-                // d[qr|qi] = scale dS [kr|ki], d[kr|ki] = scale dS^T [qr|qi] (head-planar).
-                let hscale = 1.0 / ((2.0 * hd as f64).sqrt() + 1e-12) as f32;
-                for s in 0..batch {
-                    let g = Gemm::new(t, 2 * hd, t, false, false).ld(t, 2 * w, 2 * w).offsets(s * heads * t * t, s * t * 2 * w, s * t * 2 * w).batched(heads, t * t, 2 * hd, 2 * hd).alpha(hscale);
-                    b.gemm(&g, &ws.d_probs, &a.kh, &mut ws.d_qh);
-                    let g = Gemm::new(t, 2 * hd, t, true, false).ld(t, 2 * w, 2 * w).offsets(s * heads * t * t, s * t * 2 * w, s * t * 2 * w).batched(heads, t * t, 2 * hd, 2 * hd).alpha(hscale);
-                    b.gemm(&g, &ws.d_probs, &a.qh, &mut ws.d_kh);
-                }
-            } else {
-                for s in 0..batch {
-                    // dq = scale dS k, dk = scale dS^T q.
-                    let g = Gemm::new(t, hd, t, false, false).ld(t, w, w).offsets(s * heads * t * t, s * t * w, s * t * w).batched(heads, t * t, hd, hd).alpha(scale);
-                    b.gemm(&g, &ws.d_probs, &a.kr, &mut ws.d_qr);
-                    let g = Gemm::new(t, hd, t, true, false).ld(t, w, w).offsets(s * heads * t * t, s * t * w, s * t * w).batched(heads, t * t, hd, hd).alpha(scale);
-                    b.gemm(&g, &ws.d_probs, &a.qr, &mut ws.d_kr);
-                }
-                // ComplexToLinear per head: dW = [Qr|Qi]^T dq_real, d[Qr|Qi] = dq_real W^T.
-                for (heads_buf, d_real, d_heads, ctl_off) in [(&a.qh, &ws.d_qr, &mut ws.d_qh, lo.ctl_q), (&a.kh, &ws.d_kr, &mut ws.d_kh, lo.ctl_k)] {
-                    let g = Gemm::new(2 * hd, hd, rows, true, false).ld(2 * w, w, hd).offsets(0, 0, ctl_off).batched(heads, 2 * hd, hd, 2 * hd * hd).accumulate();
-                    b.gemm(&g, heads_buf, d_real, &mut self.grads);
-                    let g = Gemm::new(rows, 2 * hd, hd, false, true).ld(w, hd, 2 * w).offsets(0, ctl_off, 0).batched(heads, hd, 2 * hd * hd, 2 * hd);
-                    b.gemm(&g, d_real, &self.params, d_heads);
-                }
-            }
-            b.rope_from_heads(&ws.d_qh, rows, t, heads, hd, c.rope(), &mut ws.d_qkv, 6 * w, 0, 3 * w);
-            b.rope_from_heads(&ws.d_kh, rows, t, heads, hd, c.rope(), &mut ws.d_qkv, 6 * w, w, 4 * w);
-            Self::linear_backward(b, &a.h1, &ws.d_qkv, wqkv, lo.wqkv, rows, &mut self.block_grad, &mut self.grads, &mut ws.dtmp);
             b.layer_norm_backward(&a.input, &a.stats1, &ws.dtmp, rows, w, !c.rms_norm, &self.params, lo.attention_norm.gamma, &mut ws.d_out, &mut self.grads, lo.attention_norm.gamma, lo.attention_norm.beta);
             b.axpy(1.0, &ws.d_out, &mut ws.dx, rows * 2 * w);
         }

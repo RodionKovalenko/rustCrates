@@ -431,3 +431,67 @@ extern "C" __global__ void rope_rows(const float* src, i64 src_ld, i64 src_off, 
         dst[r * dst_ld + dst_off + h * head_dim + 2 * i + 1] = e * s + o * c;
     }
 }
+
+// ── Wavelet mixer: causal dilated complex convolution (dilation 2^s per scale) ──
+
+// One thread per (row, channel).
+extern "C" __global__ void wavelet_conv(const float* v, i64 ld, i64 re_off, i64 im_off, i64 rows, i64 seq_len, i64 w, const float* params, i64 taps_re, i64 taps_im, i64 scales, i64 taps, float* z) {
+    GRID_STRIDE(idx, rows * w) {
+        i64 r = idx / w, j = idx % w, t = r % seq_len;
+        float ar = 0.0f, ai = 0.0f;
+        for (i64 s = 0; s < scales; s++) {
+            for (i64 k = 0; k < taps; k++) {
+                i64 lag = k << s;
+                if (lag > t) break;
+                i64 src = (r - lag) * ld, c = (s * taps + k) * w + j;
+                float cr = params[taps_re + c], ci = params[taps_im + c];
+                float vr = v[src + re_off + j], vi = v[src + im_off + j];
+                ar += cr * vr - ci * vi;
+                ai += cr * vi + ci * vr;
+            }
+        }
+        z[r * ld + re_off + j] = ar;
+        z[r * ld + im_off + j] = ai;
+    }
+}
+
+extern "C" __global__ void wavelet_conv_backward_input(const float* dz, i64 ld, i64 re_off, i64 im_off, i64 rows, i64 seq_len, i64 w, const float* params, i64 taps_re, i64 taps_im, i64 scales, i64 taps, float* dv) {
+    GRID_STRIDE(idx, rows * w) {
+        i64 r = idx / w, j = idx % w, t = r % seq_len;
+        float ar = 0.0f, ai = 0.0f;
+        for (i64 s = 0; s < scales; s++) {
+            for (i64 k = 0; k < taps; k++) {
+                i64 lag = k << s;
+                if (t + lag >= seq_len) break;
+                i64 src = (r + lag) * ld, c = (s * taps + k) * w + j;
+                float cr = params[taps_re + c], ci = params[taps_im + c];
+                float gr = dz[src + re_off + j], gi = dz[src + im_off + j];
+                ar += gr * cr + gi * ci;
+                ai += gi * cr - gr * ci;
+            }
+        }
+        dv[r * ld + re_off + j] = ar;
+        dv[r * ld + im_off + j] = ai;
+    }
+}
+
+// Grid (scales * taps * ceil(w / blockDim), row chunks): a thread per channel j (coalesced reads along j) sums its
+// chunk of rows and adds the result atomically.
+extern "C" __global__ void wavelet_conv_backward_taps(const float* dz, const float* v, i64 ld, i64 re_off, i64 im_off, i64 rows, i64 seq_len, i64 w, i64 taps, i64 rows_per_chunk, float* grads, i64 taps_re, i64 taps_im) {
+    i64 blocks_per_tap = (w + blockDim.x - 1) / blockDim.x;
+    i64 tap = blockIdx.x / blocks_per_tap;
+    i64 j = (blockIdx.x % blocks_per_tap) * blockDim.x + threadIdx.x;
+    if (j >= w) return;
+    i64 s = tap / taps, k = tap % taps, lag = k << s;
+    i64 r0 = (i64)blockIdx.y * rows_per_chunk, r1 = r0 + rows_per_chunk < rows ? r0 + rows_per_chunk : rows;
+    float ar = 0.0f, ai = 0.0f;
+    for (i64 r = r0; r < r1; r++) {
+        if (r % seq_len < lag) continue;
+        float gr = dz[r * ld + re_off + j], gi = dz[r * ld + im_off + j];
+        float vr = v[(r - lag) * ld + re_off + j], vi = v[(r - lag) * ld + im_off + j];
+        ar += gr * vr + gi * vi;
+        ai += gi * vr - gr * vi;
+    }
+    atomicAdd(grads + taps_re + tap * w + j, ar);
+    atomicAdd(grads + taps_im + tap * w + j, ai);
+}
