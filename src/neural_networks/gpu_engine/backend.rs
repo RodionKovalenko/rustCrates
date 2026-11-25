@@ -141,12 +141,12 @@ pub trait Backend {
 
     /// Complex layer norm (real variance) of `rows` planar rows of width `w`. gamma and beta are planar vectors
     /// (2w floats each) at `gamma_off` / `beta_off` of `params`. `stats` receives (mean_re, mean_im, 1 / sigma)
-    /// per row.
+    /// per row. Without `center` the mean is not subtracted (RMS norm of the complex values: x / rms(|x|), mean 0).
     #[allow(clippy::too_many_arguments)]
-    fn layer_norm(&self, x: &Self::Buf, rows: usize, w: usize, eps: f32, params: &Self::Buf, gamma_off: usize, beta_off: usize, y: &mut Self::Buf, stats: &mut Self::Buf);
+    fn layer_norm(&self, x: &Self::Buf, rows: usize, w: usize, eps: f32, center: bool, params: &Self::Buf, gamma_off: usize, beta_off: usize, y: &mut Self::Buf, stats: &mut Self::Buf);
     /// Backward pass of `layer_norm`: writes `dx`, adds the gamma / beta gradients to `grads`.
     #[allow(clippy::too_many_arguments)]
-    fn layer_norm_backward(&self, x: &Self::Buf, stats: &Self::Buf, dy: &Self::Buf, rows: usize, w: usize, params: &Self::Buf, gamma_off: usize, dx: &mut Self::Buf, grads: &mut Self::Buf, dgamma_off: usize, dbeta_off: usize);
+    fn layer_norm_backward(&self, x: &Self::Buf, stats: &Self::Buf, dy: &Self::Buf, rows: usize, w: usize, center: bool, params: &Self::Buf, gamma_off: usize, dx: &mut Self::Buf, grads: &mut Self::Buf, dgamma_off: usize, dbeta_off: usize);
 
     /// RoPE of the queries and keys: reads the planar complex columns `[re_off + c]` / `[im_off + c]`
     /// (c < heads * head_dim) of `src` (row stride `src_ld`), rotates the (even, odd) pairs of every head by the

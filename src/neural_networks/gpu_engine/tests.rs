@@ -7,7 +7,7 @@ use super::{
 };
 
 fn tiny() -> EngineConfig {
-    EngineConfig { vocab_size: 40, width: 32, layers: 2, heads: 2, ffn_hidden: 24, window: 3, seq_len: 8, complex_values: false, standard_residual: false, standard_rope: false, hermitian_scores: false, attention_output: false, real: false, tokenizer: String::new() }
+    EngineConfig { vocab_size: 40, width: 32, layers: 2, heads: 2, ffn_hidden: 24, window: 3, seq_len: 8, complex_values: false, standard_residual: false, standard_rope: false, hermitian_scores: false, attention_output: false, rms_norm: false, scaled_init: false, tied_head: false, real: false, tokenizer: String::new() }
 }
 
 fn real_tiny(window: usize) -> EngineConfig {
@@ -311,6 +311,11 @@ fn every_architecture_variant_has_exact_gradients() {
     for (hermitian_scores, attention_output) in [(true, false), (false, true), (true, true)] {
         check_architecture(EngineConfig { window: 8, complex_values: true, standard_residual: true, standard_rope: true, hermitian_scores, attention_output, ..tiny() });
     }
+    // RMS norm, scaled initialization and the tied head (on herm-wo), each and together.
+    let herm_wo = EngineConfig { window: 8, complex_values: true, standard_residual: true, standard_rope: true, hermitian_scores: true, attention_output: true, ..tiny() };
+    for (rms_norm, scaled_init, tied_head) in [(true, false, false), (false, true, false), (false, false, true), (true, true, true)] {
+        check_architecture(EngineConfig { rms_norm, scaled_init, tied_head, ..herm_wo.clone() });
+    }
     // The real control model (window 3 and full).
     for window in [3, 8] {
         check_architecture(real_tiny(window));
@@ -326,7 +331,7 @@ fn old_checkpoint_configs_load_as_the_rm_architecture() {
     let german = EngineConfig { tokenizer: "src/neural_networks/tokenizers/german_bpe_32k.json".into(), vocab_size: 32000, ..EngineConfig::default() };
     assert_eq!(serde_json::from_str::<EngineConfig>(&serde_json::to_string(&german).unwrap()).unwrap(), german);
     assert!(Layout::new(&config).final_norm.is_none());
-    for name in ["rm", "rm-pos", "complex-v", "new", "herm", "wo", "herm-wo", "real"] {
+    for name in ["rm", "rm-pos", "complex-v", "new", "herm", "wo", "herm-wo", "herm-wo-init", "herm-wo-rms", "herm-wo-tied", "herm-wo-all", "real"] {
         assert_eq!(EngineConfig::preset(name).unwrap().seq_len, 512);
     }
     // The real control model has about the parameters of the complex one.
@@ -644,11 +649,12 @@ mod cuda_backend {
     /// Loss and every gradient of the CUDA backend against the CPU backend (same parameters, same batch).
     /// `grad_scale` is the loss scale of the GPU pass (as in training with f16 GEMMs); its gradients are divided by it.
     fn compare(precision: Precision, tolerance: f64, grad_scale: f32) {
-        let rm = EngineConfig { vocab_size: 300, width: 64, layers: 2, heads: 4, ffn_hidden: 96, window: 5, seq_len: 32, complex_values: false, standard_residual: false, standard_rope: false, hermitian_scores: false, attention_output: false, real: false, tokenizer: String::new() };
+        let rm = EngineConfig { vocab_size: 300, width: 64, layers: 2, heads: 4, ffn_hidden: 96, window: 5, seq_len: 32, complex_values: false, standard_residual: false, standard_rope: false, hermitian_scores: false, attention_output: false, rms_norm: false, scaled_init: false, tied_head: false, real: false, tokenizer: String::new() };
         let new = EngineConfig { window: 32, complex_values: true, standard_residual: true, standard_rope: true, ..rm.clone() };
         let real = EngineConfig { width: 48, heads: 4, ffn_hidden: 80, real: true, ..new.clone() };
         let herm_wo = EngineConfig { hermitian_scores: true, attention_output: true, ..new.clone() };
-        for config in [rm, new, herm_wo, real] {
+        let all = EngineConfig { rms_norm: true, scaled_init: true, tied_head: true, ..herm_wo.clone() };
+        for config in [rm, new, herm_wo, all, real] {
             compare_config(precision, tolerance, grad_scale, config);
         }
     }

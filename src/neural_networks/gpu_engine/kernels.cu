@@ -127,13 +127,14 @@ extern "C" __global__ void column_sums(const float* dy, i64 rows, i64 cols, floa
 }
 
 // One block per planar row.
-extern "C" __global__ void layer_norm(const float* x, i64 w, float eps, const float* params, i64 gamma_off, i64 beta_off, float* y, float* stats) {
+extern "C" __global__ void layer_norm(const float* x, i64 w, float eps, int center, const float* params, i64 gamma_off, i64 beta_off, float* y, float* stats) {
     __shared__ float shared[32];
     i64 r = blockIdx.x;
     const float* xr = x + r * 2 * w;
     float sr = 0.0f, si = 0.0f;
     for (i64 j = threadIdx.x; j < w; j += blockDim.x) { sr += xr[j]; si += xr[w + j]; }
     float mre = block_sum(sr, shared) / w, mim = block_sum(si, shared) / w;
+    if (!center) { mre = 0.0f; mim = 0.0f; }
     float v = 0.0f;
     for (i64 j = threadIdx.x; j < w; j += blockDim.x) {
         float dr = xr[j] - mre, di = xr[w + j] - mim;
@@ -152,7 +153,7 @@ extern "C" __global__ void layer_norm(const float* x, i64 w, float eps, const fl
 }
 
 // One block per row: writes dx and the row's gamma / beta gradient contributions (rows x 4w, summed afterwards).
-extern "C" __global__ void layer_norm_backward(const float* x, const float* stats, const float* dy, i64 w, const float* params, i64 gamma_off, float* dx, float* row_grads) {
+extern "C" __global__ void layer_norm_backward(const float* x, const float* stats, const float* dy, i64 w, int center, const float* params, i64 gamma_off, float* dx, float* row_grads) {
     __shared__ float shared[32];
     i64 r = blockIdx.x;
     const float* xr = x + r * 2 * w;
@@ -172,6 +173,7 @@ extern "C" __global__ void layer_norm_backward(const float* x, const float* stat
         rg[3 * w + j] = gi;
     }
     float ure_mean = block_sum(ur_sum, shared) / w, uim_mean = block_sum(ui_sum, shared) / w;
+    if (!center) { ure_mean = 0.0f; uim_mean = 0.0f; }
     float c = block_sum(s, shared) / w;
     for (i64 j = threadIdx.x; j < w; j += blockDim.x) {
         float gr = g[j], gi = g[w + j], gmr = gamma[j], gmi = gamma[w + j];

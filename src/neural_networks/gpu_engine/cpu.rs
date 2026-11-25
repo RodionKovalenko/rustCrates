@@ -137,7 +137,7 @@ impl Backend for CpuBackend {
         grads[off..off + cols].iter_mut().zip(total).for_each(|(g, s)| *g += s as f32);
     }
 
-    fn layer_norm(&self, x: &Vec<f32>, rows: usize, w: usize, eps: f32, params: &Vec<f32>, gamma_off: usize, beta_off: usize, y: &mut Vec<f32>, stats: &mut Vec<f32>) {
+    fn layer_norm(&self, x: &Vec<f32>, rows: usize, w: usize, eps: f32, center: bool, params: &Vec<f32>, gamma_off: usize, beta_off: usize, y: &mut Vec<f32>, stats: &mut Vec<f32>) {
         let (gamma, beta) = (&params[gamma_off..gamma_off + 2 * w], &params[beta_off..beta_off + 2 * w]);
         y[..rows * 2 * w].par_chunks_mut(2 * w).zip(stats[..rows * 3].par_chunks_mut(3)).enumerate().for_each(|(r, (yr, st))| {
             let xr = &x[r * 2 * w..(r + 1) * 2 * w];
@@ -146,7 +146,7 @@ impl Backend for CpuBackend {
                 mre += xr[j];
                 mim += xr[w + j];
             }
-            (mre, mim) = (mre / w as f32, mim / w as f32);
+            (mre, mim) = if center { (mre / w as f32, mim / w as f32) } else { (0.0, 0.0) };
             let mut var = 0.0f32;
             for j in 0..w {
                 let (dr, di) = (xr[j] - mre, xr[w + j] - mim);
@@ -163,7 +163,7 @@ impl Backend for CpuBackend {
         });
     }
 
-    fn layer_norm_backward(&self, x: &Vec<f32>, stats: &Vec<f32>, dy: &Vec<f32>, rows: usize, w: usize, params: &Vec<f32>, gamma_off: usize, dx: &mut Vec<f32>, grads: &mut Vec<f32>, dgamma_off: usize, dbeta_off: usize) {
+    fn layer_norm_backward(&self, x: &Vec<f32>, stats: &Vec<f32>, dy: &Vec<f32>, rows: usize, w: usize, center: bool, params: &Vec<f32>, gamma_off: usize, dx: &mut Vec<f32>, grads: &mut Vec<f32>, dgamma_off: usize, dbeta_off: usize) {
         // With x_hat = (x - mu) / sigma and u = G conj(gamma) (complex_layer_norm::layer_norm_row_backward):
         // dx = (u - mean(u)) / sigma - x_hat * S / (n sigma) with S = sum Re(conj(u) x_hat),
         // dgamma = G conj(x_hat), dbeta = G.
@@ -190,7 +190,7 @@ impl Backend for CpuBackend {
                         acc[2 * w + j] += gr as f64;
                         acc[3 * w + j] += gi as f64;
                     }
-                    (ure_mean, uim_mean) = (ure_mean / w as f32, uim_mean / w as f32);
+                    (ure_mean, uim_mean) = if center { (ure_mean / w as f32, uim_mean / w as f32) } else { (0.0, 0.0) };
                     let c = s / w as f32;
                     for j in 0..w {
                         let (gr, gi, gmr, gmi) = (g[j], g[w + j], gamma[j], gamma[w + j]);

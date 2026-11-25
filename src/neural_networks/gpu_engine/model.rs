@@ -56,6 +56,16 @@ pub struct EngineConfig {
     /// Complex output projection Wo (w x w) of the attention before the residual (needs `complex_values`).
     #[serde(default)]
     pub attention_output: bool,
+    /// Norms divide by the RMS of the complex values without subtracting the mean (complex RMS norm).
+    #[serde(default)]
+    pub rms_norm: bool,
+    /// Output projections (Wo, W2) initialized smaller by 1 / sqrt(2 layers), as in GPT-2.
+    #[serde(default)]
+    pub scaled_init: bool,
+    /// Logits Re<x, e_v> of the final complex state with the embedding of token v (weight tying; no ComplexToLinear
+    /// and no separate head matrix).
+    #[serde(default)]
+    pub tied_head: bool,
     #[serde(default)]
     pub real: bool,
     /// Tokenizer file the model was trained with (empty: the GPT-NeoX tokenizer of the project).
@@ -67,7 +77,7 @@ impl Default for EngineConfig {
     fn default() -> Self {
         // New models: full attention over the sequence, complex values, plain residuals (checkpoints without these
         // fields keep the RM behaviour, see the serde defaults).
-        Self { vocab_size: 50282, width: 256, layers: 12, heads: 4, ffn_hidden: 1024, window: 512, seq_len: 512, complex_values: true, standard_residual: true, standard_rope: true, hermitian_scores: false, attention_output: false, real: false, tokenizer: String::new() }
+        Self { vocab_size: 50282, width: 256, layers: 12, heads: 4, ffn_hidden: 1024, window: 512, seq_len: 512, complex_values: true, standard_residual: true, standard_rope: true, hermitian_scores: false, attention_output: false, rms_norm: false, scaled_init: false, tied_head: false, real: false, tokenizer: String::new() }
     }
 }
 
@@ -114,6 +124,10 @@ impl EngineConfig {
             "herm" => Some(Self { hermitian_scores: true, ..Self::default() }),
             "wo" => Some(Self { attention_output: true, ..Self::default() }),
             "herm-wo" => Some(Self { hermitian_scores: true, attention_output: true, ..Self::default() }),
+            "herm-wo-init" => Some(Self { hermitian_scores: true, attention_output: true, scaled_init: true, ..Self::default() }),
+            "herm-wo-rms" => Some(Self { hermitian_scores: true, attention_output: true, rms_norm: true, ..Self::default() }),
+            "herm-wo-tied" => Some(Self { hermitian_scores: true, attention_output: true, tied_head: true, ..Self::default() }),
+            "herm-wo-all" => Some(Self { hermitian_scores: true, attention_output: true, scaled_init: true, rms_norm: true, tied_head: true, ..Self::default() }),
             // Real transformer with about the parameters of the complex model (21 M in the layers, 63 M in total).
             "real" => Some(Self { width: 384, heads: 6, ffn_hidden: 1024, complex_values: false, real: true, ..Self::default() }),
             _ => None,
@@ -253,8 +267,7 @@ impl Layout {
             layers.push(LayerOffsets { attention_norm, wqkv, ctl_q, ctl_k, wo, ffn_norm, w1, b1, w2, b2 });
         }
         let final_norm = c.standard_residual.then(|| norm(&mut add, "final_norm"));
-        let ctl = add("ctl".into(), vec![2 * w, w]);
-        let head = add("head".into(), vec![w, c.vocab_size]);
+        let (ctl, head) = if c.tied_head { (0, 0) } else { (add("ctl".into(), vec![2 * w, w]), add("head".into(), vec![w, c.vocab_size])) };
         let head_bias = add("head_bias".into(), vec![c.vocab_size]);
         Self { segments, total, embedding_re, embedding_im, input_norm, layers, final_norm, ctl, head, head_bias, real_layers: Vec::new(), real_final_gamma: 0 }
     }
@@ -350,9 +363,18 @@ pub fn initial_parameters(c: &EngineConfig, layout: &Layout, seed: u64) -> Vec<f
             // initialize_bias: Xavier with fan_in = fan_out = rows of the layer.
             xavier(weight.k, weight.k, &mut p[bias..bias + 2 * bias_len], &mut rng);
         }
+        if c.scaled_init {
+            let factor = (1.0 / (2.0 * c.layers as f64).sqrt()) as f32;
+            for weight in l.wo.iter().chain([&l.w2]) {
+                p[weight.re..weight.re + weight.k * weight.n].iter_mut().for_each(|v| *v *= factor);
+                p[weight.im..weight.im + weight.k * weight.n].iter_mut().for_each(|v| *v *= factor);
+            }
+        }
     }
-    xavier(w, w, &mut p[layout.ctl..layout.ctl + 2 * w * w], &mut rng);
-    xavier(w, c.vocab_size, &mut p[layout.head..layout.head + w * c.vocab_size], &mut rng);
+    if !c.tied_head {
+        xavier(w, w, &mut p[layout.ctl..layout.ctl + 2 * w * w], &mut rng);
+        xavier(w, c.vocab_size, &mut p[layout.head..layout.head + w * c.vocab_size], &mut rng);
+    }
     p
 }
 
@@ -630,8 +652,14 @@ impl<B: Backend> Model<B> {
         let (b, l, w, v) = (&self.backend, &self.layout, self.config.width, self.config.vocab_size);
         let position = context.len() - 1;
         let x = if l.final_norm.is_some() { &ws.final_normed } else { &ws.final_x };
-        b.gemm(&Gemm::new(1, w, 2 * w, false, false).offsets(position * 2 * w, l.ctl, 0), x, &self.params, &mut ws.real);
-        b.gemm(&Gemm::new(1, v, w, false, false).offsets(0, l.head, 0), &ws.real, &self.params, &mut ws.logits);
+        if self.config.tied_head {
+            // Re<x, e_v> = x_re . Er_v + x_im . Ei_v
+            b.gemm(&Gemm::new(1, v, w, false, true).ld(2 * w, w, v).offsets(position * 2 * w, l.embedding_re, 0), x, &self.params, &mut ws.logits);
+            b.gemm(&Gemm::new(1, v, w, false, true).ld(2 * w, w, v).offsets(position * 2 * w + w, l.embedding_im, 0).accumulate(), x, &self.params, &mut ws.logits);
+        } else {
+            b.gemm(&Gemm::new(1, w, 2 * w, false, false).offsets(position * 2 * w, l.ctl, 0), x, &self.params, &mut ws.real);
+            b.gemm(&Gemm::new(1, v, w, false, false).offsets(0, l.head, 0), &ws.real, &self.params, &mut ws.logits);
+        }
         b.add_row_vector(&mut ws.logits, 1, v, &self.params, l.head_bias);
         let mut logits = b.download(&ws.logits);
         logits.truncate(v);
@@ -644,7 +672,7 @@ impl<B: Backend> Model<B> {
         let (rows, w) = (ws.rows, c.width);
         b.embed(&self.params, l.embedding_re, l.embedding_im, inputs, 0, rows, w, &mut ws.embedded);
         let first = &mut ws.layers[0].input;
-        b.layer_norm(&ws.embedded, rows, w, NORM_EPSILON, &self.params, l.input_norm.gamma, l.input_norm.beta, first, &mut ws.stats0);
+        b.layer_norm(&ws.embedded, rows, w, NORM_EPSILON, !c.rms_norm, &self.params, l.input_norm.gamma, l.input_norm.beta, first, &mut ws.stats0);
         let beta = c.residual_beta();
         for i in 0..c.layers {
             self.layer_forward(ws, i);
@@ -659,7 +687,7 @@ impl<B: Backend> Model<B> {
             }
         }
         if let Some(n) = l.final_norm {
-            b.layer_norm(&ws.final_x, rows, w, NORM_EPSILON, &self.params, n.gamma, n.beta, &mut ws.final_normed, &mut ws.stats_final);
+            b.layer_norm(&ws.final_x, rows, w, NORM_EPSILON, !c.rms_norm, &self.params, n.gamma, n.beta, &mut ws.final_normed, &mut ws.stats_final);
         }
     }
 
@@ -673,7 +701,7 @@ impl<B: Backend> Model<B> {
         let a = &mut ws.layers[i];
 
         // Attention.
-        b.layer_norm(&a.input, rows, w, NORM_EPSILON, &self.params, lo.attention_norm.gamma, lo.attention_norm.beta, &mut a.h1, &mut a.stats1);
+        b.layer_norm(&a.input, rows, w, NORM_EPSILON, !c.rms_norm, &self.params, lo.attention_norm.gamma, lo.attention_norm.beta, &mut a.h1, &mut a.stats1);
         b.gemm(&Gemm::new(rows, 6 * w, 2 * w, false, false), &a.h1, wqkv, &mut a.qkv);
         b.rope_to_heads(&a.qkv, 6 * w, 0, 3 * w, rows, t, heads, hd, c.rope(), &mut a.qh);
         b.rope_to_heads(&a.qkv, 6 * w, w, 4 * w, rows, t, heads, hd, c.rope(), &mut a.kh);
@@ -719,7 +747,7 @@ impl<B: Backend> Model<B> {
         }
 
         // Feed-forward.
-        b.layer_norm(&a.mid, rows, w, NORM_EPSILON, &self.params, lo.ffn_norm.gamma, lo.ffn_norm.beta, &mut a.h2, &mut a.stats2);
+        b.layer_norm(&a.mid, rows, w, NORM_EPSILON, !c.rms_norm, &self.params, lo.ffn_norm.gamma, lo.ffn_norm.beta, &mut a.h2, &mut a.stats2);
         b.gemm(&Gemm::new(rows, 4 * hf, 2 * w, false, false), &a.h2, w1, &mut a.hidden);
         b.add_row_vector(&mut a.hidden, rows, 4 * hf, &self.params, lo.b1);
         b.gated(&a.hidden, rows, hf, &mut a.gated);
@@ -733,6 +761,9 @@ impl<B: Backend> Model<B> {
         let (rows, w, v) = (ws.rows, c.width, c.vocab_size);
         let b = &self.backend;
         let x = if l.final_norm.is_some() { &ws.final_normed } else { &ws.final_x };
+        if c.tied_head {
+            return self.tied_head(ws, targets, backward, grad_scale, counted);
+        }
         b.gemm(&Gemm::new(rows, w, 2 * w, false, false).offsets(0, l.ctl, 0), x, &self.params, &mut ws.real);
         let mut loss = 0.0;
         let chunk = HEAD_CHUNK.min(rows);
@@ -756,6 +787,39 @@ impl<B: Backend> Model<B> {
         loss / counted as f64
     }
 
+    /// Tied head: logits Re<x, e_v> = x_re Er^T + x_im Ei^T (+ bias), in chunks; with `backward`, the embedding and
+    /// bias gradients and d(head input) in `dx`.
+    fn tied_head(&mut self, ws: &mut Workspace<B>, targets: &B::Ids, backward: bool, grad_scale: f32, counted: usize) -> f64 {
+        let (c, l) = (&self.config, &self.layout);
+        let (rows, w, v) = (ws.rows, c.width, c.vocab_size);
+        let b = &self.backend;
+        let x = if l.final_norm.is_some() { &ws.final_normed } else { &ws.final_x };
+        let mut loss = 0.0;
+        let chunk = HEAD_CHUNK.min(rows);
+        let scale = grad_scale / counted as f32;
+        for start in (0..rows).step_by(chunk) {
+            let len = chunk.min(rows - start);
+            for (part, table) in [(0, l.embedding_re), (1, l.embedding_im)] {
+                let mut g = Gemm::new(len, v, w, false, true).ld(2 * w, w, v).offsets(start * 2 * w + part * w, table, 0);
+                if part == 1 {
+                    g = g.accumulate();
+                }
+                b.gemm(&g, x, &self.params, &mut ws.logits);
+            }
+            b.add_row_vector(&mut ws.logits, len, v, &self.params, l.head_bias);
+            loss += b.cross_entropy(&mut ws.logits, len, v, targets, start, scale);
+            if backward {
+                b.column_sums(&ws.logits, len, v, &mut self.grads, l.head_bias);
+                for (part, table) in [(0, l.embedding_re), (1, l.embedding_im)] {
+                    // dE += dlogits^T x_part (v x w), d x_part = dlogits E (len x w).
+                    b.gemm(&Gemm::new(v, w, len, true, false).ld(v, 2 * w, w).offsets(0, start * 2 * w + part * w, table).accumulate(), &ws.logits, x, &mut self.grads);
+                    b.gemm(&Gemm::new(len, w, v, false, false).ld(v, w, 2 * w).offsets(0, table, start * 2 * w + part * w), &ws.logits, &self.params, &mut ws.dx);
+                }
+            }
+        }
+        loss / counted as f64
+    }
+
     /// Complex linear backward: `d_in = d_out W'^T`, weight gradient folded from `in'^T d_out`.
     #[allow(clippy::too_many_arguments)]
     fn linear_backward(b: &B, input: &B::Buf, d_out: &B::Buf, block: &B::Buf, weight: ComplexWeight, rows: usize, block_grad: &mut B::Buf, grads: &mut B::Buf, d_in: &mut B::Buf) {
@@ -773,7 +837,7 @@ impl<B: Backend> Model<B> {
         let b = &self.backend;
         // ws.dx holds d(head input); through the final norm to d(layer output) of the last layer.
         if let Some(n) = self.layout.final_norm {
-            b.layer_norm_backward(&ws.final_x, &ws.stats_final, &ws.dx, rows, w, &self.params, n.gamma, &mut ws.d_out, &mut self.grads, n.gamma, n.beta);
+            b.layer_norm_backward(&ws.final_x, &ws.stats_final, &ws.dx, rows, w, !c.rms_norm, &self.params, n.gamma, &mut ws.d_out, &mut self.grads, n.gamma, n.beta);
             b.copy(&ws.d_out, 0, &mut ws.dx, 0, rows * 2 * w);
         }
         let aw = c.attention_width();
@@ -794,7 +858,7 @@ impl<B: Backend> Model<B> {
             b.column_sums(&ws.d_hidden, rows, 4 * hf, &mut self.grads, lo.b1);
             Self::linear_backward(b, &a.h2, &ws.d_hidden, w1, lo.w1, rows, &mut self.block_grad, &mut self.grads, &mut ws.dtmp);
             // d(mid) = dy + norm backward of d(h2).
-            b.layer_norm_backward(&a.mid, &a.stats2, &ws.dtmp, rows, w, &self.params, lo.ffn_norm.gamma, &mut ws.d_out, &mut self.grads, lo.ffn_norm.gamma, lo.ffn_norm.beta);
+            b.layer_norm_backward(&a.mid, &a.stats2, &ws.dtmp, rows, w, !c.rms_norm, &self.params, lo.ffn_norm.gamma, &mut ws.d_out, &mut self.grads, lo.ffn_norm.gamma, lo.ffn_norm.beta);
             b.axpy(1.0, &ws.d_out, &mut ws.dx, rows * 2 * w);
 
             // Attention: mid = input + beta [att | 0] (or input + beta att with complex values).
@@ -852,12 +916,12 @@ impl<B: Backend> Model<B> {
             b.rope_from_heads(&ws.d_qh, rows, t, heads, hd, c.rope(), &mut ws.d_qkv, 6 * w, 0, 3 * w);
             b.rope_from_heads(&ws.d_kh, rows, t, heads, hd, c.rope(), &mut ws.d_qkv, 6 * w, w, 4 * w);
             Self::linear_backward(b, &a.h1, &ws.d_qkv, wqkv, lo.wqkv, rows, &mut self.block_grad, &mut self.grads, &mut ws.dtmp);
-            b.layer_norm_backward(&a.input, &a.stats1, &ws.dtmp, rows, w, &self.params, lo.attention_norm.gamma, &mut ws.d_out, &mut self.grads, lo.attention_norm.gamma, lo.attention_norm.beta);
+            b.layer_norm_backward(&a.input, &a.stats1, &ws.dtmp, rows, w, !c.rms_norm, &self.params, lo.attention_norm.gamma, &mut ws.d_out, &mut self.grads, lo.attention_norm.gamma, lo.attention_norm.beta);
             b.axpy(1.0, &ws.d_out, &mut ws.dx, rows * 2 * w);
         }
         // Input norm and embedding.
         let l = &self.layout;
-        b.layer_norm_backward(&ws.embedded, &ws.stats0, &ws.dx, rows, w, &self.params, l.input_norm.gamma, &mut ws.d_out, &mut self.grads, l.input_norm.gamma, l.input_norm.beta);
+        b.layer_norm_backward(&ws.embedded, &ws.stats0, &ws.dx, rows, w, !c.rms_norm, &self.params, l.input_norm.gamma, &mut ws.d_out, &mut self.grads, l.input_norm.gamma, l.input_norm.beta);
         b.embed_backward(&ws.d_out, inputs, 0, rows, w, &mut self.grads, l.embedding_re, l.embedding_im);
     }
 }

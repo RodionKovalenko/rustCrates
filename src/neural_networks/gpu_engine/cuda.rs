@@ -281,17 +281,18 @@ impl Backend for CudaBackend {
         unsafe { self.stream.launch_builder(self.f("column_sums")).arg(dy).arg(&r).arg(&c).arg(grads).arg(&o).launch(grid(cols)) }.expect("column_sums");
     }
 
-    fn layer_norm(&self, x: &CudaSlice<f32>, rows: usize, w: usize, eps: f32, params: &CudaSlice<f32>, gamma_off: usize, beta_off: usize, y: &mut CudaSlice<f32>, stats: &mut CudaSlice<f32>) {
-        let (ww, g, b) = (w as i64, gamma_off as i64, beta_off as i64);
-        unsafe { self.stream.launch_builder(self.f("layer_norm")).arg(x).arg(&ww).arg(&eps).arg(params).arg(&g).arg(&b).arg(y).arg(stats).launch(per_row(rows)) }.expect("layer_norm");
+    fn layer_norm(&self, x: &CudaSlice<f32>, rows: usize, w: usize, eps: f32, center: bool, params: &CudaSlice<f32>, gamma_off: usize, beta_off: usize, y: &mut CudaSlice<f32>, stats: &mut CudaSlice<f32>) {
+        let (ww, g, b, ctr) = (w as i64, gamma_off as i64, beta_off as i64, center as i32);
+        unsafe { self.stream.launch_builder(self.f("layer_norm")).arg(x).arg(&ww).arg(&eps).arg(&ctr).arg(params).arg(&g).arg(&b).arg(y).arg(stats).launch(per_row(rows)) }.expect("layer_norm");
     }
 
-    fn layer_norm_backward(&self, x: &CudaSlice<f32>, stats: &CudaSlice<f32>, dy: &CudaSlice<f32>, rows: usize, w: usize, params: &CudaSlice<f32>, gamma_off: usize, dx: &mut CudaSlice<f32>, grads: &mut CudaSlice<f32>, dgamma_off: usize, dbeta_off: usize) {
+    fn layer_norm_backward(&self, x: &CudaSlice<f32>, stats: &CudaSlice<f32>, dy: &CudaSlice<f32>, rows: usize, w: usize, center: bool, params: &CudaSlice<f32>, gamma_off: usize, dx: &mut CudaSlice<f32>, grads: &mut CudaSlice<f32>, dgamma_off: usize, dbeta_off: usize) {
         assert_eq!(dbeta_off, dgamma_off + 2 * w, "gamma and beta must be adjacent");
         let mut scratch = self.scratch.borrow_mut();
         self.ensure(&mut scratch.floats, rows * 4 * w);
         let (ww, g) = (w as i64, gamma_off as i64);
-        unsafe { self.stream.launch_builder(self.f("layer_norm_backward")).arg(x).arg(stats).arg(dy).arg(&ww).arg(params).arg(&g).arg(dx).arg(&mut scratch.floats).launch(per_row(rows)) }.expect("layer_norm_backward");
+        let ctr = center as i32;
+        unsafe { self.stream.launch_builder(self.f("layer_norm_backward")).arg(x).arg(stats).arg(dy).arg(&ww).arg(&ctr).arg(params).arg(&g).arg(dx).arg(&mut scratch.floats).launch(per_row(rows)) }.expect("layer_norm_backward");
         self.column_sums(&scratch.floats, rows, 4 * w, grads, dgamma_off);
     }
 
