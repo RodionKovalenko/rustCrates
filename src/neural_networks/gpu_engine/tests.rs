@@ -837,3 +837,12 @@ fn german_tokenizer_loads_in_rust_and_round_trips() {
     let neox = tokenizers::Tokenizer::from_file("src/neural_networks/tokenizers/gtp_neox_tokenizer.json").unwrap();
     assert!(encoding.get_ids().len() < neox.encode(text, false).unwrap().get_ids().len());
 }
+
+#[test]
+#[ignore]
+fn print_preset_parameter_counts() {
+    for name in ["rm", "rm-pos", "complex-v", "new", "herm", "wo", "herm-wo", "herm-wo-init", "herm-wo-rms", "herm-wo-tied", "herm-wo-all", "herm-wo-wav-hybrid", "herm-wo-wav-parallel", "real"] {
+        let (total, layers) = Layout::new(&EngineConfig::preset(name).unwrap()).parameter_counts();
+        println!("PRESET {name}: {:.1} M total, {:.1} M in the layers", total as f64 / 1e6, layers as f64 / 1e6);
+    }
+}

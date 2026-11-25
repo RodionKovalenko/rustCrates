@@ -1,0 +1,178 @@
+ARCHITEKTUREN DER EIGENEN ENGINE (gpu_engine)
+=============================================
+
+Alle Modelle laufen in derselben Engine (src/neural_networks/gpu_engine/): gleicher Trainingsablauf, gleiche
+Checkpoints, Generierung und Fine-Tuning. Welche Architektur ein Modell hat, steht in seiner EngineConfig
+(Datei <checkpoint>.json); fehlende Felder in alten Checkpoints bedeuten die RM-Architektur.
+
+Code:
+  model.rs          komplexes Modell: Parameter-Layout, Forward, Backward (von Hand), Presets
+  model/real.rs     reelles Kontrollmodell
+  backend.rs        Grundoperationen (Trait), cpu.rs = Referenz, cuda.rs + kernels.cu = GPU
+  train.rs          Pretraining, finetune.rs / span_qa.rs = GermanQuAD, generate.rs = Textgenerierung
+
+Neues Modell mit einer Architektur:  ENGINE_ARCH=<preset> wav-transformer engine-pretrain <shards> ...
+                                     (Kaggle: kaggle/ablation_engine.ipynb, Einstellung ARCH)
+
+
+1. GRUNDGRÖSSEN UND SCHREIBWEISE
+--------------------------------
+  w   = 256   Breite in komplexen Werten (= 512 reelle Zahlen pro Token)
+  L   = 12    Schichten
+  H   = 4     Attention-Heads, d = w / H = 64 komplexe Werte pro Head
+  F   = 1024  Feed-Forward-Breite (komplex)
+  T   = 512   Tokens pro Sequenz
+  V   = 50282 Vokabular (GPT-NeoX-Tokenizer; mit dem deutschen Tokenizer 32000)
+
+Speicherform: eine Zeile (ein Token) ist planar [Re_0 .. Re_w-1 | Im_0 .. Im_w-1].
+
+Komplexe Matrixmultiplikation X·W (W = Wr + i·Wi, k x n) = EINE reelle Multiplikation mit der Blockmatrix:
+
+    [Xr | Xi] · [[ Wr, Wi],   =  [Xr·Wr − Xi·Wi | Xr·Wi + Xi·Wr]  =  [Re(XW) | Im(XW)]
+                 [−Wi, Wr]]
+
+splitSiLU(z)  = SiLU(Re z) + i·SiLU(Im z)
+⊙             = elementweises komplexes Produkt
+conj(z)       = komplex konjugiert
+
+
+2. GEMEINSAMER RAHMEN (alle komplexen Modelle)
+----------------------------------------------
+
+  Text ─► Tokenizer ─► Token-IDs t_1 .. t_T
+    │
+    ▼  Embedding        x_t = Er[t] + i·Ei[t]                  (Tabellen V x w; Startwerte aus der
+    │                                                            2D-Wavelet-Zerlegung eines Zufallsvektors)
+    ▼  Eingangs-Norm    x = Norm(x)
+    ▼  L x Schicht      (Abschnitt 3; je nach Architektur)
+    ▼  End-Norm         nur mit normalen Residuals (standard_residual)
+    ▼  Ausgabeschicht   (Abschnitt 4)
+    ▼  Softmax über V, Cross-Entropy gegen das nächste Token (Mittel über alle Positionen)
+
+Komplexe Norm (pro Token, über die w Kanäle; γ, β komplex pro Kanal):
+
+    μ  = mean(x)                     (entfällt mit rms_norm: μ = 0)
+    σ² = mean(|x − μ|²)              (reell, Betragsquadrat)
+    y  = (x − μ) / sqrt(σ² + ε) · γ + β
+
+
+3. EINE SCHICHT
+---------------
+
+3a. Attention (Pre-Norm)
+
+    h = Norm(x)
+    [Q | K | V] = h · Wqkv                          (w -> 3w, komplex)
+    Q, K ← RoPE(Q), RoPE(K)                          Paare (2i, 2i+1) im Real- und im Imaginärteil werden um
+                                                     θ = pos / base^(2i/d) gedreht
+    Scores pro Head (s <= t, kausal, innerhalb des Fensters):
+        ComplexToLinear:   q̃ = [Qr|Qi]·Cq, k̃ = [Kr|Ki]·Ck  (2d -> d reell), score = q̃·k̃ / sqrt(d)
+        hermitesch:        score = Re( Σ q · conj(k) ) / sqrt(2d)      (hermitian_scores)
+    P = softmax(score) über die sichtbaren Positionen
+    att = P · Re(V)                     (nur Realteil)          oder
+    att = P · V                         (komplex, complex_values)
+    a_out = att · Wo                    (attention_output; sonst a_out = att)
+
+3b. Wavelet-Mischer (wavelet_mixer; nutzt dasselbe h)
+
+    [v | g] = h · Wvg                                (w -> 2w, komplex)
+    z_t = Σ_{s=0..6} Σ_{k=0..7} c[s,k] ⊙ v_{t − k·2^s}   kausal, nur innerhalb der Sequenz; c komplex pro
+                                                         Kanal, Startwert Morlet-Wavelet; Reichweite 449 Tokens
+    u = z ⊙ splitSiLU(g)
+    m_out = u · Wo_mix                               (w -> w, komplex)
+    hybrid:   Schichten 1, 3, 5, ... (gezählt ab 0) haben NUR den Mischer, keine Attention
+    parallel: jede Schicht hat Attention UND Mischer
+
+3c. Residual nach Attention / Mischer
+
+    RM-Residual:      mid = x + β·[att | 0]          (nur in den Realteil), β = 1 / (3L)^(1/4)
+    komplexes V:      mid = x + β·att
+    normal:           mid = x + a_out (+ m_out)      (standard_residual: β = 1)
+
+3d. Feed-Forward (komplexes Gate)
+
+    h2 = Norm(mid)
+    [a | b] = h2 · W1 + b1                           (w -> 2F)
+    gate = a ⊙ splitSiLU(b)
+    f = gate · W2 + b2                               (F -> w)
+    RM-Residual:  x_next = mid + β·leaky(f)          Faktor β bzw. 0,01·β je nach Vorzeichen von Re(f),
+                                                     auch auf Im(f) angewendet -> unstetig
+    normal:       x_next = mid + f
+
+
+4. AUSGABESCHICHT
+-----------------
+    Standard:     r = [Re x | Im x] · W_ctl          (2w -> w reell, ComplexToLinear)
+                  logits = r · W_head + b            (w -> V)
+    tied_head:    logit_v = Re⟨x, e_v⟩ + b_v = x_re · Er_v + x_im · Ei_v + b_v
+                  (Embedding-Tabelle mitbenutzt, keine eigene Ausgabematrix)
+
+
+5. DIE ARCHITEKTUREN (Presets)
+------------------------------
+Spalten: Fenster | RoPE | Scores | V | Wo | Residual | Norm | Ausgabe | Mischer | Parameter (gesamt / Schichten)
+
+  rm                 256 | 1250, ±1  | CTL   | Re(V) | –  | RM    | Layer | CTL+Head | –        | 63,3 / 24,5 M
+                     Ursprüngliches RM-Modell; Pretraining-Läufe 1–3 (STORAGE/engine_lm aus pretrain-engine).
+  rm-pos             512 | 10000     | CTL   | Re(V) | –  | RM    | Layer | CTL+Head | –        | 63,3 / 24,5 M
+  complex-v          512 | 10000     | CTL   | V     | –  | RM    | Layer | CTL+Head | –        | 63,3 / 24,5 M
+  new                512 | 10000     | CTL   | V     | –  | normal| Layer | CTL+Head | –        | 63,3 / 24,5 M
+  herm               512 | 10000     | herm. | V     | –  | normal| Layer | CTL+Head | –        | 62,5 / 23,7 M
+  wo                 512 | 10000     | CTL   | V     | ja | normal| Layer | CTL+Head | –        | 64,8 / 26,0 M
+  herm-wo            512 | 10000     | herm. | V     | ja | normal| Layer | CTL+Head | –        | 64,0 / 25,2 M
+  herm-wo-init       wie herm-wo, Wo und W2 starten mit 1/sqrt(2L) kleineren Werten              | 64,0 / 25,2 M
+  herm-wo-rms        wie herm-wo, Norm ohne Mittelwert (komplexe RMS-Norm)                       | 64,0 / 25,2 M
+  herm-wo-tied       wie herm-wo, Ausgabe Re⟨x, e_v⟩ (tied_head)                                 | 51,0 / 25,2 M
+  herm-wo-all        herm-wo + init + rms + tied                                                 | 51,0 / 25,2 M
+  herm-wo-wav-hybrid herm-wo, jede zweite Attention durch den Wavelet-Mischer ersetzt            | 63,4 / 24,6 M
+  herm-wo-wav-parallel herm-wo + Wavelet-Mischer in jeder Schicht                                | 69,1 / 30,3 M
+  real               reelles Kontrollmodell (Abschnitt 6)                                         | 59,9 / 21,2 M
+
+  CTL = ComplexToLinear, herm. = hermitesch Re(q·conj k), RM = β-skaliert mit Leaky-ReLU.
+
+EngineConfig-Felder: window, standard_rope, hermitian_scores, complex_values, attention_output,
+standard_residual, rms_norm, scaled_init, tied_head, wavelet_mixer (none | hybrid | parallel), real, tokenizer.
+
+
+6. REELLES KONTROLLMODELL (real)
+--------------------------------
+Standard-Transformer zum Vergleich: W = 384 reell, 6 Heads à 64, FFN 1024, 12 Schichten.
+
+    x = E[t]                                              (V x 384)
+    pro Schicht:
+        h = RMSNorm(x)
+        [Q | K | V] = h · Wqkv,  Q, K ← RoPE (Basis 10000)
+        att = softmax(Q·Kᵀ / sqrt(64), kausal) · V
+        x = x + att · Wo
+        h2 = RMSNorm(x)
+        x = x + (SiLU(h2·W1a) ⊙ (h2·W1b)) · W2          (SwiGLU)
+    logits = RMSNorm(x) · W_head + b
+
+
+7. MESSERGEBNISSE
+-----------------
+Neues Modell, 9000 Schritte à 16 x 512 Tokens (73,7 M Tokens), gleiche Daten in gleicher Reihenfolge,
+Validierungsloss (Cross-Entropy pro Token, GPT-NeoX-Tokenizer), Tesla T4, f16:
+
+  Architektur      Schritt 1500   3000   4500   6000   7500   9000   Tokens/s
+  rm                       4,55   4,07   3,75   3,56   3,47   3,42    11.300
+  rm-pos                   4,48   3,87   3,61   3,46   3,38   3,35    11.500
+  complex-v                4,46   3,86   3,61   3,47   3,39   3,35    10.200
+  new                      4,36   3,77   3,52   3,37   3,30   3,26    10.600
+  herm-wo                  4,03   3,61   3,41   3,27   3,19   3,16    10.800
+  real                     3,73   3,38   3,18   3,05   2,96   2,92    14.850
+
+  herm, wo, herm-wo-init/-rms/-tied/-all, herm-wo-wav-hybrid/-parallel: Läufe ab 28.11.2026.
+
+Erkenntnisse:
+  - Volles Fenster + richtiges RoPE: −0,08.
+  - Komplexes V allein: kein Gewinn.
+  - Normale Residuals (statt der unstetigen Leaky-ReLU-Residual): −0,10, stabile Gradientennorm (~1 statt ~3).
+  - Hermitesche Scores + Wo: −0,10.
+  - Abstand zum reellen Modell noch 0,24.
+
+
+8. LANGES PRETRAINING (zum Vergleich)
+-------------------------------------
+  pretrain-engine, Architektur rm, 3 Läufe à ~11 h, 1,19 Mrd. Tokens: bester Validierungsloss 2,664.
+  GermanQuAD darauf: generierte Antwort EM 0,8 % / F1 8,0 %; Antwort als Textstelle (span) EM 6,8 % / F1 19,0 %.
