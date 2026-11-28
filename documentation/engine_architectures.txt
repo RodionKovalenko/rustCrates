@@ -160,16 +160,19 @@ Validierungsloss (Cross-Entropy pro Token, GPT-NeoX-Tokenizer), Tesla T4, f16:
   complex-v                4,46   3,86   3,61   3,47   3,39   3,35    10.200
   new                      4,36   3,77   3,52   3,37   3,30   3,26    10.600
   herm-wo                  4,03   3,61   3,41   3,27   3,19   3,16    10.800
+  herm-wo-wav-hybrid       3,95   3,56   3,36   3,23   3,16   3,12    11.850
   real                     3,73   3,38   3,18   3,05   2,96   2,92    14.850
 
-  herm, wo, herm-wo-init/-rms/-tied/-all, herm-wo-wav-hybrid/-parallel: Läufe ab 28.11.2026.
+  herm, wo, herm-wo-init/-rms/-tied/-all, herm-wo-wav-parallel: Läufe ab 28.11.2026.
 
 Erkenntnisse:
   - Volles Fenster + richtiges RoPE: −0,08.
   - Komplexes V allein: kein Gewinn.
   - Normale Residuals (statt der unstetigen Leaky-ReLU-Residual): −0,10, stabile Gradientennorm (~1 statt ~3).
   - Hermitesche Scores + Wo: −0,10.
-  - Abstand zum reellen Modell noch 0,24.
+  - Wavelet-Mischer statt jeder zweiten Attention (hybrid): −0,035 gegenüber herm-wo und ~10 % schneller
+    (11.850 statt 10.800 Tokens/s), gleiche Parameterzahl. Bestes komplexes Modell bisher.
+  - Abstand zum reellen Modell noch 0,20.
 
 
 8. LANGES PRETRAINING (zum Vergleich)
