@@ -160,6 +160,7 @@ Validierungsloss (Cross-Entropy pro Token, GPT-NeoX-Tokenizer), Tesla T4, f16:
   rm-pos                   4,48   3,87   3,61   3,46   3,38   3,35    11.500
   complex-v                4,46   3,86   3,61   3,47   3,39   3,35    10.200
   new                      4,36   3,77   3,52   3,37   3,30   3,26    10.600
+  wo                       4,32   3,77   3,52   3,37   3,29   3,25     9.900
   herm                     4,01   3,61   3,41   3,27   3,20   3,17    10.450
   herm-wo                  4,03   3,61   3,41   3,27   3,19   3,16    10.800
   herm-wo-init             3,97   3,60   3,39   3,25   3,15   3,11    10.750
@@ -172,18 +173,16 @@ Validierungsloss (Cross-Entropy pro Token, GPT-NeoX-Tokenizer), Tesla T4, f16:
                                                                                 Schritt 8252 (3,1468)
   real                     3,73   3,38   3,18   3,05   2,96   2,92    14.850
 
-  wo: Lauf ab 28.11.2026.
-
 Erkenntnisse:
   - Volles Fenster + richtiges RoPE: −0,08.
   - Komplexes V allein: kein Gewinn.
   - Normale Residuals (statt der unstetigen Leaky-ReLU-Residual): −0,10, stabile Gradientennorm (~1 statt ~3).
   - Hermitesche Scores + Wo: −0,10; davon hermitesche Scores allein (herm) −0,09, Wo zusätzlich nur −0,01.
+    Wo allein (wo, mit ComplexToLinear-Scores): −0,01, startet aber deutlich langsamer (6,20 bei Schritt 500).
   - Wavelet-Mischer statt jeder zweiten Attention (hybrid): −0,035 gegenüber herm-wo und ~10 % schneller
     (11.850 statt 10.800 Tokens/s), gleiche Parameterzahl.
   - Kleinere Startwerte für Wo und W2 (herm-wo-init, 1/sqrt(2L)): −0,044 gegenüber herm-wo, ohne Mehrkosten.
-    Bisher bestes komplexes Modell (3,112); die Änderung ist unabhängig vom Wavelet-Mischer und lässt sich
-    mit hybrid kombinieren.
+    Die Änderung ist unabhängig vom Wavelet-Mischer und lässt sich mit hybrid kombinieren.
   - RMS-Norm statt Layer-Norm (herm-wo-rms): gleiches Ergebnis (3,1555 gegenüber 3,1552). Der Mittelwert
     stört nicht, bringt aber auch nichts; eine robuste Norm (Median/Huber) lohnt sich daher nicht.
   - Ausgabe über die Embedding-Tabelle (herm-wo-tied, Re⟨x, e_v⟩): 3,150 gegenüber 3,155 bei 13 M weniger
@@ -197,6 +196,13 @@ Erkenntnisse:
   - Mischer zusätzlich in jeder Schicht (parallel): bei gleicher Schrittzahl 0,01 schlechter als hybrid,
     trotz +5,7 M Parametern, und 28 % langsamer. Attention und Mischer abwechselnd ist die bessere Aufteilung.
   - Abstand zum reellen Modell noch 0,11 (herm-wo-all-wav-hybrid 3,025 gegenüber real 2,920).
+
+Fazit (28.11.2026):
+  Bestes komplexes Modell: herm-wo-all-wav-hybrid = hermitesche Scores, komplexes V, Wo, normale Residuals,
+  komplexe RMS-Norm, kleine Startwerte für Wo/W2/Wo_mix, Ausgabe Re⟨x, e_v⟩, Wavelet-Mischer statt Attention
+  in den Schichten 1, 3, 5, ... — 50,4 M Parameter, 3,025 nach 73,7 M Tokens (rm: 3,42).
+  Empfehlung für das lange Pretraining: dieses Preset mit dem deutschen Tokenizer (32k, 1,72 statt 2,52
+  Tokens pro Wort); das reelle Modell als Vergleich behalten.
 
 
 8. LANGES PRETRAINING (zum Vergleich)
