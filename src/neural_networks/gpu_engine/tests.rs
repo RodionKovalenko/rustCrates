@@ -320,6 +320,8 @@ fn every_architecture_variant_has_exact_gradients() {
     for wavelet_mixer in [super::model::WaveletMixer::Hybrid, super::model::WaveletMixer::Parallel] {
         check_architecture(EngineConfig { wavelet_mixer, ..herm_wo.clone() });
     }
+    // The hybrid mixer together with RMS norm, scaled initialization and the tied head (herm-wo-all-wav-hybrid).
+    check_architecture(EngineConfig { wavelet_mixer: super::model::WaveletMixer::Hybrid, rms_norm: true, scaled_init: true, tied_head: true, ..herm_wo.clone() });
     // The real control model (window 3 and full).
     for window in [3, 8] {
         check_architecture(real_tiny(window));
@@ -335,7 +337,7 @@ fn old_checkpoint_configs_load_as_the_rm_architecture() {
     let german = EngineConfig { tokenizer: "src/neural_networks/tokenizers/german_bpe_32k.json".into(), vocab_size: 32000, ..EngineConfig::default() };
     assert_eq!(serde_json::from_str::<EngineConfig>(&serde_json::to_string(&german).unwrap()).unwrap(), german);
     assert!(Layout::new(&config).final_norm.is_none());
-    for name in ["rm", "rm-pos", "complex-v", "new", "herm", "wo", "herm-wo", "herm-wo-init", "herm-wo-rms", "herm-wo-tied", "herm-wo-all", "herm-wo-wav-hybrid", "herm-wo-wav-parallel", "real"] {
+    for name in ["rm", "rm-pos", "complex-v", "new", "herm", "wo", "herm-wo", "herm-wo-init", "herm-wo-rms", "herm-wo-tied", "herm-wo-all", "herm-wo-wav-hybrid", "herm-wo-wav-parallel", "herm-wo-all-wav-hybrid", "real"] {
         assert_eq!(EngineConfig::preset(name).unwrap().seq_len, 512);
     }
     // The real control model has about the parameters of the complex one.
@@ -841,7 +843,7 @@ fn german_tokenizer_loads_in_rust_and_round_trips() {
 #[test]
 #[ignore]
 fn print_preset_parameter_counts() {
-    for name in ["rm", "rm-pos", "complex-v", "new", "herm", "wo", "herm-wo", "herm-wo-init", "herm-wo-rms", "herm-wo-tied", "herm-wo-all", "herm-wo-wav-hybrid", "herm-wo-wav-parallel", "real"] {
+    for name in ["rm", "rm-pos", "complex-v", "new", "herm", "wo", "herm-wo", "herm-wo-init", "herm-wo-rms", "herm-wo-tied", "herm-wo-all", "herm-wo-wav-hybrid", "herm-wo-wav-parallel", "herm-wo-all-wav-hybrid", "real"] {
         let (total, layers) = Layout::new(&EngineConfig::preset(name).unwrap()).parameter_counts();
         println!("PRESET {name}: {:.1} M total, {:.1} M in the layers", total as f64 / 1e6, layers as f64 / 1e6);
     }

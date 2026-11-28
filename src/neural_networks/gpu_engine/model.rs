@@ -166,6 +166,7 @@ impl EngineConfig {
             "herm-wo-wav-hybrid" => Some(Self { hermitian_scores: true, attention_output: true, wavelet_mixer: WaveletMixer::Hybrid, ..Self::default() }),
             "herm-wo-wav-parallel" => Some(Self { hermitian_scores: true, attention_output: true, wavelet_mixer: WaveletMixer::Parallel, ..Self::default() }),
             "herm-wo-all" => Some(Self { hermitian_scores: true, attention_output: true, scaled_init: true, rms_norm: true, tied_head: true, ..Self::default() }),
+            "herm-wo-all-wav-hybrid" => Some(Self { wavelet_mixer: WaveletMixer::Hybrid, ..Self::preset("herm-wo-all").unwrap() }),
             // Real transformer with about the parameters of the complex model (21 M in the layers, 63 M in total).
             "real" => Some(Self { width: 384, heads: 6, ffn_hidden: 1024, complex_values: false, real: true, ..Self::default() }),
             _ => None,

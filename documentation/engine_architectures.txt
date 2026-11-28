@@ -126,6 +126,7 @@ Spalten: Fenster | RoPE | Scores | V | Wo | Residual | Norm | Ausgabe | Mischer 
   herm-wo-all        herm-wo + init + rms + tied                                                 | 51,0 / 25,2 M
   herm-wo-wav-hybrid herm-wo, jede zweite Attention durch den Wavelet-Mischer ersetzt            | 63,4 / 24,6 M
   herm-wo-wav-parallel herm-wo + Wavelet-Mischer in jeder Schicht                                | 69,1 / 30,3 M
+  herm-wo-all-wav-hybrid herm-wo-all + jede zweite Attention durch den Wavelet-Mischer ersetzt    | 50,4 / 24,6 M
   real               reelles Kontrollmodell (Abschnitt 6)                                         | 59,9 / 21,2 M
 
   CTL = ComplexToLinear, herm. = hermitesch Re(q·conj k), RM = β-skaliert mit Leaky-ReLU.
