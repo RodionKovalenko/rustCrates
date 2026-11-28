@@ -160,12 +160,13 @@ Validierungsloss (Cross-Entropy pro Token, GPT-NeoX-Tokenizer), Tesla T4, f16:
   complex-v                4,46   3,86   3,61   3,47   3,39   3,35    10.200
   new                      4,36   3,77   3,52   3,37   3,30   3,26    10.600
   herm-wo                  4,03   3,61   3,41   3,27   3,19   3,16    10.800
+  herm-wo-init             3,97   3,60   3,39   3,25   3,15   3,11    10.750
   herm-wo-wav-hybrid       3,95   3,56   3,36   3,23   3,16   3,12    11.850
   herm-wo-wav-parallel     4,01   3,59   3,39   3,25   3,17  (3,15)    8.550   Zeitlimit 2,2 h: Schluss bei
                                                                                 Schritt 8252 (3,1468)
   real                     3,73   3,38   3,18   3,05   2,96   2,92    14.850
 
-  herm, wo, herm-wo-init/-rms/-tied/-all: Läufe ab 28.11.2026.
+  herm, wo, herm-wo-rms/-tied/-all: Läufe ab 28.11.2026.
 
 Erkenntnisse:
   - Volles Fenster + richtiges RoPE: −0,08.
@@ -173,10 +174,13 @@ Erkenntnisse:
   - Normale Residuals (statt der unstetigen Leaky-ReLU-Residual): −0,10, stabile Gradientennorm (~1 statt ~3).
   - Hermitesche Scores + Wo: −0,10.
   - Wavelet-Mischer statt jeder zweiten Attention (hybrid): −0,035 gegenüber herm-wo und ~10 % schneller
-    (11.850 statt 10.800 Tokens/s), gleiche Parameterzahl. Bestes komplexes Modell bisher.
+    (11.850 statt 10.800 Tokens/s), gleiche Parameterzahl.
+  - Kleinere Startwerte für Wo und W2 (herm-wo-init, 1/sqrt(2L)): −0,044 gegenüber herm-wo, ohne Mehrkosten.
+    Bisher bestes komplexes Modell (3,112); die Änderung ist unabhängig vom Wavelet-Mischer und lässt sich
+    mit hybrid kombinieren.
   - Mischer zusätzlich in jeder Schicht (parallel): bei gleicher Schrittzahl 0,01 schlechter als hybrid,
     trotz +5,7 M Parametern, und 28 % langsamer. Attention und Mischer abwechselnd ist die bessere Aufteilung.
-  - Abstand zum reellen Modell noch 0,20.
+  - Abstand zum reellen Modell noch 0,19.
 
 
 8. LANGES PRETRAINING (zum Vergleich)
